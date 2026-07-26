@@ -9,18 +9,12 @@
 mod common;
 
 use qubit_fs::{
-    AtomicityRequirement,
-    FileSystemCapabilities,
-    FileSystemCapability,
-    WriteDisposition,
+    AtomicityRequirement, FileSystemCapabilities, FileSystemCapability, WriteDisposition,
     WriteOptions,
 };
 use qubit_fs_testkit::FileSystemFixture;
 
-use common::{
-    MemoryFault,
-    MemoryFixture,
-};
+use common::{MemoryFault, MemoryFixture};
 
 /// Verifies the stat contract accepts a conforming provider.
 #[test]
@@ -150,9 +144,7 @@ fn test_preflight_contract_accepts_conforming_provider() {
     let capabilities = FileSystemCapabilities::default()
         .with(FileSystemCapability::Read)
         .with(FileSystemCapability::Write);
-    qubit_fs_testkit::assert_preflight_contract(
-        &MemoryFixture::with_capabilities(capabilities),
-    );
+    qubit_fs_testkit::assert_preflight_contract(&MemoryFixture::with_capabilities(capabilities));
 }
 
 /// Verifies all synchronous option families reject missing requirements early.
@@ -165,18 +157,14 @@ fn test_preflight_contract_accepts_all_conforming_rejections() {
         .with(FileSystemCapability::Rename)
         .with(FileSystemCapability::Copy);
 
-    qubit_fs_testkit::assert_preflight_contract(
-        &MemoryFixture::with_capabilities(capabilities),
-    );
+    qubit_fs_testkit::assert_preflight_contract(&MemoryFixture::with_capabilities(capabilities));
 }
 
 /// Verifies the stat contract rejects incorrect metadata kinds.
 #[test]
 #[should_panic(expected = "written resources must be files")]
 fn test_stat_contract_rejects_wrong_file_kind() {
-    qubit_fs_testkit::assert_stat_contract(&MemoryFixture::with_fault(
-        MemoryFault::WrongStatKind,
-    ));
+    qubit_fs_testkit::assert_stat_contract(&MemoryFixture::with_fault(MemoryFault::WrongStatKind));
 }
 
 /// Verifies the read contract rejects incorrect opened-file locations.
@@ -208,21 +196,26 @@ fn test_append_contract_rejects_replacement() {
 
 /// Verifies the atomic-replace contract rejects downgraded publication.
 #[test]
-#[should_panic(
-    expected = "required atomic replacement must report atomic publication"
-)]
+#[should_panic(expected = "required atomic replacement must report atomic publication")]
 fn test_atomic_replace_contract_rejects_downgrade() {
-    qubit_fs_testkit::assert_atomic_replace_contract(
-        &MemoryFixture::with_fault(MemoryFault::AtomicReplaceDowngrade),
-    );
+    qubit_fs_testkit::assert_atomic_replace_contract(&MemoryFixture::with_fault(
+        MemoryFault::AtomicReplaceDowngrade,
+    ));
 }
 
 /// Verifies the list contract rejects missing entries.
 #[test]
 #[should_panic(expected = "list must return the written child")]
 fn test_list_contract_rejects_missing_entries() {
+    qubit_fs_testkit::assert_list_contract(&MemoryFixture::with_fault(MemoryFault::EmptyList));
+}
+
+/// Verifies the list contract rejects ignored recursive and prefix options.
+#[test]
+#[should_panic(expected = "recursive list must return the nested matching child")]
+fn test_list_contract_rejects_ignored_options() {
     qubit_fs_testkit::assert_list_contract(&MemoryFixture::with_fault(
-        MemoryFault::EmptyList,
+        MemoryFault::IgnoreListOptions,
     ));
 }
 
@@ -239,9 +232,7 @@ fn test_create_dir_contract_rejects_no_op() {
 #[test]
 #[should_panic(expected = "deleted files must not remain present")]
 fn test_delete_contract_rejects_no_op() {
-    qubit_fs_testkit::assert_delete_contract(&MemoryFixture::with_fault(
-        MemoryFault::SkipDelete,
-    ));
+    qubit_fs_testkit::assert_delete_contract(&MemoryFixture::with_fault(MemoryFault::SkipDelete));
 }
 
 /// Verifies the rename contract rejects copy-only behavior.
@@ -250,6 +241,15 @@ fn test_delete_contract_rejects_no_op() {
 fn test_rename_contract_rejects_source_preservation() {
     qubit_fs_testkit::assert_rename_contract(&MemoryFixture::with_fault(
         MemoryFault::CopyInsteadOfRename,
+    ));
+}
+
+/// Verifies advertised atomic rename cannot report a downgraded outcome.
+#[test]
+#[should_panic(expected = "required atomic rename must report atomic publication")]
+fn test_rename_contract_rejects_atomicity_downgrade() {
+    qubit_fs_testkit::assert_rename_contract(&MemoryFixture::with_fault(
+        MemoryFault::AtomicRenameDowngrade,
     ));
 }
 
@@ -262,16 +262,22 @@ fn test_copy_contract_rejects_source_removal() {
     ));
 }
 
+/// Verifies the copy contract rejects ignored destination conflict policies.
+#[test]
+#[should_panic(expected = "copy must reject an existing destination by default")]
+fn test_copy_contract_rejects_ignored_conflict_policy() {
+    qubit_fs_testkit::assert_copy_contract(&MemoryFixture::with_fault(
+        MemoryFault::CopyIgnoresConflict,
+    ));
+}
+
 /// Verifies the preflight contract rejects provider I/O before validation.
 #[test]
 #[should_panic(expected = "filesystem error kind must match")]
 fn test_preflight_contract_rejects_late_validation() {
-    let capabilities =
-        FileSystemCapabilities::default().with(FileSystemCapability::Read);
-    let fixture = MemoryFixture::with_capabilities_and_fault(
-        capabilities,
-        MemoryFault::SkipReadPreflight,
-    );
+    let capabilities = FileSystemCapabilities::default().with(FileSystemCapability::Read);
+    let fixture =
+        MemoryFixture::with_capabilities_and_fault(capabilities, MemoryFault::SkipReadPreflight);
 
     qubit_fs_testkit::assert_preflight_contract(&fixture);
 }

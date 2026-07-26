@@ -8,10 +8,7 @@
 // qubit-style: allow source-test-pair
 //! Defines the provider-owned fixture required by filesystem contracts.
 
-use qubit_fs::{
-    FileSystem,
-    FsPath,
-};
+use qubit_fs::{FileSystem, FsPath};
 
 /// Supplies an isolated filesystem and provider-specific contract paths.
 ///

@@ -12,9 +12,10 @@
 ///
 /// The fixture expression is evaluated independently for every generated
 /// test. It must create a fresh fixture advertising `Read`, `Write`, `List`,
-/// `CreateDirectory`, `Delete`, `Rename`, and `Copy`. Derived capabilities are
-/// tested when advertised, while unsupported operations and option
-/// requirements are checked through their structured errors.
+/// `CreateDirectory`, `Delete`, `Rename`, and `Copy`. The suite verifies the
+/// advertised `AtomicRename`, `AtomicReplace`, and `RecursiveDelete`
+/// guarantees through positive operations. Other optional guarantees are
+/// checked through capability dependencies and structured preflight errors.
 ///
 /// The expression is expanded inside the generated module. Provider tests
 /// should therefore qualify fixture types or factories through `super::`.

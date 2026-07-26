@@ -8,32 +8,15 @@
 
 mod common;
 
-use std::panic::{
-    AssertUnwindSafe,
-    catch_unwind,
-};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use qubit_fs::{
-    FileMetadata,
-    FileSystem,
-    FileSystemCapabilities,
-    FileSystemCapability,
-    FileSystemId,
-    FileSystemInfo,
-    FileSystemLimits,
-    FileSystemProperties,
-    FsError,
-    FsErrorKind,
-    FsOperation,
-    FsPath,
-    FsResult,
-    PathSemantics,
+    FileMetadata, FileSystem, FileSystemCapabilities, FileSystemCapability, FileSystemId,
+    FileSystemInfo, FileSystemLimits, FileSystemProperties, FsError, FsErrorKind, FsOperation,
+    FsPath, FsResult, PathSemantics,
 };
 
-use common::{
-    MemoryFault,
-    MemoryFixture,
-};
+use common::{MemoryFault, MemoryFixture};
 
 struct PropertiesFileSystem {
     info: FileSystemInfo,
@@ -77,8 +60,7 @@ impl PropertiesFixture {
         Self {
             file_system: PropertiesFileSystem {
                 info: FileSystemInfo::new(
-                    FileSystemId::new("test")
-                        .expect("the fixture ID should validate"),
+                    FileSystemId::new("test").expect("the fixture ID should validate"),
                     "test-provider",
                     PathSemantics::Hierarchical,
                 ),
@@ -95,8 +77,7 @@ impl qubit_fs_testkit::FileSystemFixture for PropertiesFixture {
     }
 
     fn path(&self, relative: &str) -> FsPath {
-        FsPath::parse(&format!("/{relative}"))
-            .expect("contract fixture paths should parse")
+        FsPath::parse(&format!("/{relative}")).expect("contract fixture paths should parse")
     }
 }
 
@@ -142,9 +123,7 @@ fn test_capabilities_contract_rejects_every_missing_base_capability() {
     ];
 
     for derived in dependencies {
-        let fixture = PropertiesFixture::new(
-            FileSystemCapabilities::default().with(derived),
-        );
+        let fixture = PropertiesFixture::new(FileSystemCapabilities::default().with(derived));
         let result = catch_unwind(AssertUnwindSafe(|| {
             qubit_fs_testkit::assert_capabilities_contract(&fixture);
         }));

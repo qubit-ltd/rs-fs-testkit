@@ -9,70 +9,9 @@
 
 use std::ptr;
 
-use qubit_fs::{
-    FileSystemCapabilities,
-    FileSystemCapability,
-    FsOperation,
-};
+use qubit_fs::FsOperation;
 
 use crate::FileSystemFixture;
-
-const CAPABILITY_DEPENDENCIES: &[(
-    FileSystemCapability,
-    FileSystemCapability,
-    &str,
-)] = &[
-    (
-        FileSystemCapability::RangeRead,
-        FileSystemCapability::Read,
-        "RangeRead requires Read",
-    ),
-    (
-        FileSystemCapability::ConditionalRead,
-        FileSystemCapability::Read,
-        "ConditionalRead requires Read",
-    ),
-    (
-        FileSystemCapability::ChecksumValidation,
-        FileSystemCapability::Read,
-        "ChecksumValidation requires Read",
-    ),
-    (
-        FileSystemCapability::Append,
-        FileSystemCapability::Write,
-        "Append requires Write",
-    ),
-    (
-        FileSystemCapability::ConditionalWrite,
-        FileSystemCapability::Write,
-        "ConditionalWrite requires Write",
-    ),
-    (
-        FileSystemCapability::AtomicReplace,
-        FileSystemCapability::Write,
-        "AtomicReplace requires Write",
-    ),
-    (
-        FileSystemCapability::RecursiveDelete,
-        FileSystemCapability::Delete,
-        "RecursiveDelete requires Delete",
-    ),
-    (
-        FileSystemCapability::ConditionalDelete,
-        FileSystemCapability::Delete,
-        "ConditionalDelete requires Delete",
-    ),
-    (
-        FileSystemCapability::AtomicRename,
-        FileSystemCapability::Rename,
-        "AtomicRename requires Rename",
-    ),
-    (
-        FileSystemCapability::ServerSideCopy,
-        FileSystemCapability::Copy,
-        "ServerSideCopy requires Copy",
-    ),
-];
 
 /// Checks stable construction-time filesystem properties.
 ///
@@ -132,31 +71,7 @@ pub fn assert_properties_contract(fixture: &dyn FileSystemFixture) {
 /// capability.
 pub fn assert_capabilities_contract(fixture: &dyn FileSystemFixture) {
     let capabilities = fixture.file_system().capabilities();
-    for &(derived, required, message) in CAPABILITY_DEPENDENCIES {
-        assert_capability_dependency(capabilities, derived, required, message);
+    if let Some((derived, required)) = capabilities.missing_dependency() {
+        panic!("{derived:?} requires {required:?}");
     }
-}
-
-/// Checks one capability dependency.
-///
-/// # Parameters
-///
-/// * `capabilities` - Advertised capability set.
-/// * `derived` - Capability whose presence creates the dependency.
-/// * `required` - Capability required by `derived`.
-/// * `message` - Contract failure message.
-///
-/// # Panics
-///
-/// Panics when `derived` is present and `required` is absent.
-fn assert_capability_dependency(
-    capabilities: FileSystemCapabilities,
-    derived: FileSystemCapability,
-    required: FileSystemCapability,
-    message: &str,
-) {
-    assert!(
-        !capabilities.contains(derived) || capabilities.contains(required),
-        "{message}",
-    );
 }
