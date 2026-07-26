@@ -5,9 +5,16 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+// qubit-style: allow source-test-pair
 //! Structured filesystem error assertions.
 
-use qubit_fs::{FileSystemCapability, FsError, FsErrorKind, FsOperation, FsPath};
+use qubit_fs::{
+    FileSystemCapability,
+    FsError,
+    FsErrorKind,
+    FsOperation,
+    FsPath,
+};
 
 /// Checks all structured fields required by one filesystem contract.
 ///

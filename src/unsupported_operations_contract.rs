@@ -8,11 +8,24 @@
 //! Contract assertions for operations a provider does not advertise.
 
 use qubit_fs::{
-    CopyOptions, CreateDirOptions, DeleteOptions, FileSystemCapability, FsErrorKind, FsOperation,
-    ListOptions, RenameOptions, TempDirOptions, TempFileOptions,
+    CopyOptions,
+    CreateDirOptions,
+    DeleteOptions,
+    FileSystemCapability,
+    FsErrorKind,
+    FsOperation,
+    ListOptions,
+    ReadOptions,
+    RenameOptions,
+    TempDirOptions,
+    TempFileOptions,
+    WriteOptions,
 };
 
-use crate::{FileSystemFixture, internal::assert_error};
+use crate::{
+    FileSystemFixture,
+    internal::assert_error,
+};
 
 /// Checks structured errors for every unadvertised synchronous operation.
 ///
@@ -33,6 +46,40 @@ pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     let source = fixture.path("contract-unsupported-source.bin");
     let destination = fixture.path("contract-unsupported-destination.bin");
+
+    if !file_system
+        .capabilities()
+        .contains(FileSystemCapability::Read)
+    {
+        let error = file_system
+            .open_reader(&source, ReadOptions::default())
+            .expect_err("unadvertised read must fail");
+        assert_error(
+            &error,
+            FsErrorKind::UnsupportedCapability,
+            FsOperation::OpenReader,
+            Some(&source),
+            None,
+            Some(FileSystemCapability::Read),
+        );
+    }
+
+    if !file_system
+        .capabilities()
+        .contains(FileSystemCapability::Write)
+    {
+        let error = file_system
+            .open_writer(&source, WriteOptions::default())
+            .expect_err("unadvertised write must fail");
+        assert_error(
+            &error,
+            FsErrorKind::UnsupportedCapability,
+            FsOperation::OpenWriter,
+            Some(&source),
+            None,
+            Some(FileSystemCapability::Write),
+        );
+    }
 
     if !file_system
         .capabilities()

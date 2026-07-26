@@ -8,13 +8,35 @@
 //! Contract assertions for synchronous filesystem I/O.
 
 use qubit_fs::{
-    AchievedAtomicity, AtomicityRequirement, FileKind, FileSystem, FileSystemCapability,
-    FileSystemExt, FsErrorKind, FsOperation, FsPath, ReadOptions, WriteDisposition, WriteOptions,
+    AchievedAtomicity,
+    AtomicityRequirement,
+    ChecksumPolicy,
+    CopyOptions,
+    CreateDirOptions,
+    DeleteOptions,
+    DirectoryStreamExt,
+    FileKind,
+    FileSystem,
+    FileSystemCapability,
+    FileSystemExt,
+    FsErrorKind,
+    FsOperation,
+    FsPath,
+    ListOptions,
+    ReadOptions,
+    RenameOptions,
+    ServerSidePreference,
+    WriteDisposition,
+    WriteOptions,
     WriteOutcome,
+    WritePrecondition,
 };
 use qubit_io::Output;
 
-use crate::{FileSystemFixture, internal::assert_error};
+use crate::{
+    FileSystemFixture,
+    internal::assert_error,
+};
 
 const INITIAL_CONTENT: &[u8] = b"initial contract content";
 const REPLACEMENT_CONTENT: &[u8] = b"replacement contract content";
@@ -24,7 +46,7 @@ const APPENDED_CONTENT: &[u8] = b" + appended";
 ///
 /// # Parameters
 ///
-/// * `fixture` - Fresh provider fixture supporting read and write operations.
+/// * `fixture` - Fresh provider fixture supporting write operations.
 ///
 /// # Panics
 ///
@@ -32,7 +54,6 @@ const APPENDED_CONTENT: &[u8] = b" + appended";
 /// metadata, or written-file metadata is inconsistent.
 pub fn assert_stat_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
-    require_capability(file_system, FileSystemCapability::Read);
     require_capability(file_system, FileSystemCapability::Write);
     let missing = fixture.path("contract-stat-missing.bin");
     let provider = file_system.info().provider_id();
@@ -274,7 +295,8 @@ pub fn assert_atomic_replace_contract(fixture: &dyn FileSystemFixture) {
         .capabilities()
         .contains(FileSystemCapability::AtomicReplace)
     {
-        let outcome = write_bytes(file_system, &path, options, REPLACEMENT_CONTENT);
+        let outcome =
+            write_bytes(file_system, &path, options, REPLACEMENT_CONTENT);
         assert_eq!(
             AchievedAtomicity::Atomic,
             outcome.atomicity,
@@ -297,40 +319,460 @@ pub fn assert_atomic_replace_contract(fixture: &dyn FileSystemFixture) {
     }
 }
 
-/// Checks that unsupported range requirements fail before provider I/O.
+/// Checks non-recursive listing and entry metadata.
 ///
 /// # Parameters
 ///
-/// * `fixture` - Fresh provider fixture whose read preflight is checked.
+/// * `fixture` - Fresh provider fixture supporting list and write operations.
 ///
 /// # Panics
 ///
-/// Panics when a provider without range-read support reaches missing-resource
-/// I/O before reporting the required capability.
-pub fn assert_preflight_contract(fixture: &dyn FileSystemFixture) {
+/// Panics when a written child is missing from its parent listing or its
+/// identity, kind, or any provider-reported metadata is inconsistent.
+pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
-    require_capability(file_system, FileSystemCapability::Read);
+    require_capability(file_system, FileSystemCapability::List);
+    require_capability(file_system, FileSystemCapability::Write);
+    let directory = fixture.path("contract-list");
+    let child = fixture.path("contract-list/child.bin");
+    write_bytes(
+        file_system,
+        &child,
+        WriteOptions {
+            create_parent: true,
+            ..WriteOptions::default()
+        },
+        INITIAL_CONTENT,
+    );
+
+    let entries = file_system
+        .list(
+            &directory,
+            ListOptions {
+                include_metadata: true,
+                ..ListOptions::default()
+            },
+        )
+        .expect("list must open the contract directory")
+        .collect_entries(16)
+        .expect("list must enumerate the contract directory");
+    assert_eq!(1, entries.len(), "list must return the written child");
+    let entry = &entries[0];
+    assert_eq!(&child, &entry.path, "listed path must match the child");
+    assert_eq!("child.bin", entry.name, "listed name must be the basename");
+    assert_eq!(FileKind::File, entry.kind, "listed child must be a file");
+    if let Some(metadata) = &entry.metadata {
+        assert_eq!(
+            FileKind::File,
+            metadata.kind,
+            "listed metadata kind must match the entry",
+        );
+        if let Some(length) = metadata.len {
+            assert_eq!(
+                INITIAL_CONTENT.len() as u64,
+                length,
+                "known listed metadata length must match the written bytes",
+            );
+        }
+    }
+}
+
+/// Checks recursive directory creation and idempotent existing-directory use.
+///
+/// # Parameters
+///
+/// * `fixture` - Fresh provider fixture supporting directory creation.
+///
+/// # Panics
+///
+/// Panics when recursive creation does not create a directory or `exists_ok`
+/// rejects the resulting directory.
+pub fn assert_create_dir_contract(fixture: &dyn FileSystemFixture) {
+    let file_system = fixture.file_system();
+    require_capability(file_system, FileSystemCapability::CreateDirectory);
+    let directory = fixture.path("contract-create-dir/child");
+    file_system
+        .create_dir(
+            &directory,
+            CreateDirOptions {
+                recursive: true,
+                ..CreateDirOptions::default()
+            },
+        )
+        .expect("recursive directory creation must succeed");
+    let metadata = file_system
+        .stat(&directory)
+        .expect("created directory metadata must be readable");
+    assert_eq!(
+        FileKind::Directory,
+        metadata.kind,
+        "created resource must be a directory",
+    );
+    file_system
+        .create_dir(
+            &directory,
+            CreateDirOptions {
+                exists_ok: true,
+                ..CreateDirOptions::default()
+            },
+        )
+        .expect("exists_ok must accept an existing directory");
+}
+
+/// Checks file deletion, missing-target tolerance, and recursive deletion when
+/// advertised.
+///
+/// # Parameters
+///
+/// * `fixture` - Fresh provider fixture supporting write and delete operations.
+///
+/// # Panics
+///
+/// Panics when deletion leaves a resource present, `missing_ok` fails, or an
+/// advertised recursive deletion leaves its tree present.
+pub fn assert_delete_contract(fixture: &dyn FileSystemFixture) {
+    let file_system = fixture.file_system();
+    require_capability(file_system, FileSystemCapability::Write);
+    require_capability(file_system, FileSystemCapability::Delete);
+    let path = fixture.path("contract-delete.bin");
+    write_bytes(file_system, &path, WriteOptions::default(), INITIAL_CONTENT);
+    file_system
+        .delete(&path, DeleteOptions::default())
+        .expect("delete must remove the contract file");
+    assert!(
+        !file_system
+            .exists(&path)
+            .expect("exists must inspect the deleted file"),
+        "deleted files must not remain present",
+    );
+    file_system
+        .delete(
+            &path,
+            DeleteOptions {
+                missing_ok: true,
+                ..DeleteOptions::default()
+            },
+        )
+        .expect("missing_ok must accept a missing target");
+
     if file_system
         .capabilities()
-        .contains(FileSystemCapability::RangeRead)
+        .contains(FileSystemCapability::RecursiveDelete)
+    {
+        let child = fixture.path("contract-delete-tree/child.bin");
+        write_bytes(
+            file_system,
+            &child,
+            WriteOptions {
+                create_parent: true,
+                ..WriteOptions::default()
+            },
+            INITIAL_CONTENT,
+        );
+        let tree = fixture.path("contract-delete-tree");
+        file_system
+            .delete(
+                &tree,
+                DeleteOptions {
+                    recursive: true,
+                    ..DeleteOptions::default()
+                },
+            )
+            .expect("advertised recursive deletion must remove the tree");
+        assert!(
+            !file_system
+                .exists(&tree)
+                .expect("exists must inspect the deleted tree"),
+            "recursively deleted trees must not remain present",
+        );
+    }
+}
+
+/// Checks rename publication and source removal.
+///
+/// # Parameters
+///
+/// * `fixture` - Fresh provider fixture supporting read, write, and rename.
+///
+/// # Panics
+///
+/// Panics when rename leaves the source present or fails to publish the exact
+/// source bytes at the destination.
+pub fn assert_rename_contract(fixture: &dyn FileSystemFixture) {
+    let file_system = fixture.file_system();
+    require_capability(file_system, FileSystemCapability::Read);
+    require_capability(file_system, FileSystemCapability::Write);
+    require_capability(file_system, FileSystemCapability::Rename);
+    let source = fixture.path("contract-rename-source.bin");
+    let destination = fixture.path("contract-rename-destination.bin");
+    write_bytes(
+        file_system,
+        &source,
+        WriteOptions::default(),
+        INITIAL_CONTENT,
+    );
+    file_system
+        .rename(&source, &destination, RenameOptions::default())
+        .expect("rename must publish the contract destination");
+    assert!(
+        !file_system
+            .exists(&source)
+            .expect("exists must inspect the renamed source"),
+        "rename must remove the source",
+    );
+    assert_content(file_system, &destination, INITIAL_CONTENT);
+}
+
+/// Checks single-file copy preservation and outcome statistics.
+///
+/// # Parameters
+///
+/// * `fixture` - Fresh provider fixture supporting read, write, and copy.
+///
+/// # Panics
+///
+/// Panics when copy changes the source, publishes different destination bytes,
+/// or reports statistics inconsistent with the copied payload.
+pub fn assert_copy_contract(fixture: &dyn FileSystemFixture) {
+    let file_system = fixture.file_system();
+    require_capability(file_system, FileSystemCapability::Read);
+    require_capability(file_system, FileSystemCapability::Write);
+    require_capability(file_system, FileSystemCapability::Copy);
+    let source = fixture.path("contract-copy-source.bin");
+    let destination = fixture.path("contract-copy-destination.bin");
+    write_bytes(
+        file_system,
+        &source,
+        WriteOptions::default(),
+        INITIAL_CONTENT,
+    );
+    let outcome = file_system
+        .copy(&source, &destination, CopyOptions::file())
+        .expect("copy must publish the contract destination");
+    assert_content(file_system, &source, INITIAL_CONTENT);
+    assert_content(file_system, &destination, INITIAL_CONTENT);
+    assert_eq!(1, outcome.stats.files, "copy must report one copied file");
+    assert_eq!(
+        INITIAL_CONTENT.len() as u64,
+        outcome.stats.bytes,
+        "copy must report the copied byte count",
+    );
+}
+
+/// Checks that unsupported option requirements fail before provider I/O.
+///
+/// # Parameters
+///
+/// * `fixture` - Fresh provider fixture whose synchronous preflight is checked.
+///
+/// # Panics
+///
+/// Panics when a provider reaches missing-resource I/O before reporting any
+/// unadvertised read, write, delete, rename, or copy requirement.
+pub fn assert_preflight_contract(fixture: &dyn FileSystemFixture) {
+    let file_system = fixture.file_system();
+    let capabilities = file_system.capabilities();
+    if capabilities.contains(FileSystemCapability::Read) {
+        assert_read_preflight(fixture);
+    }
+    if capabilities.contains(FileSystemCapability::Write) {
+        assert_write_preflight(fixture);
+    }
+    if capabilities.contains(FileSystemCapability::Delete) {
+        assert_delete_preflight(fixture);
+    }
+    if capabilities.contains(FileSystemCapability::Rename) {
+        assert_rename_preflight(fixture);
+    }
+    if capabilities.contains(FileSystemCapability::Copy) {
+        assert_copy_preflight(fixture);
+    }
+}
+
+/// Checks every optional read requirement against a missing path.
+fn assert_read_preflight(fixture: &dyn FileSystemFixture) {
+    let file_system = fixture.file_system();
+    let cases = [
+        (
+            FileSystemCapability::RangeRead,
+            ReadOptions {
+                offset: Some(1),
+                ..ReadOptions::default()
+            },
+        ),
+        (
+            FileSystemCapability::ConditionalRead,
+            ReadOptions {
+                if_match: Some("contract-version".to_owned()),
+                ..ReadOptions::default()
+            },
+        ),
+        (
+            FileSystemCapability::ChecksumValidation,
+            ReadOptions {
+                checksum: ChecksumPolicy::Required,
+                ..ReadOptions::default()
+            },
+        ),
+    ];
+    for (capability, options) in cases {
+        if file_system.capabilities().contains(capability) {
+            continue;
+        }
+        let path =
+            fixture.path(&format!("contract-preflight-{capability:?}.bin"));
+        let error = file_system
+            .open_reader(&path, options)
+            .expect_err("read requirements must fail before provider I/O");
+        assert_error(
+            &error,
+            FsErrorKind::RequirementNotMet,
+            FsOperation::OpenReader,
+            Some(&path),
+            Some(file_system.info().provider_id()),
+            Some(capability),
+        );
+    }
+}
+
+/// Checks every optional write requirement against a missing path.
+fn assert_write_preflight(fixture: &dyn FileSystemFixture) {
+    let file_system = fixture.file_system();
+    let cases = [
+        (
+            FileSystemCapability::Append,
+            WriteOptions {
+                disposition: WriteDisposition::Append,
+                atomicity: AtomicityRequirement::NotRequired,
+                ..WriteOptions::default()
+            },
+        ),
+        (
+            FileSystemCapability::ConditionalWrite,
+            WriteOptions {
+                precondition: WritePrecondition::IfAbsent,
+                ..WriteOptions::default()
+            },
+        ),
+        (
+            FileSystemCapability::AtomicReplace,
+            WriteOptions {
+                atomicity: AtomicityRequirement::Required,
+                ..WriteOptions::default()
+            },
+        ),
+    ];
+    for (capability, options) in cases {
+        if file_system.capabilities().contains(capability) {
+            continue;
+        }
+        let path =
+            fixture.path(&format!("contract-preflight-{capability:?}.bin"));
+        let error = file_system
+            .open_writer(&path, options)
+            .expect_err("write requirements must fail before provider I/O");
+        assert_error(
+            &error,
+            FsErrorKind::RequirementNotMet,
+            FsOperation::OpenWriter,
+            Some(&path),
+            Some(file_system.info().provider_id()),
+            Some(capability),
+        );
+    }
+}
+
+/// Checks optional delete requirements against a missing path.
+fn assert_delete_preflight(fixture: &dyn FileSystemFixture) {
+    let file_system = fixture.file_system();
+    let cases = [
+        (
+            FileSystemCapability::RecursiveDelete,
+            DeleteOptions {
+                recursive: true,
+                ..DeleteOptions::default()
+            },
+        ),
+        (
+            FileSystemCapability::ConditionalDelete,
+            DeleteOptions {
+                if_match: Some("contract-version".to_owned()),
+                ..DeleteOptions::default()
+            },
+        ),
+    ];
+    for (capability, options) in cases {
+        if file_system.capabilities().contains(capability) {
+            continue;
+        }
+        let path = fixture.path(&format!("contract-preflight-{capability:?}"));
+        let error = file_system
+            .delete(&path, options)
+            .expect_err("delete requirements must fail before provider I/O");
+        assert_error(
+            &error,
+            FsErrorKind::RequirementNotMet,
+            FsOperation::Delete,
+            Some(&path),
+            Some(file_system.info().provider_id()),
+            Some(capability),
+        );
+    }
+}
+
+/// Checks required rename atomicity against a missing path.
+fn assert_rename_preflight(fixture: &dyn FileSystemFixture) {
+    let file_system = fixture.file_system();
+    if file_system
+        .capabilities()
+        .contains(FileSystemCapability::AtomicRename)
     {
         return;
     }
-    let path = fixture.path("contract-preflight-missing.bin");
-    let options = ReadOptions {
-        offset: Some(1),
-        ..ReadOptions::default()
+    let source = fixture.path("contract-preflight-rename-source.bin");
+    let destination = fixture.path("contract-preflight-rename-destination.bin");
+    let options = RenameOptions {
+        atomicity: AtomicityRequirement::Required,
+        ..RenameOptions::default()
     };
     let error = file_system
-        .open_reader(&path, options)
-        .expect_err("range requirements must fail before provider I/O");
+        .rename(&source, &destination, options)
+        .expect_err("rename requirements must fail before provider I/O");
     assert_error(
         &error,
         FsErrorKind::RequirementNotMet,
-        FsOperation::OpenReader,
-        Some(&path),
+        FsOperation::Rename,
+        Some(&source),
         Some(file_system.info().provider_id()),
-        Some(FileSystemCapability::RangeRead),
+        Some(FileSystemCapability::AtomicRename),
+    );
+}
+
+/// Checks required server-side copy against a missing path.
+fn assert_copy_preflight(fixture: &dyn FileSystemFixture) {
+    let file_system = fixture.file_system();
+    if file_system
+        .capabilities()
+        .contains(FileSystemCapability::ServerSideCopy)
+    {
+        return;
+    }
+    let source = fixture.path("contract-preflight-copy-source.bin");
+    let destination = fixture.path("contract-preflight-copy-destination.bin");
+    let options = CopyOptions {
+        server_side: ServerSidePreference::Require,
+        ..CopyOptions::file()
+    };
+    let error = file_system
+        .copy(&source, &destination, options)
+        .expect_err("copy requirements must fail before provider I/O");
+    assert_error(
+        &error,
+        FsErrorKind::RequirementNotMet,
+        FsOperation::Copy,
+        Some(&source),
+        Some(file_system.info().provider_id()),
+        Some(FileSystemCapability::ServerSideCopy),
     );
 }
 
@@ -344,7 +786,10 @@ pub fn assert_preflight_contract(fixture: &dyn FileSystemFixture) {
 /// # Panics
 ///
 /// Panics when the filesystem does not advertise the required capability.
-fn require_capability(file_system: &dyn FileSystem, capability: FileSystemCapability) {
+fn require_capability(
+    file_system: &dyn FileSystem,
+    capability: FileSystemCapability,
+) {
     assert!(
         file_system.capabilities().contains(capability),
         "{capability:?} is required by this contract",
@@ -394,7 +839,11 @@ fn write_bytes(
 /// # Panics
 ///
 /// Panics when the resource cannot be read or its bytes differ.
-fn assert_content(file_system: &dyn FileSystem, path: &FsPath, expected: &[u8]) {
+fn assert_content(
+    file_system: &dyn FileSystem,
+    path: &FsPath,
+    expected: &[u8],
+) {
     let actual = file_system
         .read_all(path, expected.len())
         .expect("the committed contract resource must be readable");

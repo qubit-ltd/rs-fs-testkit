@@ -9,11 +9,19 @@
 
 use std::ptr;
 
-use qubit_fs::{FileSystemCapabilities, FileSystemCapability, FsOperation};
+use qubit_fs::{
+    FileSystemCapabilities,
+    FileSystemCapability,
+    FsOperation,
+};
 
 use crate::FileSystemFixture;
 
-const CAPABILITY_DEPENDENCIES: &[(FileSystemCapability, FileSystemCapability, &str)] = &[
+const CAPABILITY_DEPENDENCIES: &[(
+    FileSystemCapability,
+    FileSystemCapability,
+    &str,
+)] = &[
     (
         FileSystemCapability::RangeRead,
         FileSystemCapability::Read,

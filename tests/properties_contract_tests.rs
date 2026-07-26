@@ -6,10 +6,33 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+mod common;
+
+use std::panic::{
+    AssertUnwindSafe,
+    catch_unwind,
+};
+
 use qubit_fs::{
-    FileMetadata, FileSystem, FileSystemCapabilities, FileSystemCapability, FileSystemId,
-    FileSystemInfo, FileSystemLimits, FileSystemProperties, FsError, FsErrorKind, FsOperation,
-    FsPath, FsResult, PathSemantics,
+    FileMetadata,
+    FileSystem,
+    FileSystemCapabilities,
+    FileSystemCapability,
+    FileSystemId,
+    FileSystemInfo,
+    FileSystemLimits,
+    FileSystemProperties,
+    FsError,
+    FsErrorKind,
+    FsOperation,
+    FsPath,
+    FsResult,
+    PathSemantics,
+};
+
+use common::{
+    MemoryFault,
+    MemoryFixture,
 };
 
 struct PropertiesFileSystem {
@@ -54,7 +77,8 @@ impl PropertiesFixture {
         Self {
             file_system: PropertiesFileSystem {
                 info: FileSystemInfo::new(
-                    FileSystemId::new("test").expect("the fixture ID should validate"),
+                    FileSystemId::new("test")
+                        .expect("the fixture ID should validate"),
                     "test-provider",
                     PathSemantics::Hierarchical,
                 ),
@@ -71,7 +95,8 @@ impl qubit_fs_testkit::FileSystemFixture for PropertiesFixture {
     }
 
     fn path(&self, relative: &str) -> FsPath {
-        FsPath::parse(&format!("/{relative}")).expect("contract fixture paths should parse")
+        FsPath::parse(&format!("/{relative}"))
+            .expect("contract fixture paths should parse")
     }
 }
 
@@ -100,13 +125,41 @@ fn test_capabilities_contract_accepts_consistent_capabilities() {
     qubit_fs_testkit::assert_capabilities_contract(&fixture);
 }
 
-/// Verifies capability dependencies reject append without write support.
+/// Verifies every derived capability requires its base operation.
 #[test]
-#[should_panic(expected = "Append requires Write")]
-fn test_capabilities_contract_rejects_append_without_write() {
-    let fixture = PropertiesFixture::new(
-        FileSystemCapabilities::default().with(FileSystemCapability::Append),
-    );
+fn test_capabilities_contract_rejects_every_missing_base_capability() {
+    let dependencies = [
+        FileSystemCapability::RangeRead,
+        FileSystemCapability::ConditionalRead,
+        FileSystemCapability::ChecksumValidation,
+        FileSystemCapability::Append,
+        FileSystemCapability::ConditionalWrite,
+        FileSystemCapability::AtomicReplace,
+        FileSystemCapability::RecursiveDelete,
+        FileSystemCapability::ConditionalDelete,
+        FileSystemCapability::AtomicRename,
+        FileSystemCapability::ServerSideCopy,
+    ];
 
-    qubit_fs_testkit::assert_capabilities_contract(&fixture);
+    for derived in dependencies {
+        let fixture = PropertiesFixture::new(
+            FileSystemCapabilities::default().with(derived),
+        );
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            qubit_fs_testkit::assert_capabilities_contract(&fixture);
+        }));
+        assert!(
+            result.is_err(),
+            "{derived:?} without its base capability must be rejected",
+        );
+    }
+}
+
+/// Verifies the properties contract rejects unstable capability snapshots.
+#[test]
+#[should_panic(expected = "filesystem capabilities must be stable")]
+fn test_properties_contract_rejects_unstable_capabilities() {
+    let fixture = MemoryFixture::with_fault(MemoryFault::UnstableCapabilities);
+
+    qubit_fs_testkit::assert_properties_contract(&fixture);
 }

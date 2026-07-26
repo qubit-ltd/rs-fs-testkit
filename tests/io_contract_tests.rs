@@ -9,12 +9,18 @@
 mod common;
 
 use qubit_fs::{
-    AtomicityRequirement, FileSystemCapabilities, FileSystemCapability, WriteDisposition,
+    AtomicityRequirement,
+    FileSystemCapabilities,
+    FileSystemCapability,
+    WriteDisposition,
     WriteOptions,
 };
 use qubit_fs_testkit::FileSystemFixture;
 
-use common::MemoryFixture;
+use common::{
+    MemoryFault,
+    MemoryFixture,
+};
 
 /// Verifies the stat contract accepts a conforming provider.
 #[test]
@@ -100,11 +106,172 @@ fn test_atomic_replace_contract_accepts_conforming_rejection() {
     qubit_fs_testkit::assert_atomic_replace_contract(&fixture);
 }
 
+/// Verifies the list contract accepts a conforming provider.
+#[test]
+fn test_list_contract_accepts_conforming_provider() {
+    qubit_fs_testkit::assert_list_contract(&MemoryFixture::new());
+}
+
+/// Verifies listing accepts providers that cannot load optional metadata.
+#[test]
+fn test_list_contract_accepts_unknown_metadata() {
+    qubit_fs_testkit::assert_list_contract(&MemoryFixture::with_fault(
+        MemoryFault::OmitListMetadata,
+    ));
+}
+
+/// Verifies the directory-creation contract accepts a conforming provider.
+#[test]
+fn test_create_dir_contract_accepts_conforming_provider() {
+    qubit_fs_testkit::assert_create_dir_contract(&MemoryFixture::new());
+}
+
+/// Verifies the delete contract accepts a conforming provider.
+#[test]
+fn test_delete_contract_accepts_conforming_provider() {
+    qubit_fs_testkit::assert_delete_contract(&MemoryFixture::new());
+}
+
+/// Verifies the rename contract accepts a conforming provider.
+#[test]
+fn test_rename_contract_accepts_conforming_provider() {
+    qubit_fs_testkit::assert_rename_contract(&MemoryFixture::new());
+}
+
+/// Verifies the copy contract accepts a conforming provider.
+#[test]
+fn test_copy_contract_accepts_conforming_provider() {
+    qubit_fs_testkit::assert_copy_contract(&MemoryFixture::new());
+}
+
 /// Verifies preflight checks run before provider I/O.
 #[test]
 fn test_preflight_contract_accepts_conforming_provider() {
     let capabilities = FileSystemCapabilities::default()
         .with(FileSystemCapability::Read)
         .with(FileSystemCapability::Write);
-    qubit_fs_testkit::assert_preflight_contract(&MemoryFixture::with_capabilities(capabilities));
+    qubit_fs_testkit::assert_preflight_contract(
+        &MemoryFixture::with_capabilities(capabilities),
+    );
+}
+
+/// Verifies all synchronous option families reject missing requirements early.
+#[test]
+fn test_preflight_contract_accepts_all_conforming_rejections() {
+    let capabilities = FileSystemCapabilities::default()
+        .with(FileSystemCapability::Read)
+        .with(FileSystemCapability::Write)
+        .with(FileSystemCapability::Delete)
+        .with(FileSystemCapability::Rename)
+        .with(FileSystemCapability::Copy);
+
+    qubit_fs_testkit::assert_preflight_contract(
+        &MemoryFixture::with_capabilities(capabilities),
+    );
+}
+
+/// Verifies the stat contract rejects incorrect metadata kinds.
+#[test]
+#[should_panic(expected = "written resources must be files")]
+fn test_stat_contract_rejects_wrong_file_kind() {
+    qubit_fs_testkit::assert_stat_contract(&MemoryFixture::with_fault(
+        MemoryFault::WrongStatKind,
+    ));
+}
+
+/// Verifies the read contract rejects incorrect opened-file locations.
+#[test]
+#[should_panic(expected = "reader path must match the requested path")]
+fn test_read_contract_rejects_wrong_reader_location() {
+    qubit_fs_testkit::assert_read_contract(&MemoryFixture::with_fault(
+        MemoryFault::WrongReaderLocation,
+    ));
+}
+
+/// Verifies the write contract rejects incorrect opened-file locations.
+#[test]
+#[should_panic(expected = "writer path must match the requested path")]
+fn test_write_contract_rejects_wrong_writer_location() {
+    qubit_fs_testkit::assert_write_contract(&MemoryFixture::with_fault(
+        MemoryFault::WrongWriterLocation,
+    ));
+}
+
+/// Verifies the append contract rejects replacement behavior.
+#[test]
+#[should_panic(expected = "committed bytes must match")]
+fn test_append_contract_rejects_replacement() {
+    qubit_fs_testkit::assert_append_contract(&MemoryFixture::with_fault(
+        MemoryFault::AppendReplaces,
+    ));
+}
+
+/// Verifies the atomic-replace contract rejects downgraded publication.
+#[test]
+#[should_panic(
+    expected = "required atomic replacement must report atomic publication"
+)]
+fn test_atomic_replace_contract_rejects_downgrade() {
+    qubit_fs_testkit::assert_atomic_replace_contract(
+        &MemoryFixture::with_fault(MemoryFault::AtomicReplaceDowngrade),
+    );
+}
+
+/// Verifies the list contract rejects missing entries.
+#[test]
+#[should_panic(expected = "list must return the written child")]
+fn test_list_contract_rejects_missing_entries() {
+    qubit_fs_testkit::assert_list_contract(&MemoryFixture::with_fault(
+        MemoryFault::EmptyList,
+    ));
+}
+
+/// Verifies the directory-creation contract rejects a no-op implementation.
+#[test]
+#[should_panic(expected = "created directory metadata must be readable")]
+fn test_create_dir_contract_rejects_no_op() {
+    qubit_fs_testkit::assert_create_dir_contract(&MemoryFixture::with_fault(
+        MemoryFault::SkipCreateDir,
+    ));
+}
+
+/// Verifies the delete contract rejects a no-op implementation.
+#[test]
+#[should_panic(expected = "deleted files must not remain present")]
+fn test_delete_contract_rejects_no_op() {
+    qubit_fs_testkit::assert_delete_contract(&MemoryFixture::with_fault(
+        MemoryFault::SkipDelete,
+    ));
+}
+
+/// Verifies the rename contract rejects copy-only behavior.
+#[test]
+#[should_panic(expected = "rename must remove the source")]
+fn test_rename_contract_rejects_source_preservation() {
+    qubit_fs_testkit::assert_rename_contract(&MemoryFixture::with_fault(
+        MemoryFault::CopyInsteadOfRename,
+    ));
+}
+
+/// Verifies the copy contract rejects move behavior.
+#[test]
+#[should_panic(expected = "committed contract resource must be readable")]
+fn test_copy_contract_rejects_source_removal() {
+    qubit_fs_testkit::assert_copy_contract(&MemoryFixture::with_fault(
+        MemoryFault::MoveInsteadOfCopy,
+    ));
+}
+
+/// Verifies the preflight contract rejects provider I/O before validation.
+#[test]
+#[should_panic(expected = "filesystem error kind must match")]
+fn test_preflight_contract_rejects_late_validation() {
+    let capabilities =
+        FileSystemCapabilities::default().with(FileSystemCapability::Read);
+    let fixture = MemoryFixture::with_capabilities_and_fault(
+        capabilities,
+        MemoryFault::SkipReadPreflight,
+    );
+
+    qubit_fs_testkit::assert_preflight_contract(&fixture);
 }

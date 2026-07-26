@@ -6,10 +6,9 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-mod memory_file_system;
+mod common;
 
-#[allow(unused_imports)]
-pub use memory_file_system::{
-    MemoryFault,
-    MemoryFixture,
-};
+qubit_fs_testkit::sync_file_system_contract_tests!(
+    generated,
+    super::common::MemoryFixture::new(),
+);
