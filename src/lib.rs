@@ -9,21 +9,16 @@
 
 #![deny(missing_docs)]
 
-use qubit_fs::FileSystemProperties;
+mod file_system_fixture;
+mod internal;
+mod io_contract;
+mod properties_contract;
+mod unsupported_operations_contract;
 
-/// Checks construction-time filesystem identity invariants.
-///
-/// # Panics
-/// Panics when a provider exposes an empty provider identifier or filesystem
-/// identifier.
-pub fn assert_properties_contract(properties: &dyn FileSystemProperties) {
-    let info = properties.info();
-    assert!(
-        !info.provider_id().is_empty(),
-        "provider identifiers must not be empty",
-    );
-    assert!(
-        !info.id().as_str().is_empty(),
-        "filesystem identifiers must not be empty",
-    );
-}
+pub use file_system_fixture::FileSystemFixture;
+pub use io_contract::{
+    assert_append_contract, assert_atomic_replace_contract, assert_preflight_contract,
+    assert_read_contract, assert_stat_contract, assert_write_contract,
+};
+pub use properties_contract::{assert_capabilities_contract, assert_properties_contract};
+pub use unsupported_operations_contract::assert_unsupported_operations_contract;
