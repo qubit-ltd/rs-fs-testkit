@@ -1,0 +1,16 @@
+[package]
+name = "qubit-fs-testkit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+authors = ["Haixing Hu <starfish.hu@gmail.com>"]
+license = "Apache-2.0"
+repository = "https://github.com/qubit-ltd/rs-fs-testkit"
+description = "Reusable provider contract checks for qubit-fs implementations"
+
+[lib]
+name = "qubit_fs_testkit"
+doctest = true
+
+[dependencies]
+qubit-fs = { path = "../rs-fs", version = "0.2" }
