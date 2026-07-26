@@ -7,6 +7,19 @@ authors = ["Haixing Hu <starfish.hu@gmail.com>"]
 license = "Apache-2.0"
 repository = "https://github.com/qubit-ltd/rs-fs-testkit"
 description = "Reusable provider contract checks for qubit-fs implementations"
+homepage = "https://github.com/qubit-ltd/rs-fs-testkit"
+documentation = "https://docs.rs/qubit-fs-testkit"
+readme = "README.md"
+include = [
+  "/Cargo.toml",
+  "/LICENSE",
+  "/README.md",
+  "/README.zh_CN.md",
+  "/src/**",
+  "/tests/**",
+]
+keywords = ["filesystem", "testing", "testkit", "contract", "qubit"]
+categories = ["development-tools::testing", "filesystem"]
 
 [lib]
 name = "qubit_fs_testkit"
@@ -15,3 +28,6 @@ doctest = true
 [dependencies]
 qubit-fs = { path = "../rs-fs", version = "0.2" }
 qubit-io = { path = "../rs-io", version = "0.14" }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
