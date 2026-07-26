@@ -1,16 +1,30 @@
-# Qubit FS Testkit
+# qubit-fs-testkit
 
-Reusable provider contract checks for implementations of
-[`qubit-fs`](https://crates.io/crates/qubit-fs).
+[![Rust CI](https://github.com/qubit-ltd/rs-fs-testkit/actions/workflows/ci.yml/badge.svg)](https://github.com/qubit-ltd/rs-fs-testkit/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://qubit-ltd.github.io/rs-fs-testkit/coverage-badge.json)](https://qubit-ltd.github.io/rs-fs-testkit/coverage/)
+[![Crates.io](https://img.shields.io/crates/v/qubit-fs-testkit.svg?color=blue)](https://crates.io/crates/qubit-fs-testkit)
+[![Rust](https://img.shields.io/badge/rust-1.94+-blue.svg?logo=rust)](https://www.rust-lang.org)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
-Use this crate as a development dependency. It keeps reusable test support out
-of the filesystem core and provider production dependency graphs.
+`qubit-fs-testkit` provides reusable provider contract checks for
+[`qubit-fs`](https://crates.io/crates/qubit-fs) implementations. It belongs in
+provider development dependencies, keeping reusable test support out of
+production dependency graphs.
+
+## Installation
+
+Add the testkit as a development dependency:
+
+```bash
+cargo add --dev qubit-fs-testkit
+```
 
 ## Fixture
 
 Implement `FileSystemFixture` with an isolated filesystem and a mapping from
-the testkit's single-component relative names to provider paths. Create a fresh
-fixture for every mutating assertion.
+the testkit's non-empty `/`-separated relative paths to provider paths. Every
+generated test creates a fresh fixture.
 
 ```rust
 use qubit_fs::{FileSystem, FileSystemId, FsPath};
@@ -18,8 +32,21 @@ use qubit_fs_local::RootedLocalFileSystem;
 use qubit_fs_testkit::FileSystemFixture;
 
 struct RootedFixture {
-    directory: tempfile::TempDir,
+    _directory: tempfile::TempDir,
     file_system: RootedLocalFileSystem,
+}
+
+impl RootedFixture {
+    fn new() -> Self {
+        let directory = tempfile::tempdir().expect("create fixture root");
+        let id = FileSystemId::new("contract-rooted").expect("valid ID");
+        let file_system = RootedLocalFileSystem::open(id, directory.path())
+            .expect("open rooted filesystem");
+        Self {
+            _directory: directory,
+            file_system,
+        }
+    }
 }
 
 impl FileSystemFixture for RootedFixture {
@@ -31,45 +58,71 @@ impl FileSystemFixture for RootedFixture {
         FsPath::parse(&format!("/{relative}")).expect("valid contract path")
     }
 }
-
-fn fixture() -> RootedFixture {
-    let directory = tempfile::tempdir().expect("create fixture root");
-    let id = FileSystemId::new("contract-rooted").expect("valid ID");
-    let file_system =
-        RootedLocalFileSystem::open(id, directory.path()).expect("open root");
-    RootedFixture {
-        directory,
-        file_system,
-    }
-}
 ```
 
-The provider test crate calls each contract as an independent test:
+## Usage
+
+Generate the complete synchronous suite with one macro invocation:
 
 ```rust
-#[test]
-fn properties_contract() {
-    qubit_fs_testkit::assert_properties_contract(&fixture());
-}
-
-#[test]
-fn read_contract() {
-    qubit_fs_testkit::assert_read_contract(&fixture());
-}
+qubit_fs_testkit::sync_file_system_contract_tests!(
+    rooted,
+    super::RootedFixture::new(),
+);
 ```
+
+The complete suite requires the fixture to advertise `Read`, `Write`, `List`,
+`CreateDirectory`, `Delete`, `Rename`, and `Copy`. Individual assertions such
+as `assert_read_contract` and `assert_unsupported_operations_contract` remain
+available for providers with a smaller operation surface.
 
 ## Contracts
 
 The synchronous suite checks:
 
-- stable identity, limits, and capability dependencies;
-- `stat` and `exists`;
-- complete reads and caller byte limits;
-- create, replace, and create-new writes;
-- append and required atomic replacement;
-- option preflight before provider I/O;
-- structured errors for unadvertised operations.
+- stable identity, limits, and all derived capability dependencies;
+- `stat`, `exists`, complete reads, and caller byte limits;
+- create, replace, create-new, append, and required atomic writes;
+- listing, recursive directory creation, deletion, rename, and file copy;
+- option preflight for read, write, delete, rename, and copy requirements;
+- structured errors for every unadvertised synchronous operation, including
+  reads and writes.
 
 Provider-specific path encoding, platform behavior, security boundaries, and
-service registration remain the provider crate's responsibility. Asynchronous
-filesystem contracts are not included yet.
+service registration remain the provider crate's responsibility. Temporary
+resource success paths and asynchronous contracts are not included yet.
+
+## Testing
+
+```bash
+# Run tests with the default feature set
+cargo test
+
+# Run tests with all declared features
+cargo test --all-features
+
+# Project CI checks
+./ci-check.sh
+
+# Check code coverage
+./coverage.sh
+```
+
+## License
+
+Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the
+full license text.
+
+## Contributing
+
+Contributions are welcome. Please follow the Rust API guidelines, keep public
+API documentation and tests current, and run `./align-ci.sh` to format code and
+`./ci-check.sh` to satisfy CI requirements before submitting a pull request.
+
+## Author
+
+**Haixing Hu** - *Qubit Co. Ltd.*
+
+Repository: [https://github.com/qubit-ltd/rs-fs-testkit](https://github.com/qubit-ltd/rs-fs-testkit)
