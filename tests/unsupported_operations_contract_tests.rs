@@ -9,22 +9,9 @@
 mod common;
 
 use qubit_fs::{
-    FileMetadata,
-    FileReader,
-    FileSystem,
-    FileSystemCapabilities,
-    FileSystemCapability,
-    FileSystemId,
-    FileSystemInfo,
-    FileSystemLimits,
-    FileSystemProperties,
-    FsError,
-    FsErrorKind,
-    FsOperation,
-    FsPath,
-    FsResult,
-    PathSemantics,
-    ReadOptions,
+    FileMetadata, FileReader, FileSystem, FileSystemCapabilities, FileSystemCapability,
+    FileSystemId, FileSystemInfo, FileSystemLimits, FileSystemProperties, FsError, FsErrorKind,
+    FsOperation, FsPath, FsResult, PathSemantics, ReadOptions,
 };
 use qubit_fs_testkit::FileSystemFixture;
 
@@ -49,8 +36,7 @@ impl DefaultUnsupportedFileSystem {
     fn new(read_fault: Option<ReadFault>) -> Self {
         Self {
             info: FileSystemInfo::new(
-                FileSystemId::new("default-unsupported")
-                    .expect("the fixture ID should validate"),
+                FileSystemId::new("default-unsupported").expect("the fixture ID should validate"),
                 "default-unsupported-provider",
                 PathSemantics::Hierarchical,
             ),
@@ -85,11 +71,7 @@ impl FileSystem for DefaultUnsupportedFileSystem {
         .with_provider(self.info.provider_id()))
     }
 
-    fn open_reader(
-        &self,
-        path: &FsPath,
-        _options: ReadOptions,
-    ) -> FsResult<FileReader> {
+    fn open_reader(&self, path: &FsPath, _options: ReadOptions) -> FsResult<FileReader> {
         let Some(fault) = self.read_fault else {
             return Err(FsError::new(
                 FsErrorKind::UnsupportedCapability,
@@ -106,9 +88,7 @@ impl FileSystem for DefaultUnsupportedFileSystem {
                 Some(path.clone()),
                 FileSystemCapability::Read,
             ),
-            ReadFault::MissingPath => {
-                (FsOperation::OpenReader, None, FileSystemCapability::Read)
-            }
+            ReadFault::MissingPath => (FsOperation::OpenReader, None, FileSystemCapability::Read),
             ReadFault::WrongCapability => (
                 FsOperation::OpenReader,
                 Some(path.clone()),
@@ -157,61 +137,57 @@ impl FileSystemFixture for DefaultUnsupportedFixture {
     }
 
     fn path(&self, relative: &str) -> FsPath {
-        FsPath::parse(&format!("/{relative}"))
-            .expect("contract fixture paths should parse")
+        FsPath::parse(&format!("/{relative}")).expect("contract fixture paths should parse")
     }
 }
 
 /// Verifies unsupported operations expose structured capability errors.
 #[test]
 fn test_unsupported_operations_contract_accepts_conforming_provider() {
-    qubit_fs_testkit::assert_unsupported_operations_contract(
-        &DefaultUnsupportedFixture::new(None),
-    );
+    qubit_fs_testkit::assert_unsupported_operations_contract(&DefaultUnsupportedFixture::new(None));
 }
 
 /// Verifies malformed operation fields are rejected for unsupported reads.
 #[test]
 #[should_panic(expected = "filesystem error operation must match")]
 fn test_unsupported_operations_contract_rejects_wrong_operation() {
-    qubit_fs_testkit::assert_unsupported_operations_contract(
-        &DefaultUnsupportedFixture::new(Some(ReadFault::WrongOperation)),
-    );
+    qubit_fs_testkit::assert_unsupported_operations_contract(&DefaultUnsupportedFixture::new(
+        Some(ReadFault::WrongOperation),
+    ));
 }
 
 /// Verifies malformed path fields are rejected for unsupported reads.
 #[test]
 #[should_panic(expected = "filesystem error path must match")]
 fn test_unsupported_operations_contract_rejects_missing_path() {
-    qubit_fs_testkit::assert_unsupported_operations_contract(
-        &DefaultUnsupportedFixture::new(Some(ReadFault::MissingPath)),
-    );
+    qubit_fs_testkit::assert_unsupported_operations_contract(&DefaultUnsupportedFixture::new(
+        Some(ReadFault::MissingPath),
+    ));
 }
 
 /// Verifies malformed capability fields are rejected for unsupported reads.
 #[test]
 #[should_panic(expected = "filesystem error required capability must match")]
 fn test_unsupported_operations_contract_rejects_wrong_capability() {
-    qubit_fs_testkit::assert_unsupported_operations_contract(
-        &DefaultUnsupportedFixture::new(Some(ReadFault::WrongCapability)),
-    );
+    qubit_fs_testkit::assert_unsupported_operations_contract(&DefaultUnsupportedFixture::new(
+        Some(ReadFault::WrongCapability),
+    ));
 }
 
 /// Verifies malformed provider fields are rejected for unsupported reads.
 #[test]
 #[should_panic(expected = "filesystem error provider must be absent or match")]
 fn test_unsupported_operations_contract_rejects_wrong_provider() {
-    qubit_fs_testkit::assert_unsupported_operations_contract(
-        &DefaultUnsupportedFixture::new(Some(ReadFault::WrongProvider)),
-    );
+    qubit_fs_testkit::assert_unsupported_operations_contract(&DefaultUnsupportedFixture::new(
+        Some(ReadFault::WrongProvider),
+    ));
 }
 
 /// Verifies the unsupported-operation contract also checks reader support.
 #[test]
 #[should_panic(expected = "filesystem error kind must match")]
 fn test_unsupported_operations_contract_rejects_incorrect_read_error() {
-    let fixture =
-        MemoryFixture::with_capabilities(FileSystemCapabilities::default());
+    let fixture = MemoryFixture::with_capabilities(FileSystemCapabilities::default());
 
     qubit_fs_testkit::assert_unsupported_operations_contract(&fixture);
 }
@@ -220,8 +196,7 @@ fn test_unsupported_operations_contract_rejects_incorrect_read_error() {
 #[test]
 #[should_panic(expected = "unadvertised write must fail")]
 fn test_unsupported_operations_contract_rejects_incorrect_write_error() {
-    let capabilities =
-        FileSystemCapabilities::default().with(FileSystemCapability::Read);
+    let capabilities = FileSystemCapabilities::default().with(FileSystemCapability::Read);
     let fixture = MemoryFixture::with_capabilities(capabilities);
 
     qubit_fs_testkit::assert_unsupported_operations_contract(&fixture);

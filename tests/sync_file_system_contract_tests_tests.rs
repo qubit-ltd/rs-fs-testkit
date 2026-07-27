@@ -8,7 +8,4 @@
 
 mod common;
 
-qubit_fs_testkit::sync_file_system_contract_tests!(
-    generated,
-    super::common::MemoryFixture::new(),
-);
+qubit_fs_testkit::sync_file_system_contract_tests!(generated, super::common::MemoryFixture::new(),);

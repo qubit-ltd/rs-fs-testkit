@@ -9,8 +9,4 @@
 
 mod assertions;
 
-pub(crate) use assertions::{
-    assert_error,
-    assert_error_with_target,
-    assert_unsupported_error,
-};
+pub(crate) use assertions::{assert_error, assert_error_with_target, assert_unsupported_error};
