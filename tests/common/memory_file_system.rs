@@ -30,6 +30,7 @@ use qubit_fs::{
     AtomicityRequirement,
     CopyConflictPolicy,
     CopyMethod,
+    CopyMode,
     CopyOptions,
     CopyOutcome,
     CopyStats,
@@ -92,9 +93,21 @@ pub enum MemoryFault {
     AtomicRenameDowngrade,
     EmptyList,
     OmitListMetadata,
+    OmitListSiblingWithoutMetadata,
     IgnoreListOptions,
     SkipCreateDir,
+    CreateDirWithoutParents,
     SkipDelete,
+    KeepRecursiveDeleteChild,
+    SkipConditionalDelete,
+    RejectCreateNew,
+    AppendCreatesMissing,
+    IgnoreWriteIfMatch,
+    IgnoreIfNoneMatch,
+    SkipWritePreflight,
+    SkipDeletePreflight,
+    SkipCopyPreflight,
+    SkipTreeCopy,
     CopyInsteadOfRename,
     MoveInsteadOfCopy,
     CopyIgnoresConflict,
@@ -362,6 +375,7 @@ impl FileSystem for MemoryFileSystem {
             let mut directory_entry = DirEntry::new(path, kind.clone());
             if options.include_metadata
                 && self.fault != MemoryFault::OmitListMetadata
+                && self.fault != MemoryFault::OmitListSiblingWithoutMetadata
             {
                 let mut metadata = FileMetadata::new(kind);
                 if let MemoryEntry::File(bytes) = entry {
@@ -373,6 +387,19 @@ impl FileSystem for MemoryFileSystem {
         }
         listed
             .sort_by(|left, right| left.path.as_str().cmp(right.path.as_str()));
+        if self.fault == MemoryFault::OmitListSiblingWithoutMetadata {
+            let sibling_path = format!("{prefix}sibling.bin");
+            let duplicate = listed
+                .iter()
+                .find(|entry| {
+                    entry.path.as_str() == format!("{prefix}child.bin")
+                })
+                .cloned();
+            listed.retain(|entry| entry.path.as_str() != sibling_path);
+            if let Some(entry) = duplicate {
+                listed.push(entry);
+            }
+        }
         if self.fault == MemoryFault::TruncateListToPageSize
             && let Some(page_size) = options.page_size
         {
@@ -432,7 +459,8 @@ impl FileSystem for MemoryFileSystem {
                 path,
             ));
         }
-        if let Some(expected) = options.if_none_match
+        if self.fault != MemoryFault::IgnoreIfNoneMatch
+            && let Some(expected) = options.if_none_match
             && expected == etag
         {
             return Err(self.error(
@@ -463,9 +491,11 @@ impl FileSystem for MemoryFileSystem {
         path: &FsPath,
         options: WriteOptions,
     ) -> FsResult<FileWriter> {
-        options
-            .validate_against(self.capabilities)
-            .map_err(|error| self.with_context(error, path))?;
+        if self.fault != MemoryFault::SkipWritePreflight {
+            options
+                .validate_against(self.capabilities)
+                .map_err(|error| self.with_context(error, path))?;
+        }
         self.limits
             .validate_path(
                 path,
@@ -476,6 +506,26 @@ impl FileSystem for MemoryFileSystem {
         let entries =
             self.entries.lock().expect("the memory store should lock");
         let existing = entries.get(path.as_str());
+        if self.fault == MemoryFault::RejectCreateNew
+            && options.disposition == WriteDisposition::CreateNew
+            && existing.is_none()
+        {
+            return Err(self.error(
+                FsErrorKind::AlreadyExists,
+                FsOperation::OpenWriter,
+                path,
+            ));
+        }
+        if options.disposition == WriteDisposition::Append
+            && existing.is_none()
+            && self.fault != MemoryFault::AppendCreatesMissing
+        {
+            return Err(self.error(
+                FsErrorKind::NotFound,
+                FsOperation::OpenWriter,
+                path,
+            ));
+        }
         if (options.disposition == WriteDisposition::CreateNew
             && existing.is_some())
             || (options.precondition == WritePrecondition::IfAbsent
@@ -493,7 +543,9 @@ impl FileSystem for MemoryFileSystem {
             .with_path(path.clone())
             .with_provider(self.info.provider_id()));
         }
-        if let WritePrecondition::IfMatch(expected) = &options.precondition {
+        if self.fault != MemoryFault::IgnoreWriteIfMatch
+            && let WritePrecondition::IfMatch(expected) = &options.precondition
+        {
             let matches = matches!(
                 existing,
                 Some(MemoryEntry::File(bytes)) if expected.as_str() == file_etag(path, bytes)
@@ -544,15 +596,25 @@ impl FileSystem for MemoryFileSystem {
         }
         if options.recursive {
             insert_parent_directories(&mut entries, path.as_str());
+        } else if self.fault != MemoryFault::CreateDirWithoutParents
+            && !has_parent_directory(&entries, path.as_str())
+        {
+            return Err(self.error(
+                FsErrorKind::NotFound,
+                FsOperation::CreateDir,
+                path,
+            ));
         }
         entries.insert(path.as_str().to_owned(), MemoryEntry::Directory);
         Ok(())
     }
 
     fn delete(&self, path: &FsPath, options: DeleteOptions) -> FsResult<()> {
-        options
-            .validate_against(self.capabilities)
-            .map_err(|error| self.with_context(error, path))?;
+        if self.fault != MemoryFault::SkipDeletePreflight {
+            options
+                .validate_against(self.capabilities)
+                .map_err(|error| self.with_context(error, path))?;
+        }
         if self.fault == MemoryFault::SkipDelete {
             return Ok(());
         }
@@ -582,6 +644,11 @@ impl FileSystem for MemoryFileSystem {
                 ));
             }
         }
+        if self.fault == MemoryFault::SkipConditionalDelete
+            && options.if_match.is_some()
+        {
+            return Ok(());
+        }
         let prefix = format!("{}/", path.as_str().trim_end_matches('/'));
         if !options.recursive
             && entries.keys().any(|entry| entry.starts_with(&prefix))
@@ -591,6 +658,12 @@ impl FileSystem for MemoryFileSystem {
                 FsOperation::Delete,
                 path,
             ));
+        }
+        if self.fault == MemoryFault::KeepRecursiveDeleteChild
+            && options.recursive
+        {
+            entries.remove(path.as_str());
+            return Ok(());
         }
         entries.retain(|entry, _| {
             entry != path.as_str() && !entry.starts_with(&prefix)
@@ -640,11 +713,66 @@ impl FileSystem for MemoryFileSystem {
         to: &FsPath,
         options: CopyOptions,
     ) -> FsResult<CopyOutcome> {
-        options
-            .validate_against(self.capabilities)
-            .map_err(|error| self.with_context(error, from))?;
+        if self.fault != MemoryFault::SkipCopyPreflight {
+            options
+                .validate_against(self.capabilities)
+                .map_err(|error| self.with_context(error, from))?;
+        }
         let mut entries =
             self.entries.lock().expect("the memory store should lock");
+        if options.mode == CopyMode::Tree {
+            if !matches!(
+                entries.get(from.as_str()),
+                Some(MemoryEntry::Directory)
+            ) {
+                return Err(self.error(
+                    FsErrorKind::NotFound,
+                    FsOperation::Copy,
+                    from,
+                ));
+            }
+            if self.fault == MemoryFault::SkipTreeCopy {
+                return Ok(CopyOutcome::new(
+                    CopyStats::default(),
+                    CopyMethod::Local,
+                    AchievedAtomicity::NonAtomic,
+                ));
+            }
+            let source_prefix =
+                format!("{}/", from.as_str().trim_end_matches('/'));
+            let copied_entries = entries
+                .iter()
+                .filter_map(|(path, entry)| {
+                    path.strip_prefix(&source_prefix)
+                        .map(|relative| (relative.to_owned(), entry.clone()))
+                })
+                .collect::<Vec<_>>();
+            entries.insert(to.as_str().to_owned(), MemoryEntry::Directory);
+            let mut stats = CopyStats {
+                directories: 1,
+                ..CopyStats::default()
+            };
+            for (relative, entry) in copied_entries {
+                let destination = format!(
+                    "{}/{}",
+                    to.as_str().trim_end_matches('/'),
+                    relative
+                );
+                match &entry {
+                    MemoryEntry::File(bytes) => {
+                        stats.files += 1;
+                        stats.bytes += bytes.len() as u64;
+                    }
+                    MemoryEntry::Directory => stats.directories += 1,
+                }
+                entries.insert(destination, entry);
+            }
+            return Ok(CopyOutcome::new(
+                stats,
+                CopyMethod::Local,
+                AchievedAtomicity::NonAtomic,
+            ));
+        }
         let bytes = match entries.get(from.as_str()) {
             Some(MemoryEntry::File(bytes)) => bytes.clone(),
             Some(MemoryEntry::Directory) => {
@@ -787,6 +915,18 @@ impl DirectoryStreamSession for MemoryDirectoryStream {
     fn next_entry(&mut self) -> FsResult<Option<DirEntry>> {
         Ok(self.entries.pop_front())
     }
+}
+
+/// Reports whether the stored path has an existing parent directory.
+fn has_parent_directory(
+    entries: &HashMap<String, MemoryEntry>,
+    path: &str,
+) -> bool {
+    let Some((parent, _)) = path.rsplit_once('/') else {
+        return false;
+    };
+    parent.is_empty()
+        || matches!(entries.get(parent), Some(MemoryEntry::Directory))
 }
 
 /// Inserts every missing parent directory for one stored path.

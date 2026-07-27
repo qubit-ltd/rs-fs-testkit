@@ -23,6 +23,7 @@ use crate::FileSystemFixture;
 ///
 /// Panics when identity fields are empty, property snapshots are unstable, or
 /// the fixture returns a path that violates its declared semantics or limits.
+#[track_caller]
 pub fn assert_properties_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     let info = file_system.info();
@@ -69,6 +70,7 @@ pub fn assert_properties_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when a derived capability is advertised without its required base
 /// capability.
+#[track_caller]
 pub fn assert_capabilities_contract(fixture: &dyn FileSystemFixture) {
     let capabilities = fixture.file_system().capabilities();
     if let Some((derived, required)) = capabilities.missing_dependency() {

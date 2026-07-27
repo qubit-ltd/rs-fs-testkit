@@ -82,11 +82,13 @@ The synchronous suite checks:
 
 - stable identity, limits, and all derived capability dependencies;
 - `stat`, `exists`, complete reads, caller byte limits, and paged listings;
-- create, replace, create-new, append, and required atomic writes;
-- listing, recursive directory creation, deletion, rename, and file copy;
+- create, replace, successful and conflicting create-new, append, and required
+  atomic writes;
+- listings with complete children even when metadata is absent; directory
+  creation policies; recursive deletion; rename; and file and tree copy;
 - positive advertised range, conditional, checksum-required, and server-side
-  copy behavior;
-- structured option preflight for read, write, delete, rename, and copy
+  copy behavior, including ETag match and non-match transitions;
+- per-contract structured option preflight for read, write, delete, and copy
   requirements that are not advertised;
 - structured errors for every unadvertised synchronous operation, including
   reads and writes.

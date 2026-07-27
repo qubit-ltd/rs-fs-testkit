@@ -120,6 +120,15 @@ fn test_list_contract_accepts_unknown_metadata() {
     ));
 }
 
+/// Verifies listing still requires every sibling when metadata is unavailable.
+#[test]
+#[should_panic(expected = "list must return the written sibling")]
+fn test_list_contract_rejects_missing_sibling_without_metadata() {
+    qubit_fs_testkit::assert_list_contract(&MemoryFixture::with_fault(
+        MemoryFault::OmitListSiblingWithoutMetadata,
+    ));
+}
+
 /// Verifies the directory-creation contract accepts a conforming provider.
 #[test]
 fn test_create_dir_contract_accepts_conforming_provider() {
@@ -249,10 +258,23 @@ fn test_list_contract_rejects_truncated_page_results() {
 
 /// Verifies the directory-creation contract rejects a no-op implementation.
 #[test]
-#[should_panic(expected = "created directory metadata must be readable")]
+#[should_panic(
+    expected = "nonrecursive directory creation must reject a missing parent"
+)]
 fn test_create_dir_contract_rejects_no_op() {
     qubit_fs_testkit::assert_create_dir_contract(&MemoryFixture::with_fault(
         MemoryFault::SkipCreateDir,
+    ));
+}
+
+/// Verifies directory creation rejects a missing parent without recursion.
+#[test]
+#[should_panic(
+    expected = "nonrecursive directory creation must reject a missing parent"
+)]
+fn test_create_dir_contract_rejects_implicit_parent_creation() {
+    qubit_fs_testkit::assert_create_dir_contract(&MemoryFixture::with_fault(
+        MemoryFault::CreateDirWithoutParents,
     ));
 }
 
@@ -262,6 +284,17 @@ fn test_create_dir_contract_rejects_no_op() {
 fn test_delete_contract_rejects_no_op() {
     qubit_fs_testkit::assert_delete_contract(&MemoryFixture::with_fault(
         MemoryFault::SkipDelete,
+    ));
+}
+
+/// Verifies recursive deletion removes descendants as well as the root.
+#[test]
+#[should_panic(
+    expected = "recursively deleted children must not remain present"
+)]
+fn test_delete_contract_rejects_retained_recursive_child() {
+    qubit_fs_testkit::assert_delete_contract(&MemoryFixture::with_fault(
+        MemoryFault::KeepRecursiveDeleteChild,
     ));
 }
 
@@ -320,6 +353,33 @@ fn test_copy_contract_rejects_missing_destination_context() {
 fn test_copy_contract_rejects_ignored_conflict_policy() {
     qubit_fs_testkit::assert_copy_contract(&MemoryFixture::with_fault(
         MemoryFault::CopyIgnoresConflict,
+    ));
+}
+
+/// Verifies the copy contract rejects a no-op tree copy.
+#[test]
+#[should_panic(expected = "tree copy must report copied files")]
+fn test_copy_contract_rejects_skipped_tree_copy() {
+    qubit_fs_testkit::assert_copy_contract(&MemoryFixture::with_fault(
+        MemoryFault::SkipTreeCopy,
+    ));
+}
+
+/// Verifies the write contract requires create-new to create a missing target.
+#[test]
+#[should_panic(expected = "the contract writer must open")]
+fn test_write_contract_rejects_missing_create_new_support() {
+    qubit_fs_testkit::assert_write_contract(&MemoryFixture::with_fault(
+        MemoryFault::RejectCreateNew,
+    ));
+}
+
+/// Verifies append rejects a missing target instead of creating it.
+#[test]
+#[should_panic(expected = "append must reject a missing resource")]
+fn test_append_contract_rejects_missing_target_creation() {
+    qubit_fs_testkit::assert_append_contract(&MemoryFixture::with_fault(
+        MemoryFault::AppendCreatesMissing,
     ));
 }
 

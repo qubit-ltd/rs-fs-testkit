@@ -56,6 +56,7 @@ const APPENDED_CONTENT: &[u8] = b" + appended";
 ///
 /// Panics when missing-path errors lose context, existence disagrees with
 /// metadata, or written-file metadata is inconsistent.
+#[track_caller]
 pub fn assert_stat_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::Write);
@@ -120,6 +121,7 @@ pub fn assert_stat_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when bytes do not round-trip, opened-file identity is wrong, or
 /// caller byte limits do not produce the required structured error.
+#[track_caller]
 pub fn assert_read_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::Read);
@@ -173,6 +175,7 @@ pub fn assert_read_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when committed bytes, write outcomes, opened-file identity, or
 /// create-new preservation violate the common contract.
+#[track_caller]
 pub fn assert_write_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::Read);
@@ -213,6 +216,15 @@ pub fn assert_write_contract(fixture: &dyn FileSystemFixture) {
         atomicity: AtomicityRequirement::NotRequired,
         ..WriteOptions::default()
     };
+    let create_new_path = fixture.path("contract-write-create-new.bin");
+    let outcome = write_bytes(
+        file_system,
+        &create_new_path,
+        options.clone(),
+        INITIAL_CONTENT,
+    );
+    assert_bytes_written(&outcome, INITIAL_CONTENT.len());
+    assert_content(file_system, &create_new_path, INITIAL_CONTENT);
     let error = file_system
         .open_writer(&path, options)
         .expect_err("create-new must reject an existing resource");
@@ -237,6 +249,7 @@ pub fn assert_write_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when append does not preserve existing bytes or an unsupported
 /// append request loses its structured capability context.
+#[track_caller]
 pub fn assert_append_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::Read);
@@ -257,6 +270,25 @@ pub fn assert_append_contract(fixture: &dyn FileSystemFixture) {
         let mut expected = INITIAL_CONTENT.to_vec();
         expected.extend_from_slice(APPENDED_CONTENT);
         assert_content(file_system, &path, &expected);
+        let missing = fixture.path("contract-append-missing.bin");
+        let error = file_system
+            .open_writer(
+                &missing,
+                WriteOptions {
+                    disposition: WriteDisposition::Append,
+                    atomicity: AtomicityRequirement::NotRequired,
+                    ..WriteOptions::default()
+                },
+            )
+            .expect_err("append must reject a missing resource");
+        assert_error(
+            &error,
+            FsErrorKind::NotFound,
+            FsOperation::OpenWriter,
+            Some(&missing),
+            Some(file_system.info().provider_id()),
+            None,
+        );
     } else {
         let error = file_system
             .open_writer(&path, options)
@@ -283,6 +315,7 @@ pub fn assert_append_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when an advertised atomic replacement is not achieved or a rejected
 /// request loses its structured capability context or modifies existing data.
+#[track_caller]
 pub fn assert_atomic_replace_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::Read);
@@ -335,6 +368,7 @@ pub fn assert_atomic_replace_contract(fixture: &dyn FileSystemFixture) {
 /// Panics when written children are missing from their expected listings, when
 /// recursive prefix filtering is ignored, or when entry identity, kind, or
 /// provider-reported metadata is inconsistent.
+#[track_caller]
 pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::List);
@@ -385,6 +419,10 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
     assert_eq!(&child, &entry.path, "listed path must match the child");
     assert_eq!("child.bin", entry.name, "listed name must be the basename");
     assert_eq!(FileKind::File, entry.kind, "listed child must be a file");
+    assert!(
+        entries.iter().any(|entry| entry.path == sibling),
+        "list must return the written sibling",
+    );
     if let Some(metadata) = &entry.metadata {
         assert_eq!(
             FileKind::File,
@@ -398,10 +436,6 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
                 "known listed metadata length must match the written bytes",
             );
         }
-        assert!(
-            entries.iter().any(|entry| entry.path == sibling),
-            "list must return the written sibling",
-        );
     }
 
     let nested_child = fixture.path("contract-list/nested/match.bin");
@@ -437,7 +471,8 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
     );
 }
 
-/// Checks recursive directory creation and idempotent existing-directory use.
+/// Checks nonrecursive failures, recursive directory creation, and idempotent
+/// existing-directory use.
 ///
 /// # Parameters
 ///
@@ -445,11 +480,27 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// # Panics
 ///
-/// Panics when recursive creation does not create a directory or `exists_ok`
-/// rejects the resulting directory.
+/// Panics when nonrecursive creation accepts missing parents, recursive
+/// creation does not create a directory, or existing-directory policies are
+/// ignored.
+#[track_caller]
 pub fn assert_create_dir_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::CreateDirectory);
+    let missing_parent = fixture.path("contract-create-dir/missing/child");
+    let error = file_system
+        .create_dir(&missing_parent, CreateDirOptions::default())
+        .expect_err(
+            "nonrecursive directory creation must reject a missing parent",
+        );
+    assert_error(
+        &error,
+        FsErrorKind::NotFound,
+        FsOperation::CreateDir,
+        Some(&missing_parent),
+        Some(file_system.info().provider_id()),
+        None,
+    );
     let directory = fixture.path("contract-create-dir/child");
     file_system
         .create_dir(
@@ -477,6 +528,17 @@ pub fn assert_create_dir_contract(fixture: &dyn FileSystemFixture) {
             },
         )
         .expect("exists_ok must accept an existing directory");
+    let error = file_system
+        .create_dir(&directory, CreateDirOptions::default())
+        .expect_err("existing directories must reject exists_ok=false");
+    assert_error(
+        &error,
+        FsErrorKind::AlreadyExists,
+        FsOperation::CreateDir,
+        Some(&directory),
+        Some(file_system.info().provider_id()),
+        None,
+    );
 }
 
 /// Checks file deletion, missing-target tolerance, and recursive deletion when
@@ -490,6 +552,7 @@ pub fn assert_create_dir_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when deletion leaves a resource present, `missing_ok` fails, or an
 /// advertised recursive deletion leaves its tree present.
+#[track_caller]
 pub fn assert_delete_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::Write);
@@ -545,6 +608,12 @@ pub fn assert_delete_contract(fixture: &dyn FileSystemFixture) {
                 .expect("exists must inspect the deleted tree"),
             "recursively deleted trees must not remain present",
         );
+        assert!(
+            !file_system
+                .exists(&child)
+                .expect("exists must inspect recursively deleted children"),
+            "recursively deleted children must not remain present",
+        );
     }
 }
 
@@ -559,6 +628,7 @@ pub fn assert_delete_contract(fixture: &dyn FileSystemFixture) {
 /// Panics when rename overwrites without permission, leaves the source present,
 /// fails to publish the exact source bytes, or downgrades an advertised
 /// required atomic rename.
+#[track_caller]
 pub fn assert_rename_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::Read);
@@ -627,7 +697,7 @@ pub fn assert_rename_contract(fixture: &dyn FileSystemFixture) {
     assert_content(file_system, &destination, INITIAL_CONTENT);
 }
 
-/// Checks single-file copy preservation, conflict policy, and outcome
+/// Checks file and tree copy preservation, conflict policy, and outcome
 /// statistics.
 ///
 /// # Parameters
@@ -639,6 +709,7 @@ pub fn assert_rename_contract(fixture: &dyn FileSystemFixture) {
 /// Panics when copy changes the source, ignores a destination conflict policy,
 /// publishes different destination bytes, or reports statistics inconsistent
 /// with the copied payload.
+#[track_caller]
 pub fn assert_copy_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::Read);
@@ -657,6 +728,7 @@ pub fn assert_copy_contract(fixture: &dyn FileSystemFixture) {
         .expect("copy must publish the contract destination");
     assert_content(file_system, &source, INITIAL_CONTENT);
     assert_content(file_system, &destination, INITIAL_CONTENT);
+
     assert_eq!(1, outcome.stats.files, "copy must report one copied file");
     assert_eq!(
         INITIAL_CONTENT.len() as u64,
@@ -715,6 +787,28 @@ pub fn assert_copy_contract(fixture: &dyn FileSystemFixture) {
         "copy must report overwritten destinations",
     );
     assert_content(file_system, &destination, INITIAL_CONTENT);
+
+    let tree_source = fixture.path("contract-copy-tree-source");
+    let tree_child = fixture.path("contract-copy-tree-source/child.bin");
+    let tree_destination = fixture.path("contract-copy-tree-destination");
+    let copied_child = fixture.path("contract-copy-tree-destination/child.bin");
+    write_bytes(
+        file_system,
+        &tree_child,
+        WriteOptions {
+            create_parent: true,
+            ..WriteOptions::default()
+        },
+        INITIAL_CONTENT,
+    );
+    let outcome = file_system
+        .copy(&tree_source, &tree_destination, CopyOptions::tree())
+        .expect("tree copy must publish the contract destination");
+    assert!(
+        outcome.stats.files >= 1,
+        "tree copy must report copied files",
+    );
+    assert_content(file_system, &copied_child, INITIAL_CONTENT);
 }
 
 /// Checks that unsupported option requirements fail before provider I/O.
@@ -727,6 +821,7 @@ pub fn assert_copy_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when a provider reaches missing-resource I/O before reporting any
 /// unadvertised read, write, delete, rename, or copy requirement.
+#[track_caller]
 pub fn assert_preflight_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     let capabilities = file_system.capabilities();
@@ -748,6 +843,7 @@ pub fn assert_preflight_contract(fixture: &dyn FileSystemFixture) {
 }
 
 /// Checks every optional read requirement against a missing path.
+#[track_caller]
 fn assert_read_preflight(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     let cases = [
@@ -794,6 +890,7 @@ fn assert_read_preflight(fixture: &dyn FileSystemFixture) {
 }
 
 /// Checks every optional write requirement against a missing path.
+#[track_caller]
 fn assert_write_preflight(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     let cases = [
@@ -841,6 +938,7 @@ fn assert_write_preflight(fixture: &dyn FileSystemFixture) {
 }
 
 /// Checks optional delete requirements against a missing path.
+#[track_caller]
 fn assert_delete_preflight(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     let cases = [
@@ -879,6 +977,7 @@ fn assert_delete_preflight(fixture: &dyn FileSystemFixture) {
 }
 
 /// Checks required rename atomicity against a missing path.
+#[track_caller]
 fn assert_rename_preflight(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     if file_system
@@ -907,6 +1006,7 @@ fn assert_rename_preflight(fixture: &dyn FileSystemFixture) {
 }
 
 /// Checks required server-side copy against a missing path.
+#[track_caller]
 fn assert_copy_preflight(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     if file_system
@@ -944,6 +1044,7 @@ fn assert_copy_preflight(fixture: &dyn FileSystemFixture) {
 /// # Panics
 ///
 /// Panics when the filesystem does not advertise the required capability.
+#[track_caller]
 pub(crate) fn require_capability(
     file_system: &dyn FileSystem,
     capability: FileSystemCapability,
@@ -970,6 +1071,7 @@ pub(crate) fn require_capability(
 /// # Panics
 ///
 /// Panics when the writer cannot open, accept bytes, or commit.
+#[track_caller]
 pub(crate) fn write_bytes(
     file_system: &dyn FileSystem,
     path: &FsPath,
@@ -997,6 +1099,7 @@ pub(crate) fn write_bytes(
 /// # Panics
 ///
 /// Panics when the resource cannot be read or its bytes differ.
+#[track_caller]
 pub(crate) fn assert_content(
     file_system: &dyn FileSystem,
     path: &FsPath,
@@ -1018,6 +1121,7 @@ pub(crate) fn assert_content(
 /// # Panics
 ///
 /// Panics when a known byte count differs from the accepted payload size.
+#[track_caller]
 fn assert_bytes_written(outcome: &WriteOutcome, expected: usize) {
     if let Some(actual) = outcome.bytes_written {
         assert_eq!(

@@ -31,6 +31,7 @@ use qubit_fs::{
 /// # Panics
 ///
 /// Panics when any expected field differs from the actual error.
+#[track_caller]
 pub(crate) fn assert_error(
     error: &FsError,
     kind: FsErrorKind,
@@ -73,6 +74,7 @@ pub(crate) fn assert_error(
 /// # Panics
 ///
 /// Panics when any expected field differs from the actual error.
+#[track_caller]
 pub(crate) fn assert_error_with_target(
     error: &FsError,
     kind: FsErrorKind,
@@ -102,6 +104,7 @@ pub(crate) fn assert_error_with_target(
 /// Panics when a required field differs, or when a reported provider does not
 /// match the configured provider. Missing provider context remains valid for
 /// trait-default errors.
+#[track_caller]
 pub(crate) fn assert_unsupported_error(
     error: &FsError,
     kind: FsErrorKind,

@@ -42,6 +42,7 @@ use crate::{
 ///
 /// Panics when an unadvertised operation succeeds or returns an error with an
 /// incorrect kind, operation, path, or required capability.
+#[track_caller]
 pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     let source = fixture.path("contract-unsupported-source.bin");

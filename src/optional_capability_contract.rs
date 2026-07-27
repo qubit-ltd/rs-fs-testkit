@@ -20,6 +20,7 @@ use qubit_fs::{
     FsOperation,
     FsPath,
     ReadOptions,
+    ResourceVersion,
     ServerSidePreference,
     WriteOptions,
     WritePrecondition,
@@ -38,7 +39,7 @@ use crate::{
 
 const CONTRACT_CONTENT: &[u8] = b"0123456789";
 const FIRST_CONDITIONAL_TOKEN: &str = "qubit-fs-testkit-condition-a";
-const SECOND_CONDITIONAL_TOKEN: &str = "qubit-fs-testkit-condition-b";
+const UPDATED_CONTENT: &[u8] = b"conditional-write-updated";
 
 /// Checks advertised byte-range reads.
 ///
@@ -50,17 +51,27 @@ const SECOND_CONDITIONAL_TOKEN: &str = "qubit-fs-testkit-condition-b";
 ///
 /// Panics when an advertised range read returns wrong bytes or a finite
 /// provider range limit is not enforced before reading.
+#[track_caller]
 pub fn assert_range_read_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
+    let path = fixture.path("contract-range-read.bin");
     if !file_system
         .capabilities()
         .contains(FileSystemCapability::RangeRead)
     {
+        assert_missing_read_requirement(
+            file_system,
+            &path,
+            FileSystemCapability::RangeRead,
+            ReadOptions {
+                offset: Some(1),
+                ..ReadOptions::default()
+            },
+        );
         return;
     }
     require_capability(file_system, FileSystemCapability::Read);
     require_capability(file_system, FileSystemCapability::Write);
-    let path = fixture.path("contract-range-read.bin");
     write_bytes(
         file_system,
         &path,
@@ -68,17 +79,21 @@ pub fn assert_range_read_contract(fixture: &dyn FileSystemFixture) {
         CONTRACT_CONTENT,
     );
 
+    let length = match file_system.limits().max_read_range_bytes() {
+        FileSystemLimit::Maximum(maximum) => maximum.min(4),
+        _ => 4,
+    };
     let bytes = read_bytes(
         file_system,
         &path,
         ReadOptions {
             offset: Some(2),
-            length: Some(4),
+            length: Some(length),
             ..ReadOptions::default()
         },
     );
     assert_eq!(
-        b"2345",
+        &CONTRACT_CONTENT[2..2 + length as usize],
         bytes.as_slice(),
         "range reads must honor offset and length"
     );
@@ -118,17 +133,27 @@ pub fn assert_range_read_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when conditional reads are rejected despite being advertised, or
 /// when ETag conditions have incorrect success or failure behavior.
+#[track_caller]
 pub fn assert_conditional_read_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
+    let path = fixture.path("contract-conditional-read.bin");
     if !file_system
         .capabilities()
         .contains(FileSystemCapability::ConditionalRead)
     {
+        assert_missing_read_requirement(
+            file_system,
+            &path,
+            FileSystemCapability::ConditionalRead,
+            ReadOptions {
+                if_match: Some(FIRST_CONDITIONAL_TOKEN.to_owned()),
+                ..ReadOptions::default()
+            },
+        );
         return;
     }
     require_capability(file_system, FileSystemCapability::Read);
     require_capability(file_system, FileSystemCapability::Write);
-    let path = fixture.path("contract-conditional-read.bin");
     write_bytes(
         file_system,
         &path,
@@ -136,77 +161,71 @@ pub fn assert_conditional_read_contract(fixture: &dyn FileSystemFixture) {
         CONTRACT_CONTENT,
     );
 
-    let first = file_system.open_reader(
-        &path,
-        ReadOptions {
-            if_none_match: Some(FIRST_CONDITIONAL_TOKEN.to_owned()),
-            ..ReadOptions::default()
-        },
-    );
-    match first {
-        Ok(reader) => assert_eq!(
-            CONTRACT_CONTENT,
-            read_reader(reader).as_slice(),
-            "conditional reads must preserve resource bytes",
-        ),
-        Err(error) => {
-            assert_eq!(
-                FsErrorKind::PreconditionFailed,
-                error.kind(),
-                "a rejected conditional read must report a precondition failure",
-            );
-            let bytes = read_bytes(
-                file_system,
-                &path,
-                ReadOptions {
-                    if_none_match: Some(SECOND_CONDITIONAL_TOKEN.to_owned()),
-                    ..ReadOptions::default()
-                },
-            );
-            assert_eq!(
-                CONTRACT_CONTENT,
-                bytes.as_slice(),
-                "one of two distinct conditional-read tokens must permit the read",
-            );
-        }
-    }
-
-    if let Some(etag) = file_system
+    let etag = file_system
         .stat(&path)
         .expect("conditional-read metadata must remain readable")
         .etag
-    {
-        let bytes = read_bytes(
-            file_system,
+        .expect("advertised conditional reads must expose an ETag");
+    let bytes = read_bytes(
+        file_system,
+        &path,
+        ReadOptions {
+            if_match: Some(etag.clone()),
+            ..ReadOptions::default()
+        },
+    );
+    assert_eq!(
+        CONTRACT_CONTENT,
+        bytes.as_slice(),
+        "matching ETags must allow reads"
+    );
+    let error = file_system
+        .open_reader(
             &path,
             ReadOptions {
-                if_match: Some(etag.clone()),
+                if_match: Some(format!("{etag}-mismatch")),
                 ..ReadOptions::default()
             },
-        );
-        assert_eq!(
-            CONTRACT_CONTENT,
-            bytes.as_slice(),
-            "matching ETags must allow reads"
-        );
-        let error = file_system
-            .open_reader(
-                &path,
-                ReadOptions {
-                    if_match: Some(format!("{etag}-mismatch")),
-                    ..ReadOptions::default()
-                },
-            )
-            .expect_err("mismatched ETags must reject conditional reads");
-        assert_error(
-            &error,
-            FsErrorKind::PreconditionFailed,
-            FsOperation::OpenReader,
-            Some(&path),
-            Some(file_system.info().provider_id()),
-            None,
-        );
-    }
+        )
+        .expect_err("mismatched ETags must reject conditional reads");
+    assert_error(
+        &error,
+        FsErrorKind::PreconditionFailed,
+        FsOperation::OpenReader,
+        Some(&path),
+        Some(file_system.info().provider_id()),
+        None,
+    );
+    let error = file_system
+        .open_reader(
+            &path,
+            ReadOptions {
+                if_none_match: Some(etag.clone()),
+                ..ReadOptions::default()
+            },
+        )
+        .expect_err("matching if-none-match ETags must reject reads");
+    assert_error(
+        &error,
+        FsErrorKind::PreconditionFailed,
+        FsOperation::OpenReader,
+        Some(&path),
+        Some(file_system.info().provider_id()),
+        None,
+    );
+    let bytes = read_bytes(
+        file_system,
+        &path,
+        ReadOptions {
+            if_none_match: Some(format!("{etag}-mismatch")),
+            ..ReadOptions::default()
+        },
+    );
+    assert_eq!(
+        CONTRACT_CONTENT,
+        bytes.as_slice(),
+        "nonmatching if-none-match ETags must allow reads"
+    );
 }
 
 /// Checks advertised checksum-required reads.
@@ -220,17 +239,27 @@ pub fn assert_conditional_read_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when a required checksum read cannot be opened or does not return the
 /// committed bytes.
+#[track_caller]
 pub fn assert_checksum_validation_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
+    let path = fixture.path("contract-checksum-read.bin");
     if !file_system
         .capabilities()
         .contains(FileSystemCapability::ChecksumValidation)
     {
+        assert_missing_read_requirement(
+            file_system,
+            &path,
+            FileSystemCapability::ChecksumValidation,
+            ReadOptions {
+                checksum: ChecksumPolicy::Required,
+                ..ReadOptions::default()
+            },
+        );
         return;
     }
     require_capability(file_system, FileSystemCapability::Read);
     require_capability(file_system, FileSystemCapability::Write);
-    let path = fixture.path("contract-checksum-read.bin");
     write_bytes(
         file_system,
         &path,
@@ -263,17 +292,26 @@ pub fn assert_checksum_validation_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when `IfAbsent` does not create a missing resource, overwrites an
 /// existing resource, or reports an incorrect precondition error.
+#[track_caller]
 pub fn assert_conditional_write_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
+    let path = fixture.path("contract-conditional-write.bin");
     if !file_system
         .capabilities()
         .contains(FileSystemCapability::ConditionalWrite)
     {
+        assert_missing_write_requirement(
+            file_system,
+            &path,
+            WriteOptions {
+                precondition: WritePrecondition::IfAbsent,
+                ..WriteOptions::default()
+            },
+        );
         return;
     }
     require_capability(file_system, FileSystemCapability::Read);
     require_capability(file_system, FileSystemCapability::Write);
-    let path = fixture.path("contract-conditional-write.bin");
     let options = WriteOptions {
         precondition: WritePrecondition::IfAbsent,
         ..WriteOptions::default()
@@ -291,6 +329,43 @@ pub fn assert_conditional_write_contract(fixture: &dyn FileSystemFixture) {
         None,
     );
     assert_content(file_system, &path, CONTRACT_CONTENT);
+    let etag = file_system
+        .stat(&path)
+        .expect("conditional-write metadata must remain readable")
+        .etag
+        .expect("advertised conditional writes must expose an ETag");
+    let error = file_system
+        .open_writer(
+            &path,
+            WriteOptions {
+                precondition: WritePrecondition::IfMatch(ResourceVersion::new(
+                    format!("{etag}-mismatch"),
+                )),
+                ..WriteOptions::default()
+            },
+        )
+        .expect_err("mismatched IfMatch writes must reject");
+    assert_error(
+        &error,
+        FsErrorKind::PreconditionFailed,
+        FsOperation::OpenWriter,
+        Some(&path),
+        Some(file_system.info().provider_id()),
+        None,
+    );
+    assert_content(file_system, &path, CONTRACT_CONTENT);
+    write_bytes(
+        file_system,
+        &path,
+        WriteOptions {
+            precondition: WritePrecondition::IfMatch(ResourceVersion::new(
+                etag,
+            )),
+            ..WriteOptions::default()
+        },
+        UPDATED_CONTENT,
+    );
+    assert_content(file_system, &path, UPDATED_CONTENT);
 }
 
 /// Checks advertised conditional deletes.
@@ -304,18 +379,27 @@ pub fn assert_conditional_write_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when a mismatched version does not preserve the resource, or when a
 /// matching ETag is exposed but cannot delete the resource.
+#[track_caller]
 pub fn assert_conditional_delete_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
+    let path = fixture.path("contract-conditional-delete.bin");
     if !file_system
         .capabilities()
         .contains(FileSystemCapability::ConditionalDelete)
     {
+        assert_missing_delete_requirement(
+            file_system,
+            &path,
+            DeleteOptions {
+                if_match: Some(FIRST_CONDITIONAL_TOKEN.to_owned()),
+                ..DeleteOptions::default()
+            },
+        );
         return;
     }
     require_capability(file_system, FileSystemCapability::Read);
     require_capability(file_system, FileSystemCapability::Write);
     require_capability(file_system, FileSystemCapability::Delete);
-    let path = fixture.path("contract-conditional-delete.bin");
     write_bytes(
         file_system,
         &path,
@@ -325,11 +409,9 @@ pub fn assert_conditional_delete_contract(fixture: &dyn FileSystemFixture) {
     let etag = file_system
         .stat(&path)
         .expect("conditional-delete metadata must remain readable")
-        .etag;
-    let mismatch = etag.as_deref().map_or_else(
-        || FIRST_CONDITIONAL_TOKEN.to_owned(),
-        |etag| format!("{etag}-mismatch"),
-    );
+        .etag
+        .expect("advertised conditional deletes must expose an ETag");
+    let mismatch = format!("{etag}-mismatch");
     let error = file_system
         .delete(
             &path,
@@ -349,21 +431,21 @@ pub fn assert_conditional_delete_contract(fixture: &dyn FileSystemFixture) {
     );
     assert_content(file_system, &path, CONTRACT_CONTENT);
 
-    if let Some(etag) = etag {
-        file_system
-            .delete(
-                &path,
-                DeleteOptions {
-                    if_match: Some(etag),
-                    ..DeleteOptions::default()
-                },
-            )
-            .expect("matching ETags must allow conditional deletes");
-    } else {
-        file_system
-            .delete(&path, DeleteOptions::default())
-            .expect("ordinary cleanup must delete the contract resource");
-    }
+    file_system
+        .delete(
+            &path,
+            DeleteOptions {
+                if_match: Some(etag),
+                ..DeleteOptions::default()
+            },
+        )
+        .expect("matching ETags must allow conditional deletes");
+    assert!(
+        !file_system
+            .exists(&path)
+            .expect("exists must inspect conditionally deleted resources"),
+        "matching ETags must remove the resource",
+    );
 }
 
 /// Checks advertised required server-side copies.
@@ -377,19 +459,29 @@ pub fn assert_conditional_delete_contract(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when required server-side copies fail, report a non-server-side
 /// method, or produce wrong destination bytes.
+#[track_caller]
 pub fn assert_server_side_copy_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
+    let source = fixture.path("contract-server-copy-source.bin");
+    let destination = fixture.path("contract-server-copy-destination.bin");
     if !file_system
         .capabilities()
         .contains(FileSystemCapability::ServerSideCopy)
     {
+        assert_missing_copy_requirement(
+            file_system,
+            &source,
+            &destination,
+            CopyOptions {
+                server_side: ServerSidePreference::Require,
+                ..CopyOptions::file()
+            },
+        );
         return;
     }
     require_capability(file_system, FileSystemCapability::Read);
     require_capability(file_system, FileSystemCapability::Write);
     require_capability(file_system, FileSystemCapability::Copy);
-    let source = fixture.path("contract-server-copy-source.bin");
-    let destination = fixture.path("contract-server-copy-destination.bin");
     write_bytes(
         file_system,
         &source,
@@ -414,6 +506,88 @@ pub fn assert_server_side_copy_contract(fixture: &dyn FileSystemFixture) {
     assert_content(file_system, &destination, CONTRACT_CONTENT);
 }
 
+/// Checks a missing read capability before provider resource I/O.
+#[track_caller]
+fn assert_missing_read_requirement(
+    file_system: &dyn FileSystem,
+    path: &FsPath,
+    capability: FileSystemCapability,
+    options: ReadOptions,
+) {
+    let error = file_system.open_reader(path, options).expect_err(
+        "missing read capabilities must reject before provider I/O",
+    );
+    assert_error(
+        &error,
+        FsErrorKind::RequirementNotMet,
+        FsOperation::OpenReader,
+        Some(path),
+        Some(file_system.info().provider_id()),
+        Some(capability),
+    );
+}
+
+/// Checks a missing conditional-write capability before provider resource I/O.
+#[track_caller]
+fn assert_missing_write_requirement(
+    file_system: &dyn FileSystem,
+    path: &FsPath,
+    options: WriteOptions,
+) {
+    let error = file_system.open_writer(path, options).expect_err(
+        "missing write capabilities must reject before provider I/O",
+    );
+    assert_error(
+        &error,
+        FsErrorKind::RequirementNotMet,
+        FsOperation::OpenWriter,
+        Some(path),
+        Some(file_system.info().provider_id()),
+        Some(FileSystemCapability::ConditionalWrite),
+    );
+}
+
+/// Checks a missing conditional-delete capability before provider resource I/O.
+#[track_caller]
+fn assert_missing_delete_requirement(
+    file_system: &dyn FileSystem,
+    path: &FsPath,
+    options: DeleteOptions,
+) {
+    let error = file_system.delete(path, options).expect_err(
+        "missing delete capabilities must reject before provider I/O",
+    );
+    assert_error(
+        &error,
+        FsErrorKind::RequirementNotMet,
+        FsOperation::Delete,
+        Some(path),
+        Some(file_system.info().provider_id()),
+        Some(FileSystemCapability::ConditionalDelete),
+    );
+}
+
+/// Checks a missing server-side-copy capability before provider resource I/O.
+#[track_caller]
+fn assert_missing_copy_requirement(
+    file_system: &dyn FileSystem,
+    source: &FsPath,
+    destination: &FsPath,
+    options: CopyOptions,
+) {
+    let error = file_system.copy(source, destination, options).expect_err(
+        "missing copy capabilities must reject before provider I/O",
+    );
+    assert_error(
+        &error,
+        FsErrorKind::RequirementNotMet,
+        FsOperation::Copy,
+        Some(source),
+        Some(file_system.info().provider_id()),
+        Some(FileSystemCapability::ServerSideCopy),
+    );
+}
+
 /// Reads every byte from an already-opened contract reader.
 ///
 /// # Parameters
@@ -427,6 +601,7 @@ pub fn assert_server_side_copy_contract(fixture: &dyn FileSystemFixture) {
 /// # Panics
 ///
 /// Panics when the reader cannot return its complete content.
+#[track_caller]
 fn read_reader(mut reader: FileReader) -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut buffer = [0_u8; 1024];
@@ -457,6 +632,7 @@ fn read_reader(mut reader: FileReader) -> Vec<u8> {
 /// # Panics
 ///
 /// Panics when the reader cannot open or cannot return all bytes.
+#[track_caller]
 fn read_bytes(
     file_system: &dyn FileSystem,
     path: &FsPath,
