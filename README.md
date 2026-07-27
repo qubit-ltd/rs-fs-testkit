@@ -72,15 +72,18 @@ qubit_fs_testkit::sync_file_system_contract_tests!(
 ```
 
 The complete suite requires the fixture to advertise `Read`, `Write`, `List`,
-`CreateDirectory`, `Delete`, `Rename`, and `Copy`. Individual assertions such
-as `assert_read_contract` and `assert_unsupported_operations_contract` remain
-available for providers with a smaller operation surface.
+`CreateDirectory`, `Delete`, `Rename`, and `Copy`. Individual assertions remain
+available for providers with a smaller operation surface. Fixtures can provide
+out-of-band seed and observation hooks for capability-specific contracts, so a
+read-only, write-only, or copy-only provider need not advertise unrelated
+setup capabilities.
 
 ## Contracts
 
 The synchronous suite checks:
 
-- stable identity, limits, and all derived capability dependencies;
+- stable identity, derived capability dependencies, and safely probeable finite
+  path, component, and write limits;
 - `stat`, `exists`, complete reads, caller byte limits, and paged listings;
 - create, replace, successful and conflicting create-new, append, and required
   atomic writes;
@@ -88,17 +91,21 @@ The synchronous suite checks:
   creation policies; recursive deletion; rename; and file and tree copy;
 - positive advertised range, conditional, checksum-required, and server-side
   copy behavior, including ETag match and non-match transitions;
+- provider-neutral file/object and directory/prefix representations, plus
+  advertised temporary-resource lifecycle and atomic-persist behavior;
 - per-contract structured option preflight for read, write, delete, and copy
   requirements that are not advertised;
 - structured errors for every unadvertised synchronous operation, including
   reads and writes.
 
 Provider-specific path encoding, platform behavior, security boundaries, and
-service registration remain the provider crate's responsibility. Temporary
-resource success paths and asynchronous contracts are not included yet. The
-checksum contract confirms that `ChecksumPolicy::Required` can be honored; a
-black-box fixture cannot independently inject storage corruption to prove a
-provider's internal checksum implementation.
+service registration remain the provider crate's responsibility. Symbolic-link
+and empty-directory representation checks require fixture probes because the
+core trait has no creation operation for either resource. Asynchronous
+contracts are available as separate assertions rather than part of the
+synchronous macro. The checksum contract confirms that `ChecksumPolicy::Required`
+can be honored; a black-box fixture cannot independently inject storage
+corruption to prove a provider's internal checksum implementation.
 
 ## Testing
 

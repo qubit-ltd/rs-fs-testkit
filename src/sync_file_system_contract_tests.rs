@@ -15,8 +15,9 @@
 /// `CreateDirectory`, `Delete`, `Rename`, and `Copy`. The suite verifies the
 /// advertised `AtomicRename`, `AtomicReplace`, `RecursiveDelete`, range read,
 /// conditional read/write/delete, checksum-required read, and server-side-copy
-/// guarantees through positive operations. Optional requirements that are not
-/// advertised are checked through structured preflight errors.
+/// guarantees through positive operations. Advertised temporary-file and
+/// temporary-directory lifecycles are also checked. Optional requirements that
+/// are not advertised are checked through structured preflight errors.
 ///
 /// The expression is expanded inside the generated module. Provider tests
 /// should therefore qualify fixture types or factories through `super::`.
@@ -139,6 +140,16 @@ macro_rules! sync_file_system_contract_tests {
             #[test]
             fn test_preflight_contract() {
                 $crate::assert_preflight_contract(&$fixture);
+            }
+
+            #[test]
+            fn test_temp_file_contract() {
+                $crate::assert_temp_file_contract(&$fixture);
+            }
+
+            #[test]
+            fn test_temp_dir_contract() {
+                $crate::assert_temp_dir_contract(&$fixture);
             }
 
             #[test]

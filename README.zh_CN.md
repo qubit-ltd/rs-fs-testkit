@@ -71,23 +71,26 @@ qubit_fs_testkit::sync_file_system_contract_tests!(
 ```
 
 完整套件要求 fixture 声明 `Read`、`Write`、`List`、`CreateDirectory`、
-`Delete`、`Rename` 和 `Copy`。对于操作面较小的 provider，仍可单独调用
-`assert_read_contract`、`assert_unsupported_operations_contract` 等断言。
+`Delete`、`Rename` 和 `Copy`。对于操作面较小的 provider，仍可单独调用各项
+断言。fixture 可以提供带外的预置和观察钩子，因此只读、只写或只复制的
+provider 无需声明与被测 capability 无关的准备能力。
 
 ## 契约范围
 
 同步契约套件检查：
 
-- 稳定的身份、限制以及所有派生 capability 依赖；
+- 稳定的身份、所有派生 capability 依赖，以及可安全探测的有限路径、组件和写入上限；
 - `stat`、`exists`、完整读取、调用方字节上限和分页列目录；
 - 创建、替换、create-new 的成功与冲突路径、追加和强制原子写入；
 - 即使缺少 metadata 也完整返回子项的列目录、目录创建策略、递归删除、重命名、文件和目录树复制；
 - 已声明的范围读取、条件读写删除、必需校验和读取和服务端复制正向行为，包括 ETag 匹配和不匹配转换；
+- provider-neutral 的文件/对象与目录/前缀表示，以及已声明临时资源的生命周期和原子持久化行为；
 - 每项未声明的读取、写入、删除和复制需求都在 provider I/O 前完成结构化预检；
 - 每项未声明同步操作（包括读取和写入）都返回结构化错误。
 
 provider 特有的路径编码、平台行为、安全边界和服务注册仍由 provider crate
-负责。当前尚未包含临时资源成功路径和异步契约。校验和契约确认
+负责。符号链接和空目录表示检查需要 fixture 提供探针，因为核心 trait 没有创建
+这两类资源的操作。异步契约作为独立断言提供，而不纳入同步宏。校验和契约确认
 `ChecksumPolicy::Required` 可以兑现；通用黑盒 fixture 无法独立注入存储损坏，
 因而不能证明 provider 内部校验和实现的细节。
 
