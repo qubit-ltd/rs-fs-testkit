@@ -81,16 +81,22 @@ available for providers with a smaller operation surface.
 The synchronous suite checks:
 
 - stable identity, limits, and all derived capability dependencies;
-- `stat`, `exists`, complete reads, and caller byte limits;
+- `stat`, `exists`, complete reads, caller byte limits, and paged listings;
 - create, replace, create-new, append, and required atomic writes;
 - listing, recursive directory creation, deletion, rename, and file copy;
-- option preflight for read, write, delete, rename, and copy requirements;
+- positive advertised range, conditional, checksum-required, and server-side
+  copy behavior;
+- structured option preflight for read, write, delete, rename, and copy
+  requirements that are not advertised;
 - structured errors for every unadvertised synchronous operation, including
   reads and writes.
 
 Provider-specific path encoding, platform behavior, security boundaries, and
 service registration remain the provider crate's responsibility. Temporary
-resource success paths and asynchronous contracts are not included yet.
+resource success paths and asynchronous contracts are not included yet. The
+checksum contract confirms that `ChecksumPolicy::Required` can be honored; a
+black-box fixture cannot independently inject storage corruption to prove a
+provider's internal checksum implementation.
 
 ## Testing
 
