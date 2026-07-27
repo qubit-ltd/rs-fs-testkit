@@ -8,11 +8,24 @@
 //! Contract assertions for operations a provider does not advertise.
 
 use qubit_fs::{
-    CopyOptions, CreateDirOptions, DeleteOptions, FileSystemCapability, FsErrorKind, FsOperation,
-    ListOptions, ReadOptions, RenameOptions, TempDirOptions, TempFileOptions, WriteOptions,
+    CopyOptions,
+    CreateDirOptions,
+    DeleteOptions,
+    FileSystemCapability,
+    FsErrorKind,
+    FsOperation,
+    ListOptions,
+    ReadOptions,
+    RenameOptions,
+    TempDirOptions,
+    TempFileOptions,
+    WriteOptions,
 };
 
-use crate::{FileSystemFixture, internal::assert_error};
+use crate::{
+    FileSystemFixture,
+    internal::assert_unsupported_error,
+};
 
 /// Checks structured errors for every unadvertised synchronous operation.
 ///
@@ -41,12 +54,12 @@ pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
         let error = file_system
             .open_reader(&source, ReadOptions::default())
             .expect_err("unadvertised read must fail");
-        assert_error(
+        assert_unsupported_error(
             &error,
             FsErrorKind::UnsupportedCapability,
             FsOperation::OpenReader,
             Some(&source),
-            None,
+            Some(file_system.info().provider_id()),
             Some(FileSystemCapability::Read),
         );
     }
@@ -58,12 +71,12 @@ pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
         let error = file_system
             .open_writer(&source, WriteOptions::default())
             .expect_err("unadvertised write must fail");
-        assert_error(
+        assert_unsupported_error(
             &error,
             FsErrorKind::UnsupportedCapability,
             FsOperation::OpenWriter,
             Some(&source),
-            None,
+            Some(file_system.info().provider_id()),
             Some(FileSystemCapability::Write),
         );
     }
@@ -75,12 +88,12 @@ pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
         let error = file_system
             .list(&source, ListOptions::default())
             .expect_err("unadvertised list must fail");
-        assert_error(
+        assert_unsupported_error(
             &error,
             FsErrorKind::UnsupportedCapability,
             FsOperation::List,
             Some(&source),
-            None,
+            Some(file_system.info().provider_id()),
             Some(FileSystemCapability::List),
         );
     }
@@ -92,12 +105,12 @@ pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
         let error = file_system
             .create_dir(&source, CreateDirOptions::default())
             .expect_err("unadvertised directory creation must fail");
-        assert_error(
+        assert_unsupported_error(
             &error,
             FsErrorKind::UnsupportedCapability,
             FsOperation::CreateDir,
             Some(&source),
-            None,
+            Some(file_system.info().provider_id()),
             Some(FileSystemCapability::CreateDirectory),
         );
     }
@@ -109,12 +122,12 @@ pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
         let error = file_system
             .delete(&source, DeleteOptions::default())
             .expect_err("unadvertised deletion must fail");
-        assert_error(
+        assert_unsupported_error(
             &error,
             FsErrorKind::UnsupportedCapability,
             FsOperation::Delete,
             Some(&source),
-            None,
+            Some(file_system.info().provider_id()),
             Some(FileSystemCapability::Delete),
         );
     }
@@ -126,12 +139,12 @@ pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
         let error = file_system
             .rename(&source, &destination, RenameOptions::default())
             .expect_err("unadvertised rename must fail");
-        assert_error(
+        assert_unsupported_error(
             &error,
             FsErrorKind::UnsupportedCapability,
             FsOperation::Rename,
             Some(&source),
-            None,
+            Some(file_system.info().provider_id()),
             Some(FileSystemCapability::Rename),
         );
     }
@@ -143,12 +156,12 @@ pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
         let error = file_system
             .copy(&source, &destination, CopyOptions::default())
             .expect_err("unadvertised copy must fail");
-        assert_error(
+        assert_unsupported_error(
             &error,
             FsErrorKind::UnsupportedCapability,
             FsOperation::Copy,
             Some(&source),
-            None,
+            Some(file_system.info().provider_id()),
             Some(FileSystemCapability::Copy),
         );
     }
@@ -160,12 +173,12 @@ pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
         let error = file_system
             .create_temp_file(TempFileOptions::default())
             .expect_err("unadvertised temporary-file creation must fail");
-        assert_error(
+        assert_unsupported_error(
             &error,
             FsErrorKind::UnsupportedCapability,
             FsOperation::CreateTemp,
             None,
-            None,
+            Some(file_system.info().provider_id()),
             Some(FileSystemCapability::TempFile),
         );
     }
@@ -177,12 +190,12 @@ pub fn assert_unsupported_operations_contract(fixture: &dyn FileSystemFixture) {
         let error = file_system
             .create_temp_dir(TempDirOptions::default())
             .expect_err("unadvertised temporary-directory creation must fail");
-        assert_error(
+        assert_unsupported_error(
             &error,
             FsErrorKind::UnsupportedCapability,
             FsOperation::CreateTemp,
             None,
-            None,
+            Some(file_system.info().provider_id()),
             Some(FileSystemCapability::TempDirectory),
         );
     }

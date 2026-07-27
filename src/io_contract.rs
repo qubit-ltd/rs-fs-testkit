@@ -8,15 +8,39 @@
 //! Contract assertions for synchronous filesystem I/O.
 
 use qubit_fs::{
-    AchievedAtomicity, AtomicityRequirement, ChecksumPolicy, CopyConflictPolicy, CopyOptions,
-    CreateDirOptions, DeleteOptions, DirectoryStreamExt, FileKind, FileSystem,
-    FileSystemCapability, FileSystemExt, FsErrorKind, FsOperation, FsPath, ListOptions,
-    ReadOptions, RenameOptions, ServerSidePreference, WriteDisposition, WriteOptions, WriteOutcome,
+    AchievedAtomicity,
+    AtomicityRequirement,
+    ChecksumPolicy,
+    CopyConflictPolicy,
+    CopyOptions,
+    CreateDirOptions,
+    DeleteOptions,
+    DirectoryStreamExt,
+    FileKind,
+    FileSystem,
+    FileSystemCapability,
+    FileSystemExt,
+    FsErrorKind,
+    FsOperation,
+    FsPath,
+    ListOptions,
+    ReadOptions,
+    RenameOptions,
+    ServerSidePreference,
+    WriteDisposition,
+    WriteOptions,
+    WriteOutcome,
     WritePrecondition,
 };
 use qubit_io::Output;
 
-use crate::{FileSystemFixture, internal::assert_error};
+use crate::{
+    FileSystemFixture,
+    internal::{
+        assert_error,
+        assert_error_with_target,
+    },
+};
 
 const INITIAL_CONTENT: &[u8] = b"initial contract content";
 const REPLACEMENT_CONTENT: &[u8] = b"replacement contract content";
@@ -275,7 +299,8 @@ pub fn assert_atomic_replace_contract(fixture: &dyn FileSystemFixture) {
         .capabilities()
         .contains(FileSystemCapability::AtomicReplace)
     {
-        let outcome = write_bytes(file_system, &path, options, REPLACEMENT_CONTENT);
+        let outcome =
+            write_bytes(file_system, &path, options, REPLACEMENT_CONTENT);
         assert_eq!(
             AchievedAtomicity::Atomic,
             outcome.atomicity,
@@ -298,7 +323,8 @@ pub fn assert_atomic_replace_contract(fixture: &dyn FileSystemFixture) {
     }
 }
 
-/// Checks non-recursive listing, recursive prefix filtering, and entry metadata.
+/// Checks non-recursive listing, recursive prefix filtering, and entry
+/// metadata.
 ///
 /// # Parameters
 ///
@@ -315,6 +341,7 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
     require_capability(file_system, FileSystemCapability::Write);
     let directory = fixture.path("contract-list");
     let child = fixture.path("contract-list/child.bin");
+    let sibling = fixture.path("contract-list/sibling.bin");
     write_bytes(
         file_system,
         &child,
@@ -324,20 +351,37 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
         },
         INITIAL_CONTENT,
     );
+    write_bytes(
+        file_system,
+        &sibling,
+        WriteOptions {
+            create_parent: true,
+            ..WriteOptions::default()
+        },
+        REPLACEMENT_CONTENT,
+    );
 
     let entries = file_system
         .list(
             &directory,
             ListOptions {
                 include_metadata: true,
+                page_size: Some(1),
                 ..ListOptions::default()
             },
         )
         .expect("list must open the contract directory")
         .collect_entries(16)
         .expect("list must enumerate the contract directory");
-    assert_eq!(1, entries.len(), "list must return the written child");
-    let entry = &entries[0];
+    assert_eq!(
+        2,
+        entries.len(),
+        "list must return every written child across pages",
+    );
+    let entry = entries
+        .iter()
+        .find(|entry| entry.path == child)
+        .expect("list must return the written child");
     assert_eq!(&child, &entry.path, "listed path must match the child");
     assert_eq!("child.bin", entry.name, "listed name must be the basename");
     assert_eq!(FileKind::File, entry.kind, "listed child must be a file");
@@ -354,6 +398,10 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
                 "known listed metadata length must match the written bytes",
             );
         }
+        assert!(
+            entries.iter().any(|entry| entry.path == sibling),
+            "list must return the written sibling",
+        );
     }
 
     let nested_child = fixture.path("contract-list/nested/match.bin");
@@ -371,7 +419,7 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
             &directory,
             ListOptions {
                 recursive: true,
-                prefix: Some("match".to_owned()),
+                prefix: Some("nested/match.bin".to_owned()),
                 ..ListOptions::default()
             },
         )
@@ -533,10 +581,14 @@ pub fn assert_rename_contract(fixture: &dyn FileSystemFixture) {
     let error = file_system
         .rename(&source, &destination, RenameOptions::default())
         .expect_err("rename must reject an existing destination by default");
-    assert_eq!(
+    assert_error_with_target(
+        &error,
         FsErrorKind::AlreadyExists,
-        error.kind(),
-        "rename must classify destination conflicts",
+        FsOperation::Rename,
+        Some(&source),
+        Some(&destination),
+        Some(file_system.info().provider_id()),
+        None,
     );
     assert_content(file_system, &source, INITIAL_CONTENT);
     assert_content(file_system, &destination, REPLACEMENT_CONTENT);
@@ -575,7 +627,8 @@ pub fn assert_rename_contract(fixture: &dyn FileSystemFixture) {
     assert_content(file_system, &destination, INITIAL_CONTENT);
 }
 
-/// Checks single-file copy preservation, conflict policy, and outcome statistics.
+/// Checks single-file copy preservation, conflict policy, and outcome
+/// statistics.
 ///
 /// # Parameters
 ///
@@ -620,10 +673,14 @@ pub fn assert_copy_contract(fixture: &dyn FileSystemFixture) {
     let error = file_system
         .copy(&source, &destination, CopyOptions::file())
         .expect_err("copy must reject an existing destination by default");
-    assert_eq!(
+    assert_error_with_target(
+        &error,
         FsErrorKind::AlreadyExists,
-        error.kind(),
-        "copy must classify destination conflicts",
+        FsOperation::Copy,
+        Some(&source),
+        Some(&destination),
+        Some(file_system.info().provider_id()),
+        None,
     );
     assert_content(file_system, &destination, REPLACEMENT_CONTENT);
 
@@ -720,7 +777,8 @@ fn assert_read_preflight(fixture: &dyn FileSystemFixture) {
         if file_system.capabilities().contains(capability) {
             continue;
         }
-        let path = fixture.path(&format!("contract-preflight-{capability:?}.bin"));
+        let path =
+            fixture.path(&format!("contract-preflight-{capability:?}.bin"));
         let error = file_system
             .open_reader(&path, options)
             .expect_err("read requirements must fail before provider I/O");
@@ -766,7 +824,8 @@ fn assert_write_preflight(fixture: &dyn FileSystemFixture) {
         if file_system.capabilities().contains(capability) {
             continue;
         }
-        let path = fixture.path(&format!("contract-preflight-{capability:?}.bin"));
+        let path =
+            fixture.path(&format!("contract-preflight-{capability:?}.bin"));
         let error = file_system
             .open_writer(&path, options)
             .expect_err("write requirements must fail before provider I/O");
@@ -885,7 +944,10 @@ fn assert_copy_preflight(fixture: &dyn FileSystemFixture) {
 /// # Panics
 ///
 /// Panics when the filesystem does not advertise the required capability.
-fn require_capability(file_system: &dyn FileSystem, capability: FileSystemCapability) {
+pub(crate) fn require_capability(
+    file_system: &dyn FileSystem,
+    capability: FileSystemCapability,
+) {
     assert!(
         file_system.capabilities().contains(capability),
         "{capability:?} is required by this contract",
@@ -908,7 +970,7 @@ fn require_capability(file_system: &dyn FileSystem, capability: FileSystemCapabi
 /// # Panics
 ///
 /// Panics when the writer cannot open, accept bytes, or commit.
-fn write_bytes(
+pub(crate) fn write_bytes(
     file_system: &dyn FileSystem,
     path: &FsPath,
     options: WriteOptions,
@@ -935,7 +997,11 @@ fn write_bytes(
 /// # Panics
 ///
 /// Panics when the resource cannot be read or its bytes differ.
-fn assert_content(file_system: &dyn FileSystem, path: &FsPath, expected: &[u8]) {
+pub(crate) fn assert_content(
+    file_system: &dyn FileSystem,
+    path: &FsPath,
+    expected: &[u8],
+) {
     let actual = file_system
         .read_all(path, expected.len())
         .expect("the committed contract resource must be readable");

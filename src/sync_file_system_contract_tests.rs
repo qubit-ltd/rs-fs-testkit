@@ -13,9 +13,10 @@
 /// The fixture expression is evaluated independently for every generated
 /// test. It must create a fresh fixture advertising `Read`, `Write`, `List`,
 /// `CreateDirectory`, `Delete`, `Rename`, and `Copy`. The suite verifies the
-/// advertised `AtomicRename`, `AtomicReplace`, and `RecursiveDelete`
-/// guarantees through positive operations. Other optional guarantees are
-/// checked through capability dependencies and structured preflight errors.
+/// advertised `AtomicRename`, `AtomicReplace`, `RecursiveDelete`, range read,
+/// conditional read/write/delete, checksum-required read, and server-side-copy
+/// guarantees through positive operations. Optional requirements that are not
+/// advertised are checked through structured preflight errors.
 ///
 /// The expression is expanded inside the generated module. Provider tests
 /// should therefore qualify fixture types or factories through `super::`.
@@ -66,8 +67,28 @@ macro_rules! sync_file_system_contract_tests {
             }
 
             #[test]
+            fn test_range_read_contract() {
+                $crate::assert_range_read_contract(&$fixture);
+            }
+
+            #[test]
+            fn test_conditional_read_contract() {
+                $crate::assert_conditional_read_contract(&$fixture);
+            }
+
+            #[test]
+            fn test_checksum_validation_contract() {
+                $crate::assert_checksum_validation_contract(&$fixture);
+            }
+
+            #[test]
             fn test_write_contract() {
                 $crate::assert_write_contract(&$fixture);
+            }
+
+            #[test]
+            fn test_conditional_write_contract() {
+                $crate::assert_conditional_write_contract(&$fixture);
             }
 
             #[test]
@@ -96,6 +117,11 @@ macro_rules! sync_file_system_contract_tests {
             }
 
             #[test]
+            fn test_conditional_delete_contract() {
+                $crate::assert_conditional_delete_contract(&$fixture);
+            }
+
+            #[test]
             fn test_rename_contract() {
                 $crate::assert_rename_contract(&$fixture);
             }
@@ -103,6 +129,11 @@ macro_rules! sync_file_system_contract_tests {
             #[test]
             fn test_copy_contract() {
                 $crate::assert_copy_contract(&$fixture);
+            }
+
+            #[test]
+            fn test_server_side_copy_contract() {
+                $crate::assert_server_side_copy_contract(&$fixture);
             }
 
             #[test]
