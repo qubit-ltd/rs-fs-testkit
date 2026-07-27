@@ -17,7 +17,7 @@ use qubit_io::Input;
 use crate::{
     FileSystemFixture,
     internal::assert_error,
-    io_contract::{assert_content, require_capability, write_bytes},
+    io_contract::{assert_observable_content, require_capability, seed_file, write_bytes},
 };
 
 const CONTRACT_CONTENT: &[u8] = b"0123456789";
@@ -54,13 +54,7 @@ pub fn assert_range_read_contract(fixture: &dyn FileSystemFixture) {
         return;
     }
     require_capability(file_system, FileSystemCapability::Read);
-    require_capability(file_system, FileSystemCapability::Write);
-    write_bytes(
-        file_system,
-        &path,
-        WriteOptions::default(),
-        CONTRACT_CONTENT,
-    );
+    let path = seed_file(fixture, "contract-range-read.bin", CONTRACT_CONTENT);
 
     let length = match file_system.limits().max_read_range_bytes() {
         FileSystemLimit::Maximum(maximum) => maximum.min(4),
@@ -135,13 +129,7 @@ pub fn assert_conditional_read_contract(fixture: &dyn FileSystemFixture) {
         return;
     }
     require_capability(file_system, FileSystemCapability::Read);
-    require_capability(file_system, FileSystemCapability::Write);
-    write_bytes(
-        file_system,
-        &path,
-        WriteOptions::default(),
-        CONTRACT_CONTENT,
-    );
+    let path = seed_file(fixture, "contract-conditional-read.bin", CONTRACT_CONTENT);
 
     let etag = file_system
         .stat(&path)
@@ -241,13 +229,7 @@ pub fn assert_checksum_validation_contract(fixture: &dyn FileSystemFixture) {
         return;
     }
     require_capability(file_system, FileSystemCapability::Read);
-    require_capability(file_system, FileSystemCapability::Write);
-    write_bytes(
-        file_system,
-        &path,
-        WriteOptions::default(),
-        CONTRACT_CONTENT,
-    );
+    let path = seed_file(fixture, "contract-checksum-read.bin", CONTRACT_CONTENT);
     let bytes = read_bytes(
         file_system,
         &path,
@@ -292,7 +274,6 @@ pub fn assert_conditional_write_contract(fixture: &dyn FileSystemFixture) {
         );
         return;
     }
-    require_capability(file_system, FileSystemCapability::Read);
     require_capability(file_system, FileSystemCapability::Write);
     let options = WriteOptions {
         precondition: WritePrecondition::IfAbsent,
@@ -310,7 +291,7 @@ pub fn assert_conditional_write_contract(fixture: &dyn FileSystemFixture) {
         Some(file_system.info().provider_id()),
         None,
     );
-    assert_content(file_system, &path, CONTRACT_CONTENT);
+    assert_observable_content(fixture, &path, CONTRACT_CONTENT);
     let etag = file_system
         .stat(&path)
         .expect("conditional-write metadata must remain readable")
@@ -335,7 +316,7 @@ pub fn assert_conditional_write_contract(fixture: &dyn FileSystemFixture) {
         Some(file_system.info().provider_id()),
         None,
     );
-    assert_content(file_system, &path, CONTRACT_CONTENT);
+    assert_observable_content(fixture, &path, CONTRACT_CONTENT);
     write_bytes(
         file_system,
         &path,
@@ -345,7 +326,7 @@ pub fn assert_conditional_write_contract(fixture: &dyn FileSystemFixture) {
         },
         UPDATED_CONTENT,
     );
-    assert_content(file_system, &path, UPDATED_CONTENT);
+    assert_observable_content(fixture, &path, UPDATED_CONTENT);
 }
 
 /// Checks advertised conditional deletes.
@@ -377,15 +358,8 @@ pub fn assert_conditional_delete_contract(fixture: &dyn FileSystemFixture) {
         );
         return;
     }
-    require_capability(file_system, FileSystemCapability::Read);
-    require_capability(file_system, FileSystemCapability::Write);
     require_capability(file_system, FileSystemCapability::Delete);
-    write_bytes(
-        file_system,
-        &path,
-        WriteOptions::default(),
-        CONTRACT_CONTENT,
-    );
+    let path = seed_file(fixture, "contract-conditional-delete.bin", CONTRACT_CONTENT);
     let etag = file_system
         .stat(&path)
         .expect("conditional-delete metadata must remain readable")
@@ -409,7 +383,12 @@ pub fn assert_conditional_delete_contract(fixture: &dyn FileSystemFixture) {
         Some(file_system.info().provider_id()),
         None,
     );
-    assert_content(file_system, &path, CONTRACT_CONTENT);
+    assert!(
+        file_system
+            .exists(&path)
+            .expect("exists must inspect a conditionally retained resource"),
+        "mismatched ETags must preserve conditional-delete resources",
+    );
 
     file_system
         .delete(
@@ -459,15 +438,8 @@ pub fn assert_server_side_copy_contract(fixture: &dyn FileSystemFixture) {
         );
         return;
     }
-    require_capability(file_system, FileSystemCapability::Read);
-    require_capability(file_system, FileSystemCapability::Write);
     require_capability(file_system, FileSystemCapability::Copy);
-    write_bytes(
-        file_system,
-        &source,
-        WriteOptions::default(),
-        CONTRACT_CONTENT,
-    );
+    let source = seed_file(fixture, "contract-server-copy-source.bin", CONTRACT_CONTENT);
     let outcome = file_system
         .copy(
             &source,
@@ -483,7 +455,13 @@ pub fn assert_server_side_copy_contract(fixture: &dyn FileSystemFixture) {
         outcome.method,
         "required server-side copies must report the server-side method",
     );
-    assert_content(file_system, &destination, CONTRACT_CONTENT);
+    assert!(
+        file_system
+            .exists(&destination)
+            .expect("exists must inspect a server-side copy destination"),
+        "required server-side copies must create the destination",
+    );
+    assert_observable_content(fixture, &destination, CONTRACT_CONTENT);
 }
 
 /// Checks a missing read capability before provider resource I/O.

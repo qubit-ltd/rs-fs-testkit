@@ -8,17 +8,9 @@
 
 mod common;
 
-use qubit_fs::{
-    FileSystemCapabilities,
-    FileSystemCapability,
-    FileSystemLimit,
-    FileSystemLimits,
-};
+use qubit_fs::{FileSystemCapabilities, FileSystemCapability, FileSystemLimit, FileSystemLimits};
 
-use common::{
-    MemoryFault,
-    MemoryFixture,
-};
+use common::{MemoryFault, MemoryFixture};
 
 /// Builds a provider capability set covering every optional contract assertion.
 fn optional_capabilities() -> FileSystemCapabilities {
@@ -38,75 +30,127 @@ fn optional_capabilities() -> FileSystemCapabilities {
 /// Verifies range reads honor advertised byte-range support.
 #[test]
 fn test_range_read_contract_accepts_advertised_provider() {
-    qubit_fs_testkit::assert_range_read_contract(
-        &MemoryFixture::with_capabilities(optional_capabilities()),
-    );
+    qubit_fs_testkit::assert_range_read_contract(&MemoryFixture::with_capabilities(
+        optional_capabilities(),
+    ));
 }
 
 /// Verifies range reads enforce a declared finite byte limit before reading.
 #[test]
 fn test_range_read_contract_enforces_declared_limit() {
-    let limits = FileSystemLimits::unknown()
-        .with_max_read_range_bytes(FileSystemLimit::Maximum(4));
-    qubit_fs_testkit::assert_range_read_contract(
-        &MemoryFixture::with_capabilities_and_limits(
-            optional_capabilities(),
-            limits,
-        ),
-    );
+    let limits = FileSystemLimits::unknown().with_max_read_range_bytes(FileSystemLimit::Maximum(4));
+    qubit_fs_testkit::assert_range_read_contract(&MemoryFixture::with_capabilities_and_limits(
+        optional_capabilities(),
+        limits,
+    ));
 }
 
 /// Verifies a conforming provider may declare a range limit below four bytes.
 #[test]
 fn test_range_read_contract_accepts_small_declared_limit() {
-    let limits = FileSystemLimits::unknown()
-        .with_max_read_range_bytes(FileSystemLimit::Maximum(3));
-    qubit_fs_testkit::assert_range_read_contract(
-        &MemoryFixture::with_capabilities_and_limits(
-            optional_capabilities(),
-            limits,
-        ),
-    );
+    let limits = FileSystemLimits::unknown().with_max_read_range_bytes(FileSystemLimit::Maximum(3));
+    qubit_fs_testkit::assert_range_read_contract(&MemoryFixture::with_capabilities_and_limits(
+        optional_capabilities(),
+        limits,
+    ));
 }
 
 /// Verifies conditional reads honor advertised version conditions.
 #[test]
 fn test_conditional_read_contract_accepts_advertised_provider() {
-    qubit_fs_testkit::assert_conditional_read_contract(
-        &MemoryFixture::with_capabilities(optional_capabilities()),
-    );
+    qubit_fs_testkit::assert_conditional_read_contract(&MemoryFixture::with_capabilities(
+        optional_capabilities(),
+    ));
 }
 
 /// Verifies checksum-required reads honor advertised validation support.
 #[test]
 fn test_checksum_validation_contract_accepts_advertised_provider() {
-    qubit_fs_testkit::assert_checksum_validation_contract(
-        &MemoryFixture::with_capabilities(optional_capabilities()),
-    );
+    qubit_fs_testkit::assert_checksum_validation_contract(&MemoryFixture::with_capabilities(
+        optional_capabilities(),
+    ));
 }
 
 /// Verifies conditional writes honor advertised preconditions.
 #[test]
 fn test_conditional_write_contract_accepts_advertised_provider() {
-    qubit_fs_testkit::assert_conditional_write_contract(
-        &MemoryFixture::with_capabilities(optional_capabilities()),
-    );
+    qubit_fs_testkit::assert_conditional_write_contract(&MemoryFixture::with_capabilities(
+        optional_capabilities(),
+    ));
 }
 
 /// Verifies conditional deletes honor advertised version conditions.
 #[test]
 fn test_conditional_delete_contract_accepts_advertised_provider() {
-    qubit_fs_testkit::assert_conditional_delete_contract(
-        &MemoryFixture::with_capabilities(optional_capabilities()),
-    );
+    qubit_fs_testkit::assert_conditional_delete_contract(&MemoryFixture::with_capabilities(
+        optional_capabilities(),
+    ));
 }
 
 /// Verifies required server-side copies report the requested copy method.
 #[test]
 fn test_server_side_copy_contract_accepts_advertised_provider() {
-    qubit_fs_testkit::assert_server_side_copy_contract(
-        &MemoryFixture::with_capabilities(optional_capabilities()),
-    );
+    qubit_fs_testkit::assert_server_side_copy_contract(&MemoryFixture::with_capabilities(
+        optional_capabilities(),
+    ));
+}
+
+/// Verifies range reads can use fixture-provided seed data without write support.
+#[test]
+fn test_range_read_contract_accepts_read_only_provider_with_fixture_seed_data() {
+    let capabilities = FileSystemCapabilities::default()
+        .with(FileSystemCapability::Read)
+        .with(FileSystemCapability::RangeRead);
+
+    qubit_fs_testkit::assert_range_read_contract(&MemoryFixture::with_capabilities(capabilities));
+}
+
+/// Verifies conditional reads can use fixture-provided seed data without writes.
+#[test]
+fn test_conditional_read_contract_accepts_read_only_provider_with_fixture_seed_data() {
+    let capabilities = FileSystemCapabilities::default()
+        .with(FileSystemCapability::Read)
+        .with(FileSystemCapability::ConditionalRead);
+
+    qubit_fs_testkit::assert_conditional_read_contract(&MemoryFixture::with_capabilities(
+        capabilities,
+    ));
+}
+
+/// Verifies conditional writes do not require read support for setup or checks.
+#[test]
+fn test_conditional_write_contract_accepts_write_only_provider() {
+    let capabilities = FileSystemCapabilities::default()
+        .with(FileSystemCapability::Write)
+        .with(FileSystemCapability::ConditionalWrite);
+
+    qubit_fs_testkit::assert_conditional_write_contract(&MemoryFixture::with_capabilities(
+        capabilities,
+    ));
+}
+
+/// Verifies conditional deletes can use fixture-provided seed data without reads or writes.
+#[test]
+fn test_conditional_delete_contract_accepts_delete_only_provider_with_fixture_seed_data() {
+    let capabilities = FileSystemCapabilities::default()
+        .with(FileSystemCapability::Delete)
+        .with(FileSystemCapability::ConditionalDelete);
+
+    qubit_fs_testkit::assert_conditional_delete_contract(&MemoryFixture::with_capabilities(
+        capabilities,
+    ));
+}
+
+/// Verifies server-side copies can use fixture-provided seed data without read or write support.
+#[test]
+fn test_server_side_copy_contract_accepts_copy_only_provider_with_fixture_seed_data() {
+    let capabilities = FileSystemCapabilities::default()
+        .with(FileSystemCapability::Copy)
+        .with(FileSystemCapability::ServerSideCopy);
+
+    qubit_fs_testkit::assert_server_side_copy_contract(&MemoryFixture::with_capabilities(
+        capabilities,
+    ));
 }
 
 /// Verifies conditional reads reject matching `if_none_match` versions.
@@ -152,12 +196,10 @@ fn test_range_read_contract_rejects_late_missing_capability_validation() {
     let capabilities = FileSystemCapabilities::default()
         .with(FileSystemCapability::Read)
         .with(FileSystemCapability::Write);
-    qubit_fs_testkit::assert_range_read_contract(
-        &MemoryFixture::with_capabilities_and_fault(
-            capabilities,
-            MemoryFault::SkipReadPreflight,
-        ),
-    );
+    qubit_fs_testkit::assert_range_read_contract(&MemoryFixture::with_capabilities_and_fault(
+        capabilities,
+        MemoryFault::SkipReadPreflight,
+    ));
 }
 
 /// Verifies conditional-read assertions check missing capability preflight.
@@ -168,61 +210,44 @@ fn test_conditional_read_contract_rejects_late_missing_capability_validation() {
         .with(FileSystemCapability::Read)
         .with(FileSystemCapability::Write);
     qubit_fs_testkit::assert_conditional_read_contract(
-        &MemoryFixture::with_capabilities_and_fault(
-            capabilities,
-            MemoryFault::SkipReadPreflight,
-        ),
+        &MemoryFixture::with_capabilities_and_fault(capabilities, MemoryFault::SkipReadPreflight),
     );
 }
 
 /// Verifies checksum assertions check missing capability preflight.
 #[test]
 #[should_panic(expected = "filesystem error kind must match")]
-fn test_checksum_validation_contract_rejects_late_missing_capability_validation()
- {
+fn test_checksum_validation_contract_rejects_late_missing_capability_validation() {
     let capabilities = FileSystemCapabilities::default()
         .with(FileSystemCapability::Read)
         .with(FileSystemCapability::Write);
     qubit_fs_testkit::assert_checksum_validation_contract(
-        &MemoryFixture::with_capabilities_and_fault(
-            capabilities,
-            MemoryFault::SkipReadPreflight,
-        ),
+        &MemoryFixture::with_capabilities_and_fault(capabilities, MemoryFault::SkipReadPreflight),
     );
 }
 
 /// Verifies conditional-write assertions check missing capability preflight.
 #[test]
-#[should_panic(
-    expected = "missing write capabilities must reject before provider I/O"
-)]
-fn test_conditional_write_contract_rejects_late_missing_capability_validation()
-{
+#[should_panic(expected = "missing write capabilities must reject before provider I/O")]
+fn test_conditional_write_contract_rejects_late_missing_capability_validation() {
     let capabilities = FileSystemCapabilities::default()
         .with(FileSystemCapability::Read)
         .with(FileSystemCapability::Write);
     qubit_fs_testkit::assert_conditional_write_contract(
-        &MemoryFixture::with_capabilities_and_fault(
-            capabilities,
-            MemoryFault::SkipWritePreflight,
-        ),
+        &MemoryFixture::with_capabilities_and_fault(capabilities, MemoryFault::SkipWritePreflight),
     );
 }
 
 /// Verifies conditional-delete assertions check missing capability preflight.
 #[test]
 #[should_panic(expected = "filesystem error kind must match")]
-fn test_conditional_delete_contract_rejects_late_missing_capability_validation()
-{
+fn test_conditional_delete_contract_rejects_late_missing_capability_validation() {
     let capabilities = FileSystemCapabilities::default()
         .with(FileSystemCapability::Read)
         .with(FileSystemCapability::Write)
         .with(FileSystemCapability::Delete);
     qubit_fs_testkit::assert_conditional_delete_contract(
-        &MemoryFixture::with_capabilities_and_fault(
-            capabilities,
-            MemoryFault::SkipDeletePreflight,
-        ),
+        &MemoryFixture::with_capabilities_and_fault(capabilities, MemoryFault::SkipDeletePreflight),
     );
 }
 
@@ -235,9 +260,6 @@ fn test_server_side_copy_contract_rejects_late_missing_capability_validation() {
         .with(FileSystemCapability::Write)
         .with(FileSystemCapability::Copy);
     qubit_fs_testkit::assert_server_side_copy_contract(
-        &MemoryFixture::with_capabilities_and_fault(
-            capabilities,
-            MemoryFault::SkipCopyPreflight,
-        ),
+        &MemoryFixture::with_capabilities_and_fault(capabilities, MemoryFault::SkipCopyPreflight),
     );
 }

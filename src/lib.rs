@@ -16,6 +16,7 @@ mod internal;
 mod io_contract;
 mod optional_capability_contract;
 mod properties_contract;
+mod representation_contract;
 mod sync_file_system_contract_tests;
 mod temp_contract;
 mod unsupported_operations_contract;
@@ -35,5 +36,6 @@ pub use optional_capability_contract::{
     assert_range_read_contract, assert_server_side_copy_contract,
 };
 pub use properties_contract::{assert_capabilities_contract, assert_properties_contract};
+pub use representation_contract::{assert_empty_directory_contract, assert_symlink_contract};
 pub use temp_contract::{assert_temp_dir_contract, assert_temp_file_contract};
 pub use unsupported_operations_contract::assert_unsupported_operations_contract;

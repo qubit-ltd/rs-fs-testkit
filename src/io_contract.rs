@@ -11,8 +11,8 @@ use qubit_fs::{
     AchievedAtomicity, AtomicityRequirement, ChecksumPolicy, CopyConflictPolicy, CopyOptions,
     CreateDirOptions, DeleteOptions, DirectoryStreamExt, FileKind, FileSystem,
     FileSystemCapability, FileSystemExt, FsErrorKind, FsOperation, FsPath, ListOptions,
-    ReadOptions, RenameOptions, ResourceVersion, ServerSidePreference, WriteDisposition,
-    WriteOptions, WriteOutcome, WritePrecondition,
+    PathSemantics, ReadOptions, RenameOptions, ResourceVersion, ServerSidePreference,
+    WriteDisposition, WriteOptions, WriteOutcome, WritePrecondition,
 };
 use qubit_io::Output;
 
@@ -70,10 +70,10 @@ pub fn assert_stat_contract(fixture: &dyn FileSystemFixture) {
     let metadata = file_system
         .stat(&written)
         .expect("stat must read metadata for a written file");
-    assert_eq!(
-        FileKind::File,
-        metadata.kind,
-        "written resources must be files"
+    assert_file_like_kind(
+        file_system.info().path_semantics(),
+        &metadata.kind,
+        "written resources must have a file-like kind",
     );
     if let Some(length) = metadata.len {
         assert_eq!(
@@ -395,17 +395,26 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
         .find(|entry| entry.path == child)
         .expect("list must return the written child");
     assert_eq!(&child, &entry.path, "listed path must match the child");
-    assert_eq!("child.bin", entry.name, "listed name must be the basename");
-    assert_eq!(FileKind::File, entry.kind, "listed child must be a file");
+    assert_eq!(
+        child
+            .file_name()
+            .expect("contract child paths must have a basename"),
+        entry.name,
+        "listed name must match the mapped child basename",
+    );
+    assert_file_like_kind(
+        file_system.info().path_semantics(),
+        &entry.kind,
+        "listed child must have a file-like kind",
+    );
     assert!(
         entries.iter().any(|entry| entry.path == sibling),
         "list must return the written sibling",
     );
     if let Some(metadata) = &entry.metadata {
         assert_eq!(
-            FileKind::File,
-            metadata.kind,
-            "listed metadata kind must match the entry",
+            &entry.kind, &metadata.kind,
+            "listed metadata kind must match the entry"
         );
         if let Some(length) = metadata.len {
             assert_eq!(
@@ -431,7 +440,7 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
             &directory,
             ListOptions {
                 recursive: true,
-                prefix: Some("nested/match.bin".to_owned()),
+                prefix: Some(fixture.list_prefix(&directory, "nested/match.bin")),
                 ..ListOptions::default()
             },
         )
@@ -465,18 +474,20 @@ pub fn assert_list_contract(fixture: &dyn FileSystemFixture) {
 pub fn assert_create_dir_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::CreateDirectory);
-    let missing_parent = fixture.path("contract-create-dir/missing/child");
-    let error = file_system
-        .create_dir(&missing_parent, CreateDirOptions::default())
-        .expect_err("nonrecursive directory creation must reject a missing parent");
-    assert_error(
-        &error,
-        FsErrorKind::NotFound,
-        FsOperation::CreateDir,
-        Some(&missing_parent),
-        Some(file_system.info().provider_id()),
-        None,
-    );
+    if file_system.info().path_semantics() == PathSemantics::Hierarchical {
+        let missing_parent = fixture.path("contract-create-dir/missing/child");
+        let error = file_system
+            .create_dir(&missing_parent, CreateDirOptions::default())
+            .expect_err("nonrecursive directory creation must reject a missing parent");
+        assert_error(
+            &error,
+            FsErrorKind::NotFound,
+            FsOperation::CreateDir,
+            Some(&missing_parent),
+            Some(file_system.info().provider_id()),
+            None,
+        );
+    }
     let directory = fixture.path("contract-create-dir/child");
     file_system
         .create_dir(
@@ -490,10 +501,9 @@ pub fn assert_create_dir_contract(fixture: &dyn FileSystemFixture) {
     let metadata = file_system
         .stat(&directory)
         .expect("created directory metadata must be readable");
-    assert_eq!(
-        FileKind::Directory,
-        metadata.kind,
-        "created resource must be a directory",
+    assert!(
+        metadata.is_directory_like(),
+        "created resource must be a directory-like container",
     );
     file_system
         .create_dir(
@@ -1008,6 +1018,30 @@ fn assert_copy_preflight(fixture: &dyn FileSystemFixture) {
     );
 }
 
+/// Checks that a written resource has a kind compatible with path semantics.
+///
+/// # Parameters
+///
+/// * `semantics` - Path semantics advertised by the filesystem.
+/// * `kind` - Provider-reported resource kind.
+/// * `message` - Assertion message explaining the violated contract.
+///
+/// # Panics
+///
+/// Panics when the kind cannot represent a written file or object under the
+/// advertised path semantics.
+#[track_caller]
+fn assert_file_like_kind(semantics: PathSemantics, kind: &FileKind, message: &str) {
+    let matches = match semantics {
+        PathSemantics::Hierarchical => *kind == FileKind::File,
+        PathSemantics::ObjectKey => matches!(kind, FileKind::File | FileKind::Object),
+        PathSemantics::ProviderSpecific => {
+            matches!(kind, FileKind::File | FileKind::Object | FileKind::Other(_))
+        }
+    };
+    assert!(matches, "{message}: found {kind:?}");
+}
+
 /// Requires one capability before a positive contract is executed.
 ///
 /// # Parameters
@@ -1057,6 +1091,61 @@ pub(crate) fn write_bytes(
         panic!("the contract writer must accept all bytes: {error}");
     }
     writer.commit().expect("the contract writer must commit")
+}
+
+/// Prepares a complete file for a capability-specific contract.
+///
+/// # Parameters
+///
+/// * `fixture` - Provider fixture that may offer out-of-band setup.
+/// * `relative` - Testkit-relative destination path.
+/// * `bytes` - Complete contents to prepare.
+///
+/// # Returns
+/// The provider-local seeded path.
+///
+/// # Panics
+///
+/// Panics when the fixture has no seed hook and the filesystem does not
+/// advertise ordinary write support, or when the ordinary write fails.
+#[track_caller]
+pub(crate) fn seed_file(fixture: &dyn FileSystemFixture, relative: &str, bytes: &[u8]) -> FsPath {
+    if let Some(path) = fixture.seed_file(relative, bytes) {
+        return path;
+    }
+    let file_system = fixture.file_system();
+    require_capability(file_system, FileSystemCapability::Write);
+    let path = fixture.path(relative);
+    write_bytes(file_system, &path, WriteOptions::default(), bytes);
+    path
+}
+
+/// Checks resource contents when the fixture or filesystem can observe them.
+///
+/// # Parameters
+///
+/// * `fixture` - Provider fixture that may offer out-of-band observation.
+/// * `path` - Provider-local resource path.
+/// * `expected` - Expected complete contents.
+///
+/// # Panics
+///
+/// Panics when available observation returns bytes that differ from `expected`.
+#[track_caller]
+pub(crate) fn assert_observable_content(
+    fixture: &dyn FileSystemFixture,
+    path: &FsPath,
+    expected: &[u8],
+) {
+    if let Some(actual) = fixture.read_file(path) {
+        assert_eq!(expected, actual.as_slice(), "committed bytes must match");
+    } else if fixture
+        .file_system()
+        .capabilities()
+        .contains(FileSystemCapability::Read)
+    {
+        assert_content(fixture.file_system(), path, expected);
+    }
 }
 
 /// Checks committed resource contents through the public read API.

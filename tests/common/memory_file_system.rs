@@ -33,6 +33,7 @@ type Entries = Arc<Mutex<HashMap<String, MemoryEntry>>>;
 enum MemoryEntry {
     File(Vec<u8>),
     Directory,
+    Symlink,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -105,7 +106,12 @@ impl MemoryFixture {
         fault: MemoryFault,
     ) -> Self {
         Self {
-            file_system: MemoryFileSystem::new(capabilities, FileSystemLimits::unknown(), fault),
+            file_system: MemoryFileSystem::new(
+                capabilities,
+                FileSystemLimits::unknown(),
+                fault,
+                PathSemantics::Hierarchical,
+            ),
         }
     }
 
@@ -116,7 +122,28 @@ impl MemoryFixture {
         limits: FileSystemLimits,
     ) -> Self {
         Self {
-            file_system: MemoryFileSystem::new(capabilities, limits, MemoryFault::None),
+            file_system: MemoryFileSystem::new(
+                capabilities,
+                limits,
+                MemoryFault::None,
+                PathSemantics::Hierarchical,
+            ),
+        }
+    }
+
+    /// Creates an isolated filesystem with explicit provider path semantics.
+    #[allow(dead_code)]
+    pub fn with_capabilities_and_path_semantics(
+        capabilities: FileSystemCapabilities,
+        path_semantics: PathSemantics,
+    ) -> Self {
+        Self {
+            file_system: MemoryFileSystem::new(
+                capabilities,
+                FileSystemLimits::unknown(),
+                MemoryFault::None,
+                path_semantics,
+            ),
         }
     }
 
@@ -136,6 +163,50 @@ impl FileSystemFixture for MemoryFixture {
     fn path(&self, relative: &str) -> FsPath {
         FsPath::parse(&format!("/{relative}")).expect("contract fixture paths should parse")
     }
+
+    fn seed_file(&self, relative: &str, bytes: &[u8]) -> Option<FsPath> {
+        let path = self.path(relative);
+        let mut entries = self
+            .file_system
+            .entries
+            .lock()
+            .expect("the memory store should lock");
+        insert_parent_directories(&mut entries, path.as_str());
+        entries.insert(path.as_str().to_owned(), MemoryEntry::File(bytes.to_vec()));
+        Some(path)
+    }
+
+    fn read_file(&self, path: &FsPath) -> Option<Vec<u8>> {
+        let entries = self
+            .file_system
+            .entries
+            .lock()
+            .expect("the memory store should lock");
+        match entries.get(path.as_str()) {
+            Some(MemoryEntry::File(bytes)) => Some(bytes.clone()),
+            Some(MemoryEntry::Directory | MemoryEntry::Symlink) | None => None,
+        }
+    }
+
+    fn empty_directory_path(&self) -> Option<FsPath> {
+        let path = self.path("contract-empty-directory");
+        self.file_system
+            .entries
+            .lock()
+            .expect("the memory store should lock")
+            .insert(path.as_str().to_owned(), MemoryEntry::Directory);
+        Some(path)
+    }
+
+    fn symlink_path(&self) -> Option<FsPath> {
+        let path = self.path("contract-symlink");
+        self.file_system
+            .entries
+            .lock()
+            .expect("the memory store should lock")
+            .insert(path.as_str().to_owned(), MemoryEntry::Symlink);
+        Some(path)
+    }
 }
 
 struct MemoryFileSystem {
@@ -153,13 +224,14 @@ impl MemoryFileSystem {
         capabilities: FileSystemCapabilities,
         limits: FileSystemLimits,
         fault: MemoryFault,
+        path_semantics: PathSemantics,
     ) -> Self {
         Self {
             entries: Arc::new(Mutex::new(HashMap::new())),
             info: FileSystemInfo::new(
                 FileSystemId::new("memory").expect("the memory filesystem ID should validate"),
                 "memory-provider",
-                PathSemantics::Hierarchical,
+                path_semantics,
             ),
             capabilities,
             limits,
@@ -193,6 +265,27 @@ impl MemoryFileSystem {
         FsError::new(kind, operation, "the memory operation failed")
             .with_path(path.clone())
             .with_provider(self.info.provider_id())
+    }
+
+    /// Converts one internal entry into its provider-neutral resource kind.
+    fn file_kind(&self, entry: &MemoryEntry) -> FileKind {
+        match entry {
+            MemoryEntry::File(_) => {
+                if self.info.path_semantics() == PathSemantics::ObjectKey {
+                    FileKind::Object
+                } else {
+                    FileKind::File
+                }
+            }
+            MemoryEntry::Directory => {
+                if self.info.path_semantics() == PathSemantics::ObjectKey {
+                    FileKind::Prefix
+                } else {
+                    FileKind::Directory
+                }
+            }
+            MemoryEntry::Symlink => FileKind::Symlink,
+        }
     }
 
     /// Builds one contextual filesystem error with a destination path.
@@ -236,20 +329,24 @@ impl FileSystemProperties for MemoryFileSystem {
 
 impl FileSystem for MemoryFileSystem {
     fn stat(&self, path: &FsPath) -> FsResult<FileMetadata> {
+        self.limits
+            .validate_path(path, self.info.path_semantics(), FsOperation::Stat)
+            .map_err(|error| self.with_context(error, path))?;
         let entries = self.entries.lock().expect("the memory store should lock");
         match entries.get(path.as_str()) {
             Some(MemoryEntry::File(bytes)) => {
                 let kind = if self.fault == MemoryFault::WrongStatKind {
                     FileKind::Directory
                 } else {
-                    FileKind::File
+                    self.file_kind(&MemoryEntry::File(bytes.clone()))
                 };
                 let mut metadata = FileMetadata::new(kind);
                 metadata.len = Some(bytes.len() as u64);
                 metadata.etag = Some(ResourceVersion::new(file_etag(path, bytes)));
                 Ok(metadata)
             }
-            Some(MemoryEntry::Directory) => Ok(FileMetadata::new(FileKind::Directory)),
+            Some(entry @ MemoryEntry::Directory) => Ok(FileMetadata::new(self.file_kind(entry))),
+            Some(entry @ MemoryEntry::Symlink) => Ok(FileMetadata::new(self.file_kind(entry))),
             None => Err(self.error(FsErrorKind::NotFound, FsOperation::Stat, path)),
         }
     }
@@ -284,10 +381,7 @@ impl FileSystem for MemoryFileSystem {
                 continue;
             }
             let path = FsPath::parse(entry_path).expect("stored memory paths should parse");
-            let kind = match entry {
-                MemoryEntry::File(_) => FileKind::File,
-                MemoryEntry::Directory => FileKind::Directory,
-            };
+            let kind = self.file_kind(entry);
             let mut directory_entry = DirEntry::new(path, kind.clone());
             if options.include_metadata
                 && self.fault != MemoryFault::OmitListMetadata
@@ -339,6 +433,9 @@ impl FileSystem for MemoryFileSystem {
         let bytes = match entries.get(path.as_str()) {
             Some(MemoryEntry::File(bytes)) => bytes.clone(),
             Some(MemoryEntry::Directory) => {
+                return Err(self.error(FsErrorKind::IsDirectory, FsOperation::OpenReader, path));
+            }
+            Some(MemoryEntry::Symlink) => {
                 return Err(self.error(FsErrorKind::IsDirectory, FsOperation::OpenReader, path));
             }
             None => {
@@ -462,7 +559,8 @@ impl FileSystem for MemoryFileSystem {
         }
         if options.recursive {
             insert_parent_directories(&mut entries, path.as_str());
-        } else if self.fault != MemoryFault::CreateDirWithoutParents
+        } else if self.info.path_semantics() == PathSemantics::Hierarchical
+            && self.fault != MemoryFault::CreateDirWithoutParents
             && !has_parent_directory(&entries, path.as_str())
         {
             return Err(self.error(FsErrorKind::NotFound, FsOperation::CreateDir, path));
@@ -588,6 +686,7 @@ impl FileSystem for MemoryFileSystem {
                         stats.bytes += bytes.len() as u64;
                     }
                     MemoryEntry::Directory => stats.directories += 1,
+                    MemoryEntry::Symlink => stats.files += 1,
                 }
                 entries.insert(destination, entry);
             }
@@ -600,6 +699,9 @@ impl FileSystem for MemoryFileSystem {
         let bytes = match entries.get(from.as_str()) {
             Some(MemoryEntry::File(bytes)) => bytes.clone(),
             Some(MemoryEntry::Directory) => {
+                return Err(self.error(FsErrorKind::IsDirectory, FsOperation::Copy, from));
+            }
+            Some(MemoryEntry::Symlink) => {
                 return Err(self.error(FsErrorKind::IsDirectory, FsOperation::Copy, from));
             }
             None => {

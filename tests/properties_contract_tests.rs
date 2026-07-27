@@ -8,32 +8,15 @@
 
 mod common;
 
-use std::panic::{
-    AssertUnwindSafe,
-    catch_unwind,
-};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use qubit_fs::{
-    FileMetadata,
-    FileSystem,
-    FileSystemCapabilities,
-    FileSystemCapability,
-    FileSystemId,
-    FileSystemInfo,
-    FileSystemLimits,
-    FileSystemProperties,
-    FsError,
-    FsErrorKind,
-    FsOperation,
-    FsPath,
-    FsResult,
-    PathSemantics,
+    FileMetadata, FileSystem, FileSystemCapabilities, FileSystemCapability, FileSystemId,
+    FileSystemInfo, FileSystemLimit, FileSystemLimits, FileSystemProperties, FsError, FsErrorKind,
+    FsOperation, FsPath, FsResult, PathSemantics,
 };
 
-use common::{
-    MemoryFault,
-    MemoryFixture,
-};
+use common::{MemoryFault, MemoryFixture};
 
 struct PropertiesFileSystem {
     info: FileSystemInfo,
@@ -77,8 +60,7 @@ impl PropertiesFixture {
         Self {
             file_system: PropertiesFileSystem {
                 info: FileSystemInfo::new(
-                    FileSystemId::new("test")
-                        .expect("the fixture ID should validate"),
+                    FileSystemId::new("test").expect("the fixture ID should validate"),
                     "test-provider",
                     PathSemantics::Hierarchical,
                 ),
@@ -86,6 +68,13 @@ impl PropertiesFixture {
                 limits: FileSystemLimits::unknown(),
             },
         }
+    }
+
+    /// Creates a fixture with explicit properties and limits.
+    fn with_limits(limits: FileSystemLimits) -> Self {
+        let mut fixture = Self::new(FileSystemCapabilities::default());
+        fixture.file_system.limits = limits;
+        fixture
     }
 }
 
@@ -95,8 +84,7 @@ impl qubit_fs_testkit::FileSystemFixture for PropertiesFixture {
     }
 
     fn path(&self, relative: &str) -> FsPath {
-        FsPath::parse(&format!("/{relative}"))
-            .expect("contract fixture paths should parse")
+        FsPath::parse(&format!("/{relative}")).expect("contract fixture paths should parse")
     }
 }
 
@@ -142,9 +130,7 @@ fn test_capabilities_contract_rejects_every_missing_base_capability() {
     ];
 
     for derived in dependencies {
-        let fixture = PropertiesFixture::new(
-            FileSystemCapabilities::default().with(derived),
-        );
+        let fixture = PropertiesFixture::new(FileSystemCapabilities::default().with(derived));
         let result = catch_unwind(AssertUnwindSafe(|| {
             qubit_fs_testkit::assert_capabilities_contract(&fixture);
         }));
@@ -162,4 +148,39 @@ fn test_properties_contract_rejects_unstable_capabilities() {
     let fixture = MemoryFixture::with_fault(MemoryFault::UnstableCapabilities);
 
     qubit_fs_testkit::assert_properties_contract(&fixture);
+}
+
+/// Verifies property contracts reject providers that ignore finite component limits.
+#[test]
+#[should_panic(expected = "filesystem error kind must match")]
+fn test_properties_contract_rejects_unenforced_finite_component_limit() {
+    let limits =
+        FileSystemLimits::unknown().with_max_component_text_bytes(FileSystemLimit::Maximum(64));
+
+    qubit_fs_testkit::assert_properties_contract(&PropertiesFixture::with_limits(limits));
+}
+
+/// Verifies property contracts accept providers that enforce finite component limits.
+#[test]
+fn test_properties_contract_accepts_enforced_finite_component_limit() {
+    let limits =
+        FileSystemLimits::unknown().with_max_component_text_bytes(FileSystemLimit::Maximum(64));
+
+    qubit_fs_testkit::assert_properties_contract(&MemoryFixture::with_capabilities_and_limits(
+        FileSystemCapabilities::default(),
+        limits,
+    ));
+}
+
+/// Verifies property contracts exercise finite path and write limits safely.
+#[test]
+fn test_properties_contract_accepts_enforced_finite_path_and_write_limits() {
+    let limits = FileSystemLimits::unknown()
+        .with_max_path_text_bytes(FileSystemLimit::Maximum(64))
+        .with_max_write_bytes(FileSystemLimit::Maximum(64));
+
+    qubit_fs_testkit::assert_properties_contract(&MemoryFixture::with_capabilities_and_limits(
+        FileSystemCapabilities::default().with(FileSystemCapability::Write),
+        limits,
+    ));
 }
