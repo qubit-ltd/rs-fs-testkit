@@ -8,38 +8,17 @@
 //! Contract assertions for synchronous filesystem I/O.
 
 use qubit_fs::{
-    AchievedAtomicity,
-    AtomicityRequirement,
-    ChecksumPolicy,
-    CopyConflictPolicy,
-    CopyOptions,
-    CreateDirOptions,
-    DeleteOptions,
-    DirectoryStreamExt,
-    FileKind,
-    FileSystem,
-    FileSystemCapability,
-    FileSystemExt,
-    FsErrorKind,
-    FsOperation,
-    FsPath,
-    ListOptions,
-    ReadOptions,
-    RenameOptions,
-    ServerSidePreference,
-    WriteDisposition,
-    WriteOptions,
-    WriteOutcome,
-    WritePrecondition,
+    AchievedAtomicity, AtomicityRequirement, ChecksumPolicy, CopyConflictPolicy, CopyOptions,
+    CreateDirOptions, DeleteOptions, DirectoryStreamExt, FileKind, FileSystem,
+    FileSystemCapability, FileSystemExt, FsErrorKind, FsOperation, FsPath, ListOptions,
+    ReadOptions, RenameOptions, ResourceVersion, ServerSidePreference, WriteDisposition,
+    WriteOptions, WriteOutcome, WritePrecondition,
 };
 use qubit_io::Output;
 
 use crate::{
     FileSystemFixture,
-    internal::{
-        assert_error,
-        assert_error_with_target,
-    },
+    internal::{assert_error, assert_error_with_target},
 };
 
 const INITIAL_CONTENT: &[u8] = b"initial contract content";
@@ -332,8 +311,7 @@ pub fn assert_atomic_replace_contract(fixture: &dyn FileSystemFixture) {
         .capabilities()
         .contains(FileSystemCapability::AtomicReplace)
     {
-        let outcome =
-            write_bytes(file_system, &path, options, REPLACEMENT_CONTENT);
+        let outcome = write_bytes(file_system, &path, options, REPLACEMENT_CONTENT);
         assert_eq!(
             AchievedAtomicity::Atomic,
             outcome.atomicity,
@@ -490,9 +468,7 @@ pub fn assert_create_dir_contract(fixture: &dyn FileSystemFixture) {
     let missing_parent = fixture.path("contract-create-dir/missing/child");
     let error = file_system
         .create_dir(&missing_parent, CreateDirOptions::default())
-        .expect_err(
-            "nonrecursive directory creation must reject a missing parent",
-        );
+        .expect_err("nonrecursive directory creation must reject a missing parent");
     assert_error(
         &error,
         FsErrorKind::NotFound,
@@ -857,7 +833,7 @@ fn assert_read_preflight(fixture: &dyn FileSystemFixture) {
         (
             FileSystemCapability::ConditionalRead,
             ReadOptions {
-                if_match: Some("contract-version".to_owned()),
+                if_match: Some(ResourceVersion::from("contract-version")),
                 ..ReadOptions::default()
             },
         ),
@@ -873,8 +849,7 @@ fn assert_read_preflight(fixture: &dyn FileSystemFixture) {
         if file_system.capabilities().contains(capability) {
             continue;
         }
-        let path =
-            fixture.path(&format!("contract-preflight-{capability:?}.bin"));
+        let path = fixture.path(&format!("contract-preflight-{capability:?}.bin"));
         let error = file_system
             .open_reader(&path, options)
             .expect_err("read requirements must fail before provider I/O");
@@ -921,8 +896,7 @@ fn assert_write_preflight(fixture: &dyn FileSystemFixture) {
         if file_system.capabilities().contains(capability) {
             continue;
         }
-        let path =
-            fixture.path(&format!("contract-preflight-{capability:?}.bin"));
+        let path = fixture.path(&format!("contract-preflight-{capability:?}.bin"));
         let error = file_system
             .open_writer(&path, options)
             .expect_err("write requirements must fail before provider I/O");
@@ -952,7 +926,7 @@ fn assert_delete_preflight(fixture: &dyn FileSystemFixture) {
         (
             FileSystemCapability::ConditionalDelete,
             DeleteOptions {
-                if_match: Some("contract-version".to_owned()),
+                if_match: Some(ResourceVersion::from("contract-version")),
                 ..DeleteOptions::default()
             },
         ),
@@ -1045,10 +1019,7 @@ fn assert_copy_preflight(fixture: &dyn FileSystemFixture) {
 ///
 /// Panics when the filesystem does not advertise the required capability.
 #[track_caller]
-pub(crate) fn require_capability(
-    file_system: &dyn FileSystem,
-    capability: FileSystemCapability,
-) {
+pub(crate) fn require_capability(file_system: &dyn FileSystem, capability: FileSystemCapability) {
     assert!(
         file_system.capabilities().contains(capability),
         "{capability:?} is required by this contract",
@@ -1100,11 +1071,7 @@ pub(crate) fn write_bytes(
 ///
 /// Panics when the resource cannot be read or its bytes differ.
 #[track_caller]
-pub(crate) fn assert_content(
-    file_system: &dyn FileSystem,
-    path: &FsPath,
-    expected: &[u8],
-) {
+pub(crate) fn assert_content(file_system: &dyn FileSystem, path: &FsPath, expected: &[u8]) {
     let actual = file_system
         .read_all(path, expected.len())
         .expect("the committed contract resource must be readable");
