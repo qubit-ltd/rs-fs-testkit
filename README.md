@@ -23,11 +23,12 @@ cargo add --dev qubit-fs-testkit
 ## Fixture
 
 Implement `FileSystemFixture` with an isolated filesystem and a mapping from
-the testkit's non-empty `/`-separated relative paths to provider paths. Every
-generated test creates a fresh fixture.
+the testkit's non-empty `/`-separated relative paths to provider paths. Use
+the optional seed and observation hooks when setup must be outside the
+operation being checked.
 
 ```rust
-use qubit_fs::{FileSystem, FileSystemId, FsPath};
+use qubit_fs::{FileSystem, FileSystemId, Path};
 use qubit_fs_local::RootedLocalFileSystem;
 use qubit_fs_testkit::FileSystemFixture;
 
@@ -50,33 +51,30 @@ impl RootedFixture {
 }
 
 impl FileSystemFixture for RootedFixture {
-    fn file_system(&self) -> &dyn FileSystem {
+    fn file_system(&self) -> &FileSystem {
         &self.file_system
     }
 
-    fn path(&self, relative: &str) -> FsPath {
-        FsPath::parse(&format!("/{relative}")).expect("valid contract path")
+    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
+        Path::parse(&format!("/{relative}"))
+            .map_err(|error| qubit_fs_testkit::FixtureError::new(error.to_string()))
     }
 }
 ```
 
 ## Usage
 
-Generate the complete synchronous suite with one macro invocation:
+Run the complete synchronous suite against a fresh fixture:
 
 ```rust
-qubit_fs_testkit::sync_file_system_contract_tests!(
-    rooted,
-    super::RootedFixture::new(),
-);
+let fixture = RootedFixture::new();
+qubit_fs_testkit::FileSystemContractSuite::new(&fixture).assert_all();
 ```
 
-The complete suite requires the fixture to advertise `Read`, `Write`, `List`,
-`CreateDirectory`, `Delete`, `Rename`, and `Copy`. Individual assertions remain
-available for providers with a smaller operation surface. Fixtures can provide
-out-of-band seed and observation hooks for capability-specific contracts, so a
-read-only, write-only, or copy-only provider need not advertise unrelated
-setup capabilities.
+The suite follows the advertised capability surface. It verifies positive
+behavior for advertised operations and structured rejection for unavailable
+operations. `AsyncFileSystemContractSuite::assert_all` provides the matching
+runtime-neutral asynchronous suite.
 
 ## Contracts
 

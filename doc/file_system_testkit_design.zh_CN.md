@@ -1,7 +1,8 @@
 # Qubit FS Testkit 设计
 
-> 状态：已批准的目标设计。本文定义 `qubit-fs-testkit` 在具体门面/SPI 重构后的
-> provider contract 测试架构；当前实现迁移前可能与本文不同。
+> 状态：已批准的目标设计，已按最终版 `qubit-fs` 的门面、copy/rename failure 与
+> `AsyncCopyOperation` 契约复核。本文定义 `qubit-fs-testkit` 在具体门面/SPI
+> 重构后的 provider contract 测试架构；当前实现迁移前可能与本文不同。
 
 ## 1. 定位
 
@@ -49,29 +50,51 @@ Testkit 不构造 `qubit_fs::spi::*Request`，也不直接调用 operation SPI�
 ### 3.1 同步 fixture
 
 ```rust
+pub type FixtureResult<T> = Result<T, FixtureError>;
+
+pub enum FixtureSupport<T> {
+    Supported(T),
+    Unsupported,
+}
+
 pub trait FileSystemFixture {
     fn file_system(&self) -> &FileSystem;
-    fn path(&self, relative: &str) -> FsPath;
+    fn path(&self, relative: &str) -> FixtureResult<Path>;
 
     fn list_prefix(
         &self,
-        root: &FsPath,
+        root: &Path,
         relative: &str,
-    ) -> String;
+    ) -> FixtureResult<String>;
 
     fn seed_file(
         &self,
         relative: &str,
         bytes: &[u8],
-    ) -> Option<FsPath>;
+    ) -> FixtureResult<FixtureSupport<Path>>;
 
     fn read_file(
         &self,
-        path: &FsPath,
-    ) -> Option<Vec<u8>>;
+        path: &Path,
+    ) -> FixtureResult<FixtureSupport<Vec<u8>>>;
 
-    fn empty_directory_path(&self) -> Option<FsPath>;
-    fn symlink_path(&self) -> Option<FsPath>;
+    fn empty_directory_path(
+        &self,
+    ) -> FixtureResult<FixtureSupport<Path>>;
+
+    fn symlink_path(
+        &self,
+    ) -> FixtureResult<FixtureSupport<Path>>;
+
+    fn copy_fast_path_case(
+        &self,
+        method: CopyMethod,
+    ) -> FixtureResult<FixtureSupport<CopyFixtureCase>>;
+
+    fn entry_identity(
+        &self,
+        path: &Path,
+    ) -> FixtureResult<FixtureSupport<FixtureEntryIdentity>>;
 }
 ```
 
@@ -87,17 +110,31 @@ Fixture 负责：
 
 Fixture 不负责重新解释 capability 或放宽 contract。
 
+`FixtureSupport::Unsupported` 只表示 provider/fixture 无法提供某个可选 probe。
+`FixtureError` 表示 setup、observation 或 teardown 实际失败，suite 必须报告失败，
+不能把它当成 unsupported 而跳过测试。构造核心 logical `Path` 是所有 fixture 的基本
+责任，因此 `path()` 返回 `FixtureResult<Path>`，没有 `Unsupported` 分支。
+
+`copy_fast_path_case`、`entry_identity` 等 representation probe 有默认
+`Unsupported` 实现。`CopyFixtureCase` 包含已经准备好的 source、target 和 options；
+它必须保证请求的 `CopyMethod` 在 provider 声明的静态适用范围内。
+`FixtureEntryIdentity` 是只用于相等性比较的 opaque test value，不进入
+`qubit-fs` 公共 API。`FixtureError` 是具体、可保留 typed source 的错误，并满足同步
+与异步 fixture 所需的 `Send + Sync + 'static` 边界。
+
 ### 3.2 异步 fixture
 
 ```rust
 pub trait AsyncFileSystemFixture: Sync {
     fn file_system(&self) -> &AsyncFileSystem;
-    fn path(&self, relative: &str) -> FsPath;
+    fn path(&self, relative: &str) -> FixtureResult<Path>;
     // 对应的异步 setup/observation hooks
 }
 ```
 
 Async fixture hook 返回 runtime-neutral future。Testkit 不创建全局 runtime。
+异步可选 hook 同样返回 `FixtureResult<FixtureSupport<T>>`，不能用 ready `None`
+混淆 unsupported 与 setup failure。
 
 ## 4. Stateful contract suite
 
@@ -115,18 +152,18 @@ impl<'a> FileSystemContractSuite<'a> {
         fixture: &'a dyn FileSystemFixture,
     ) -> Self;
 
-    pub fn assert_all(&self);
-    pub fn assert_properties(&self);
-    pub fn assert_stat(&self);
-    pub fn assert_read(&self);
-    pub fn assert_write(&self);
-    pub fn assert_list(&self);
-    pub fn assert_create_directory(&self);
-    pub fn assert_delete(&self);
-    pub fn assert_copy(&self);
-    pub fn assert_rename(&self);
-    pub fn assert_temp_resources(&self);
-    pub fn assert_error_context(&self);
+    pub fn assert_all(mut self);
+    pub fn assert_properties(&mut self);
+    pub fn assert_stat(&mut self);
+    pub fn assert_read(&mut self);
+    pub fn assert_write(&mut self);
+    pub fn assert_list(&mut self);
+    pub fn assert_create_directory(&mut self);
+    pub fn assert_delete(&mut self);
+    pub fn assert_copy(&mut self);
+    pub fn assert_rename(&mut self);
+    pub fn assert_temp_resources(&mut self);
+    pub fn assert_error_context(&mut self);
 }
 ```
 
@@ -140,6 +177,10 @@ pub struct AsyncFileSystemContractSuite<'a> {
 
 它提供同名 async assertion methods。调用者自行使用所选 runtime 的 `#[test]` /
 `#[tokio::test]` 等入口。
+
+Suite 持有 name generator、resource 清单和当前 contract，因此单项 assertion 使用
+`&mut self`；`assert_all` 消费并在内部可变地驱动 suite。不能只为保留 `&self`
+签名而给 testkit 自身增加 `RefCell`、`Mutex` 或原子计数器。
 
 Provider 可以运行完整 suite：
 
@@ -187,7 +228,7 @@ Capability 处理遵循两个方向。
 
 ### 6.1 已声明 capability
 
-只要 provider 声明 capability，suite 就验证对应正向语义。例如：
+只要 provider 声明 capability，suite 就验证对应稳定语义保证。例如：
 
 - `Read`：完整读取与 open identity；
 - `RangeRead`：range 边界与返回长度；
@@ -201,7 +242,20 @@ Capability 处理遵循两个方向。
 - `TempFile`、`TempDirectory`、`AtomicTempPersist`；
 - checksum validation。
 
-声明能力但只能返回 `UnsupportedCapability` 视为 contract failure。
+声明能力但对 capability 明确保证范围内的 fixture case 只能返回
+`UnsupportedCapability`，视为 contract failure。
+
+Capability 不是某一次 native fast path 的强制分派开关。`Copy` 可以由门面流式
+fallback 提供；`ServerSideCopy`、native clone 等 fast path 还可能受 bucket、device、
+region 或具体路径对影响。正向 fast-path contract 必须使用 fixture 明确提供的
+applicable case；普通路径对得到无副作用 `CopyAttempt::Declined` 本身不是 contract
+failure，最终门面结果仍需满足 resolved requirements。
+
+如果 provider 声明 `ServerSideCopy`、clone 等需要动态适用 case 的 capability，完整
+suite 要求 fixture 至少提供一个对应 `copy_fast_path_case`。此时返回
+`FixtureSupport::Unsupported` 是 fixture contract failure，不能借此跳过已声明能力。
+对于未声明 capability 或 entry identity 等非强制 representation probe，
+`Unsupported` 才表示合法跳过。
 
 ### 6.2 未声明 capability
 
@@ -225,6 +279,7 @@ side effect。门面“SPI 完全未调用”的白盒保证由 `qubit-fs` 自�
 - facade clone 观察同一不可变 snapshot；
 - capabilities dependency 自洽；
 - path semantics 与 fixture mapping 相容；
+- `PathConstraints` 与 fixture mapping 相容，且稳定约束在 I/O 前执行；
 - finite limit 可被安全探测；
 - unknown/inapplicable/unbounded 不被误当作数值；
 - provider diagnostics 不包含 credential-like key。
@@ -245,9 +300,9 @@ Limit contract 至少覆盖：
 
 验证：
 
-- `stat` 的 kind、size、location 和 final-symlink 语义；
+- `stat` 的 kind、size、logical path 和 final-symlink 语义；
 - `exists` 只吞掉 `NotFound`；
-- reader opened location 与请求一致；
+- reader 的 `OpenedFileInfo(FileSystemId + Path)` 与请求一致；
 - open-time metadata 是 snapshot；
 - `read_all` 同时遵守 caller limit 和 filesystem limit；
 - range、condition 与 checksum requirement。
@@ -283,7 +338,17 @@ Limit contract 至少覆盖：
 - file/directory delete；
 - recursive delete 不遗留 child；
 - copy 不删除 source；
+- copy 的 `CopyMethod`、`used_fallback`、atomicity、durability、metadata 与统计符合
+  实际路径；
+- 门面 fallback 只覆盖允许的普通文件 create-new/skip 组合；
+- provider-native `Completed` 不再执行门面 fallback；
+- native `Declined` 只有在 fallback allowlist 满足时才成功；
+- native failure 不因错误种类触发第二次 copy；
+- `CopyFailureState` 与 partial stats 符合可观察 target 状态；
 - rename 成功后 source 消失；
+- `RenameFailureState::{Unchanged, Renamed, Indeterminate}` 与可观察状态一致；
+- fixture 能安全观察 entry identity 时，rename 保留 identity，证明它不是
+  copy+delete；
 - type conflict、overwrite 和 precondition；
 - required atomicity 不降级；
 - outcome source/target context 完整。
@@ -292,7 +357,7 @@ Limit contract 至少覆盖：
 
 同步与异步 suite 都覆盖：
 
-- temp resource 绑定创建它的原始 filesystem 门面；
+- temp handle 保存创建它的原始 filesystem identity；
 - `Owned → Persisted/Kept/Cleaned`；
 - `NotPublished → Owned`；
 - `Published → Persisted`；
@@ -321,7 +386,7 @@ Limit contract 至少覆盖：
 - source error 是否保留；
 - `Display` / `Debug` 不泄漏 secret。
 
-Provider 返回非法 opened location、entry 或 outcome 时，门面必须产生
+Provider 返回非法 opened identity、entry 或 outcome 时，门面必须产生
 `ProviderContractViolation`。
 
 ## 11. 同步与异步一致性
@@ -345,6 +410,23 @@ I/O driver 和 cancellation assertion 分开实现。公共 API 不通过宏生�
 - drop 不启动 executor 或阻塞；
 - stream/backpressure 行为符合 `qubit-io` contract。
 
+`AsyncCopyOperation` 单独覆盖：
+
+- `begin_copy` 只执行同步 preflight，不调用 provider；
+- `Ready → Running → Completed` 成功路径；
+- explicit failure 进入 `Failed(reported CopyFailureState)`；
+- 在 native attempt、reader、writer 和 commit await 点取消时进入
+  `Failed(Indeterminate)`；
+- fallback 已创建 writer 后取消，operation 仍持有 recovery writer；
+- `take_recovery_writer` 显式转移 cleanup/recovery responsibility；
+- 未 poll 的 execute future 被 drop 不改变 `Ready`；
+- operation drop 不执行 I/O；
+- 非 `Ready` operation 不能盲目重新 execute。
+
+取消测试不绑定具体 runtime：testkit 自验证使用可控 `Pending` future 手工 poll；
+真实 provider suite 只有在 fixture 提供对应 fault/cancellation hook 时才运行阶段性
+取消 probe。
+
 ## 12. Testkit 自验证
 
 Testkit 必须包含 conforming provider 和一组最小 broken provider：
@@ -352,17 +434,22 @@ Testkit 必须包含 conforming provider 和一组最小 broken provider：
 - unstable/inconsistent properties；
 - ignored option；
 - late preflight side effect；
-- wrong opened location；
+- wrong opened identity；
 - wrong file kind；
 - list entry 越界；
 - truncated/invalid stream；
 - atomicity downgrade；
+- copy fast path decline 后遗留 staging；
+- copy native failure 后门面错误重试；
+- copy failure state/partial stats 错误；
 - copy 删除 source；
 - rename 保留 source；
+- rename 已完成却报告 `Unchanged`；
 - recursive delete 遗留 child；
 - invalid error context；
 - writer/temp failure state 错误；
 - secret 泄漏；
+- async copy cancellation 丢失 recovery writer；
 - async cancellation state 错误。
 
 每个 broken provider 只破坏一个 contract，相应 self-test 必须证明 suite 能精确捕获。
@@ -386,12 +473,15 @@ Testkit 不重复其他 crate 的白盒测试。
 src/
 ├── file_system_fixture.rs
 ├── async_file_system_fixture.rs
+├── fixture_support.rs
 ├── file_system_contract_suite.rs
 ├── async_file_system_contract_suite.rs
 ├── contract_context.rs
 ├── properties_contract.rs
 ├── io_contract.rs
 ├── namespace_contract.rs
+├── copy_contract.rs
+├── async_copy_contract.rs
 ├── optional_capability_contract.rs
 ├── temp_contract.rs
 ├── error_contract.rs
@@ -406,10 +496,13 @@ src/
 
 - `cargo test` 可在无真实网络依赖下完成 testkit 自验证；
 - provider 只需实现 fixture 并创建 suite；
+- fixture setup/observation failure 不会被当成 unsupported 跳过；
 - 完整 suite 对 conforming provider 通过；
 - 每个 broken provider 被对应 contract 拒绝；
 - capability 缺失不会导致无意义正向测试；
 - capability 声明不会被静默跳过；
 - 同步与异步 contract coverage 对称；
+- effective copy、provider-native fast path 与门面 fallback 的责任被分别验证；
+- `AsyncCopyOperation` 的状态、取消和 recovery responsibility 被确定性验证；
 - public API 中不再出现 `&dyn FileSystem` 或 assertion free function；
 - 可选 registration macro 只生成 test wrapper，不承载 contract 逻辑。

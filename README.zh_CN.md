@@ -22,11 +22,11 @@ cargo add --dev qubit-fs-testkit
 ## Fixture
 
 实现 `FileSystemFixture`，提供隔离的文件系统，并将 testkit 给出的非空、
-以 `/` 分隔的相对路径映射为 provider 路径。宏生成的每项测试都会创建全新的
-fixture。
+以 `/` 分隔的相对路径映射为 provider 路径。若准备工作不应成为被测操作，
+请使用可选的带外预置和观察钩子。
 
 ```rust
-use qubit_fs::{FileSystem, FileSystemId, FsPath};
+use qubit_fs::{FileSystem, FileSystemId, Path};
 use qubit_fs_local::RootedLocalFileSystem;
 use qubit_fs_testkit::FileSystemFixture;
 
@@ -49,31 +49,29 @@ impl RootedFixture {
 }
 
 impl FileSystemFixture for RootedFixture {
-    fn file_system(&self) -> &dyn FileSystem {
+    fn file_system(&self) -> &FileSystem {
         &self.file_system
     }
 
-    fn path(&self, relative: &str) -> FsPath {
-        FsPath::parse(&format!("/{relative}")).expect("valid contract path")
+    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
+        Path::parse(&format!("/{relative}"))
+            .map_err(|error| qubit_fs_testkit::FixtureError::new(error.to_string()))
     }
 }
 ```
 
 ## 使用
 
-通过一次宏调用生成完整的同步契约套件：
+针对新的 fixture 运行完整同步契约套件：
 
 ```rust
-qubit_fs_testkit::sync_file_system_contract_tests!(
-    rooted,
-    super::RootedFixture::new(),
-);
+let fixture = RootedFixture::new();
+qubit_fs_testkit::FileSystemContractSuite::new(&fixture).assert_all();
 ```
 
-完整套件要求 fixture 声明 `Read`、`Write`、`List`、`CreateDirectory`、
-`Delete`、`Rename` 和 `Copy`。对于操作面较小的 provider，仍可单独调用各项
-断言。fixture 可以提供带外的预置和观察钩子，因此只读、只写或只复制的
-provider 无需声明与被测 capability 无关的准备能力。
+套件按已声明的 capability 面运行：验证已声明操作的正向行为，并验证不可用
+操作的结构化拒绝。对应的运行时无关异步套件是
+`AsyncFileSystemContractSuite::assert_all`。
 
 ## 契约范围
 
