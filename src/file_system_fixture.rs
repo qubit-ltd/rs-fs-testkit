@@ -8,7 +8,10 @@
 // qubit-style: allow source-test-pair
 //! Defines the provider-owned fixture required by filesystem contracts.
 
-use qubit_fs::{FileSystem, FsPath};
+use qubit_fs::{
+    FileSystem,
+    FsPath,
+};
 
 /// Supplies an isolated filesystem and provider-specific contract paths.
 ///
@@ -78,7 +81,8 @@ pub trait FileSystemFixture {
         None
     }
 
-    /// Supplies one existing empty directory or prefix for representation checks.
+    /// Supplies one existing empty directory or prefix for representation
+    /// checks.
     ///
     /// # Returns
     /// A provider-local empty directory or prefix when the fixture can prepare

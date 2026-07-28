@@ -11,19 +11,53 @@ use std::{
     future::Future,
     io,
     pin::Pin,
-    sync::{Arc, Mutex},
-    task::{Context, Poll, Waker},
+    sync::{
+        Arc,
+        Mutex,
+    },
+    task::{
+        Context,
+        Poll,
+        Waker,
+    },
 };
 
 use qubit_fs::{
-    AchievedAtomicity, AsyncFileReader, AsyncFileSystem, AsyncFileWriteSession, AsyncFileWriter,
-    FileKind, FileLocation, FileMetadata, FileSystemCapabilities, FileSystemCapability,
-    FileSystemId, FileSystemInfo, FileSystemLimits, FileSystemProperties, FsError, FsErrorKind,
-    FsFuture, FsOperation, FsPath, OpenedFileInfo, PathSemantics, PublicationMethod, ReadOptions,
-    WriteFuture, WriteOptions, WriteOutcome,
+    AchievedAtomicity,
+    AsyncFileReader,
+    AsyncFileSystem,
+    AsyncFileWriteSession,
+    AsyncFileWriter,
+    FileKind,
+    FileLocation,
+    FileMetadata,
+    FileSystemCapabilities,
+    FileSystemCapability,
+    FileSystemId,
+    FileSystemInfo,
+    FileSystemLimits,
+    FileSystemProperties,
+    FsError,
+    FsErrorKind,
+    FsFuture,
+    FsOperation,
+    FsPath,
+    OpenedFileInfo,
+    PathSemantics,
+    PublicationMethod,
+    ReadOptions,
+    WriteFuture,
+    WriteOptions,
+    WriteOutcome,
 };
-use qubit_fs_testkit::{AsyncFileSystemFixture, assert_async_write_contract};
-use qubit_io::{AsyncInput, AsyncOutput};
+use qubit_fs_testkit::{
+    AsyncFileSystemFixture,
+    assert_async_write_contract,
+};
+use qubit_io::{
+    AsyncInput,
+    AsyncOutput,
+};
 
 type Entries = Arc<Mutex<HashMap<String, Vec<u8>>>>;
 
@@ -45,7 +79,8 @@ impl AsyncFileSystemFixture for MemoryAsyncFixture {
     }
 
     fn path(&self, relative: &str) -> FsPath {
-        FsPath::parse(&format!("/{relative}")).expect("fixture path should parse")
+        FsPath::parse(&format!("/{relative}"))
+            .expect("fixture path should parse")
     }
 }
 
@@ -59,7 +94,8 @@ impl MemoryAsyncFileSystem {
     fn new() -> Self {
         Self {
             info: FileSystemInfo::new(
-                FileSystemId::new("async-memory").expect("fixture filesystem ID should be valid"),
+                FileSystemId::new("async-memory")
+                    .expect("fixture filesystem ID should be valid"),
                 "async-memory",
                 PathSemantics::Hierarchical,
             ),
@@ -69,7 +105,10 @@ impl MemoryAsyncFileSystem {
     }
 
     fn opened_info(&self, path: &FsPath) -> OpenedFileInfo {
-        OpenedFileInfo::new(FileLocation::new(self.info.id().clone(), path.clone()))
+        OpenedFileInfo::new(FileLocation::new(
+            self.info.id().clone(),
+            path.clone(),
+        ))
     }
 }
 
@@ -90,7 +129,10 @@ impl FileSystemProperties for MemoryAsyncFileSystem {
 }
 
 impl AsyncFileSystem for MemoryAsyncFileSystem {
-    fn stat_async<'a>(&'a self, path: &'a FsPath) -> FsFuture<'a, FileMetadata> {
+    fn stat_async<'a>(
+        &'a self,
+        path: &'a FsPath,
+    ) -> FsFuture<'a, FileMetadata> {
         let result = self
             .entries
             .lock()
@@ -178,8 +220,9 @@ impl AsyncInput for MemoryAsyncInput {
         let this = self.get_mut();
         let available = this.content.len().saturating_sub(this.position);
         let read = available.min(count);
-        output[index..index + read]
-            .copy_from_slice(&this.content[this.position..this.position + read]);
+        output[index..index + read].copy_from_slice(
+            &this.content[this.position..this.position + read],
+        );
         this.position += read;
         Poll::Ready(Ok(read))
     }
@@ -206,7 +249,10 @@ impl AsyncOutput for MemoryAsyncWriteSession {
         Poll::Ready(Ok(count))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        _context: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
         Poll::Ready(Ok(()))
     }
 }

@@ -9,19 +9,47 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        Arc,
+        Mutex,
+        atomic::{
+            AtomicUsize,
+            Ordering,
+        },
     },
 };
 
 use qubit_fs::{
-    AchievedAtomicity, FileKind, FileMetadata, FileResource, FileSystem, FileSystemCapabilities,
-    FileSystemCapability, FileSystemId, FileSystemInfo, FileSystemLimits, FileSystemProperties,
-    FsError, FsErrorKind, FsOperation, FsPath, FsResult, PersistFailure, PersistOptions,
-    PersistOutcome, PublicationMethod, TempDir, TempDirOptions, TempFile, TempFileOptions,
+    AchievedAtomicity,
+    FileKind,
+    FileMetadata,
+    FileResource,
+    FileSystem,
+    FileSystemCapabilities,
+    FileSystemCapability,
+    FileSystemId,
+    FileSystemInfo,
+    FileSystemLimits,
+    FileSystemProperties,
+    FsError,
+    FsErrorKind,
+    FsOperation,
+    FsPath,
+    FsResult,
+    PersistFailure,
+    PersistOptions,
+    PersistOutcome,
+    PublicationMethod,
+    TempDir,
+    TempDirOptions,
+    TempFile,
+    TempFileOptions,
     TempResourceSession,
 };
-use qubit_fs_testkit::{FileSystemFixture, assert_temp_dir_contract, assert_temp_file_contract};
+use qubit_fs_testkit::{
+    FileSystemFixture,
+    assert_temp_dir_contract,
+    assert_temp_file_contract,
+};
 
 /// Isolated fixture for temporary-resource contract assertions.
 struct TempFixture {
@@ -43,7 +71,8 @@ impl FileSystemFixture for TempFixture {
     }
 
     fn path(&self, relative: &str) -> FsPath {
-        FsPath::parse(&format!("/{relative}")).expect("temporary contract paths should parse")
+        FsPath::parse(&format!("/{relative}"))
+            .expect("temporary contract paths should parse")
     }
 }
 
@@ -75,7 +104,12 @@ impl TempFileSystem {
     }
 
     /// Allocates one unique temporary provider-local path.
-    fn temporary_path(&self, parent: Option<&FsPath>, prefix: &str, suffix: &str) -> FsPath {
+    fn temporary_path(
+        &self,
+        parent: Option<&FsPath>,
+        prefix: &str,
+        suffix: &str,
+    ) -> FsPath {
         let parent = parent
             .map_or("/temporary", FsPath::as_str)
             .trim_end_matches('/');
@@ -128,9 +162,13 @@ impl FileSystem for TempFileSystem {
             .cloned()
             .map(FileMetadata::new)
             .ok_or_else(|| {
-                FsError::new(FsErrorKind::NotFound, FsOperation::Stat, "path is absent")
-                    .with_path(path.clone())
-                    .with_provider(self.info.provider_id())
+                FsError::new(
+                    FsErrorKind::NotFound,
+                    FsOperation::Stat,
+                    "path is absent",
+                )
+                .with_path(path.clone())
+                .with_provider(self.info.provider_id())
             })
     }
 
@@ -138,7 +176,11 @@ impl FileSystem for TempFileSystem {
         if !self.capabilities.contains(FileSystemCapability::TempFile) {
             return Err(self.unsupported_temp(FileSystemCapability::TempFile));
         }
-        let path = self.temporary_path(options.parent.as_ref(), &options.prefix, &options.suffix);
+        let path = self.temporary_path(
+            options.parent.as_ref(),
+            &options.prefix,
+            &options.suffix,
+        );
         let resource = self.create_resource(path.clone(), FileKind::File);
         Ok(TempFile::new(
             resource,
@@ -151,9 +193,15 @@ impl FileSystem for TempFileSystem {
             .capabilities
             .contains(FileSystemCapability::TempDirectory)
         {
-            return Err(self.unsupported_temp(FileSystemCapability::TempDirectory));
+            return Err(
+                self.unsupported_temp(FileSystemCapability::TempDirectory)
+            );
         }
-        let path = self.temporary_path(options.parent.as_ref(), &options.prefix, &options.suffix);
+        let path = self.temporary_path(
+            options.parent.as_ref(),
+            &options.prefix,
+            &options.suffix,
+        );
         let resource = self.create_resource(path.clone(), FileKind::Directory);
         Ok(TempDir::new(
             resource,
@@ -171,7 +219,11 @@ struct TempSession {
 
 impl TempSession {
     /// Creates a lifecycle session for one registered temporary resource.
-    fn new(file_system: TempFileSystem, source: FsPath, kind: FileKind) -> Self {
+    fn new(
+        file_system: TempFileSystem,
+        source: FsPath,
+        kind: FileKind,
+    ) -> Self {
         Self {
             file_system,
             source,
@@ -229,7 +281,8 @@ fn test_temp_contract_assertions_are_exported() {
     let _: fn(&dyn FileSystemFixture) = assert_temp_dir_contract;
 }
 
-/// Verifies temporary-file contracts require no unrelated filesystem capabilities.
+/// Verifies temporary-file contracts require no unrelated filesystem
+/// capabilities.
 #[test]
 fn test_temp_file_contract_accepts_temp_file_only_provider() {
     assert_temp_file_contract(&TempFixture::new(
@@ -237,11 +290,13 @@ fn test_temp_file_contract_accepts_temp_file_only_provider() {
     ));
 }
 
-/// Verifies temporary-directory contracts require no unrelated filesystem capabilities.
+/// Verifies temporary-directory contracts require no unrelated filesystem
+/// capabilities.
 #[test]
 fn test_temp_dir_contract_accepts_temp_dir_only_provider() {
     assert_temp_dir_contract(&TempFixture::new(
-        FileSystemCapabilities::default().with(FileSystemCapability::TempDirectory),
+        FileSystemCapabilities::default()
+            .with(FileSystemCapability::TempDirectory),
     ));
 }
 

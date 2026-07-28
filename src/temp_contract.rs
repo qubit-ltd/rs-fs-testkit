@@ -8,11 +8,21 @@
 //! Positive contracts for synchronous temporary resources.
 
 use qubit_fs::{
-    AchievedAtomicity, AtomicityRequirement, FileSystemCapability, FsErrorKind, FsOperation,
-    PersistFailureState, PersistOptions, TempDirOptions, TempFileOptions,
+    AchievedAtomicity,
+    AtomicityRequirement,
+    FileSystemCapability,
+    FsErrorKind,
+    FsOperation,
+    PersistFailureState,
+    PersistOptions,
+    TempDirOptions,
+    TempFileOptions,
 };
 
-use crate::{FileSystemFixture, internal::assert_error};
+use crate::{
+    FileSystemFixture,
+    internal::assert_error,
+};
 
 /// Checks temporary-file creation, cleanup, and persistence.
 ///
@@ -118,7 +128,9 @@ pub fn assert_temp_dir_contract(fixture: &dyn FileSystemFixture) {
 /// `Required` when atomic temporary persistence is advertised; otherwise
 /// `Preferred`.
 #[must_use]
-fn temp_persist_atomicity(file_system: &dyn qubit_fs::FileSystem) -> AtomicityRequirement {
+fn temp_persist_atomicity(
+    file_system: &dyn qubit_fs::FileSystem,
+) -> AtomicityRequirement {
     if file_system
         .capabilities()
         .contains(FileSystemCapability::AtomicTempPersist)
@@ -169,7 +181,8 @@ fn assert_persist_outcome(
     }
 }
 
-/// Checks that an unadvertised atomic temporary-persistence request fails early.
+/// Checks that an unadvertised atomic temporary-persistence request fails
+/// early.
 ///
 /// # Parameters
 ///
@@ -180,7 +193,9 @@ fn assert_persist_outcome(
 /// Panics when an unadvertised atomic persistence request succeeds or returns
 /// an incorrectly structured failure.
 #[track_caller]
-fn assert_required_atomic_file_persist_rejection(fixture: &dyn FileSystemFixture) {
+fn assert_required_atomic_file_persist_rejection(
+    fixture: &dyn FileSystemFixture,
+) {
     let file_system = fixture.file_system();
     if file_system
         .capabilities()
@@ -211,7 +226,8 @@ fn assert_required_atomic_file_persist_rejection(fixture: &dyn FileSystemFixture
     );
 }
 
-/// Checks that an unadvertised atomic temporary-directory persistence request fails early.
+/// Checks that an unadvertised atomic temporary-directory persistence request
+/// fails early.
 ///
 /// # Parameters
 ///
@@ -222,7 +238,9 @@ fn assert_required_atomic_file_persist_rejection(fixture: &dyn FileSystemFixture
 /// Panics when an unadvertised atomic persistence request succeeds or returns
 /// an incorrectly structured failure.
 #[track_caller]
-fn assert_required_atomic_dir_persist_rejection(fixture: &dyn FileSystemFixture) {
+fn assert_required_atomic_dir_persist_rejection(
+    fixture: &dyn FileSystemFixture,
+) {
     let file_system = fixture.file_system();
     if file_system
         .capabilities()

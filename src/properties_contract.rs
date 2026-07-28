@@ -9,9 +9,17 @@
 
 use std::ptr;
 
-use qubit_fs::{FileSystemExt, FileSystemLimit, FsErrorKind, FsOperation};
+use qubit_fs::{
+    FileSystemExt,
+    FileSystemLimit,
+    FsErrorKind,
+    FsOperation,
+};
 
-use crate::{FileSystemFixture, internal::assert_error};
+use crate::{
+    FileSystemFixture,
+    internal::assert_error,
+};
 
 const MAX_LIMIT_PROBE_BYTES: usize = 4096;
 
@@ -67,7 +75,9 @@ pub fn assert_properties_contract(fixture: &dyn FileSystemFixture) {
         "contract-limit-path-",
         "path limits must reject oversized paths",
     );
-    if file_system.info().path_semantics() == qubit_fs::PathSemantics::Hierarchical {
+    if file_system.info().path_semantics()
+        == qubit_fs::PathSemantics::Hierarchical
+    {
         assert_finite_path_limit(
             fixture,
             file_system.limits().max_component_text_bytes(),
@@ -75,7 +85,9 @@ pub fn assert_properties_contract(fixture: &dyn FileSystemFixture) {
             "component limits must reject oversized paths",
         );
     }
-    if let Some(length) = oversized_probe_length(file_system.limits().max_write_bytes()) {
+    if let Some(length) =
+        oversized_probe_length(file_system.limits().max_write_bytes())
+    {
         let path = fixture.path("contract-limit-write.bin");
         let bytes = vec![b'x'; length];
         let error = file_system

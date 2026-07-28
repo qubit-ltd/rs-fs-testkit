@@ -8,7 +8,11 @@
 
 mod common;
 
-use qubit_fs::{FileSystemCapabilities, FileSystemCapability, PathSemantics};
+use qubit_fs::{
+    FileSystemCapabilities,
+    FileSystemCapability,
+    PathSemantics,
+};
 
 use common::MemoryFixture;
 
@@ -19,8 +23,10 @@ fn test_object_key_provider_satisfies_stat_list_and_create_dir_contracts() {
         .with(FileSystemCapability::Write)
         .with(FileSystemCapability::List)
         .with(FileSystemCapability::CreateDirectory);
-    let fixture =
-        MemoryFixture::with_capabilities_and_path_semantics(capabilities, PathSemantics::ObjectKey);
+    let fixture = MemoryFixture::with_capabilities_and_path_semantics(
+        capabilities,
+        PathSemantics::ObjectKey,
+    );
 
     qubit_fs_testkit::assert_stat_contract(&fixture);
     qubit_fs_testkit::assert_list_contract(&fixture);

@@ -25,17 +25,36 @@ pub use async_file_system_fixture::AsyncFileSystemFixture;
 pub use async_io_contract::assert_async_write_contract;
 pub use file_system_fixture::FileSystemFixture;
 pub use io_contract::{
-    assert_append_contract, assert_atomic_replace_contract, assert_copy_contract,
-    assert_create_dir_contract, assert_delete_contract, assert_list_contract,
-    assert_preflight_contract, assert_read_contract, assert_rename_contract, assert_stat_contract,
+    assert_append_contract,
+    assert_atomic_replace_contract,
+    assert_copy_contract,
+    assert_create_dir_contract,
+    assert_delete_contract,
+    assert_list_contract,
+    assert_preflight_contract,
+    assert_read_contract,
+    assert_rename_contract,
+    assert_stat_contract,
     assert_write_contract,
 };
 pub use optional_capability_contract::{
-    assert_checksum_validation_contract, assert_conditional_delete_contract,
-    assert_conditional_read_contract, assert_conditional_write_contract,
-    assert_range_read_contract, assert_server_side_copy_contract,
+    assert_checksum_validation_contract,
+    assert_conditional_delete_contract,
+    assert_conditional_read_contract,
+    assert_conditional_write_contract,
+    assert_range_read_contract,
+    assert_server_side_copy_contract,
 };
-pub use properties_contract::{assert_capabilities_contract, assert_properties_contract};
-pub use representation_contract::{assert_empty_directory_contract, assert_symlink_contract};
-pub use temp_contract::{assert_temp_dir_contract, assert_temp_file_contract};
+pub use properties_contract::{
+    assert_capabilities_contract,
+    assert_properties_contract,
+};
+pub use representation_contract::{
+    assert_empty_directory_contract,
+    assert_symlink_contract,
+};
+pub use temp_contract::{
+    assert_temp_dir_contract,
+    assert_temp_file_contract,
+};
 pub use unsupported_operations_contract::assert_unsupported_operations_contract;

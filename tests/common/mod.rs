@@ -9,4 +9,7 @@
 mod memory_file_system;
 
 #[allow(unused_imports)]
-pub use memory_file_system::{MemoryFault, MemoryFixture};
+pub use memory_file_system::{
+    MemoryFault,
+    MemoryFixture,
+};

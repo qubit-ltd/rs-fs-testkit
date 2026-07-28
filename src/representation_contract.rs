@@ -7,9 +7,15 @@
 // =============================================================================
 //! Contract assertions for provider-specific resource representations.
 
-use qubit_fs::{FileKind, FileSystemCapability};
+use qubit_fs::{
+    FileKind,
+    FileSystemCapability,
+};
 
-use crate::{FileSystemFixture, io_contract::require_capability};
+use crate::{
+    FileSystemFixture,
+    io_contract::require_capability,
+};
 
 /// Checks that an advertised empty directory or prefix remains representable.
 ///
@@ -25,9 +31,9 @@ use crate::{FileSystemFixture, io_contract::require_capability};
 pub fn assert_empty_directory_contract(fixture: &dyn FileSystemFixture) {
     let file_system = fixture.file_system();
     require_capability(file_system, FileSystemCapability::EmptyDirectory);
-    let path = fixture
-        .empty_directory_path()
-        .expect("EmptyDirectory contract requires fixture.empty_directory_path()");
+    let path = fixture.empty_directory_path().expect(
+        "EmptyDirectory contract requires fixture.empty_directory_path()",
+    );
     let metadata = file_system
         .stat(&path)
         .expect("stat must read the empty directory or prefix");

@@ -8,11 +8,24 @@
 //! Contract assertions for operations a provider does not advertise.
 
 use qubit_fs::{
-    CopyOptions, CreateDirOptions, DeleteOptions, FileSystemCapability, FsErrorKind, FsOperation,
-    ListOptions, ReadOptions, RenameOptions, TempDirOptions, TempFileOptions, WriteOptions,
+    CopyOptions,
+    CreateDirOptions,
+    DeleteOptions,
+    FileSystemCapability,
+    FsErrorKind,
+    FsOperation,
+    ListOptions,
+    ReadOptions,
+    RenameOptions,
+    TempDirOptions,
+    TempFileOptions,
+    WriteOptions,
 };
 
-use crate::{FileSystemFixture, internal::assert_unsupported_error};
+use crate::{
+    FileSystemFixture,
+    internal::assert_unsupported_error,
+};
 
 /// Checks structured errors for every unadvertised synchronous operation.
 ///

@@ -7,7 +7,10 @@
 // =============================================================================
 //! Fixtures for asynchronous filesystem provider contracts.
 
-use qubit_fs::{AsyncFileSystem, FsPath};
+use qubit_fs::{
+    AsyncFileSystem,
+    FsPath,
+};
 
 /// Supplies an asynchronous filesystem and isolated provider-local paths.
 pub trait AsyncFileSystemFixture: Sync {

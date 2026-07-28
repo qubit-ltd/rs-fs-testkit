@@ -7,7 +7,13 @@
 // =============================================================================
 //! Contract assertions for asynchronous filesystem I/O.
 
-use qubit_fs::{AsyncFileSystemExt, FileSystemCapability, FsFuture, WriteOptions, WriterState};
+use qubit_fs::{
+    AsyncFileSystemExt,
+    FileSystemCapability,
+    FsFuture,
+    WriteOptions,
+    WriterState,
+};
 
 use crate::AsyncFileSystemFixture;
 
@@ -22,7 +28,9 @@ use crate::AsyncFileSystemFixture;
 /// # Panics
 /// Panics when required capabilities are absent or any lifecycle operation
 /// violates the provider-neutral contract.
-pub fn assert_async_write_contract(fixture: &dyn AsyncFileSystemFixture) -> FsFuture<'_, ()> {
+pub fn assert_async_write_contract(
+    fixture: &dyn AsyncFileSystemFixture,
+) -> FsFuture<'_, ()> {
     Box::pin(async move {
         let file_system = fixture.file_system();
         assert!(
