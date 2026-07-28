@@ -5,98 +5,113 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-// qubit-style: allow source-test-pair
-//! Defines the provider-owned fixture required by filesystem contracts.
+//! Typed synchronous fixtures for filesystem contract suites.
 
-use qubit_fs::{
-    FileSystem,
-    FsPath,
-};
+use qubit_fs::{CopyMethod, CopyOptions, FileSystem, Path};
 
-/// Supplies an isolated filesystem and provider-specific contract paths.
-///
-/// Every mutating contract assertion requires a fresh fixture. Implementations
-/// must retain any resource guard needed to keep the filesystem alive for the
-/// duration of an assertion.
+use crate::{FixtureResult, FixtureSupport};
+
+/// Opaque provider identity used to compare entries across namespace changes.
+#[derive(Debug, Eq, PartialEq)]
+pub struct FixtureEntryIdentity(Vec<u8>);
+
+impl FixtureEntryIdentity {
+    /// Creates an opaque identity from provider-owned stable bytes.
+    #[must_use]
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+}
+
+/// Provider-prepared case that makes one native copy method applicable.
+#[derive(Clone, Debug)]
+pub struct CopyFixtureCase {
+    source: Path,
+    target: Path,
+    options: CopyOptions,
+}
+
+impl CopyFixtureCase {
+    /// Creates a native-copy case from its source, target, and requested options.
+    #[must_use]
+    pub fn new(source: Path, target: Path, options: CopyOptions) -> Self {
+        Self {
+            source,
+            target,
+            options,
+        }
+    }
+
+    /// Returns the prepared source path.
+    #[must_use]
+    pub const fn source(&self) -> &Path {
+        &self.source
+    }
+
+    /// Returns the prepared target path.
+    #[must_use]
+    pub const fn target(&self) -> &Path {
+        &self.target
+    }
+
+    /// Returns the copy options that make the case applicable.
+    #[must_use]
+    pub const fn options(&self) -> &CopyOptions {
+        &self.options
+    }
+
+    /// Decomposes this case into its owned request parts.
+    #[must_use]
+    pub fn into_parts(self) -> (Path, Path, CopyOptions) {
+        (self.source, self.target, self.options)
+    }
+}
+
+/// Supplies an isolated facade and provider-specific contract observations.
 pub trait FileSystemFixture {
-    /// Returns the configured filesystem under test.
-    ///
-    /// # Returns
-    ///
-    /// A filesystem that remains valid for the fixture lifetime.
-    fn file_system(&self) -> &dyn FileSystem;
+    /// Returns the concrete synchronous filesystem facade under test.
+    fn file_system(&self) -> &FileSystem;
 
-    /// Maps one testkit-relative path into provider path syntax.
-    ///
-    /// # Parameters
-    ///
-    /// * `relative` - Non-empty `/`-separated relative path supplied by the
-    ///   testkit.
-    ///
-    /// # Returns
-    ///
-    /// The equivalent path accepted by the configured filesystem.
-    fn path(&self, relative: &str) -> FsPath;
+    /// Maps a testkit-relative name to an isolated logical path.
+    fn path(&self, relative: &str) -> FixtureResult<Path>;
 
-    /// Maps a testkit-relative list prefix into provider list-prefix syntax.
-    ///
-    /// # Parameters
-    ///
-    /// * `root` - Provider-local path passed as the list root.
-    /// * `relative` - Non-empty `/`-separated prefix relative to `root`.
-    ///
-    /// # Returns
-    ///
-    /// The equivalent prefix accepted by the configured filesystem. Providers
-    /// whose list prefix syntax matches the testkit syntax can use this
-    /// default implementation.
-    fn list_prefix(&self, _root: &FsPath, relative: &str) -> String {
-        relative.to_owned()
+    /// Maps a relative list prefix for the supplied root.
+    fn list_prefix(&self, root: &Path, relative: &str) -> FixtureResult<String>;
+
+    /// Seeds a complete file outside the operation currently under test.
+    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+        let _ = (relative, bytes);
+        Ok(FixtureSupport::Unsupported)
     }
 
-    /// Seeds a complete file outside the capability under test.
-    ///
-    /// # Parameters
-    ///
-    /// * `relative` - Non-empty `/`-separated testkit-relative path.
-    /// * `bytes` - Complete contents to make available at that path.
-    ///
-    /// # Returns
-    /// The seeded provider-local path when the fixture has an out-of-band setup
-    /// mechanism; `None` asks the contract to use ordinary write operations.
-    fn seed_file(&self, _relative: &str, _bytes: &[u8]) -> Option<FsPath> {
-        None
+    /// Reads a complete file outside the operation currently under test.
+    fn read_file(&self, path: &Path) -> FixtureResult<FixtureSupport<Vec<u8>>> {
+        let _ = path;
+        Ok(FixtureSupport::Unsupported)
     }
 
-    /// Reads a complete file outside the capability under test.
-    ///
-    /// # Parameters
-    ///
-    /// * `path` - Provider-local path to observe.
-    ///
-    /// # Returns
-    /// Complete observed bytes when the fixture has an out-of-band observation
-    /// mechanism; `None` asks the contract to use ordinary read operations.
-    fn read_file(&self, _path: &FsPath) -> Option<Vec<u8>> {
-        None
+    /// Supplies a known empty directory for representation assertions.
+    fn empty_directory_path(&self) -> FixtureResult<FixtureSupport<Path>> {
+        Ok(FixtureSupport::Unsupported)
     }
 
-    /// Supplies one existing empty directory or prefix for representation
-    /// checks.
-    ///
-    /// # Returns
-    /// A provider-local empty directory or prefix when the fixture can prepare
-    /// one; `None` means the matching representation assertion cannot run.
-    fn empty_directory_path(&self) -> Option<FsPath> {
-        None
+    /// Supplies a known symbolic-link path for representation assertions.
+    fn symlink_path(&self) -> FixtureResult<FixtureSupport<Path>> {
+        Ok(FixtureSupport::Unsupported)
     }
 
-    /// Supplies one existing symbolic link for representation checks.
-    ///
-    /// # Returns
-    /// A provider-local symbolic-link path when the fixture can prepare one;
-    /// `None` means the matching representation assertion cannot run.
-    fn symlink_path(&self) -> Option<FsPath> {
-        None
+    /// Supplies a case in which the requested native copy method must apply.
+    fn copy_fast_path_case(
+        &self,
+        method: CopyMethod,
+    ) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
+        let _ = method;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Supplies an opaque stable identity for a provider entry.
+    fn entry_identity(&self, path: &Path) -> FixtureResult<FixtureSupport<FixtureEntryIdentity>> {
+        let _ = path;
+        Ok(FixtureSupport::Unsupported)
     }
 }
