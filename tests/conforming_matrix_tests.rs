@@ -6,8 +6,16 @@
 
 mod common;
 
-use qubit_fs::{FileSystemCapability, FsError, FsErrorKind, FsOperation};
-use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
+use qubit_fs::{
+    FileSystemCapability,
+    FsError,
+    FsErrorKind,
+    FsOperation,
+};
+use qubit_fs_testkit::{
+    FileSystemContractSuite,
+    FileSystemFixture,
+};
 
 use common::MemoryFixture;
 
@@ -38,6 +46,13 @@ fn test_conforming_memory_provider_satisfies_sync_suite() {
     assert!(fixture.is_empty(), "suite must clean up created resources");
 }
 
+/// A filesystem may use its own identifier as the provider identifier.
+#[test]
+fn test_sync_suite_allows_matching_filesystem_and_provider_ids() {
+    let fixture = MemoryFixture::with_matching_ids();
+    FileSystemContractSuite::new(&fixture).assert_all();
+}
+
 /// A suite must not attempt end-of-run deletion when the facade lacks it.
 #[test]
 fn test_sync_suite_skips_cleanup_without_delete_capability() {
@@ -55,9 +70,10 @@ fn test_single_faults_are_rejected_by_sync_suite() {
         common::MemoryFault::EmptyList,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).assert_all();
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_all();
+            }));
         assert!(result.is_err(), "suite accepted injected fault: {fault:?}");
     }
 }

@@ -9,9 +9,17 @@
 // fault matrices.
 //! Typed synchronous fixtures for filesystem contract suites.
 
-use qubit_fs::{CopyMethod, CopyOptions, FileSystem, Path};
+use qubit_fs::{
+    CopyMethod,
+    CopyOptions,
+    FileSystem,
+    Path,
+};
 
-use crate::{FixtureResult, FixtureSupport};
+use crate::{
+    FixtureResult,
+    FixtureSupport,
+};
 
 /// Opaque provider identity used to compare entries across namespace changes.
 #[derive(Debug, Eq, PartialEq)]
@@ -79,10 +87,15 @@ pub trait FileSystemFixture {
     fn path(&self, relative: &str) -> FixtureResult<Path>;
 
     /// Maps a relative list prefix for the supplied root.
-    fn list_prefix(&self, root: &Path, relative: &str) -> FixtureResult<String>;
+    fn list_prefix(&self, root: &Path, relative: &str)
+    -> FixtureResult<String>;
 
     /// Seeds a complete file outside the operation currently under test.
-    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_file(
+        &self,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<FixtureSupport<Path>> {
         let _ = (relative, bytes);
         Ok(FixtureSupport::Unsupported)
     }
@@ -113,7 +126,10 @@ pub trait FileSystemFixture {
     }
 
     /// Supplies an opaque stable identity for a provider entry.
-    fn entry_identity(&self, path: &Path) -> FixtureResult<FixtureSupport<FixtureEntryIdentity>> {
+    fn entry_identity(
+        &self,
+        path: &Path,
+    ) -> FixtureResult<FixtureSupport<FixtureEntryIdentity>> {
         let _ = path;
         Ok(FixtureSupport::Unsupported)
     }

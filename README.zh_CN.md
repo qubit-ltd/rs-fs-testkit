@@ -87,20 +87,18 @@ qubit_fs_testkit::FileSystemContractSuite::new(&fixture).assert_all();
 
 同步契约套件检查：
 
-- 稳定的身份、所有派生 capability 依赖，以及可安全探测的有限路径、组件和写入上限；
-- `stat`、`exists`、完整读取、调用方字节上限和分页列目录；
-- 创建、替换、create-new 的成功与冲突路径、追加和强制原子写入；
-- 即使缺少 metadata 也完整返回子项的列目录、目录创建策略、递归删除、重命名、文件和目录树复制；
-- 已声明的范围读取、条件读写删除、必需校验和读取和服务端复制正向行为，包括 ETag 匹配和不匹配转换；
-- provider-neutral 的文件/对象与目录/前缀表示，以及已声明临时资源的生命周期和原子持久化行为；
-- 每项未声明的读取、写入、删除和复制需求都在 provider I/O 前完成结构化预检；
-- 每项未声明同步操作（包括读取和写入）都返回结构化错误。
+- 非空的 filesystem 和 provider 标识（两者可以相同）、稳定的属性快照、依赖一致的
+  capability，以及 fixture 路径兼容性；
+- 缺失路径的 `stat` 错误；已声明读取的调用方字节上限；写入；直接子项与带前缀的
+  分页列目录；以及未声明 `Read`、`Write` 或 `List` 时的结构化预检错误；
+- 已声明的目录创建、文件删除、复制、重命名，以及临时文件或目录的清理和持久化；
+  这些类别中未声明的操作会被跳过，而不是断言；
+- 回退与已声明服务端复制的结果报告，以及缺失路径和错误上下文的结构化检查。
 
-provider 特有的路径编码、平台行为、安全边界和服务注册仍由 provider crate
-负责。符号链接和空目录表示检查需要 fixture 提供探针，因为核心 trait 没有创建
-这两类资源的操作。异步契约作为独立断言提供，而不纳入同步宏。校验和契约确认
-`ChecksumPolicy::Required` 可以兑现；通用黑盒 fixture 无法独立注入存储损坏，
-因而不能证明 provider 内部校验和实现的细节。
+`AsyncFileSystemContractSuite` 为核心操作提供对应的运行时无关检查，并对未声明的
+创建、删除、重命名和临时资源操作验证结构化拒绝。provider 特有的路径编码、平台
+行为、安全边界、服务注册和上述未列出的 capability 仍由 provider crate 负责。设计
+文档说明的是预期的后续扩展，而非当前套件已经作出的保证。
 
 ## 测试
 
@@ -116,7 +114,13 @@ cargo test --all-features
 
 # 检查代码覆盖率
 ./coverage.sh
+
+# 强制执行已配置的逐源文件覆盖率阈值
+COVERAGE_ENFORCE_THRESHOLDS=1 ./coverage.sh
 ```
+
+默认只生成覆盖率报告。如需强制执行已配置的逐源文件阈值，请设置
+`COVERAGE_ENFORCE_THRESHOLDS=1`。
 
 ## 许可证
 
