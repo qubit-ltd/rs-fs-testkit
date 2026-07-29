@@ -10,12 +10,7 @@
 //! Mutable state shared by one contract-suite run.
 
 use qubit_fs::{
-    AsyncFileSystem,
-    FileKind,
-    FileSystem,
-    FileSystemCapability,
-    FileSystemProperties,
-    FsErrorKind,
+    AsyncFileSystem, FileKind, FileSystem, FileSystemCapability, FileSystemProperties, FsErrorKind,
     Path,
 };
 
@@ -111,10 +106,7 @@ impl ContractContext {
     /// Cleanup follows the synchronous suite semantics: missing resources are
     /// already cleaned, while every other observation or deletion error fails
     /// the current contract with its diagnostic context.
-    pub(crate) async fn cleanup_async(
-        &mut self,
-        file_system: &AsyncFileSystem,
-    ) {
+    pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) {
         if !self
             .properties
             .capabilities()

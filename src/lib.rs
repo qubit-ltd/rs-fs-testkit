@@ -23,19 +23,9 @@ mod fixture_support;
 
 pub use async_file_system_contract_suite::AsyncFileSystemContractSuite;
 pub use async_file_system_fixture::{
-    AsyncCopyCancellationStage,
-    AsyncCopyFixtureCase,
-    AsyncFileSystemFixture,
-    FixtureFuture,
+    AsyncCopyCancellationStage, AsyncCopyFixtureCase, AsyncFileSystemFixture, FixtureFuture,
 };
 pub use file_system_contract_suite::FileSystemContractSuite;
-pub use file_system_fixture::{
-    CopyFixtureCase,
-    FileSystemFixture,
-    FixtureEntryIdentity,
-};
-pub use fixture_error::{
-    FixtureError,
-    FixtureResult,
-};
+pub use file_system_fixture::{CopyFixtureCase, FileSystemFixture, FixtureEntryIdentity};
+pub use fixture_error::{FixtureError, FixtureResult};
 pub use fixture_support::FixtureSupport;

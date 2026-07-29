@@ -11,12 +11,7 @@
 
 use std::{
     error::Error,
-    fmt::{
-        Debug,
-        Display,
-        Formatter,
-        Result as FmtResult,
-    },
+    fmt::{Debug, Display, Formatter, Result as FmtResult},
 };
 
 /// Failure raised by fixture setup or out-of-band observation.
