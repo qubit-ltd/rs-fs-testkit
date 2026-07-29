@@ -53,7 +53,9 @@ impl ContractContext {
     pub(crate) fn relative_name(&self, relative: &str) -> String {
         format!(
             "{}-{}-{}",
-            self.current_contract, self.name_counter, relative
+            self.current_contract(),
+            self.name_counter,
+            relative
         )
     }
 
@@ -97,12 +99,7 @@ impl ContractContext {
             } else {
                 file_system.delete_file(&path, Default::default())
             };
-            result.unwrap_or_else(|error| {
-                panic!(
-                    "{} contract: cleanup failed for {path}: {error}",
-                    self.current_contract
-                )
-            });
+            result.expect("contract cleanup failed");
         }
     }
 
@@ -139,12 +136,7 @@ impl ContractContext {
             } else {
                 file_system.delete_file(&path, Default::default()).await
             };
-            result.unwrap_or_else(|error| {
-                panic!(
-                    "{} contract: cleanup failed for {path}: {error}",
-                    self.current_contract
-                )
-            });
+            result.expect("contract cleanup failed");
         }
     }
 }

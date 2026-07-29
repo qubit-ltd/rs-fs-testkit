@@ -101,6 +101,48 @@ fn test_async_core_capability_negative_branches_are_exercised() {
     );
 }
 
+/// Unadvertised optional operations return structured errors while core
+/// contracts continue to exercise the provider.
+#[test]
+fn test_async_suite_skips_unadvertised_optional_capabilities() {
+    let fixture = AsyncMemoryFixture::without_optional_capabilities();
+    let mut assertion =
+        Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(matches!(
+        assertion.as_mut().poll(&mut context),
+        Poll::Ready(())
+    ));
+}
+
+/// Every public asynchronous contract phase remains independently pollable for
+/// providers that execute without suspension.
+#[test]
+fn test_async_contract_entry_points_run_individually() {
+    let fixture = AsyncMemoryFixture::new();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let mut assertion = Box::pin(async {
+        suite.assert_properties().await;
+        suite.assert_stat().await;
+        suite.assert_read().await;
+        suite.assert_write().await;
+        suite.assert_list().await;
+        suite.assert_create_directory().await;
+        suite.assert_delete().await;
+        suite.assert_copy().await;
+        suite.assert_rename().await;
+        suite.assert_temp_resources().await;
+        suite.assert_error_context().await;
+    });
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(matches!(
+        assertion.as_mut().poll(&mut context),
+        Poll::Ready(())
+    ));
+}
+
 /// Each isolated asynchronous provider fault must fail the full suite.
 #[test]
 fn test_single_faults_are_rejected_by_async_suite() {

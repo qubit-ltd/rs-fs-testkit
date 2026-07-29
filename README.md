@@ -125,7 +125,6 @@ cargo test --all-features
 
 # Check code coverage
 ./coverage.sh
-
 ```
 
 ## License

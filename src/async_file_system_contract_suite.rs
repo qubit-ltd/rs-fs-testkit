@@ -88,18 +88,14 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             !info.provider_id().is_empty(),
             "properties contract: provider id is empty"
         );
-        let path =
-            self.fixture
-                .path("contract-properties")
-                .unwrap_or_else(|error| {
-                    panic!("properties contract: fixture path failed: {error}")
-                });
+        let path = self
+            .fixture
+            .path("contract-properties")
+            .expect("properties contract: fixture path failed");
         properties
             .path_constraints()
             .validate(&path)
-            .unwrap_or_else(|error| {
-                panic!("properties contract: fixture path violates constraints: {error}")
-            });
+            .expect("properties contract: fixture path violates constraints");
         assert_eq!(
             properties.info(),
             self.fixture.file_system().properties().info(),
@@ -159,9 +155,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .fixture
             .seed_file("async-read", b"async bytes")
             .await
-            .unwrap_or_else(|error| {
-                panic!("read contract: fixture seed failed: {error}")
-            }) {
+            .expect("read contract: fixture seed failed")
+        {
             FixtureSupport::Supported(path) => {
                 self.context.record_created(path.clone());
                 let mut reader = self
@@ -229,9 +224,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("write contract: writer commit failed");
         self.context.record_created(path.clone());
-        match self.fixture.read_file(&path).await.unwrap_or_else(|error| {
-            panic!("write contract: fixture observation failed: {error}")
-        }) {
+        match self
+            .fixture
+            .read_file(&path)
+            .await
+            .expect("write contract: fixture observation failed")
+        {
             FixtureSupport::Supported(bytes) => {
                 assert_eq!(
                     bytes, b"async written",
@@ -394,9 +392,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .expect(
                     "async copy contract: advertised copy preflight failed",
                 );
-            let outcome = operation.execute().await.unwrap_or_else(|failure| {
-                panic!("async copy contract: copy failed: {}", failure.error())
-            });
+            let outcome = operation
+                .execute()
+                .await
+                .expect("async copy contract: copy failed");
             match outcome.method() {
                 CopyMethod::Streamed => assert!(
                     outcome.used_fallback(),
@@ -433,9 +432,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let case = self
                 .fixture
                 .copy_cancellation_case(stage)
-                .unwrap_or_else(|error| {
-                    panic!("async copy contract: fixture setup failed: {error}")
-                });
+                .expect("async copy contract: fixture setup failed");
             let case = match case {
                 FixtureSupport::Supported(case) => case,
                 FixtureSupport::Unsupported => continue,
@@ -492,12 +489,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .rename(&source, &target, RenameOptions::default())
                 .await
-                .unwrap_or_else(|failure| {
-                    panic!(
-                        "rename contract: advertised rename failed: {}",
-                        failure.error()
-                    )
-                });
+                .expect("rename contract: advertised rename failed");
             let error =
                 self.fixture.file_system().stat(&source).await.expect_err(
                     "rename contract: source remained after success",
@@ -639,12 +631,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// boundary.
     fn path(&self, relative: &str) -> qubit_fs::Path {
         let relative = self.context.relative_name(relative);
-        self.fixture.path(&relative).unwrap_or_else(|error| {
-            panic!(
-                "{} contract: fixture path failed: {error}",
-                self.context.current_contract()
-            )
-        })
+        self.fixture
+            .path(&relative)
+            .expect("async contract: fixture path failed")
     }
 
     /// Returns whether the cached property snapshot advertises a capability.
@@ -667,9 +656,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .fixture
             .seed_file(&relative, bytes)
             .await
-            .unwrap_or_else(|error| {
-                panic!("{contract} contract: fixture seed failed: {error}")
-            }) {
+            .expect("async contract: fixture seed failed")
+        {
             FixtureSupport::Supported(path) => {
                 self.context.record_created(path.clone());
                 path
@@ -689,9 +677,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         expected: &[u8],
         message: &str,
     ) {
-        match self.fixture.read_file(path).await.unwrap_or_else(|error| {
-            panic!("async copy contract: fixture observation failed: {error}")
-        }) {
+        match self
+            .fixture
+            .read_file(path)
+            .await
+            .expect("async copy contract: fixture observation failed")
+        {
             FixtureSupport::Supported(actual) => {
                 assert_eq!(actual, expected, "{message}")
             }

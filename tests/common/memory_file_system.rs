@@ -58,6 +58,9 @@ use qubit_fs::spi::{
 };
 use qubit_fs::{
     AchievedAtomicity,
+    CopyMethod,
+    CopyOutcome,
+    CopyStats,
     CreateDirectoryOutcome,
     DeleteOutcome,
     FileKind,
@@ -120,6 +123,14 @@ pub enum MemoryFault {
     WrongPersistTarget,
     /// Returns no entries for a non-empty requested directory.
     EmptyList,
+    /// Returns bytes different from the provider's stored content.
+    ReadWrongBytes,
+    /// Accepts writes without publishing their content.
+    WriteDropsBytes,
+    /// Reports deletion success without removing the resource.
+    DeleteNoOp,
+    /// Reports rename success without moving the resource.
+    RenameNoOp,
 }
 
 #[derive(Clone)]
@@ -134,12 +145,25 @@ struct State {
     fault: MemoryFault,
     delete_capability: bool,
     core_capabilities: bool,
+    optional_capabilities: bool,
+    native_copy: bool,
 }
 
 impl MemoryFixture {
     /// Creates a fresh conforming fixture.
     pub fn new() -> Self {
         Self::with_fault(MemoryFault::None)
+    }
+
+    /// Creates a conforming fixture whose copy primitive completes natively.
+    pub fn with_native_copy() -> Self {
+        let fixture = Self::new();
+        fixture
+            .state
+            .lock()
+            .expect("memory state lock must succeed")
+            .native_copy = true;
+        fixture
     }
 
     /// Creates a fresh fixture with exactly one provider fault.
@@ -158,11 +182,23 @@ impl MemoryFixture {
         Self::with_capabilities(MemoryFault::None, true, false)
     }
 
+    /// Creates a fixture that exposes only the core capabilities.
+    pub fn without_optional_capabilities() -> Self {
+        Self::with_configuration(
+            MemoryFault::None,
+            true,
+            true,
+            false,
+            "memory-contract-provider",
+        )
+    }
+
     /// Creates a conforming fixture whose filesystem and provider identifiers
     /// are identical.
     pub fn with_matching_ids() -> Self {
         Self::with_configuration(
             MemoryFault::None,
+            true,
             true,
             true,
             "memory-contract",
@@ -182,6 +218,7 @@ impl MemoryFixture {
             fault,
             delete_capability,
             core_capabilities,
+            true,
             "memory-contract-provider",
         )
     }
@@ -191,6 +228,7 @@ impl MemoryFixture {
         fault: MemoryFault,
         delete_capability: bool,
         core_capabilities: bool,
+        optional_capabilities: bool,
         provider_id: &'static str,
     ) -> Self {
         let state = Arc::new(Mutex::new(State {
@@ -199,6 +237,8 @@ impl MemoryFixture {
             fault,
             delete_capability,
             core_capabilities,
+            optional_capabilities,
+            native_copy: false,
         }));
         let path_calls = Arc::new(AtomicUsize::new(0));
         let file_system = FileSystem::from_spi(MemorySpi {
@@ -329,11 +369,14 @@ impl MemorySpi {
 impl FileSystemSpi for MemorySpi {
     fn properties(&self) -> FileSystemProperties {
         let state = self.state.lock().expect("memory state lock must succeed");
-        let mut capabilities = FileSystemCapabilities::new()
-            .with(FileSystemCapability::CreateDirectory)
-            .with(FileSystemCapability::Rename)
-            .with(FileSystemCapability::TempFile)
-            .with(FileSystemCapability::TempDirectory);
+        let mut capabilities = FileSystemCapabilities::new();
+        if state.optional_capabilities {
+            capabilities = capabilities
+                .with(FileSystemCapability::CreateDirectory)
+                .with(FileSystemCapability::Rename)
+                .with(FileSystemCapability::TempFile)
+                .with(FileSystemCapability::TempDirectory);
+        }
         if state.core_capabilities {
             capabilities = capabilities
                 .with(FileSystemCapability::Read)
@@ -415,9 +458,14 @@ impl FileSystemSpi for MemorySpi {
                 "memory entry absent",
             ));
         };
+        let bytes = if state.fault == MemoryFault::ReadWrongBytes {
+            b"wrong bytes".to_vec()
+        } else {
+            bytes.clone()
+        };
         Ok(OpenedReader::new(
             Self::info(request.path().clone()),
-            Box::new(Cursor::new(bytes.clone())),
+            Box::new(Cursor::new(bytes)),
         ))
     }
 
@@ -454,12 +502,13 @@ impl FileSystemSpi for MemorySpi {
         &self,
         request: DeleteFileRequest<'_>,
     ) -> FsResult<DeleteOutcome> {
-        let removed = self
-            .state
-            .lock()
-            .expect("memory state lock must succeed")
-            .entries
-            .remove(request.path().as_str());
+        let mut state =
+            self.state.lock().expect("memory state lock must succeed");
+        let removed = if state.fault == MemoryFault::DeleteNoOp {
+            None
+        } else {
+            state.entries.remove(request.path().as_str())
+        };
         Ok(DeleteOutcome::new(removed.is_none()))
     }
 
@@ -467,19 +516,53 @@ impl FileSystemSpi for MemorySpi {
         &self,
         request: DeleteDirectoryRequest<'_>,
     ) -> FsResult<DeleteOutcome> {
-        let removed = self
-            .state
-            .lock()
-            .expect("memory state lock must succeed")
-            .entries
-            .remove(request.path().as_str());
+        let mut state =
+            self.state.lock().expect("memory state lock must succeed");
+        let removed = if state.fault == MemoryFault::DeleteNoOp {
+            None
+        } else {
+            state.entries.remove(request.path().as_str())
+        };
         Ok(DeleteOutcome::new(removed.is_none()))
     }
 
     fn try_copy(
         &self,
-        _: qubit_fs::spi::CopyRequest<'_>,
+        request: qubit_fs::spi::CopyRequest<'_>,
     ) -> Result<CopyAttempt, qubit_fs::spi::SpiCopyFailure> {
+        let mut state =
+            self.state.lock().expect("memory state lock must succeed");
+        if state.native_copy {
+            let Some(entry) =
+                state.entries.get(request.source().as_str()).cloned()
+            else {
+                return Err(qubit_fs::spi::SpiCopyFailure::new(
+                    FsError::new(
+                        FsErrorKind::NotFound,
+                        FsOperation::Copy,
+                        "memory copy source absent",
+                    ),
+                    qubit_fs::CopyFailureState::Unchanged,
+                    CopyStats::default(),
+                ));
+            };
+            let bytes = match &entry {
+                Entry::File(bytes) => bytes.len() as u64,
+                Entry::Directory => 0,
+            };
+            state
+                .entries
+                .insert(request.target().as_str().to_owned(), entry);
+            return Ok(CopyAttempt::Completed(CopyOutcome::new(
+                CopyStats {
+                    files: 1,
+                    bytes,
+                    ..CopyStats::default()
+                },
+                CopyMethod::Native,
+                AchievedAtomicity::NonAtomic,
+            )));
+        }
         Ok(CopyAttempt::Declined(CopyDeclineReason::NotImplemented))
     }
 
@@ -500,9 +583,15 @@ impl FileSystemSpi for MemorySpi {
                 RenameFailureState::Unchanged,
             ));
         };
-        state
-            .entries
-            .insert(request.target().as_str().to_owned(), entry);
+        if state.fault != MemoryFault::RenameNoOp {
+            state
+                .entries
+                .insert(request.target().as_str().to_owned(), entry);
+        } else {
+            state
+                .entries
+                .insert(request.source().as_str().to_owned(), entry);
+        }
         Ok(RenameOutcome::new(
             request.source().clone(),
             request.target().clone(),
@@ -614,14 +703,14 @@ impl Output for MemoryWriter {
 
 impl FileWriterSpi for MemoryWriter {
     fn commit(&mut self) -> Result<WriteOutcome, SpiWriteFailure> {
-        self.state
-            .lock()
-            .expect("memory state lock must succeed")
-            .entries
-            .insert(
+        let mut state =
+            self.state.lock().expect("memory state lock must succeed");
+        if state.fault != MemoryFault::WriteDropsBytes {
+            state.entries.insert(
                 self.path.as_str().to_owned(),
                 Entry::File(self.bytes.clone()),
             );
+        }
         Ok(WriteOutcome::new(
             AchievedAtomicity::NonAtomic,
             PublicationMethod::Direct,
@@ -742,6 +831,19 @@ impl AsyncMemoryFixture {
             false,
             false,
             false,
+            false,
+            "async-memory-contract-provider",
+        )
+    }
+
+    /// Creates an asynchronous fixture that exposes only core capabilities.
+    pub fn without_optional_capabilities() -> Self {
+        Self::with_configuration(
+            AsyncMemoryFault::None,
+            false,
+            false,
+            true,
+            false,
             "async-memory-contract-provider",
         )
     }
@@ -753,6 +855,7 @@ impl AsyncMemoryFixture {
             AsyncMemoryFault::None,
             false,
             false,
+            true,
             true,
             "async-memory-contract",
         )
@@ -769,6 +872,7 @@ impl AsyncMemoryFixture {
             supports_cancellation_cases,
             native_copy,
             true,
+            true,
             "async-memory-contract-provider",
         )
     }
@@ -779,6 +883,7 @@ impl AsyncMemoryFixture {
         supports_cancellation_cases: bool,
         native_copy: bool,
         core_capabilities: bool,
+        optional_capabilities: bool,
         provider_id: &'static str,
     ) -> Self {
         let stage =
@@ -791,6 +896,7 @@ impl AsyncMemoryFixture {
             fault,
             native_copy,
             core_capabilities,
+            optional_capabilities,
             provider_id,
         })
         .expect("async memory SPI properties must be valid");
@@ -894,6 +1000,7 @@ struct AsyncMemorySpi {
     fault: AsyncMemoryFault,
     native_copy: bool,
     core_capabilities: bool,
+    optional_capabilities: bool,
     provider_id: &'static str,
 }
 
@@ -924,11 +1031,15 @@ impl AsyncMemorySpi {
 
 impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     fn properties(&self) -> FileSystemProperties {
-        let mut capabilities = FileSystemCapabilities::new()
-            .with(FileSystemCapability::Delete)
-            .with(FileSystemCapability::Rename)
-            .with(FileSystemCapability::TempFile)
-            .with(FileSystemCapability::TempDirectory);
+        let mut capabilities = FileSystemCapabilities::new();
+        if self.optional_capabilities {
+            capabilities = capabilities
+                .with(FileSystemCapability::CreateDirectory)
+                .with(FileSystemCapability::Delete)
+                .with(FileSystemCapability::Rename)
+                .with(FileSystemCapability::TempFile)
+                .with(FileSystemCapability::TempDirectory);
+        }
         if self.core_capabilities {
             capabilities = capabilities
                 .with(FileSystemCapability::Copy)

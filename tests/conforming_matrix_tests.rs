@@ -62,6 +62,18 @@ fn test_sync_suite_skips_cleanup_without_delete_capability() {
     FileSystemContractSuite::new(&fixture).assert_all();
 }
 
+/// Unadvertised optional operations do not prevent core contracts from
+/// exercising a conforming provider.
+#[test]
+fn test_sync_suite_skips_unadvertised_optional_capabilities() {
+    let fixture = MemoryFixture::without_optional_capabilities();
+    FileSystemContractSuite::new(&fixture).assert_all();
+    assert!(
+        fixture.is_empty(),
+        "core contract resources must be cleaned"
+    );
+}
+
 /// Each injected provider defect must be rejected by the matching suite phase.
 #[test]
 fn test_single_faults_are_rejected_by_sync_suite() {
@@ -70,6 +82,10 @@ fn test_single_faults_are_rejected_by_sync_suite() {
         common::MemoryFault::KeepTempOnCleanup,
         common::MemoryFault::WrongPersistTarget,
         common::MemoryFault::EmptyList,
+        common::MemoryFault::ReadWrongBytes,
+        common::MemoryFault::WriteDropsBytes,
+        common::MemoryFault::DeleteNoOp,
+        common::MemoryFault::RenameNoOp,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
         let result =
@@ -90,6 +106,14 @@ fn test_sync_suite_uses_unique_names_for_repeated_phases() {
     assert_eq!(fixture.entry_count(), 2);
 }
 
+/// A provider-native copy outcome satisfies the contract without fallback.
+#[test]
+fn test_sync_copy_accepts_native_outcome() {
+    let fixture = MemoryFixture::with_native_copy();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    suite.assert_copy();
+}
+
 /// Unadvertised core operations still exercise the facade's structured
 /// preflight.
 #[test]
@@ -99,6 +123,7 @@ fn test_core_capability_negative_branches_are_exercised() {
     suite.assert_read();
     suite.assert_write();
     suite.assert_list();
+    suite.assert_copy();
     assert_eq!(
         fixture.path_call_count(),
         3,

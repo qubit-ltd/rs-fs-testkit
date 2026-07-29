@@ -83,18 +83,14 @@ impl<'a> FileSystemContractSuite<'a> {
             properties.capabilities().missing_dependency().is_none(),
             "properties contract: capability dependencies are inconsistent"
         );
-        let path =
-            self.fixture
-                .path("contract-properties")
-                .unwrap_or_else(|error| {
-                    panic!("properties contract: fixture path failed: {error}")
-                });
+        let path = self
+            .fixture
+            .path("contract-properties")
+            .expect("properties contract: fixture path failed");
         properties
             .path_constraints()
             .validate(&path)
-            .unwrap_or_else(|error| {
-                panic!("properties contract: fixture path violates constraints: {error}")
-            });
+            .expect("properties contract: fixture path violates constraints");
         assert_eq!(
             properties.info(),
             self.fixture.file_system().properties().info(),
@@ -220,12 +216,12 @@ impl<'a> FileSystemContractSuite<'a> {
         self.fixture
             .file_system()
             .write_all(&path, b"written", WriteOptions::default())
-            .unwrap_or_else(|failure| {
-                panic!("writer contract: write failed: {}", failure.error())
-            });
-        match self.fixture.read_file(&path).unwrap_or_else(|error| {
-            panic!("writer contract: fixture observation failed: {error}")
-        }) {
+            .expect("writer contract: write failed");
+        match self
+            .fixture
+            .read_file(&path)
+            .expect("writer contract: fixture observation failed")
+        {
             FixtureSupport::Supported(bytes) => {
                 assert_eq!(
                     bytes, b"written",
@@ -273,9 +269,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .list(&root, Default::default())
-            .unwrap_or_else(|error| {
-                panic!("list contract: cannot open namespace: {error}")
-            });
+            .expect("list contract: cannot open namespace");
         let mut actual = Vec::new();
         while let Some(entry) =
             stream.next_entry().expect("list contract: stream error")
@@ -293,9 +287,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let prefix = self
             .fixture
             .list_prefix(&root, "prefixed/nested")
-            .unwrap_or_else(|error| {
-                panic!("list contract: fixture prefix failed: {error}")
-            });
+            .expect("list contract: fixture prefix failed");
         let mut stream = self
             .fixture
             .file_system()
@@ -307,9 +299,7 @@ impl<'a> FileSystemContractSuite<'a> {
                     ..ListOptions::default()
                 },
             )
-            .unwrap_or_else(|error| {
-                panic!("list contract: prefix listing failed: {error}")
-            });
+            .expect("list contract: prefix listing failed");
         let entry = stream
             .next_entry()
             .expect("list contract: prefix stream error")
@@ -334,9 +324,7 @@ impl<'a> FileSystemContractSuite<'a> {
         self.fixture
             .file_system()
             .create_directory(&path, CreateDirectoryOptions::default())
-            .unwrap_or_else(|error| {
-                panic!("namespace contract: directory creation failed: {error}")
-            });
+            .expect("namespace contract: directory creation failed");
         let metadata = self
             .fixture
             .file_system()
@@ -375,9 +363,7 @@ impl<'a> FileSystemContractSuite<'a> {
         self.fixture
             .file_system()
             .delete_file(&path, DeleteOptions::default())
-            .unwrap_or_else(|error| {
-                panic!("delete contract: deletion failed: {error}")
-            });
+            .expect("delete contract: deletion failed");
         assert!(
             !self
                 .fixture
@@ -401,12 +387,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .copy(&source, &target, CopyOptions::default())
-            .unwrap_or_else(|failure| {
-                panic!(
-                    "copy contract: fallback copy failed: {}",
-                    failure.error()
-                )
-            });
+            .expect("copy contract: fallback copy failed");
         match outcome.method() {
             CopyMethod::Streamed => assert!(
                 outcome.used_fallback(),
@@ -437,11 +418,8 @@ impl<'a> FileSystemContractSuite<'a> {
             match self
                 .fixture
                 .copy_fast_path_case(CopyMethod::ServerSide)
-                .unwrap_or_else(|error| {
-                    panic!(
-                        "copy contract: fixture fast-path setup failed: {error}"
-                    )
-                }) {
+                .expect("copy contract: fixture fast-path setup failed")
+            {
                 FixtureSupport::Supported(case) => {
                     let outcome = self
                         .fixture
@@ -451,12 +429,7 @@ impl<'a> FileSystemContractSuite<'a> {
                             case.target(),
                             case.options().clone(),
                         )
-                        .unwrap_or_else(|failure| {
-                            panic!(
-                                "copy contract: native case failed: {}",
-                                failure.error()
-                            )
-                        });
+                        .expect("copy contract: native case failed");
                     assert_eq!(
                         outcome.method(),
                         CopyMethod::ServerSide,
@@ -489,9 +462,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .rename(&source, &target, RenameOptions::default())
-            .unwrap_or_else(|failure| {
-                panic!("rename contract: rename failed: {}", failure.error())
-            });
+            .expect("rename contract: rename failed");
         assert_eq!(
             outcome.source(),
             &source,
@@ -527,13 +498,11 @@ impl<'a> FileSystemContractSuite<'a> {
         if self.capable(FileSystemCapability::TempFile) {
             let mut temporary = file_system
                 .create_temp_file(Default::default())
-                .unwrap_or_else(|error| {
-                    panic!("temp-file contract: create failed: {error}")
-                });
+                .expect("temp-file contract: create failed");
             let source = temporary.path().clone();
-            temporary.cleanup().unwrap_or_else(|error| {
-                panic!("temp-file contract: cleanup failed: {error}")
-            });
+            temporary
+                .cleanup()
+                .expect("temp-file contract: cleanup failed");
             assert!(
                 !file_system
                     .exists(&source)
@@ -550,13 +519,11 @@ impl<'a> FileSystemContractSuite<'a> {
         if self.capable(FileSystemCapability::TempDirectory) {
             let mut temporary = file_system
                 .create_temp_directory(Default::default())
-                .unwrap_or_else(|error| {
-                    panic!("temp-directory contract: create failed: {error}")
-                });
+                .expect("temp-directory contract: create failed");
             let source = temporary.path().clone();
-            temporary.cleanup().unwrap_or_else(|error| {
-                panic!("temp-directory contract: cleanup failed: {error}")
-            });
+            temporary
+                .cleanup()
+                .expect("temp-directory contract: cleanup failed");
             assert!(
                 !file_system
                     .exists(&source)
@@ -569,6 +536,9 @@ impl<'a> FileSystemContractSuite<'a> {
             let target = self.path("temp-persisted-directory");
             self.assert_temp_directory_persist(&mut temporary, &target);
             self.context.record_created(target);
+            if self.capable(FileSystemCapability::CreateDirectory) {
+                self.assert_temp_directory_overwrite();
+            }
         }
     }
 
@@ -594,12 +564,9 @@ impl<'a> FileSystemContractSuite<'a> {
     /// up.
     fn path(&self, relative: &str) -> qubit_fs::Path {
         let relative = self.context.relative_name(relative);
-        self.fixture.path(&relative).unwrap_or_else(|error| {
-            panic!(
-                "{} contract: fixture path failed: {error}",
-                self.context.current_contract()
-            )
-        })
+        self.fixture
+            .path(&relative)
+            .expect("contract: fixture path failed")
     }
 
     /// Returns whether the immutable snapshot declares a capability.
@@ -635,12 +602,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let relative = self.context.relative_name(relative);
         self.fixture
             .seed_file(&relative, bytes)
-            .unwrap_or_else(|error| {
-                panic!(
-                    "{} contract: fixture seed failed: {error}",
-                    self.context.current_contract()
-                )
-            })
+            .expect("contract: fixture seed failed")
     }
 
     /// Reads a provider-owned probe through the fixture and checks exact bytes.
@@ -650,9 +612,11 @@ impl<'a> FileSystemContractSuite<'a> {
         expected: &[u8],
         message: &str,
     ) {
-        match self.fixture.read_file(path).unwrap_or_else(|error| {
-            panic!("copy contract: fixture observation failed: {error}")
-        }) {
+        match self
+            .fixture
+            .read_file(path)
+            .expect("copy contract: fixture observation failed")
+        {
             FixtureSupport::Supported(actual) => {
                 assert_eq!(actual, expected, "{message}")
             }
@@ -729,12 +693,7 @@ impl<'a> FileSystemContractSuite<'a> {
                     ..PersistOptions::default()
                 },
             )
-            .unwrap_or_else(|failure| {
-                panic!(
-                    "temp-directory contract: persist failed: {}",
-                    failure.error()
-                )
-            });
+            .expect("temp-directory contract: persist failed");
         assert_eq!(
             outcome.target, *target,
             "temp-directory contract: persist target mismatch"
@@ -786,6 +745,50 @@ impl<'a> FileSystemContractSuite<'a> {
         }
     }
 
+    /// Verifies a temporary directory replaces an existing empty directory
+    /// when the caller explicitly allows replacement.
+    fn assert_temp_directory_overwrite(&mut self) {
+        let file_system = self.fixture.file_system();
+        let target = self.path("temp-overwritten-directory");
+        file_system
+            .create_directory(&target, CreateDirectoryOptions::default())
+            .expect(
+                "temp-directory overwrite contract: destination setup failed",
+            );
+        let mut temporary = file_system
+            .create_temp_directory(Default::default())
+            .expect(
+                "temp-directory overwrite contract: temporary creation failed",
+            );
+        let outcome = temporary
+            .persist(
+                &target,
+                PersistOptions {
+                    overwrite: true,
+                    atomicity: if self
+                        .capable(FileSystemCapability::AtomicTempPersist)
+                    {
+                        AtomicityRequirement::Required
+                    } else {
+                        AtomicityRequirement::Preferred
+                    },
+                    ..PersistOptions::default()
+                },
+            )
+            .expect("temp-directory overwrite contract: persist failed");
+        assert_eq!(
+            outcome.target, target,
+            "temp-directory overwrite contract: persist target mismatch"
+        );
+        assert!(
+            file_system.exists(&target).expect(
+                "temp-directory overwrite contract: target exists failed"
+            ),
+            "temp-directory overwrite contract: replacement did not publish target"
+        );
+        self.context.record_created(target);
+    }
+
     /// Persists one temporary file using the strongest guarantee it advertises.
     fn assert_temp_file_persist_result(
         &self,
@@ -807,9 +810,7 @@ impl<'a> FileSystemContractSuite<'a> {
                     ..PersistOptions::default()
                 },
             )
-            .unwrap_or_else(|failure| {
-                panic!("{label} contract: persist failed: {}", failure.error())
-            });
+            .expect("temp-file contract: persist failed");
         assert_eq!(
             outcome.target, *target,
             "{label} contract: persist target mismatch"
