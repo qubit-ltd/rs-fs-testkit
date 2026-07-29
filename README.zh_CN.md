@@ -115,12 +115,7 @@ cargo test --all-features
 # 检查代码覆盖率
 ./coverage.sh
 
-# 强制执行已配置的逐源文件覆盖率阈值
-COVERAGE_ENFORCE_THRESHOLDS=1 ./coverage.sh
 ```
-
-默认只生成覆盖率报告。如需强制执行已配置的逐源文件阈值，请设置
-`COVERAGE_ENFORCE_THRESHOLDS=1`。
 
 ## 许可证
 
