@@ -7,98 +7,54 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![English Document](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 
-`qubit-fs-testkit` 为
-[`qubit-fs`](https://crates.io/crates/qubit-fs) provider 实现提供可复用的契约
-测试。它应作为 provider 的开发依赖使用，避免测试支持进入生产依赖图。
-
-契约套件的目标架构见[设计文档](doc/file_system_testkit_design.zh_CN.md)。
+`qubit-fs-testkit` 为 `qubit-fs` provider 实现提供可复用、由 capability 驱动的契约测试。将它
+作为 provider 的开发依赖，提供隔离 fixture，并运行同步或运行时无关的异步套件，无需将测试支持
+放入生产依赖图。
 
 ## 安装
-
-将 testkit 添加为开发依赖：
 
 ```bash
 cargo add --dev qubit-fs-testkit
 ```
 
-## Fixture
+## 快速开始
 
-实现 `FileSystemFixture`，提供隔离的文件系统，并将 testkit 给出的非空、
-以 `/` 分隔的相对路径映射为 provider 路径。若准备工作不应成为被测操作，
-请使用可选的带外预置和观察钩子。
+对于能提供全新测试文件系统的 provider，请实现 `FileSystemFixture`，并在其上运行全部同步契约：
 
-```rust
-use qubit_fs::{FileSystem, FileSystemId, Path};
-use qubit_fs_local::RootedLocalFileSystem;
-use qubit_fs_testkit::FileSystemFixture;
-
-struct RootedFixture {
-    _directory: tempfile::TempDir,
-    file_system: RootedLocalFileSystem,
-}
-
-impl RootedFixture {
-    fn new() -> Self {
-        let directory = tempfile::tempdir().expect("create fixture root");
-        let id = FileSystemId::new("contract-rooted").expect("valid ID");
-        let file_system = RootedLocalFileSystem::open(id, directory.path())
-            .expect("open rooted filesystem");
-        Self {
-            _directory: directory,
-            file_system,
-        }
-    }
-}
-
-impl FileSystemFixture for RootedFixture {
-    fn file_system(&self) -> &FileSystem {
-        &self.file_system
-    }
-
-    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
-        Path::parse(&format!("/{relative}"))
-            .map_err(|error| qubit_fs_testkit::FixtureError::new(error.to_string()))
-    }
-
-    fn list_prefix(
-        &self,
-        root: &Path,
-        relative: &str,
-    ) -> qubit_fs_testkit::FixtureResult<String> {
-        Ok(format!("{}/{relative}", root.as_str().trim_end_matches('/')))
-    }
-}
-```
-
-## 使用
-
-针对新的 fixture 运行完整同步契约套件：
-
-```rust
-let fixture = RootedFixture::new();
+```rust,ignore
+let fixture = TestFixture::new();
 qubit_fs_testkit::FileSystemContractSuite::new(&fixture).assert_all();
 ```
 
-套件按已声明的 capability 面运行：验证已声明操作的正向行为，并验证不可用
-操作的结构化拒绝。对应的运行时无关异步套件是
-`AsyncFileSystemContractSuite::assert_all`。
+对于异步 provider，请实现 `AsyncFileSystemFixture`，并 await 对应套件：
 
-## 契约范围
+```rust,ignore
+let fixture = AsyncTestFixture::new();
+qubit_fs_testkit::AsyncFileSystemContractSuite::new(&fixture)
+    .assert_all()
+    .await;
+```
 
-同步契约套件检查：
+套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝，同时跳过 provider
+没有声明的可选操作。
 
-- 非空的 filesystem 和 provider 标识（两者可以相同）、稳定的属性快照、依赖一致的
-  capability，以及 fixture 路径兼容性；
-- 缺失路径的 `stat` 错误；已声明读取的调用方字节上限；写入；直接子项与带前缀的
-  分页列目录；以及未声明 `Read`、`Write` 或 `List` 时的结构化预检错误；
-- 已声明的目录创建、文件删除、复制、重命名，以及临时文件或目录的清理和持久化；
-  这些类别中未声明的操作会被跳过，而不是断言；
-- 回退与已声明服务端复制的结果报告，以及缺失路径和错误上下文的结构化检查。
+## 提供的能力
 
-`AsyncFileSystemContractSuite` 为核心操作提供对应的运行时无关检查，并对未声明的
-创建、删除、重命名和临时资源操作验证结构化拒绝。provider 特有的路径编码、平台
-行为、安全边界、服务注册和上述未列出的 capability 仍由 provider crate 负责。设计
-文档说明的是预期的后续扩展，而非当前套件已经作出的保证。
+- `FileSystemFixture` 和 `AsyncFileSystemFixture`：提供隔离门面与 provider 特有路径映射；可选
+  hooks 可在被测操作之外执行准备和观察。
+- `FileSystemContractSuite::new(&fixture).assert_all()` 与异步
+  `AsyncFileSystemContractSuite` 对应方法，均按固定、依赖安全的工作流运行。
+- 覆盖门面属性、核心操作、capability 预检、结构化错误上下文、清理和已支持的可选操作的契约。
+
+provider crate 仍需自行负责平台行为、路径编码、安全边界、服务注册，以及当前套件覆盖范围外的
+capability。
+
+## 延伸阅读
+
+- [English user guide](doc/user_guide.md)
+- [中文用户手册](doc/user_guide.zh_CN.md)
+- [API 文档](https://docs.rs/qubit-fs-testkit)
+- [English README](README.md)
 
 ## 测试
 
