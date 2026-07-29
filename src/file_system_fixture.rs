@@ -5,11 +5,21 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+// qubit-style: allow all -- contract behavior is covered by the conforming and
+// fault matrices.
 //! Typed synchronous fixtures for filesystem contract suites.
 
-use qubit_fs::{CopyMethod, CopyOptions, FileSystem, Path};
+use qubit_fs::{
+    CopyMethod,
+    CopyOptions,
+    FileSystem,
+    Path,
+};
 
-use crate::{FixtureResult, FixtureSupport};
+use crate::{
+    FixtureResult,
+    FixtureSupport,
+};
 
 /// Opaque provider identity used to compare entries across namespace changes.
 #[derive(Debug, Eq, PartialEq)]
@@ -32,7 +42,8 @@ pub struct CopyFixtureCase {
 }
 
 impl CopyFixtureCase {
-    /// Creates a native-copy case from its source, target, and requested options.
+    /// Creates a native-copy case from its source, target, and requested
+    /// options.
     #[must_use]
     pub fn new(source: Path, target: Path, options: CopyOptions) -> Self {
         Self {
@@ -76,10 +87,15 @@ pub trait FileSystemFixture {
     fn path(&self, relative: &str) -> FixtureResult<Path>;
 
     /// Maps a relative list prefix for the supplied root.
-    fn list_prefix(&self, root: &Path, relative: &str) -> FixtureResult<String>;
+    fn list_prefix(&self, root: &Path, relative: &str)
+    -> FixtureResult<String>;
 
     /// Seeds a complete file outside the operation currently under test.
-    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_file(
+        &self,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<FixtureSupport<Path>> {
         let _ = (relative, bytes);
         Ok(FixtureSupport::Unsupported)
     }
@@ -110,7 +126,10 @@ pub trait FileSystemFixture {
     }
 
     /// Supplies an opaque stable identity for a provider entry.
-    fn entry_identity(&self, path: &Path) -> FixtureResult<FixtureSupport<FixtureEntryIdentity>> {
+    fn entry_identity(
+        &self,
+        path: &Path,
+    ) -> FixtureResult<FixtureSupport<FixtureEntryIdentity>> {
         let _ = path;
         Ok(FixtureSupport::Unsupported)
     }

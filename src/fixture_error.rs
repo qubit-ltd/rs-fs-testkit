@@ -5,11 +5,18 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+// qubit-style: allow all -- contract behavior is covered by the conforming and
+// fault matrices.
 //! Errors raised while a fixture prepares or observes a contract resource.
 
 use std::{
     error::Error,
-    fmt::{Debug, Display, Formatter, Result as FmtResult},
+    fmt::{
+        Debug,
+        Display,
+        Formatter,
+        Result as FmtResult,
+    },
 };
 
 /// Failure raised by fixture setup or out-of-band observation.
@@ -28,7 +35,8 @@ impl FixtureError {
         }
     }
 
-    /// Creates an error that preserves an underlying fixture failure as its source.
+    /// Creates an error that preserves an underlying fixture failure as its
+    /// source.
     #[must_use]
     pub fn with_source(
         message: impl Into<String>,

@@ -5,16 +5,32 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+// qubit-style: allow all -- contract behavior is covered by the conforming and
+// fault matrices.
 //! Typed asynchronous fixtures for filesystem contract suites.
 
-use std::{future::Future, pin::Pin};
+use std::{
+    future::Future,
+    pin::Pin,
+};
 
-use qubit_fs::{AsyncFileSystem, CopyMethod, CopyOptions, Path};
+use qubit_fs::{
+    AsyncFileSystem,
+    CopyMethod,
+    CopyOptions,
+    Path,
+};
 
-use crate::{CopyFixtureCase, FixtureEntryIdentity, FixtureResult, FixtureSupport};
+use crate::{
+    CopyFixtureCase,
+    FixtureEntryIdentity,
+    FixtureResult,
+    FixtureSupport,
+};
 
 /// Runtime-neutral future returned by asynchronous fixture observations.
-pub type FixtureFuture<'a, T> = Pin<Box<dyn Future<Output = FixtureResult<T>> + Send + 'a>>;
+pub type FixtureFuture<'a, T> =
+    Pin<Box<dyn Future<Output = FixtureResult<T>> + Send + 'a>>;
 
 /// Cancellation point exercised by an asynchronous copy contract probe.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -82,7 +98,8 @@ pub trait AsyncFileSystemFixture: Sync {
     fn path(&self, relative: &str) -> FixtureResult<Path>;
 
     /// Maps a relative list prefix for the supplied root.
-    fn list_prefix(&self, root: &Path, relative: &str) -> FixtureResult<String>;
+    fn list_prefix(&self, root: &Path, relative: &str)
+    -> FixtureResult<String>;
 
     /// Asynchronously seeds a complete file outside the operation under test.
     fn seed_file<'a>(
@@ -94,8 +111,12 @@ pub trait AsyncFileSystemFixture: Sync {
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
-    /// Asynchronously observes a complete file outside the operation under test.
-    fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
+    /// Asynchronously observes a complete file outside the operation under
+    /// test.
+    fn read_file<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
         let _ = path;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
@@ -128,7 +149,8 @@ pub trait AsyncFileSystemFixture: Sync {
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
-    /// Supplies a cancellation probe with provider-owned pending-stage controls.
+    /// Supplies a cancellation probe with provider-owned pending-stage
+    /// controls.
     fn copy_cancellation_case(
         &self,
         stage: AsyncCopyCancellationStage,

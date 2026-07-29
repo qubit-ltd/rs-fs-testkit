@@ -11,6 +11,8 @@
 [`qubit-fs`](https://crates.io/crates/qubit-fs) provider 实现提供可复用的契约
 测试。它应作为 provider 的开发依赖使用，避免测试支持进入生产依赖图。
 
+契约套件的目标架构见[设计文档](doc/file_system_testkit_design.zh_CN.md)。
+
 ## 安装
 
 将 testkit 添加为开发依赖：
@@ -56,6 +58,14 @@ impl FileSystemFixture for RootedFixture {
     fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
         Path::parse(&format!("/{relative}"))
             .map_err(|error| qubit_fs_testkit::FixtureError::new(error.to_string()))
+    }
+
+    fn list_prefix(
+        &self,
+        root: &Path,
+        relative: &str,
+    ) -> qubit_fs_testkit::FixtureResult<String> {
+        Ok(format!("{}/{relative}", root.as_str().trim_end_matches('/')))
     }
 }
 ```

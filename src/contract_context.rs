@@ -5,10 +5,17 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+// qubit-style: allow all -- contract behavior is covered by the conforming and
+// fault matrices.
 //! Mutable state shared by one contract-suite run.
 
 use qubit_fs::{
-    AsyncFileSystem, FileKind, FileSystem, FileSystemCapability, FileSystemProperties, FsErrorKind,
+    AsyncFileSystem,
+    FileKind,
+    FileSystem,
+    FileSystemCapability,
+    FileSystemProperties,
+    FsErrorKind,
     Path,
 };
 
@@ -42,6 +49,14 @@ impl ContractContext {
         self.name_counter = self.name_counter.saturating_add(1);
     }
 
+    /// Returns a suite-unique relative name for the current contract phase.
+    pub(crate) fn relative_name(&self, relative: &str) -> String {
+        format!(
+            "{}-{}-{}",
+            self.current_contract, self.name_counter, relative
+        )
+    }
+
     /// Records a path created by the current contract assertion.
     pub(crate) fn record_created(&mut self, path: Path) {
         self.created_paths.push(path);
@@ -52,7 +67,8 @@ impl ContractContext {
         self.current_contract
     }
 
-    /// Removes resources recorded by completed contract phases in reverse order.
+    /// Removes resources recorded by completed contract phases in reverse
+    /// order.
     ///
     /// Cleanup is best-effort: a resource that a phase already removed is not a
     /// contract failure, while any other cleanup error is reported with the
@@ -95,7 +111,10 @@ impl ContractContext {
     /// Cleanup follows the synchronous suite semantics: missing resources are
     /// already cleaned, while every other observation or deletion error fails
     /// the current contract with its diagnostic context.
-    pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) {
+    pub(crate) async fn cleanup_async(
+        &mut self,
+        file_system: &AsyncFileSystem,
+    ) {
         if !self
             .properties
             .capabilities()

@@ -9,36 +9,100 @@
 
 use std::collections::HashMap;
 use std::future;
-use std::io::{Cursor, Result as IoResult};
+use std::io::{
+    Cursor,
+    Result as IoResult,
+};
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
+use std::sync::atomic::{
+    AtomicUsize,
+    Ordering,
+};
+use std::sync::{
+    Arc,
+    Mutex,
+};
+use std::task::{
+    Context,
+    Poll,
+};
 
 use qubit_fs::spi::{
-    CopyAttempt, CopyDeclineReason, CreateDirectoryRequest, CreateTempDirectoryRequest,
-    CreateTempFileRequest, DeleteDirectoryRequest, DeleteFileRequest, DirectoryStreamSpi,
-    FileSystemSpi, FileWriterSpi, ListRequest, OpenReaderRequest, OpenWriterRequest,
-    OpenedDirectoryStream, OpenedReader, OpenedTempDirectory, OpenedTempFile, OpenedWriter,
-    PersistRequest, RenameRequest, SpiRenameFailure, SpiWriteFailure, StatRequest, StatResponse,
+    CopyAttempt,
+    CopyDeclineReason,
+    CreateDirectoryRequest,
+    CreateTempDirectoryRequest,
+    CreateTempFileRequest,
+    DeleteDirectoryRequest,
+    DeleteFileRequest,
+    DirectoryStreamSpi,
+    FileSystemSpi,
+    FileWriterSpi,
+    ListRequest,
+    OpenReaderRequest,
+    OpenWriterRequest,
+    OpenedDirectoryStream,
+    OpenedReader,
+    OpenedTempDirectory,
+    OpenedTempFile,
+    OpenedWriter,
+    PersistRequest,
+    RenameRequest,
+    SpiRenameFailure,
+    SpiWriteFailure,
+    StatRequest,
+    StatResponse,
     TempResourceSpi,
 };
 use qubit_fs::{
-    AchievedAtomicity, CreateDirectoryOutcome, DeleteOutcome, FileKind, FileMetadata, FileSystem,
-    FileSystemCapabilities, FileSystemCapability, FileSystemId, FileSystemInfo, FileSystemLimits,
-    FileSystemProperties, FsError, FsErrorKind, FsOperation, FsResult, OpenedFileInfo, Path,
-    PathConstraints, PathSemantics, PersistOutcome, PublicationMethod, RenameFailureState,
-    RenameOutcome, WriteOutcome,
+    AchievedAtomicity,
+    CreateDirectoryOutcome,
+    DeleteOutcome,
+    FileKind,
+    FileMetadata,
+    FileSystem,
+    FileSystemCapabilities,
+    FileSystemCapability,
+    FileSystemId,
+    FileSystemInfo,
+    FileSystemLimits,
+    FileSystemProperties,
+    FsError,
+    FsErrorKind,
+    FsOperation,
+    FsResult,
+    OpenedFileInfo,
+    Path,
+    PathConstraints,
+    PathSemantics,
+    PersistOutcome,
+    PublicationMethod,
+    RenameFailureState,
+    RenameOutcome,
+    WriteOutcome,
 };
 use qubit_fs_testkit::{
-    AsyncCopyCancellationStage, AsyncCopyFixtureCase, AsyncFileSystemFixture, FixtureFuture,
+    AsyncCopyCancellationStage,
+    AsyncCopyFixtureCase,
+    AsyncFileSystemFixture,
+    FixtureFuture,
 };
-use qubit_fs_testkit::{FileSystemFixture, FixtureResult, FixtureSupport};
-use qubit_io::{AsyncInput, AsyncOutput, Output};
+use qubit_fs_testkit::{
+    FileSystemFixture,
+    FixtureResult,
+    FixtureSupport,
+};
+use qubit_io::{
+    AsyncInput,
+    AsyncOutput,
+    Output,
+};
 
 /// One isolated contract fixture backed by the public synchronous facade.
 pub struct MemoryFixture {
     file_system: FileSystem,
     state: Arc<Mutex<State>>,
+    path_calls: Arc<AtomicUsize>,
 }
 
 /// A single injected provider defect used by the self-test matrix.
@@ -52,6 +116,8 @@ pub enum MemoryFault {
     KeepTempOnCleanup,
     /// Reports a persisted target different from the requested target.
     WrongPersistTarget,
+    /// Returns no entries for a non-empty requested directory.
+    EmptyList,
 }
 
 #[derive(Clone)]
@@ -65,6 +131,7 @@ struct State {
     next_temp: u64,
     fault: MemoryFault,
     delete_capability: bool,
+    core_capabilities: bool,
 }
 
 impl MemoryFixture {
@@ -75,36 +142,72 @@ impl MemoryFixture {
 
     /// Creates a fresh fixture with exactly one provider fault.
     pub fn with_fault(fault: MemoryFault) -> Self {
-        Self::with_capabilities(fault, true)
+        Self::with_capabilities(fault, true, true)
     }
 
     /// Creates a fixture whose facade does not advertise deletion.
     pub fn without_delete() -> Self {
-        Self::with_capabilities(MemoryFault::None, false)
+        Self::with_capabilities(MemoryFault::None, false, true)
+    }
+
+    /// Creates a fixture without the core read, write, list, and copy
+    /// capabilities.
+    pub fn without_core_capabilities() -> Self {
+        Self::with_capabilities(MemoryFault::None, true, false)
     }
 
     /// Creates a fixture with one injected fault and deletion-capability value.
     ///
     /// `fault` selects the provider defect; `delete_capability` controls the
     /// facade property snapshot returned to the suite.
-    fn with_capabilities(fault: MemoryFault, delete_capability: bool) -> Self {
+    fn with_capabilities(
+        fault: MemoryFault,
+        delete_capability: bool,
+        core_capabilities: bool,
+    ) -> Self {
         let state = Arc::new(Mutex::new(State {
             entries: HashMap::new(),
             next_temp: 0,
             fault,
             delete_capability,
+            core_capabilities,
         }));
+        let path_calls = Arc::new(AtomicUsize::new(0));
         let file_system = FileSystem::from_spi(MemorySpi {
             state: Arc::clone(&state),
         })
         .expect("memory SPI properties must be valid");
-        Self { file_system, state }
+        Self {
+            file_system,
+            state,
+            path_calls,
+        }
     }
 
     /// Builds one absolute logical path for the fixture namespace.
     fn path_for(relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/contract/{relative}"))
-            .map_err(|error| qubit_fs_testkit::FixtureError::new(error.to_string()))
+        Path::parse(&format!("/contract/{relative}")).map_err(|error| {
+            qubit_fs_testkit::FixtureError::new(error.to_string())
+        })
+    }
+
+    /// Returns whether the fixture namespace contains no resources.
+    pub fn is_empty(&self) -> bool {
+        self.entry_count() == 0
+    }
+
+    /// Returns the number of resources retained by the fixture namespace.
+    pub fn entry_count(&self) -> usize {
+        self.state
+            .lock()
+            .expect("memory state lock must succeed")
+            .entries
+            .len()
+    }
+
+    /// Returns how many contract paths the suite requested from this fixture.
+    pub fn path_call_count(&self) -> usize {
+        self.path_calls.load(Ordering::Relaxed)
     }
 }
 
@@ -114,14 +217,23 @@ impl FileSystemFixture for MemoryFixture {
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.path_calls.fetch_add(1, Ordering::Relaxed);
         Self::path_for(relative)
     }
 
-    fn list_prefix(&self, root: &Path, relative: &str) -> FixtureResult<String> {
+    fn list_prefix(
+        &self,
+        root: &Path,
+        relative: &str,
+    ) -> FixtureResult<String> {
         Ok(format!("{}/{}", root.as_str(), relative))
     }
 
-    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_file(
+        &self,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<FixtureSupport<Path>> {
         let path = Self::path_for(relative)?;
         self.state
             .lock()
@@ -163,14 +275,16 @@ impl MemorySpi {
     /// Returns the provider identity for an opened temporary resource.
     fn info(path: Path) -> OpenedFileInfo {
         OpenedFileInfo::new(
-            FileSystemId::new("memory-contract").expect("memory provider id must be valid"),
+            FileSystemId::new("memory-contract")
+                .expect("memory provider id must be valid"),
             path,
         )
     }
 
     /// Allocates one temporary resource path and inserts its entry.
     fn create_temp(&self, directory: bool) -> Path {
-        let mut state = self.state.lock().expect("memory state lock must succeed");
+        let mut state =
+            self.state.lock().expect("memory state lock must succeed");
         let path = Path::parse(&format!("/contract/.tmp-{}", state.next_temp))
             .expect("generated temporary path must be valid");
         state.next_temp += 1;
@@ -188,26 +302,27 @@ impl MemorySpi {
 
 impl FileSystemSpi for MemorySpi {
     fn properties(&self) -> FileSystemProperties {
-        let delete_capability = self
-            .state
-            .lock()
-            .expect("memory state lock must succeed")
-            .delete_capability;
+        let state = self.state.lock().expect("memory state lock must succeed");
         let mut capabilities = FileSystemCapabilities::new()
-            .with(FileSystemCapability::Read)
-            .with(FileSystemCapability::Write)
-            .with(FileSystemCapability::List)
             .with(FileSystemCapability::CreateDirectory)
-            .with(FileSystemCapability::Copy)
             .with(FileSystemCapability::Rename)
             .with(FileSystemCapability::TempFile)
             .with(FileSystemCapability::TempDirectory);
-        if delete_capability {
+        if state.core_capabilities {
+            capabilities = capabilities
+                .with(FileSystemCapability::Read)
+                .with(FileSystemCapability::Write)
+                .with(FileSystemCapability::List)
+                .with(FileSystemCapability::Copy);
+        }
+        if state.delete_capability {
             capabilities = capabilities.with(FileSystemCapability::Delete);
         }
+        drop(state);
         FileSystemProperties::new(
             FileSystemInfo::new(
-                FileSystemId::new("memory-contract").expect("memory provider id must be valid"),
+                FileSystemId::new("memory-contract")
+                    .expect("memory provider id must be valid"),
                 "memory-contract-provider",
                 PathSemantics::Hierarchical,
             ),
@@ -239,13 +354,31 @@ impl FileSystemSpi for MemorySpi {
         Ok(StatResponse::new(request.path().clone(), metadata))
     }
 
-    fn list(&self, _: ListRequest<'_>) -> FsResult<OpenedDirectoryStream> {
-        Ok(OpenedDirectoryStream::new(Box::new(EmptyDirectoryStream)))
+    fn list(
+        &self,
+        request: ListRequest<'_>,
+    ) -> FsResult<OpenedDirectoryStream> {
+        let state = self.state.lock().expect("memory state lock must succeed");
+        let entries = if state.fault == MemoryFault::EmptyList {
+            Vec::new()
+        } else {
+            direct_children(&state.entries, request.path())
+        };
+        Ok(OpenedDirectoryStream::new(Box::new(
+            MemoryDirectoryStream {
+                entries: entries.into_iter(),
+            },
+        )))
     }
 
-    fn open_reader(&self, request: OpenReaderRequest<'_>) -> FsResult<OpenedReader> {
+    fn open_reader(
+        &self,
+        request: OpenReaderRequest<'_>,
+    ) -> FsResult<OpenedReader> {
         let state = self.state.lock().expect("memory state lock must succeed");
-        let Some(Entry::File(bytes)) = state.entries.get(request.path().as_str()) else {
+        let Some(Entry::File(bytes)) =
+            state.entries.get(request.path().as_str())
+        else {
             return Err(FsError::new(
                 FsErrorKind::NotFound,
                 FsOperation::OpenReader,
@@ -258,7 +391,10 @@ impl FileSystemSpi for MemorySpi {
         ))
     }
 
-    fn open_writer(&self, request: OpenWriterRequest<'_>) -> FsResult<OpenedWriter> {
+    fn open_writer(
+        &self,
+        request: OpenWriterRequest<'_>,
+    ) -> FsResult<OpenedWriter> {
         Ok(OpenedWriter::new(
             Self::info(request.path().clone()),
             Box::new(MemoryWriter {
@@ -273,8 +409,10 @@ impl FileSystemSpi for MemorySpi {
         &self,
         request: CreateDirectoryRequest<'_>,
     ) -> FsResult<CreateDirectoryOutcome> {
-        let mut state = self.state.lock().expect("memory state lock must succeed");
-        let already_existed = state.entries.contains_key(request.path().as_str());
+        let mut state =
+            self.state.lock().expect("memory state lock must succeed");
+        let already_existed =
+            state.entries.contains_key(request.path().as_str());
         state
             .entries
             .entry(request.path().as_str().to_owned())
@@ -282,7 +420,10 @@ impl FileSystemSpi for MemorySpi {
         Ok(CreateDirectoryOutcome::new(already_existed))
     }
 
-    fn delete_file(&self, request: DeleteFileRequest<'_>) -> FsResult<DeleteOutcome> {
+    fn delete_file(
+        &self,
+        request: DeleteFileRequest<'_>,
+    ) -> FsResult<DeleteOutcome> {
         let removed = self
             .state
             .lock()
@@ -292,7 +433,10 @@ impl FileSystemSpi for MemorySpi {
         Ok(DeleteOutcome::new(removed.is_none()))
     }
 
-    fn delete_directory(&self, request: DeleteDirectoryRequest<'_>) -> FsResult<DeleteOutcome> {
+    fn delete_directory(
+        &self,
+        request: DeleteDirectoryRequest<'_>,
+    ) -> FsResult<DeleteOutcome> {
         let removed = self
             .state
             .lock()
@@ -309,9 +453,14 @@ impl FileSystemSpi for MemorySpi {
         Ok(CopyAttempt::Declined(CopyDeclineReason::NotImplemented))
     }
 
-    fn rename(&self, request: RenameRequest<'_>) -> Result<RenameOutcome, SpiRenameFailure> {
-        let mut state = self.state.lock().expect("memory state lock must succeed");
-        let Some(entry) = state.entries.remove(request.source().as_str()) else {
+    fn rename(
+        &self,
+        request: RenameRequest<'_>,
+    ) -> Result<RenameOutcome, SpiRenameFailure> {
+        let mut state =
+            self.state.lock().expect("memory state lock must succeed");
+        let Some(entry) = state.entries.remove(request.source().as_str())
+        else {
             return Err(SpiRenameFailure::new(
                 FsError::new(
                     FsErrorKind::NotFound,
@@ -330,7 +479,10 @@ impl FileSystemSpi for MemorySpi {
         ))
     }
 
-    fn create_temp_file(&self, _: CreateTempFileRequest) -> FsResult<OpenedTempFile> {
+    fn create_temp_file(
+        &self,
+        _: CreateTempFileRequest,
+    ) -> FsResult<OpenedTempFile> {
         let path = self.create_temp(false);
         Ok(OpenedTempFile::new(
             Self::info(path.clone()),
@@ -356,12 +508,39 @@ impl FileSystemSpi for MemorySpi {
     }
 }
 
-struct EmptyDirectoryStream;
+struct MemoryDirectoryStream {
+    entries: std::vec::IntoIter<qubit_fs::DirEntry>,
+}
 
-impl DirectoryStreamSpi for EmptyDirectoryStream {
+impl DirectoryStreamSpi for MemoryDirectoryStream {
     fn next_entry(&mut self) -> FsResult<Option<qubit_fs::DirEntry>> {
-        Ok(None)
+        Ok(self.entries.next())
     }
+}
+
+fn direct_children(
+    entries: &HashMap<String, Entry>,
+    root: &Path,
+) -> Vec<qubit_fs::DirEntry> {
+    let prefix = format!("{}/", root.as_str().trim_end_matches('/'));
+    entries
+        .iter()
+        .filter_map(|(text, entry)| {
+            let relative = text.strip_prefix(&prefix)?;
+            if relative.is_empty() || relative.contains('/') {
+                return None;
+            }
+            let kind = match entry {
+                Entry::File(_) => FileKind::File,
+                Entry::Directory => FileKind::Directory,
+            };
+            Some(qubit_fs::DirEntry::new(
+                Path::parse(text)
+                    .expect("stored memory path must remain valid"),
+                kind,
+            ))
+        })
+        .collect()
 }
 
 struct MemoryWriter {
@@ -419,7 +598,8 @@ impl TempResourceSpi for TempSession {
         &mut self,
         request: PersistRequest<'_>,
     ) -> Result<PersistOutcome, qubit_fs::spi::SpiPersistFailure> {
-        let mut state = self.state.lock().expect("memory state lock must succeed");
+        let mut state =
+            self.state.lock().expect("memory state lock must succeed");
         let entry = state
             .entries
             .remove(self.path.as_str())
@@ -428,7 +608,8 @@ impl TempResourceSpi for TempSession {
             .entries
             .insert(request.target().as_str().to_owned(), entry);
         let target = if state.fault == MemoryFault::WrongPersistTarget {
-            Path::parse("/contract/wrong-persist-target").expect("generated path must be valid")
+            Path::parse("/contract/wrong-persist-target")
+                .expect("generated path must be valid")
         } else {
             request.target().clone()
         };
@@ -444,7 +625,8 @@ impl TempResourceSpi for TempSession {
     }
 
     fn cleanup(&mut self) -> FsResult<()> {
-        let mut state = self.state.lock().expect("memory state lock must succeed");
+        let mut state =
+            self.state.lock().expect("memory state lock must succeed");
         if state.fault != MemoryFault::KeepTempOnCleanup {
             state.entries.remove(self.path.as_str());
         }
@@ -457,6 +639,8 @@ pub struct AsyncMemoryFixture {
     file_system: qubit_fs::AsyncFileSystem,
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
+    supports_cancellation_cases: bool,
+    path_calls: Arc<AtomicUsize>,
 }
 
 /// A single injected asynchronous provider defect used by the self-test matrix.
@@ -472,6 +656,8 @@ pub enum AsyncMemoryFault {
     WriteDropsBytes,
     /// Produces a listing entry outside the requested namespace.
     ListEscapesNamespace,
+    /// Returns no entries for a non-empty requested directory.
+    EmptyList,
     /// Reports deletion success without removing the resource.
     DeleteNoOp,
     /// Reports copy success without publishing the target bytes.
@@ -490,18 +676,64 @@ impl AsyncMemoryFixture {
 
     /// Creates an asynchronous fixture with exactly one provider fault.
     pub fn with_fault(fault: AsyncMemoryFault) -> Self {
-        let stage = Arc::new(Mutex::new(AsyncCopyCancellationStage::NativeAttempt));
+        Self::with_copy_behavior(fault, true, false)
+    }
+
+    /// Creates a conforming fixture without optional cancellation probes.
+    pub fn without_cancellation_cases() -> Self {
+        Self::with_copy_behavior(AsyncMemoryFault::None, false, false)
+    }
+
+    /// Creates a fixture whose provider completes copy through its native path.
+    pub fn with_native_copy() -> Self {
+        Self::with_copy_behavior(AsyncMemoryFault::None, false, true)
+    }
+
+    /// Creates a fixture without the core read, write, list, and copy
+    /// capabilities.
+    pub fn without_core_capabilities() -> Self {
+        Self::with_configuration(AsyncMemoryFault::None, false, false, false)
+    }
+
+    /// Creates a fixture with selected copy and fault behavior.
+    fn with_copy_behavior(
+        fault: AsyncMemoryFault,
+        supports_cancellation_cases: bool,
+        native_copy: bool,
+    ) -> Self {
+        Self::with_configuration(
+            fault,
+            supports_cancellation_cases,
+            native_copy,
+            true,
+        )
+    }
+
+    /// Creates a fixture with selected capabilities and copy behavior.
+    fn with_configuration(
+        fault: AsyncMemoryFault,
+        supports_cancellation_cases: bool,
+        native_copy: bool,
+        core_capabilities: bool,
+    ) -> Self {
+        let stage =
+            Arc::new(Mutex::new(AsyncCopyCancellationStage::NativeAttempt));
         let entries = Arc::new(Mutex::new(HashMap::new()));
+        let path_calls = Arc::new(AtomicUsize::new(0));
         let file_system = qubit_fs::AsyncFileSystem::from_spi(AsyncMemorySpi {
             stage: Arc::clone(&stage),
             entries: Arc::clone(&entries),
             fault,
+            native_copy,
+            core_capabilities,
         })
         .expect("async memory SPI properties must be valid");
         Self {
             file_system,
             stage,
             entries,
+            supports_cancellation_cases,
+            path_calls,
         }
     }
 
@@ -512,6 +744,11 @@ impl AsyncMemoryFixture {
             .expect("async memory state lock must succeed")
             .is_empty()
     }
+
+    /// Returns how many contract paths the suite requested from this fixture.
+    pub fn path_call_count(&self) -> usize {
+        self.path_calls.load(Ordering::Relaxed)
+    }
 }
 
 impl AsyncFileSystemFixture for AsyncMemoryFixture {
@@ -520,10 +757,15 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.path_calls.fetch_add(1, Ordering::Relaxed);
         MemoryFixture::path_for(relative)
     }
 
-    fn list_prefix(&self, root: &Path, relative: &str) -> FixtureResult<String> {
+    fn list_prefix(
+        &self,
+        root: &Path,
+        relative: &str,
+    ) -> FixtureResult<String> {
         Ok(format!("{}/{}", root.as_str(), relative))
     }
 
@@ -542,7 +784,10 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
-    fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
+    fn read_file<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
         Box::pin(async move {
             let entry = self
                 .entries
@@ -561,6 +806,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         &self,
         stage: AsyncCopyCancellationStage,
     ) -> FixtureResult<FixtureSupport<AsyncCopyFixtureCase>> {
+        if !self.supports_cancellation_cases {
+            return Ok(FixtureSupport::Unsupported);
+        }
         *self.stage.lock().expect("async stage lock must succeed") = stage;
         let source = self.path("async-copy-source")?;
         self.entries
@@ -582,6 +830,8 @@ struct AsyncMemorySpi {
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
     fault: AsyncMemoryFault,
+    native_copy: bool,
+    core_capabilities: bool,
 }
 
 impl AsyncMemorySpi {
@@ -593,7 +843,8 @@ impl AsyncMemorySpi {
     /// Returns the fixed provider identity for a opened handle.
     fn info(path: &Path) -> OpenedFileInfo {
         OpenedFileInfo::new(
-            FileSystemId::new("async-memory-contract").expect("async provider id must be valid"),
+            FileSystemId::new("async-memory-contract")
+                .expect("async provider id must be valid"),
             path.clone(),
         )
     }
@@ -610,6 +861,18 @@ impl AsyncMemorySpi {
 
 impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     fn properties(&self) -> FileSystemProperties {
+        let mut capabilities = FileSystemCapabilities::new()
+            .with(FileSystemCapability::Delete)
+            .with(FileSystemCapability::Rename)
+            .with(FileSystemCapability::TempFile)
+            .with(FileSystemCapability::TempDirectory);
+        if self.core_capabilities {
+            capabilities = capabilities
+                .with(FileSystemCapability::Copy)
+                .with(FileSystemCapability::Read)
+                .with(FileSystemCapability::Write)
+                .with(FileSystemCapability::List);
+        }
         FileSystemProperties::new(
             FileSystemInfo::new(
                 FileSystemId::new("async-memory-contract")
@@ -617,15 +880,7 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                 "async-memory-contract-provider",
                 PathSemantics::Hierarchical,
             ),
-            FileSystemCapabilities::new()
-                .with(FileSystemCapability::Copy)
-                .with(FileSystemCapability::Read)
-                .with(FileSystemCapability::Write)
-                .with(FileSystemCapability::List)
-                .with(FileSystemCapability::Delete)
-                .with(FileSystemCapability::Rename)
-                .with(FileSystemCapability::TempFile)
-                .with(FileSystemCapability::TempDirectory),
+            capabilities,
             FileSystemLimits::unknown(),
             PathConstraints::absolute(),
         )
@@ -655,9 +910,9 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                     path,
                     FileMetadata::new(FileKind::Directory),
                 )),
-                None if fault == AsyncMemoryFault::MissingPathExists => {
-                    Ok(StatResponse::new(path, FileMetadata::new(FileKind::File)))
-                }
+                None if fault == AsyncMemoryFault::MissingPathExists => Ok(
+                    StatResponse::new(path, FileMetadata::new(FileKind::File)),
+                ),
                 None => Err(FsError::new(
                     FsErrorKind::NotFound,
                     FsOperation::Stat,
@@ -670,16 +925,31 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     fn list<'a>(
         &'a self,
         request: ListRequest<'a>,
-    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<qubit_fs::spi::OpenedAsyncDirectoryStream>> {
-        let path = if self.fault == AsyncMemoryFault::ListEscapesNamespace {
-            Path::parse("/outside-list-root").expect("fixed list entry path must be valid")
+    ) -> qubit_fs::spi::SpiFuture<
+        'a,
+        FsResult<qubit_fs::spi::OpenedAsyncDirectoryStream>,
+    > {
+        let entries = if self.fault == AsyncMemoryFault::ListEscapesNamespace {
+            vec![qubit_fs::DirEntry::new(
+                Path::parse("/outside-list-root")
+                    .expect("fixed list entry path must be valid"),
+                FileKind::Directory,
+            )]
+        } else if self.fault == AsyncMemoryFault::EmptyList {
+            Vec::new()
         } else {
-            request.path().clone()
+            direct_children(
+                &self
+                    .entries
+                    .lock()
+                    .expect("async memory state lock must succeed"),
+                request.path(),
+            )
         };
         Box::pin(async move {
             Ok(qubit_fs::spi::OpenedAsyncDirectoryStream::new(Box::new(
                 AsyncMemoryDirectoryStream {
-                    entry: Some(qubit_fs::DirEntry::new(path, FileKind::Directory)),
+                    entries: entries.into_iter(),
                 },
             )))
         })
@@ -688,7 +958,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     fn open_reader<'a>(
         &'a self,
         request: OpenReaderRequest<'a>,
-    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<qubit_fs::spi::OpenedAsyncReader>> {
+    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<qubit_fs::spi::OpenedAsyncReader>>
+    {
         if request.path().as_str() == "/contract/async-copy-source"
             && self.stage() == AsyncCopyCancellationStage::Reader
         {
@@ -715,7 +986,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                 bytes = b"wrong bytes".to_vec();
             }
             Ok(qubit_fs::spi::OpenedAsyncReader::new(
-                qubit_fs::AsyncFileReader::new(AsyncMemoryReader { bytes, offset: 0 }, info),
+                info,
+                Box::new(AsyncMemoryReader { bytes, offset: 0 }),
             ))
         })
     }
@@ -723,8 +995,10 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     fn open_writer<'a>(
         &'a self,
         request: OpenWriterRequest<'a>,
-    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<qubit_fs::spi::OpenedAsyncWriter>> {
-        let stage = if request.path().as_str() == "/contract/async-copy-target" {
+    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<qubit_fs::spi::OpenedAsyncWriter>>
+    {
+        let stage = if request.path().as_str() == "/contract/async-copy-target"
+        {
             self.stage()
         } else {
             AsyncCopyCancellationStage::NativeAttempt
@@ -803,11 +1077,49 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     fn try_copy<'a>(
         &'a self,
         request: qubit_fs::spi::CopyRequest<'a>,
-    ) -> qubit_fs::spi::SpiFuture<'a, Result<CopyAttempt, qubit_fs::spi::SpiCopyFailure>> {
+    ) -> qubit_fs::spi::SpiFuture<
+        'a,
+        Result<CopyAttempt, qubit_fs::spi::SpiCopyFailure>,
+    > {
         if request.source().as_str() == "/contract/async-copy-source"
             && self.stage() == AsyncCopyCancellationStage::NativeAttempt
         {
             return Box::pin(future::pending());
+        }
+        if self.native_copy {
+            let source = request.source().clone();
+            let target = request.target().clone();
+            let entries = Arc::clone(&self.entries);
+            return Box::pin(async move {
+                let mut entries = entries
+                    .lock()
+                    .expect("async memory state lock must succeed");
+                let Some(entry) = entries.get(source.as_str()).cloned() else {
+                    return Err(qubit_fs::spi::SpiCopyFailure::new(
+                        FsError::new(
+                            FsErrorKind::NotFound,
+                            FsOperation::Copy,
+                            "async memory copy source absent",
+                        ),
+                        qubit_fs::CopyFailureState::Unchanged,
+                        qubit_fs::CopyStats::default(),
+                    ));
+                };
+                let bytes = match &entry {
+                    Entry::File(bytes) => bytes.len() as u64,
+                    Entry::Directory => 0,
+                };
+                entries.insert(target.as_str().to_owned(), entry);
+                Ok(CopyAttempt::Completed(qubit_fs::CopyOutcome::new(
+                    qubit_fs::CopyStats {
+                        files: 1,
+                        bytes,
+                        ..qubit_fs::CopyStats::default()
+                    },
+                    qubit_fs::CopyMethod::Native,
+                    AchievedAtomicity::NonAtomic,
+                )))
+            });
         }
         Box::pin(async {
             Ok(CopyAttempt::Declined(
@@ -819,7 +1131,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     fn rename<'a>(
         &'a self,
         request: RenameRequest<'a>,
-    ) -> qubit_fs::spi::SpiFuture<'a, Result<RenameOutcome, SpiRenameFailure>> {
+    ) -> qubit_fs::spi::SpiFuture<'a, Result<RenameOutcome, SpiRenameFailure>>
+    {
         let source = request.source().clone();
         let target = request.target().clone();
         let entries = Arc::clone(&self.entries);
@@ -851,7 +1164,10 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     fn create_temp_file<'a>(
         &'a self,
         _: CreateTempFileRequest,
-    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<qubit_fs::spi::OpenedAsyncTempFile>> {
+    ) -> qubit_fs::spi::SpiFuture<
+        'a,
+        FsResult<qubit_fs::spi::OpenedAsyncTempFile>,
+    > {
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
         Box::pin(async move {
@@ -870,7 +1186,10 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     fn create_temp_directory<'a>(
         &'a self,
         _: CreateTempDirectoryRequest,
-    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<qubit_fs::spi::OpenedAsyncTempDirectory>> {
+    ) -> qubit_fs::spi::SpiFuture<
+        'a,
+        FsResult<qubit_fs::spi::OpenedAsyncTempDirectory>,
+    > {
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
         Box::pin(async move {
@@ -888,14 +1207,15 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
 }
 
 struct AsyncMemoryDirectoryStream {
-    entry: Option<qubit_fs::DirEntry>,
+    entries: std::vec::IntoIter<qubit_fs::DirEntry>,
 }
 
 impl qubit_fs::spi::AsyncDirectoryStreamSession for AsyncMemoryDirectoryStream {
     fn next_entry_async<'a>(
         &'a mut self,
-    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<Option<qubit_fs::DirEntry>>> {
-        Box::pin(async move { Ok(self.entry.take()) })
+    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<Option<qubit_fs::DirEntry>>>
+    {
+        Box::pin(async move { Ok(self.entries.next()) })
     }
 }
 
@@ -919,8 +1239,9 @@ impl AsyncInput for AsyncMemoryReader {
             Poll::Ready(Ok(0))
         } else {
             let length = count.min(this.bytes.len() - this.offset);
-            output[index..index + length]
-                .copy_from_slice(&this.bytes[this.offset..this.offset + length]);
+            output[index..index + length].copy_from_slice(
+                &this.bytes[this.offset..this.offset + length],
+            );
             this.offset += length;
             Poll::Ready(Ok(length))
         }
@@ -954,7 +1275,10 @@ impl AsyncOutput for AsyncMemoryWriter {
         }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<IoResult<()>> {
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+    ) -> Poll<IoResult<()>> {
         let _ = self;
         Poll::Ready(Ok(()))
     }
@@ -963,7 +1287,10 @@ impl AsyncOutput for AsyncMemoryWriter {
 impl qubit_fs::spi::AsyncFileWriteSession for AsyncMemoryWriter {
     fn commit_async<'a>(
         self: Pin<&'a mut Self>,
-    ) -> qubit_fs::spi::SpiFuture<'a, Result<qubit_fs::WriteOutcome, qubit_fs::WriteFailure>> {
+    ) -> qubit_fs::spi::SpiFuture<
+        'a,
+        Result<qubit_fs::WriteOutcome, qubit_fs::WriteFailure>,
+    > {
         if self.as_ref().get_ref().stage == AsyncCopyCancellationStage::Commit {
             return Box::pin(future::pending());
         }
@@ -975,7 +1302,7 @@ impl qubit_fs::spi::AsyncFileWriteSession for AsyncMemoryWriter {
         Box::pin(async move {
             if fault != AsyncMemoryFault::WriteDropsBytes
                 && !(fault == AsyncMemoryFault::CopyDropsTarget
-                    && path.as_str() == "/contract/async-copy-positive-target")
+                    && path.as_str().contains("async-copy-positive-target"))
             {
                 state
                     .lock()
@@ -989,7 +1316,9 @@ impl qubit_fs::spi::AsyncFileWriteSession for AsyncMemoryWriter {
         })
     }
 
-    fn abort_async<'a>(self: Pin<&'a mut Self>) -> qubit_fs::spi::SpiFuture<'a, FsResult<()>> {
+    fn abort_async<'a>(
+        self: Pin<&'a mut Self>,
+    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<()>> {
         let _ = self;
         Box::pin(async { Ok(()) })
     }
@@ -1003,7 +1332,10 @@ impl qubit_fs::spi::AsyncFileWriteSession for AsyncMemoryWriter {
 ///
 /// `entries` owns the fixture namespace and `directory` selects the resource
 /// kind. The returned path is already present in that namespace.
-fn allocate_async_temp(entries: &Arc<Mutex<HashMap<String, Entry>>>, directory: bool) -> Path {
+fn allocate_async_temp(
+    entries: &Arc<Mutex<HashMap<String, Entry>>>,
+    directory: bool,
+) -> Path {
     let mut entries = entries
         .lock()
         .expect("async memory state lock must succeed");
@@ -1031,7 +1363,9 @@ struct AsyncTempSession {
 }
 
 impl qubit_fs::spi::AsyncTempResourceSpi for AsyncTempSession {
-    fn cleanup<'a>(self: Pin<&'a mut Self>) -> qubit_fs::spi::SpiFuture<'a, FsResult<()>> {
+    fn cleanup<'a>(
+        self: Pin<&'a mut Self>,
+    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<()>> {
         let this = self.get_mut();
         let entries = Arc::clone(&this.entries);
         let path = this.path.clone();
@@ -1047,20 +1381,24 @@ impl qubit_fs::spi::AsyncTempResourceSpi for AsyncTempSession {
         })
     }
 
-    fn keep<'a>(self: Pin<&'a mut Self>) -> qubit_fs::spi::SpiFuture<'a, FsResult<()>> {
+    fn keep<'a>(
+        self: Pin<&'a mut Self>,
+    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<()>> {
         let _ = self;
         Box::pin(async { Ok(()) })
     }
 
     fn persist<'a>(
         self: Pin<&'a mut Self>,
-        target: &'a Path,
-        _: qubit_fs::PersistOptions,
-    ) -> qubit_fs::spi::SpiFuture<'a, Result<PersistOutcome, qubit_fs::PersistFailure>> {
+        request: qubit_fs::spi::PersistRequest<'a>,
+    ) -> qubit_fs::spi::SpiFuture<
+        'a,
+        Result<PersistOutcome, qubit_fs::spi::SpiPersistFailure>,
+    > {
         let this = self.get_mut();
         let entries = Arc::clone(&this.entries);
         let source = this.path.clone();
-        let target = target.clone();
+        let target = request.target().clone();
         Box::pin(async move {
             let mut entries = entries
                 .lock()

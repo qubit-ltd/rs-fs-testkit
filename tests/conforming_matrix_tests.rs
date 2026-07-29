@@ -6,8 +6,16 @@
 
 mod common;
 
-use qubit_fs::{FileSystemCapability, FsError, FsErrorKind, FsOperation};
-use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
+use qubit_fs::{
+    FileSystemCapability,
+    FsError,
+    FsErrorKind,
+    FsOperation,
+};
+use qubit_fs_testkit::{
+    FileSystemContractSuite,
+    FileSystemFixture,
+};
 
 use common::MemoryFixture;
 
@@ -35,6 +43,7 @@ fn test_conforming_memory_provider_satisfies_sync_suite() {
         );
     }
     FileSystemContractSuite::new(&fixture).assert_all();
+    assert!(fixture.is_empty(), "suite must clean up created resources");
 }
 
 /// A suite must not attempt end-of-run deletion when the facade lacks it.
@@ -51,13 +60,41 @@ fn test_single_faults_are_rejected_by_sync_suite() {
         common::MemoryFault::WrongStatKind,
         common::MemoryFault::KeepTempOnCleanup,
         common::MemoryFault::WrongPersistTarget,
+        common::MemoryFault::EmptyList,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).assert_all();
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_all();
+            }));
         assert!(result.is_err(), "suite accepted injected fault: {fault:?}");
     }
+}
+
+/// Repeated assertion phases must use distinct resource names.
+#[test]
+fn test_sync_suite_uses_unique_names_for_repeated_phases() {
+    let fixture = MemoryFixture::new();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    suite.assert_write();
+    suite.assert_write();
+    assert_eq!(fixture.entry_count(), 2);
+}
+
+/// Unadvertised core operations still exercise the facade's structured
+/// preflight.
+#[test]
+fn test_core_capability_negative_branches_are_exercised() {
+    let fixture = MemoryFixture::without_core_capabilities();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    suite.assert_read();
+    suite.assert_write();
+    suite.assert_list();
+    assert_eq!(
+        fixture.path_call_count(),
+        3,
+        "each negative capability branch must exercise one facade path"
+    );
 }
 
 /// Structured errors must not format an untrusted source diagnostic.

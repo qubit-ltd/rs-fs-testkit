@@ -12,6 +12,9 @@
 provider development dependencies, keeping reusable test support out of
 production dependency graphs.
 
+The intended contract-suite architecture is recorded in the
+[Chinese design document](doc/file_system_testkit_design.zh_CN.md).
+
 ## Installation
 
 Add the testkit as a development dependency:
@@ -58,6 +61,14 @@ impl FileSystemFixture for RootedFixture {
     fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
         Path::parse(&format!("/{relative}"))
             .map_err(|error| qubit_fs_testkit::FixtureError::new(error.to_string()))
+    }
+
+    fn list_prefix(
+        &self,
+        root: &Path,
+        relative: &str,
+    ) -> qubit_fs_testkit::FixtureResult<String> {
+        Ok(format!("{}/{relative}", root.as_str().trim_end_matches('/')))
     }
 }
 ```
