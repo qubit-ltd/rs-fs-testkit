@@ -8,20 +8,38 @@
 //! Mutable state shared by one contract-suite run.
 
 use qubit_fs::{
-    AsyncFileSystem, FileKind, FileSystem, FileSystemCapability, FileSystemProperties, FsErrorKind,
+    AsyncFileSystem,
+    FileKind,
+    FileSystem,
+    FileSystemCapability,
+    FileSystemProperties,
+    FsErrorKind,
     Path,
 };
 
 /// Holds the immutable snapshot and mutable namespace bookkeeping for a suite.
 pub(crate) struct ContractContext {
+    /// Immutable property snapshot captured when the suite starts.
     properties: FileSystemProperties,
+    /// Counter used to make repeated contract phase names unique.
     name_counter: u64,
+    /// Paths retained for best-effort cleanup in reverse creation order.
     created_paths: Vec<Path>,
+    /// Name of the contract phase currently producing diagnostics.
     current_contract: &'static str,
 }
 
 impl ContractContext {
     /// Creates context from the facade's cached immutable property snapshot.
+    ///
+    /// # Parameters
+    ///
+    /// * `properties` - Property snapshot exposed by the tested facade.
+    ///
+    /// # Returns
+    ///
+    /// Fresh context in the initialization phase with no recorded paths.
+    #[inline]
     pub(crate) fn new(properties: &FileSystemProperties) -> Self {
         Self {
             properties: properties.clone(),
@@ -32,17 +50,36 @@ impl ContractContext {
     }
 
     /// Returns the suite's single property snapshot.
+    ///
+    /// # Returns
+    ///
+    /// The immutable snapshot captured when the context was created.
+    #[inline(always)]
     pub(crate) const fn properties(&self) -> &FileSystemProperties {
         &self.properties
     }
 
     /// Starts a named contract assertion and advances the unique-name counter.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract` - Static contract name used in paths and diagnostics.
+    #[inline]
     pub(crate) fn begin(&mut self, contract: &'static str) {
         self.current_contract = contract;
         self.name_counter = self.name_counter.saturating_add(1);
     }
 
     /// Returns a suite-unique relative name for the current contract phase.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Human-readable suffix describing the contract resource.
+    ///
+    /// # Returns
+    ///
+    /// A name containing the current contract, invocation counter, and suffix.
+    #[inline]
     pub(crate) fn relative_name(&self, relative: &str) -> String {
         format!(
             "{}-{}-{}",
@@ -53,11 +90,21 @@ impl ContractContext {
     }
 
     /// Records a path created by the current contract assertion.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Provider path that cleanup should remove later.
+    #[inline]
     pub(crate) fn record_created(&mut self, path: Path) {
         self.created_paths.push(path);
     }
 
     /// Returns the contract currently being evaluated for diagnostic context.
+    ///
+    /// # Returns
+    ///
+    /// The static name most recently supplied to [`Self::begin`].
+    #[inline(always)]
     pub(crate) const fn current_contract(&self) -> &'static str {
         self.current_contract
     }
@@ -69,6 +116,15 @@ impl ContractContext {
     /// contract failure, while any other cleanup error is reported with the
     /// phase that owned the resource. Providers without deletion capability
     /// retain the fixture-owned resources because the suite cannot clean them.
+    ///
+    /// # Parameters
+    ///
+    /// * `file_system` - Synchronous facade used to inspect and delete paths.
+    ///
+    /// # Panics
+    ///
+    /// Panics when metadata inspection or deletion fails for a recorded path,
+    /// except when inspection reports that the path is already absent.
     pub(crate) fn cleanup(&mut self, file_system: &FileSystem) {
         if !self
             .properties
@@ -101,7 +157,19 @@ impl ContractContext {
     /// Cleanup follows the synchronous suite semantics: missing resources are
     /// already cleaned, while every other observation or deletion error fails
     /// the current contract with its diagnostic context.
-    pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) {
+    ///
+    /// # Parameters
+    ///
+    /// * `file_system` - Asynchronous facade used to inspect and delete paths.
+    ///
+    /// # Panics
+    ///
+    /// Panics when metadata inspection or deletion fails for a recorded path,
+    /// except when inspection reports that the path is already absent.
+    pub(crate) async fn cleanup_async(
+        &mut self,
+        file_system: &AsyncFileSystem,
+    ) {
         if !self
             .properties
             .capabilities()
