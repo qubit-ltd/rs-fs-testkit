@@ -175,13 +175,17 @@ fn test_async_contract_entry_points_run_individually() {
 fn test_single_faults_are_rejected_by_async_suite() {
     for fault in [
         AsyncMemoryFault::MissingPathExists,
+        AsyncMemoryFault::WrongStatMetadata,
         AsyncMemoryFault::ReadWrongBytes,
         AsyncMemoryFault::WriteDropsBytes,
         AsyncMemoryFault::ListEscapesNamespace,
         AsyncMemoryFault::EmptyList,
+        AsyncMemoryFault::ListDropsMetadata,
         AsyncMemoryFault::DeleteNoOp,
         AsyncMemoryFault::CopyDropsTarget,
         AsyncMemoryFault::RenameNoOp,
+        AsyncMemoryFault::RenameWrongOutcome,
+        AsyncMemoryFault::DirectoryCopyDropsChildren,
         AsyncMemoryFault::TempCleanupNoOp,
         AsyncMemoryFault::AppendOverwrites,
         AsyncMemoryFault::RecursiveDeleteLeavesChildren,
@@ -190,6 +194,7 @@ fn test_single_faults_are_rejected_by_async_suite() {
         AsyncMemoryFault::DurableCopyNonDurable,
         AsyncMemoryFault::TempPersistWrongTarget,
         AsyncMemoryFault::AtomicTempPersistNonAtomic,
+        AsyncMemoryFault::TempIgnoresOptions,
     ] {
         let fixture = AsyncMemoryFixture::with_fault(fault);
         let result =

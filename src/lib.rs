@@ -23,6 +23,7 @@ mod file_system_contract_suite;
 mod file_system_fixture;
 mod fixture_error;
 mod fixture_support;
+mod internal;
 
 pub use async_copy_cancellation_stage::AsyncCopyCancellationStage;
 pub use async_copy_fixture_case::AsyncCopyFixtureCase;

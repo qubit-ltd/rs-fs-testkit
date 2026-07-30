@@ -37,6 +37,10 @@ use std::panic::{
 };
 
 use crate::contract_context::ContractContext;
+use crate::internal::{
+    assert_error_with_target,
+    assert_unsupported_error,
+};
 use crate::{
     FileSystemFixture,
     FixtureSupport,
@@ -1465,14 +1469,27 @@ impl<'a> FileSystemContractSuite<'a> {
         path: &qubit_fs::Path,
         target: Option<&qubit_fs::Path>,
     ) {
-        assert_eq!(error.kind(), kind, "error contract: kind mismatch");
-        assert_eq!(
-            error.operation(),
-            operation,
-            "error contract: context mismatch"
-        );
-        assert_eq!(error.path(), Some(path), "error contract: path mismatch");
-        assert_eq!(error.target(), target, "error contract: target mismatch");
+        let provider = Some(self.context.properties().info().provider_id());
+        if kind == FsErrorKind::UnsupportedCapability && target.is_none() {
+            assert_unsupported_error(
+                error,
+                kind,
+                operation,
+                Some(path),
+                provider,
+                error.required_capability(),
+            );
+        } else {
+            assert_error_with_target(
+                error,
+                kind,
+                operation,
+                Some(path),
+                target,
+                provider,
+                error.required_capability(),
+            );
+        }
     }
 
     /// Validates option-derived capability preflight errors.
@@ -1494,20 +1511,14 @@ impl<'a> FileSystemContractSuite<'a> {
         capability: FileSystemCapability,
         contract: &str,
     ) {
-        assert_eq!(
-            error.kind(),
+        let _ = contract;
+        assert_unsupported_error(
+            error,
             FsErrorKind::RequirementNotMet,
-            "{contract}: error kind mismatch"
-        );
-        assert_eq!(
-            error.operation(),
             operation,
-            "{contract}: error operation mismatch"
-        );
-        assert_eq!(
-            error.required_capability(),
+            error.path(),
+            Some(self.context.properties().info().provider_id()),
             Some(capability),
-            "{contract}: missing required-capability context"
         );
     }
 }

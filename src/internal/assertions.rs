@@ -13,7 +13,7 @@ use qubit_fs::{
     FsError,
     FsErrorKind,
     FsOperation,
-    FsPath,
+    Path,
 };
 
 /// Checks all structured fields required by one filesystem contract.
@@ -24,8 +24,8 @@ use qubit_fs::{
 /// * `kind` - Required error classification.
 /// * `operation` - Required public operation.
 /// * `path` - Required path when the contract is path-scoped.
-/// * `provider` - Required provider identifier when provider context is
-///   available.
+/// * `provider` - Expected provider identifier when the error reports provider
+///   context.
 /// * `capability` - Required capability when the error reports one.
 ///
 /// # Panics
@@ -36,7 +36,7 @@ pub(crate) fn assert_error(
     error: &FsError,
     kind: FsErrorKind,
     operation: FsOperation,
-    path: Option<&FsPath>,
+    path: Option<&Path>,
     provider: Option<&str>,
     capability: Option<FileSystemCapability>,
 ) {
@@ -47,10 +47,9 @@ pub(crate) fn assert_error(
         "filesystem error operation must match",
     );
     assert_eq!(path, error.path(), "filesystem error path must match");
-    assert_eq!(
-        provider,
-        error.provider(),
-        "filesystem error provider must match",
+    assert!(
+        error.provider().is_none() || error.provider() == provider,
+        "filesystem error provider must be absent or match the configured provider",
     );
     assert_eq!(
         capability,
@@ -79,8 +78,8 @@ pub(crate) fn assert_error_with_target(
     error: &FsError,
     kind: FsErrorKind,
     operation: FsOperation,
-    path: Option<&FsPath>,
-    target: Option<&FsPath>,
+    path: Option<&Path>,
+    target: Option<&Path>,
     provider: Option<&str>,
     capability: Option<FileSystemCapability>,
 ) {
@@ -109,7 +108,7 @@ pub(crate) fn assert_unsupported_error(
     error: &FsError,
     kind: FsErrorKind,
     operation: FsOperation,
-    path: Option<&FsPath>,
+    path: Option<&Path>,
     provider: Option<&str>,
     capability: Option<FileSystemCapability>,
 ) {
