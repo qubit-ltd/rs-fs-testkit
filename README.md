@@ -52,9 +52,10 @@ operations the provider does not advertise.
   `AsyncFileSystemContractSuite` counterpart, each running a fixed,
   dependency-safe workflow.
 - Contracts for facade properties, core operations, capability preflight,
-  structured error context, cleanup, and supported optional operations. The
-  synchronous suite also verifies append, recursive deletion, required-atomic
-  rename/replacement, and required-durable copy when advertised.
+  structured error context, cleanup, and supported optional operations. Both
+  suites verify advertised append, recursive deletion, required-atomic
+  rename/replacement, and required-durable copy. The synchronous suite also
+  verifies atomic temporary-resource persistence.
 
 Provider crates remain responsible for their own platform behavior, path
 encoding, security boundaries, service registration, and capabilities outside
