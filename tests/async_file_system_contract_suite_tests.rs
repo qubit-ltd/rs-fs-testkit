@@ -9,9 +9,16 @@
 mod common;
 
 use std::future::Future;
-use std::task::{Context, Poll, Waker};
+use std::task::{
+    Context,
+    Poll,
+    Waker,
+};
 
-use common::{AsyncMemoryFault, AsyncMemoryFixture};
+use common::{
+    AsyncMemoryFault,
+    AsyncMemoryFixture,
+};
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 
 /// Polls one copy contract that is expected to complete without suspension.
@@ -26,11 +33,12 @@ fn assert_copy_contract(fixture: &AsyncMemoryFixture) {
     ));
 }
 
-/// A conforming asynchronous provider must satisfy every suite phase.
+/// A conforming asynchronous provider satisfies every suite phase.
 #[test]
 fn test_conforming_async_memory_provider_satisfies_full_suite() {
     let fixture = AsyncMemoryFixture::new();
-    let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
+    let mut assertion =
+        Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
     assert!(matches!(
@@ -45,7 +53,8 @@ fn test_conforming_async_memory_provider_satisfies_full_suite() {
 #[test]
 fn test_async_suite_allows_matching_filesystem_and_provider_ids() {
     let fixture = AsyncMemoryFixture::with_matching_ids();
-    let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
+    let mut assertion =
+        Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
     assert!(matches!(
@@ -101,7 +110,8 @@ fn test_async_core_capability_negative_branches_are_exercised() {
 #[test]
 fn test_async_suite_skips_unadvertised_optional_capabilities() {
     let fixture = AsyncMemoryFixture::without_optional_capabilities();
-    let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
+    let mut assertion =
+        Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
     assert!(matches!(
@@ -157,15 +167,18 @@ fn test_single_faults_are_rejected_by_async_suite() {
         AsyncMemoryFault::TempCleanupNoOp,
     ] {
         let fixture = AsyncMemoryFixture::with_fault(fault);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
-            let waker = Waker::noop();
-            let mut context = Context::from_waker(waker);
-            assert!(matches!(
-                assertion.as_mut().poll(&mut context),
-                Poll::Ready(())
-            ));
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut assertion = Box::pin(
+                    AsyncFileSystemContractSuite::new(&fixture).assert_all(),
+                );
+                let waker = Waker::noop();
+                let mut context = Context::from_waker(waker);
+                assert!(matches!(
+                    assertion.as_mut().poll(&mut context),
+                    Poll::Ready(())
+                ));
+            }));
         assert!(
             result.is_err(),
             "suite accepted injected async fault: {fault:?}"
