@@ -9,15 +9,32 @@
 mod common;
 
 use std::future::Future;
-use std::task::{Context, Poll, Waker};
-
-use qubit_fs::{CopyMethod, FileSystem, Path};
-use qubit_fs_testkit::{
-    AsyncCopyCancellationStage, AsyncCopyFixtureCase, AsyncFileSystemFixture, CopyFixtureCase,
-    FileSystemFixture, FixtureError, FixtureResult, FixtureSupport,
+use std::task::{
+    Context,
+    Poll,
+    Waker,
 };
 
-use common::{AsyncMemoryFixture, MemoryFixture};
+use qubit_fs::{
+    CopyMethod,
+    FileSystem,
+    Path,
+};
+use qubit_fs_testkit::{
+    AsyncCopyCancellationStage,
+    AsyncCopyFixtureCase,
+    AsyncFileSystemFixture,
+    CopyFixtureCase,
+    FileSystemFixture,
+    FixtureError,
+    FixtureResult,
+    FixtureSupport,
+};
+
+use common::{
+    AsyncMemoryFixture,
+    MemoryFixture,
+};
 
 /// Fixture that uses every synchronous optional-hook default.
 struct DefaultSyncFixture<'a> {
@@ -32,10 +49,6 @@ impl FileSystemFixture for DefaultSyncFixture<'_> {
     fn path(&self, relative: &str) -> FixtureResult<Path> {
         Path::parse(&format!("/defaults/{relative}"))
             .map_err(|error| FixtureError::new(error.to_string()))
-    }
-
-    fn list_prefix(&self, _: &Path, relative: &str) -> FixtureResult<String> {
-        Ok(relative.to_owned())
     }
 }
 
@@ -53,14 +66,12 @@ impl AsyncFileSystemFixture for DefaultAsyncFixture<'_> {
         Path::parse(&format!("/defaults/{relative}"))
             .map_err(|error| FixtureError::new(error.to_string()))
     }
-
-    fn list_prefix(&self, _: &Path, relative: &str) -> FixtureResult<String> {
-        Ok(relative.to_owned())
-    }
 }
 
 /// Polls a fixture future that completes without suspension.
-fn poll_fixture_future<T>(future: impl Future<Output = FixtureResult<T>>) -> FixtureResult<T> {
+fn poll_fixture_future<T>(
+    future: impl Future<Output = FixtureResult<T>>,
+) -> FixtureResult<T> {
     let mut future = Box::pin(future);
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
@@ -75,8 +86,10 @@ fn poll_fixture_future<T>(future: impl Future<Output = FixtureResult<T>>) -> Fix
 /// Verifies that setup failures remain distinguishable from unavailable probes.
 #[test]
 fn test_fixture_support_does_not_conflate_error_with_unsupported() {
-    let unsupported: FixtureResult<FixtureSupport<Path>> = Ok(FixtureSupport::Unsupported);
-    let failure: FixtureResult<FixtureSupport<Path>> = Err(FixtureError::new("setup failed"));
+    let unsupported: FixtureResult<FixtureSupport<Path>> =
+        Ok(FixtureSupport::Unsupported);
+    let failure: FixtureResult<FixtureSupport<Path>> =
+        Err(FixtureError::new("setup failed"));
 
     assert!(matches!(unsupported, Ok(FixtureSupport::Unsupported)));
     assert!(failure.is_err());
@@ -91,6 +104,12 @@ fn test_synchronous_fixture_defaults_are_unsupported() {
         file_system: memory.file_system(),
     };
     let path = fixture.path("entry").expect("build default path");
+    assert_eq!(
+        fixture
+            .list_prefix(&Path::root(), "entry")
+            .expect("build default list prefix"),
+        "entry"
+    );
 
     assert!(matches!(
         fixture.seed_file("entry", b"bytes"),
@@ -115,6 +134,12 @@ fn test_asynchronous_fixture_defaults_are_unsupported() {
         file_system: memory.file_system(),
     };
     let path = fixture.path("entry").expect("build default path");
+    assert_eq!(
+        fixture
+            .list_prefix(&Path::root(), "entry")
+            .expect("build default list prefix"),
+        "entry"
+    );
 
     assert!(matches!(
         poll_fixture_future(fixture.seed_file("entry", b"bytes")),
@@ -138,7 +163,10 @@ fn test_fixture_error_preserves_message_and_source() {
     assert_eq!(plain.to_string(), "plain failure");
     assert!(std::error::Error::source(&plain).is_none());
 
-    let sourced = FixtureError::with_source("outer failure", std::io::Error::other("inner"));
+    let sourced = FixtureError::with_source(
+        "outer failure",
+        std::io::Error::other("inner"),
+    );
     assert_eq!(sourced.to_string(), "outer failure");
     assert_eq!(
         std::error::Error::source(&sourced)
@@ -156,7 +184,11 @@ fn test_fixture_error_preserves_message_and_source() {
 fn test_copy_fixture_cases_expose_and_transfer_request_parts() {
     let source = Path::parse("/defaults/source").expect("valid source path");
     let target = Path::parse("/defaults/target").expect("valid target path");
-    let case = CopyFixtureCase::new(source.clone(), target.clone(), Default::default());
+    let case = CopyFixtureCase::new(
+        source.clone(),
+        target.clone(),
+        Default::default(),
+    );
     assert_eq!(case.source(), &source);
     assert_eq!(case.target(), &target);
     assert_eq!(case.options(), &qubit_fs::CopyOptions::default());
@@ -165,8 +197,11 @@ fn test_copy_fixture_cases_expose_and_transfer_request_parts() {
     assert_eq!(actual_target, target);
     assert_eq!(actual_options, qubit_fs::CopyOptions::default());
 
-    let async_case =
-        AsyncCopyFixtureCase::new(actual_source.clone(), actual_target.clone(), actual_options);
+    let async_case = AsyncCopyFixtureCase::new(
+        actual_source.clone(),
+        actual_target.clone(),
+        actual_options,
+    );
     assert_eq!(async_case.source(), &actual_source);
     assert_eq!(async_case.target(), &actual_target);
     assert_eq!(async_case.options(), &qubit_fs::CopyOptions::default());

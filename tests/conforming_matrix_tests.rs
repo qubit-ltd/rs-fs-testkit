@@ -8,8 +8,16 @@
 
 mod common;
 
-use qubit_fs::{FileSystemCapability, FsError, FsErrorKind, FsOperation};
-use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
+use qubit_fs::{
+    FileSystemCapability,
+    FsError,
+    FsErrorKind,
+    FsOperation,
+};
+use qubit_fs_testkit::{
+    FileSystemContractSuite,
+    FileSystemFixture,
+};
 
 use common::MemoryFixture;
 
@@ -80,9 +88,10 @@ fn test_single_faults_are_rejected_by_sync_suite() {
         common::MemoryFault::RenameNoOp,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).assert_all();
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_all();
+            }));
         assert!(result.is_err(), "suite accepted injected fault: {fault:?}");
     }
 }
@@ -141,6 +150,34 @@ fn test_stronger_capability_negative_branches_are_exercised() {
     suite.assert_atomic_rename();
     suite.assert_atomic_replace();
     suite.assert_durable_copy();
+}
+
+/// Each advertised option and stronger guarantee must be observed by the
+/// synchronous suite rather than accepted as an unchecked provider claim.
+#[test]
+fn test_sync_suite_rejects_advertised_option_and_guarantee_faults() {
+    for fault in [
+        common::MemoryFault::ListDropsMetadata,
+        common::MemoryFault::DirectoryCopyDropsChildren,
+        common::MemoryFault::TempIgnoresOptions,
+        common::MemoryFault::AppendOverwrites,
+        common::MemoryFault::RecursiveDeleteLeavesChildren,
+        common::MemoryFault::AtomicRenameNonAtomic,
+        common::MemoryFault::AtomicReplaceNonAtomic,
+        common::MemoryFault::DurableCopyNonDurable,
+        common::MemoryFault::AtomicTempPersistNonAtomic,
+        common::MemoryFault::ServerSideCopyFallsBack,
+    ] {
+        let fixture = MemoryFixture::with_fault(fault);
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_all();
+            }));
+        assert!(
+            result.is_err(),
+            "suite accepted advertised option or guarantee fault: {fault:?}"
+        );
+    }
 }
 
 /// Structured errors must not format an untrusted source diagnostic.
