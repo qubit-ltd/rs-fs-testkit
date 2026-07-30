@@ -7,9 +7,17 @@
 // =============================================================================
 //! Typed synchronous fixtures for filesystem contract suites.
 
-use qubit_fs::{CopyMethod, FileSystem, Path};
+use qubit_fs::{
+    CopyMethod,
+    FileSystem,
+    Path,
+};
 
-use crate::{CopyFixtureCase, FixtureResult, FixtureSupport};
+use crate::{
+    CopyFixtureCase,
+    FixtureResult,
+    FixtureSupport,
+};
 
 /// Supplies an isolated facade and provider-specific contract observations.
 pub trait FileSystemFixture {
@@ -20,10 +28,21 @@ pub trait FileSystemFixture {
     fn path(&self, relative: &str) -> FixtureResult<Path>;
 
     /// Maps a relative list prefix for the supplied root.
-    fn list_prefix(&self, root: &Path, relative: &str) -> FixtureResult<String>;
+    fn list_prefix(
+        &self,
+        root: &Path,
+        relative: &str,
+    ) -> FixtureResult<String> {
+        let _ = root;
+        Ok(relative.to_owned())
+    }
 
     /// Seeds a complete file outside the operation currently under test.
-    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_file(
+        &self,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<FixtureSupport<Path>> {
         let _ = (relative, bytes);
         Ok(FixtureSupport::Unsupported)
     }

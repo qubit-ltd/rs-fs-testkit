@@ -7,7 +7,10 @@
 // =============================================================================
 //! Provider-prepared synchronous copy fixture cases.
 
-use qubit_fs::{CopyOptions, Path};
+use qubit_fs::{
+    CopyOptions,
+    Path,
+};
 
 /// Provider-prepared case that makes one native copy method applicable.
 #[derive(Clone, Debug)]
@@ -18,7 +21,8 @@ pub struct CopyFixtureCase {
 }
 
 impl CopyFixtureCase {
-    /// Creates a native-copy case from its source, target, and requested options.
+    /// Creates a native-copy case from its source, target, and requested
+    /// options.
     #[must_use]
     pub fn new(source: Path, target: Path, options: CopyOptions) -> Self {
         Self {
