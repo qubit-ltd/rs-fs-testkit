@@ -44,9 +44,9 @@ cargo add --dev qubit-fs-testkit
 
 Implement `FileSystemFixture` for a fixture that owns or otherwise retains the
 resources required to keep its filesystem isolated. At minimum, implement
-`file_system`, `path`, and `list_prefix`. Implement `AsyncFileSystemFixture`
-for an asynchronous facade; it has the same required mapping methods and is
-`Sync`.
+`file_system` and `path`; `list_prefix` has a default implementation. Implement
+`AsyncFileSystemFixture` for an asynchronous facade; it has the same required
+mapping methods and is `Sync`.
 
 ## Core Workflow
 
@@ -84,6 +84,12 @@ observation outside the operation being checked. Examples include `seed_file`,
 `read_file`, and `copy_fast_path_case`. Return `FixtureSupport::Unsupported`
 for an optional observation the provider cannot supply; it is not a fabricated
 assertion.
+
+`seed_file` and `read_file` must use an observation channel independent of the
+facade under test. For example, a local-provider fixture can seed and inspect
+its isolated temporary directory through native filesystem APIs. Reusing the
+same facade for setup or observation can make a matching read/write defect pass
+the contract suite.
 
 When individual phases are called directly, call `finish()` afterward to clean
 the resources those phases created. `assert_all()` calls it automatically; the

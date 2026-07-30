@@ -37,8 +37,9 @@ list prefix。可选 fixture hook 可预置/读取文件并准备 native-copy �
 cargo add --dev qubit-fs-testkit
 ```
 
-为拥有或保留隔离文件系统资源的 fixture 实现 `FileSystemFixture`。至少实现 `file_system`、`path`
-和 `list_prefix`。对于异步门面实现 `AsyncFileSystemFixture`；它有相同的必需映射方法，并要求 `Sync`。
+为拥有或保留隔离文件系统资源的 fixture 实现 `FileSystemFixture`。至少实现 `file_system` 和 `path`；
+`list_prefix` 有默认实现。对于异步门面实现 `AsyncFileSystemFixture`；它有相同的必需映射方法，并要求
+`Sync`。
 
 ## 核心工作流
 
@@ -71,6 +72,10 @@ AsyncFileSystemContractSuite::new(&fixture).assert_all().await;
 只有当通用套件需要在被测操作外进行 provider 所有的观察时，才实现可选 fixture hook。例如
 `seed_file`、`read_file` 和 `copy_fast_path_case`。对于 provider 无法提供的可选观察，返回
 `FixtureSupport::Unsupported`，而非伪造断言。
+
+`seed_file` 与 `read_file` 必须通过独立于待测门面的通道完成观察。例如，本地 provider 的 fixture 可
+直接用原生文件系统 API 预置和检查隔离临时目录。若用同一个门面完成准备或观察，彼此匹配的读写缺陷可能
+仍会通过契约套件。
 
 若直接单独调用阶段方法，结束后应调用 `finish()` 清理这些阶段创建的资源。`assert_all()` 会
 自动调用它；同步套件在断言 panic 后重新抛出前也会执行清理。
