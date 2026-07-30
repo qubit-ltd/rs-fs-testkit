@@ -5,34 +5,38 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Provider-prepared asynchronous copy cancellation cases.
+//! Provider-prepared asynchronous copy fixture cases.
 
-use qubit_fs::{CopyOptions, Path};
-
-/// Cancellation point exercised by an asynchronous copy contract probe.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AsyncCopyCancellationStage {
-    /// The provider-native copy attempt is pending.
-    NativeAttempt,
-    /// The fallback source reader is pending.
-    Reader,
-    /// The fallback target writer is pending.
-    Writer,
-    /// The fallback commit is pending.
-    Commit,
-}
+use qubit_fs::{
+    CopyOptions,
+    Path,
+};
 
 /// Provider-prepared asynchronous copy request used for cancellation probing.
+#[must_use]
 #[derive(Clone, Debug)]
 pub struct AsyncCopyFixtureCase {
+    /// Source path passed to the copy operation.
     source: Path,
+    /// Destination path passed to the copy operation.
     target: Path,
+    /// Options governing the probed copy operation.
     options: CopyOptions,
 }
 
 impl AsyncCopyFixtureCase {
     /// Creates a cancellation probe request from owned copy arguments.
-    #[must_use]
+    ///
+    /// # Parameters
+    ///
+    /// * `source` - Source path passed to the copy operation.
+    /// * `target` - Destination path passed to the copy operation.
+    /// * `options` - Options governing the copy operation.
+    ///
+    /// # Returns
+    ///
+    /// A prepared request containing the supplied arguments.
+    #[inline]
     pub fn new(source: Path, target: Path, options: CopyOptions) -> Self {
         Self {
             source,
@@ -41,25 +45,45 @@ impl AsyncCopyFixtureCase {
         }
     }
 
-    /// Returns the source path.
+    /// Returns the source path without transferring ownership.
+    ///
+    /// # Returns
+    ///
+    /// The prepared source path.
+    #[inline(always)]
     #[must_use]
     pub const fn source(&self) -> &Path {
         &self.source
     }
 
-    /// Returns the target path.
+    /// Returns the target path without transferring ownership.
+    ///
+    /// # Returns
+    ///
+    /// The prepared destination path.
+    #[inline(always)]
     #[must_use]
     pub const fn target(&self) -> &Path {
         &self.target
     }
 
-    /// Returns the copy options.
+    /// Returns the copy options without transferring ownership.
+    ///
+    /// # Returns
+    ///
+    /// The prepared copy options.
+    #[inline(always)]
     #[must_use]
     pub const fn options(&self) -> &CopyOptions {
         &self.options
     }
 
     /// Decomposes the prepared request into owned parts.
+    ///
+    /// # Returns
+    ///
+    /// The source path, destination path, and copy options in that order.
+    #[inline]
     #[must_use]
     pub fn into_parts(self) -> (Path, Path, CopyOptions) {
         (self.source, self.target, self.options)

@@ -9,18 +9,34 @@
 
 use std::{
     error::Error,
-    fmt::{Debug, Display, Formatter, Result as FmtResult},
+    fmt::{
+        Debug,
+        Display,
+        Formatter,
+        Result as FmtResult,
+    },
 };
 
 /// Failure raised by fixture setup or out-of-band observation.
+#[must_use]
 pub struct FixtureError {
+    /// Human-readable context safe to expose through `Display` and `Debug`.
     message: String,
+    /// Optional underlying failure retained for error-chain inspection.
     source: Option<Box<dyn Error + Send + Sync + 'static>>,
 }
 
 impl FixtureError {
     /// Creates an error with a human-readable fixture failure message.
-    #[must_use]
+    ///
+    /// # Parameters
+    ///
+    /// * `message` - Safe diagnostic context for the fixture failure.
+    ///
+    /// # Returns
+    ///
+    /// A fixture error without an underlying source.
+    #[inline]
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -30,7 +46,16 @@ impl FixtureError {
 
     /// Creates an error that preserves an underlying fixture failure as its
     /// source.
-    #[must_use]
+    ///
+    /// # Parameters
+    ///
+    /// * `message` - Safe diagnostic context for the fixture failure.
+    /// * `source` - Underlying error retained in the standard error chain.
+    ///
+    /// # Returns
+    ///
+    /// A fixture error wrapping the supplied source.
+    #[inline]
     pub fn with_source(
         message: impl Into<String>,
         source: impl Error + Send + Sync + 'static,
@@ -44,6 +69,15 @@ impl FixtureError {
 
 impl Debug for FixtureError {
     /// Formats the error without requiring its source to implement `Debug`.
+    ///
+    /// # Parameters
+    ///
+    /// * `formatter` - Destination formatter receiving the safe debug view.
+    ///
+    /// # Returns
+    ///
+    /// The formatter result.
+    #[inline]
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter
             .debug_struct("FixtureError")
@@ -54,6 +88,15 @@ impl Debug for FixtureError {
 
 impl Display for FixtureError {
     /// Displays the fixture failure message.
+    ///
+    /// # Parameters
+    ///
+    /// * `formatter` - Destination formatter receiving the safe message.
+    ///
+    /// # Returns
+    ///
+    /// The formatter result.
+    #[inline(always)]
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str(&self.message)
     }
@@ -61,6 +104,12 @@ impl Display for FixtureError {
 
 impl Error for FixtureError {
     /// Returns the preserved fixture failure, when one was supplied.
+    ///
+    /// # Returns
+    ///
+    /// `Some(source)` when created by [`Self::with_source`], or `None` when
+    /// created by [`Self::new`].
+    #[inline]
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.source
             .as_deref()
@@ -69,4 +118,8 @@ impl Error for FixtureError {
 }
 
 /// Result returned by fixture setup and out-of-band observation hooks.
+///
+/// # Type Parameters
+///
+/// * `T` - Successful value produced by the fixture hook.
 pub type FixtureResult<T> = Result<T, FixtureError>;

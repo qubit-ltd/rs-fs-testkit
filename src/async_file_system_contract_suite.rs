@@ -9,29 +9,68 @@
 
 use std::{
     future::Future,
-    task::{Context, Poll, Waker},
+    task::{
+        Context,
+        Poll,
+        Waker,
+    },
 };
 
 use qubit_fs::{
-    AchievedAtomicity, AsyncCopyOperationState, AtomicityRequirement, CopyFailureState, CopyMethod,
-    CopyOptions, CreateDirectoryOptions, DeleteOptions, DurabilityRequirement,
-    FileSystemCapability, FsErrorKind, FsOperation, RenameOptions, TempDirectoryOptions,
-    TempFileOptions, WriteDisposition, WriteOptions,
+    AchievedAtomicity,
+    AsyncCopyOperationState,
+    AtomicityRequirement,
+    CopyFailureState,
+    CopyMethod,
+    CopyOptions,
+    CreateDirectoryOptions,
+    DeleteOptions,
+    DurabilityRequirement,
+    FileSystemCapability,
+    FsErrorKind,
+    FsOperation,
+    RenameOptions,
+    TempDirectoryOptions,
+    TempFileOptions,
+    WriteDisposition,
+    WriteOptions,
 };
-use qubit_io::{AsyncInput, AsyncOutput};
+use qubit_io::{
+    AsyncInput,
+    AsyncOutput,
+};
 
 use crate::contract_context::ContractContext;
-use crate::{AsyncCopyCancellationStage, AsyncFileSystemFixture, FixtureSupport};
+use crate::{
+    AsyncCopyCancellationStage,
+    AsyncFileSystemFixture,
+    FixtureSupport,
+};
 
 /// Runs asynchronous provider contracts against one isolated fixture.
+///
+/// # Type Parameters
+///
+/// * `'a` - Lifetime of the borrowed provider fixture.
+#[must_use = "the suite must run at least one contract assertion"]
 pub struct AsyncFileSystemContractSuite<'a> {
+    /// Provider-owned fixture supplying the facade and observation hooks.
     fixture: &'a dyn AsyncFileSystemFixture,
+    /// Property snapshot and cleanup state for the current suite run.
     context: ContractContext,
 }
 
 impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Creates a stateful asynchronous suite borrowing one isolated fixture.
-    #[must_use]
+    ///
+    /// # Parameters
+    ///
+    /// * `fixture` - Isolated provider fixture exercised by the suite.
+    ///
+    /// # Returns
+    ///
+    /// A suite with a fresh context and captured property snapshot.
+    #[inline]
     pub fn new(fixture: &'a dyn AsyncFileSystemFixture) -> Self {
         Self {
             fixture,
@@ -40,6 +79,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Runs all asynchronous contracts in their dependency-safe fixed order.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the provider violates any contract or fixture setup and
+    /// observation fails. Cleanup runs after all phases complete normally.
     pub async fn assert_all(mut self) {
         self.assert_properties().await;
         self.assert_stat().await;
@@ -61,11 +105,20 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Cleans resources created by individually executed asynchronous phases.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a recorded resource cannot be inspected or deleted.
     pub async fn finish(&mut self) {
         self.context.cleanup_async(self.fixture.file_system()).await;
     }
 
     /// Checks immutable facade properties and fixture path compatibility.
+    ///
+    /// # Panics
+    ///
+    /// Panics when identifiers or capabilities are inconsistent, the fixture
+    /// path is invalid, or the facade snapshot changes during the suite run.
     pub async fn assert_properties(&mut self) {
         self.context.begin("properties");
         let properties = self.context.properties();
@@ -99,6 +152,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous metadata behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when missing-path errors omit or misreport structured context.
     pub async fn assert_stat(&mut self) {
         self.context.begin("stat");
         let path = self.path("async-stat-missing");
@@ -108,9 +165,20 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .stat(&path)
             .await
             .expect_err("stat contract: missing path succeeded");
-        self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+        self.assert_error(
+            &error,
+            FsErrorKind::NotFound,
+            FsOperation::Stat,
+            &path,
+        );
     }
+
     /// Checks asynchronous reader behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when capability preflight, seeded reads, byte limits, or
+    /// structured error context violates the reader contract.
     pub async fn assert_read(&mut self) {
         self.context.begin("read");
         if !self.capable(FileSystemCapability::Read) {
@@ -120,7 +188,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .open_reader(&path, Default::default())
                 .await
-                .expect_err("read contract: unadvertised reader open succeeded");
+                .expect_err(
+                    "read contract: unadvertised reader open succeeded",
+                );
             self.assert_error(
                 &error,
                 FsErrorKind::UnsupportedCapability,
@@ -159,11 +229,19 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 );
             }
             FixtureSupport::Unsupported => {
-                panic!("read contract: advertised capability requires fixture.seed_file support")
+                panic!(
+                    "read contract: advertised capability requires fixture.seed_file support"
+                )
             }
         }
     }
+
     /// Checks asynchronous writer behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when capability preflight, publication, fixture observation, or
+    /// structured error context violates the writer contract.
     pub async fn assert_write(&mut self) {
         self.context.begin("write");
         if !self.capable(FileSystemCapability::Write) {
@@ -173,7 +251,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .open_writer(&path, Default::default())
                 .await
-                .expect_err("write contract: unadvertised writer open succeeded");
+                .expect_err(
+                    "write contract: unadvertised writer open succeeded",
+                );
             self.assert_error(
                 &error,
                 FsErrorKind::UnsupportedCapability,
@@ -216,11 +296,19 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 )
             }
             FixtureSupport::Unsupported => {
-                panic!("write contract: Write capability requires fixture.read_file support")
+                panic!(
+                    "write contract: Write capability requires fixture.read_file support"
+                )
             }
         }
     }
+
     /// Checks asynchronous directory-listing behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when capability preflight, child enumeration, prefix filtering,
+    /// pagination, or requested metadata violates the listing contract.
     pub async fn assert_list(&mut self) {
         self.context.begin("list");
         let path = self.path("async-list");
@@ -248,7 +336,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             actual.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             let mut expected = vec![first, second];
             expected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-            assert_eq!(actual, expected, "list contract: direct children mismatch");
+            assert_eq!(
+                actual, expected,
+                "list contract: direct children mismatch"
+            );
         } else {
             let error = self
                 .fixture
@@ -269,7 +360,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
         }
     }
+
     /// Checks asynchronous directory-creation behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when capability preflight, directory publication, metadata, or
+    /// existing-directory handling violates the creation contract.
     pub async fn assert_create_directory(&mut self) {
         self.context.begin("create_directory");
         let path = self.path("async-created-directory");
@@ -278,7 +375,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .create_directory(&path, CreateDirectoryOptions::default())
                 .await
-                .expect("create-directory contract: advertised creation failed");
+                .expect(
+                    "create-directory contract: advertised creation failed",
+                );
             self.context.record_created(path.clone());
             let metadata = self
                 .fixture
@@ -305,7 +404,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
         }
     }
+
     /// Checks asynchronous deletion behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when capability preflight, deletion, existence observation, or
+    /// structured error context violates the deletion contract.
     pub async fn assert_delete(&mut self) {
         self.context.begin("delete");
         let path = self.path("async-delete");
@@ -324,7 +429,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .stat(&path)
                 .await
                 .expect_err("delete contract: deleted file remained");
-            self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+            self.assert_error(
+                &error,
+                FsErrorKind::NotFound,
+                FsOperation::Stat,
+                &path,
+            );
         } else {
             let error = self
                 .fixture
@@ -340,7 +450,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
         }
     }
+
     /// Checks asynchronous native and fallback copy behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when capability preflight, copy publication, cancellation,
+    /// method reporting, or directory recursion violates the copy contract.
     pub async fn assert_copy(&mut self) {
         self.context.begin("copy");
         if !self.capable(FileSystemCapability::Copy) {
@@ -351,7 +467,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Default::default(),
             ) {
                 Err(error) => error,
-                Ok(_) => panic!("async copy contract: unadvertised copy preflight succeeded"),
+                Ok(_) => panic!(
+                    "async copy contract: unadvertised copy preflight succeeded"
+                ),
             };
             self.assert_error(
                 error.error(),
@@ -384,7 +502,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 outcome.used_fallback(),
                 "async copy contract: streamed copy was not reported as fallback"
             ),
-            CopyMethod::Native | CopyMethod::Clone | CopyMethod::ServerSide | CopyMethod::Mixed => {
+            CopyMethod::Native
+            | CopyMethod::Clone
+            | CopyMethod::ServerSide
+            | CopyMethod::Mixed => {
                 assert!(
                     !outcome.used_fallback(),
                     "async copy contract: completed fast path was reported as fallback"
@@ -439,12 +560,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             drop(execution);
             assert_eq!(
                 operation.state(),
-                AsyncCopyOperationState::Failed(CopyFailureState::Indeterminate),
+                AsyncCopyOperationState::Failed(
+                    CopyFailureState::Indeterminate
+                ),
                 "async copy contract: cancellation did not become indeterminate"
             );
             if matches!(
                 stage,
-                AsyncCopyCancellationStage::Writer | AsyncCopyCancellationStage::Commit
+                AsyncCopyCancellationStage::Writer
+                    | AsyncCopyCancellationStage::Commit
             ) {
                 assert!(
                     operation.take_recovery_writer().is_some(),
@@ -453,7 +577,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             }
         }
     }
+
     /// Checks asynchronous rename behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when capability preflight, publication, source removal, target
+    /// content, or structured error context violates the rename contract.
     pub async fn assert_rename(&mut self) {
         self.context.begin("rename");
         let source = self.path("async-rename-source");
@@ -468,13 +598,16 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .rename(&source, &target, RenameOptions::default())
                 .await
                 .expect("rename contract: advertised rename failed");
-            let error = self
-                .fixture
-                .file_system()
-                .stat(&source)
-                .await
-                .expect_err("rename contract: source remained after success");
-            self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &source);
+            let error =
+                self.fixture.file_system().stat(&source).await.expect_err(
+                    "rename contract: source remained after success",
+                );
+            self.assert_error(
+                &error,
+                FsErrorKind::NotFound,
+                FsOperation::Stat,
+                &source,
+            );
             self.fixture
                 .file_system()
                 .stat(&target)
@@ -496,7 +629,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
         }
     }
+
     /// Checks asynchronous append writes when the provider advertises them.
+    ///
+    /// # Panics
+    ///
+    /// Panics when append preflight or publication violates the advertised
+    /// capability, or fixture setup and observation fail.
     pub async fn assert_append(&mut self) {
         self.context.begin("append");
         let path = self.path("async-append-target");
@@ -510,7 +649,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .open_writer(&path, options)
                 .await
-                .expect_err("append contract: unadvertised append preflight succeeded");
+                .expect_err(
+                    "append contract: unadvertised append preflight succeeded",
+                );
             self.assert_requirement_error(
                 &error,
                 FsOperation::OpenWriter,
@@ -545,6 +686,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous recursive deletion when the provider advertises it.
+    ///
+    /// # Panics
+    ///
+    /// Panics when recursive-delete preflight or descendant removal violates
+    /// the advertised capability, or fixture setup fails.
     pub async fn assert_recursive_delete(&mut self) {
         self.context.begin("recursive_delete");
         let root = self.path("async-recursive-delete-root");
@@ -585,24 +731,23 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("recursive-delete contract: recursive removal failed");
         assert!(
-            !self
-                .fixture
-                .file_system()
-                .exists(&root)
-                .await
-                .expect("recursive-delete contract: root existence check failed")
+            !self.fixture.file_system().exists(&root).await.expect(
+                "recursive-delete contract: root existence check failed"
+            )
         );
         assert!(
-            !self
-                .fixture
-                .file_system()
-                .exists(&child)
-                .await
-                .expect("recursive-delete contract: child existence check failed")
+            !self.fixture.file_system().exists(&child).await.expect(
+                "recursive-delete contract: child existence check failed"
+            )
         );
     }
 
     /// Checks asynchronous atomic rename publication when advertised.
+    ///
+    /// # Panics
+    ///
+    /// Panics when atomic-rename preflight, publication, or reported atomicity
+    /// violates the advertised capability.
     pub async fn assert_atomic_rename(&mut self) {
         self.context.begin("atomic_rename");
         let source = self.path("async-atomic-rename-source");
@@ -617,7 +762,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .rename(&source, &target, options)
                 .await
-                .expect_err("atomic-rename contract: unadvertised preflight succeeded");
+                .expect_err(
+                    "atomic-rename contract: unadvertised preflight succeeded",
+                );
             self.assert_requirement_error(
                 failure.error(),
                 FsOperation::Rename,
@@ -648,6 +795,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous atomic replacement publication when advertised.
+    ///
+    /// # Panics
+    ///
+    /// Panics when atomic-replacement preflight, publication, or reported
+    /// atomicity violates the advertised capability.
     pub async fn assert_atomic_replace(&mut self) {
         self.context.begin("atomic_replace");
         let path = self.path("async-atomic-replace-target");
@@ -661,7 +813,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .open_writer(&path, options)
                 .await
-                .expect_err("atomic-replace contract: unadvertised preflight succeeded");
+                .expect_err(
+                    "atomic-replace contract: unadvertised preflight succeeded",
+                );
             self.assert_requirement_error(
                 &error,
                 FsOperation::OpenWriter,
@@ -693,6 +847,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous durable copy publication when advertised.
+    ///
+    /// # Panics
+    ///
+    /// Panics when durable-copy preflight, publication, reported durability,
+    /// or target content violates the advertised capability.
     pub async fn assert_durable_copy(&mut self) {
         self.context.begin("durable_copy");
         let source = self.path("async-durable-copy-source");
@@ -708,7 +867,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .begin_copy(source, target, options)
             {
                 Err(error) => error,
-                Ok(_) => panic!("durable-copy contract: unadvertised preflight succeeded"),
+                Ok(_) => panic!(
+                    "durable-copy contract: unadvertised preflight succeeded"
+                ),
             };
             self.assert_requirement_error(
                 error.error(),
@@ -719,7 +880,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             return;
         }
         let source = self
-            .required_seed("async-durable-copy-source", b"durable copy", "durable-copy")
+            .required_seed(
+                "async-durable-copy-source",
+                b"durable copy",
+                "durable-copy",
+            )
             .await;
         let mut operation = self
             .fixture
@@ -745,6 +910,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous temporary-resource lifecycle behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when temporary resource options, cleanup, or publication violates
+    /// an advertised capability.
     pub async fn assert_temp_resources(&mut self) {
         self.context.begin("temp_resources");
         if self.capable(FileSystemCapability::TempFile) {
@@ -765,7 +935,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .stat(&path)
                 .await
                 .expect_err("temp-file contract: cleanup retained source");
-            self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+            self.assert_error(
+                &error,
+                FsErrorKind::NotFound,
+                FsOperation::Stat,
+                &path,
+            );
         } else {
             let error = match self
                 .fixture
@@ -773,7 +948,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .create_temp_file(TempFileOptions::default())
                 .await
             {
-                Ok(_) => panic!("temp-file contract: unadvertised creation succeeded"),
+                Ok(_) => panic!(
+                    "temp-file contract: unadvertised creation succeeded"
+                ),
                 Err(error) => error,
             };
             self.assert_error(
@@ -795,13 +972,16 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .cleanup()
                 .await
                 .expect("temp-directory contract: cleanup failed");
-            let error = self
-                .fixture
-                .file_system()
-                .stat(&path)
-                .await
-                .expect_err("temp-directory contract: cleanup retained source");
-            self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+            let error =
+                self.fixture.file_system().stat(&path).await.expect_err(
+                    "temp-directory contract: cleanup retained source",
+                );
+            self.assert_error(
+                &error,
+                FsErrorKind::NotFound,
+                FsOperation::Stat,
+                &path,
+            );
         } else {
             let error = match self
                 .fixture
@@ -809,7 +989,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .create_temp_directory(TempDirectoryOptions::default())
                 .await
             {
-                Ok(_) => panic!("temp-directory contract: unadvertised creation succeeded"),
+                Ok(_) => panic!(
+                    "temp-directory contract: unadvertised creation succeeded"
+                ),
                 Err(error) => error,
             };
             self.assert_error(
@@ -820,7 +1002,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
         }
     }
+
     /// Checks asynchronous structured-error context and redaction behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a missing-path error omits or misreports its structured
+    /// kind, operation, or path context.
     pub async fn assert_error_context(&mut self) {
         self.context.begin("error_context");
         let path = self.path("async-error-context-missing");
@@ -830,11 +1018,29 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .stat(&path)
             .await
             .expect_err("error contract: missing path succeeded");
-        self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+        self.assert_error(
+            &error,
+            FsErrorKind::NotFound,
+            FsOperation::Stat,
+            &path,
+        );
     }
 
     /// Resolves a fixture path or identifies setup failure at the contract
     /// boundary.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Resource name relative to the current contract phase.
+    ///
+    /// # Returns
+    ///
+    /// The provider path mapped by the fixture.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the fixture cannot map the generated relative name.
+    #[inline]
     fn path(&self, relative: &str) -> qubit_fs::Path {
         let relative = self.context.relative_name(relative);
         self.fixture
@@ -843,6 +1049,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Returns whether the cached property snapshot advertises a capability.
+    ///
+    /// # Parameters
+    ///
+    /// * `capability` - Capability to query in the captured snapshot.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the provider advertises the capability.
+    #[inline(always)]
     fn capable(&self, capability: FileSystemCapability) -> bool {
         self.context
             .properties()
@@ -851,6 +1066,21 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Seeds a resource and makes fixture support mandatory for the contract.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Resource name relative to the current contract phase.
+    /// * `bytes` - Exact content to publish.
+    /// * `contract` - Contract label used in failure diagnostics.
+    ///
+    /// # Returns
+    ///
+    /// The provider path of the seeded file.
+    ///
+    /// # Panics
+    ///
+    /// Panics when fixture setup fails or the required seed hook is
+    /// unsupported.
     async fn required_seed(
         &mut self,
         relative: &str,
@@ -877,7 +1107,23 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Reads a fixture-owned file and checks its exact bytes after copy.
-    async fn assert_bytes(&self, path: &qubit_fs::Path, expected: &[u8], message: &str) {
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Provider path to observe.
+    /// * `expected` - Exact expected content.
+    /// * `message` - Assertion message used when content differs.
+    ///
+    /// # Panics
+    ///
+    /// Panics when observation fails, is unsupported, or returns different
+    /// content.
+    async fn assert_bytes(
+        &self,
+        path: &qubit_fs::Path,
+        expected: &[u8],
+        message: &str,
+    ) {
         match self
             .fixture
             .read_file(path)
@@ -888,12 +1134,25 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 assert_eq!(actual, expected, "{message}")
             }
             FixtureSupport::Unsupported => {
-                panic!("async copy contract: Copy capability requires fixture.read_file support")
+                panic!(
+                    "async copy contract: Copy capability requires fixture.read_file support"
+                )
             }
         }
     }
 
     /// Checks public context on an asynchronous facade error.
+    ///
+    /// # Parameters
+    ///
+    /// * `error` - Actual filesystem error.
+    /// * `kind` - Expected error classification.
+    /// * `operation` - Expected public operation.
+    /// * `path` - Expected source path.
+    ///
+    /// # Panics
+    ///
+    /// Panics when any expected structured field differs.
     fn assert_error(
         &self,
         error: &qubit_fs::FsError,
@@ -911,6 +1170,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Validates option-derived asynchronous capability preflight errors.
+    ///
+    /// # Parameters
+    ///
+    /// * `error` - Actual filesystem error.
+    /// * `operation` - Expected public operation.
+    /// * `capability` - Capability required by the rejected options.
+    /// * `contract` - Contract label used in diagnostics.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the error kind, operation, or required capability differs.
     fn assert_requirement_error(
         &self,
         error: &qubit_fs::FsError,

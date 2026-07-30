@@ -8,6 +8,11 @@
 //! Typed availability results for provider-owned fixture probes.
 
 /// Distinguishes a supported fixture probe from one the fixture cannot offer.
+///
+/// # Type Parameters
+///
+/// * `T` - Value returned when the fixture supports the probe.
+#[must_use]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FixtureSupport<T> {
     /// The fixture supplied the requested provider-specific value.
