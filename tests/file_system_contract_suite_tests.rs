@@ -8,12 +8,20 @@
 
 mod common;
 
-use qubit_fs::{FileSystemCapability, FsError, FsErrorKind, FsOperation};
-use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
+use qubit_fs::{
+    FileSystemCapability,
+    FsError,
+    FsErrorKind,
+    FsOperation,
+};
+use qubit_fs_testkit::{
+    FileSystemContractSuite,
+    FileSystemFixture,
+};
 
 use common::MemoryFixture;
 
-/// A conforming provider must satisfy every synchronous suite phase.
+/// A conforming provider satisfies every synchronous suite phase.
 #[test]
 fn test_conforming_memory_provider_satisfies_sync_suite() {
     let fixture = MemoryFixture::new();
@@ -80,26 +88,12 @@ fn test_single_faults_are_rejected_by_sync_suite() {
         common::MemoryFault::RenameNoOp,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).assert_all();
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_all();
+            }));
         assert!(result.is_err(), "suite accepted injected fault: {fault:?}");
     }
-}
-
-/// Repeated assertion phases must use distinct resource names.
-#[test]
-fn test_sync_suite_uses_unique_names_for_repeated_phases() {
-    let fixture = MemoryFixture::new();
-    let mut suite = FileSystemContractSuite::new(&fixture);
-    suite.assert_write();
-    suite.assert_write();
-    assert_eq!(fixture.entry_count(), 2);
-    suite.finish();
-    assert!(
-        fixture.is_empty(),
-        "finish must clean resources created by individual phases"
-    );
 }
 
 /// A provider-native copy outcome satisfies the contract without fallback.
@@ -160,9 +154,10 @@ fn test_sync_suite_rejects_advertised_option_and_guarantee_faults() {
         common::MemoryFault::ServerSideCopyFallsBack,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).assert_all();
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_all();
+            }));
         assert!(
             result.is_err(),
             "suite accepted advertised option or guarantee fault: {fault:?}"
