@@ -45,8 +45,8 @@ qubit_fs_testkit::AsyncFileSystemContractSuite::new(&fixture)
 - `FileSystemContractSuite::new(&fixture).assert_all()` 与异步
   `AsyncFileSystemContractSuite` 对应方法，均按固定、依赖安全的工作流运行。
 - 覆盖门面属性、核心操作、capability 预检、结构化错误上下文、清理和已支持的可选操作的契约。
-  同步与异步套件都会在 provider 声明时验证 append、递归删除、必需原子 rename/replacement
-  和必需 durable copy；同步套件还验证临时资源持久化的原子性。
+  同步与异步套件都会在 provider 声明时验证 append、递归删除、必需原子 rename/replacement、
+  必需 durable copy 和临时资源持久化的原子性。
 
 provider crate 仍需自行负责平台行为、路径编码、安全边界、服务注册，以及当前套件覆盖范围外的
 capability。

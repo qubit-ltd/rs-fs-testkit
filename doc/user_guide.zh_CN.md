@@ -51,9 +51,9 @@ let fixture = TestFixture::new();
 FileSystemContractSuite::new(&fixture).assert_all();
 ```
 
-同步套件依次检查 properties、`stat`、read、write、list、创建目录、delete、copy、rename、临时
-资源和错误上下文，随后执行清理。同步套件还会在声明对应能力时检查追加写、递归删除、
-必需原子 rename/replace 和必需持久 copy。门面未声明的核心操作会被检查是否返回结构化的
+同步与异步套件都会依次检查 properties、`stat`、read、write、list、创建目录、delete、copy、
+rename、追加写、递归删除、必需原子 rename/replace、必需持久 copy、包括原子持久化在内的临时
+资源和错误上下文，随后执行清理。门面未声明的核心操作会被检查是否返回结构化的
 `UnsupportedCapability` 预检错误；未声明的强化保证会被检查是否返回结构化的
 `RequirementNotMet` 预检错误。
 
