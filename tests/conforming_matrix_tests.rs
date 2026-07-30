@@ -8,16 +8,8 @@
 
 mod common;
 
-use qubit_fs::{
-    FileSystemCapability,
-    FsError,
-    FsErrorKind,
-    FsOperation,
-};
-use qubit_fs_testkit::{
-    FileSystemContractSuite,
-    FileSystemFixture,
-};
+use qubit_fs::{FileSystemCapability, FsError, FsErrorKind, FsOperation};
+use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
 
 use common::MemoryFixture;
 
@@ -88,10 +80,9 @@ fn test_single_faults_are_rejected_by_sync_suite() {
         common::MemoryFault::RenameNoOp,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
-        let result =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                FileSystemContractSuite::new(&fixture).assert_all();
-            }));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            FileSystemContractSuite::new(&fixture).assert_all();
+        }));
         assert!(result.is_err(), "suite accepted injected fault: {fault:?}");
     }
 }
@@ -104,6 +95,11 @@ fn test_sync_suite_uses_unique_names_for_repeated_phases() {
     suite.assert_write();
     suite.assert_write();
     assert_eq!(fixture.entry_count(), 2);
+    suite.finish();
+    assert!(
+        fixture.is_empty(),
+        "finish must clean resources created by individual phases"
+    );
 }
 
 /// A provider-native copy outcome satisfies the contract without fallback.
@@ -118,17 +114,33 @@ fn test_sync_copy_accepts_native_outcome() {
 /// preflight.
 #[test]
 fn test_core_capability_negative_branches_are_exercised() {
-    let fixture = MemoryFixture::without_core_capabilities();
+    let fixture = MemoryFixture::without_operation_capabilities();
     let mut suite = FileSystemContractSuite::new(&fixture);
     suite.assert_read();
     suite.assert_write();
     suite.assert_list();
+    suite.assert_create_directory();
+    suite.assert_delete();
     suite.assert_copy();
+    suite.assert_rename();
     assert_eq!(
         fixture.path_call_count(),
-        3,
-        "each negative capability branch must exercise one facade path"
+        8,
+        "negative capability branches must exercise their facade paths"
     );
+}
+
+/// Unadvertised stronger operation guarantees must fail at the facade
+/// preflight before a provider primitive is reached.
+#[test]
+fn test_stronger_capability_negative_branches_are_exercised() {
+    let fixture = MemoryFixture::without_optional_capabilities();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    suite.assert_append();
+    suite.assert_recursive_delete();
+    suite.assert_atomic_rename();
+    suite.assert_atomic_replace();
+    suite.assert_durable_copy();
 }
 
 /// Structured errors must not format an untrusted source diagnostic.
