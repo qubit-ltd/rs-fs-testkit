@@ -7,10 +7,7 @@
 // =============================================================================
 //! Provider-prepared asynchronous copy cancellation cases.
 
-use qubit_fs::{
-    CopyOptions,
-    Path,
-};
+use qubit_fs::{CopyOptions, Path};
 
 /// Cancellation point exercised by an asynchronous copy contract probe.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
