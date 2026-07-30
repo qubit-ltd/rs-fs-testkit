@@ -60,6 +60,7 @@ use qubit_fs::{
     AchievedAtomicity,
     AtomicityRequirement,
     CopyMethod,
+    CopyMode,
     CopyOutcome,
     CopyStats,
     CreateDirectoryOutcome,
@@ -994,6 +995,8 @@ pub enum AsyncMemoryFault {
     None,
     /// Reports a missing path as an existing file.
     MissingPathExists,
+    /// Returns directory metadata for an existing file.
+    WrongStatMetadata,
     /// Returns bytes different from the provider's seeded content.
     ReadWrongBytes,
     /// Accepts writes but does not publish their bytes.
@@ -1002,12 +1005,18 @@ pub enum AsyncMemoryFault {
     ListEscapesNamespace,
     /// Returns no entries for a non-empty requested directory.
     EmptyList,
+    /// Omits metadata explicitly requested by the caller.
+    ListDropsMetadata,
     /// Reports deletion success without removing the resource.
     DeleteNoOp,
     /// Reports copy success without publishing the target bytes.
     CopyDropsTarget,
     /// Reports rename success without moving the resource.
     RenameNoOp,
+    /// Reports a rename outcome with identities different from the request.
+    RenameWrongOutcome,
+    /// Copies a directory root without its descendants.
+    DirectoryCopyDropsChildren,
     /// Reports temporary cleanup success without removing the resource.
     TempCleanupNoOp,
     /// Appends by replacing existing bytes.
@@ -1024,6 +1033,8 @@ pub enum AsyncMemoryFault {
     TempPersistWrongTarget,
     /// Reports non-atomic completion for required temporary persistence.
     AtomicTempPersistNonAtomic,
+    /// Ignores temporary-resource parent and affix options.
+    TempIgnoresOptions,
 }
 
 impl AsyncMemoryFixture {
@@ -1317,6 +1328,10 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                 Some(Entry::File(bytes)) => {
                     let mut metadata = FileMetadata::new(FileKind::File);
                     metadata.len = Some(bytes.len() as u64);
+                    if fault == AsyncMemoryFault::WrongStatMetadata {
+                        metadata.kind = FileKind::Directory;
+                        metadata.len = None;
+                    }
                     Ok(StatResponse::new(path, metadata))
                 }
                 Some(Entry::Directory) => Ok(StatResponse::new(
@@ -1358,7 +1373,7 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                     .expect("async memory state lock must succeed"),
                 request.path(),
                 request.options().options(),
-                true,
+                self.fault != AsyncMemoryFault::ListDropsMetadata,
             )
         };
         Box::pin(async move {
@@ -1523,7 +1538,7 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
         let options = request.options().options();
         let durable =
             options.durability == qubit_fs::DurabilityRequirement::Required;
-        if self.native_copy || durable {
+        if self.native_copy || durable || options.mode == CopyMode::Tree {
             let source = request.source().clone();
             let target = request.target().clone();
             let entries = Arc::clone(&self.entries);
@@ -1547,7 +1562,30 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                     Entry::File(bytes) => bytes.len() as u64,
                     Entry::Directory => 0,
                 };
+                let directory = matches!(&entry, Entry::Directory);
                 entries.insert(target.as_str().to_owned(), entry);
+                if directory
+                    && fault != AsyncMemoryFault::DirectoryCopyDropsChildren
+                {
+                    let source_prefix =
+                        format!("{}/", source.as_str().trim_end_matches('/'));
+                    let target_prefix =
+                        format!("{}/", target.as_str().trim_end_matches('/'));
+                    let descendants = entries
+                        .iter()
+                        .filter_map(|(path, entry)| {
+                            path.strip_prefix(&source_prefix).map(|relative| {
+                                (
+                                    format!("{target_prefix}{relative}"),
+                                    entry.clone(),
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    for (path, entry) in descendants {
+                        entries.insert(path, entry);
+                    }
+                }
                 Ok(CopyAttempt::Completed(
                     qubit_fs::CopyOutcome::new(
                         qubit_fs::CopyStats {
@@ -1599,9 +1637,20 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                 };
                 entries.insert(target.as_str().to_owned(), entry);
             }
+            let (reported_source, reported_target) =
+                if fault == AsyncMemoryFault::RenameWrongOutcome {
+                    (
+                        Path::parse("/contract/async-wrong-rename-source")
+                            .expect("generated path must be valid"),
+                        Path::parse("/contract/async-wrong-rename-target")
+                            .expect("generated path must be valid"),
+                    )
+                } else {
+                    (source, target)
+                };
             Ok(RenameOutcome::new(
-                source,
-                target,
+                reported_source,
+                reported_target,
                 if atomicity == AtomicityRequirement::Required
                     && fault != AsyncMemoryFault::AtomicRenameNonAtomic
                 {
@@ -1616,15 +1665,23 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
 
     fn create_temp_file<'a>(
         &'a self,
-        _: CreateTempFileRequest,
+        request: CreateTempFileRequest,
     ) -> qubit_fs::spi::SpiFuture<
         'a,
         FsResult<qubit_fs::spi::OpenedAsyncTempFile>,
     > {
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
+        let options = request.options().clone();
         Box::pin(async move {
-            let path = allocate_async_temp(&entries, false);
+            let path = allocate_async_temp(
+                &entries,
+                false,
+                options.parent.as_ref(),
+                &options.prefix,
+                &options.suffix,
+                fault,
+            );
             Ok(qubit_fs::spi::OpenedAsyncTempFile::new(
                 Self::info(&path),
                 Box::new(AsyncTempSession {
@@ -1638,15 +1695,23 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
 
     fn create_temp_directory<'a>(
         &'a self,
-        _: CreateTempDirectoryRequest,
+        request: CreateTempDirectoryRequest,
     ) -> qubit_fs::spi::SpiFuture<
         'a,
         FsResult<qubit_fs::spi::OpenedAsyncTempDirectory>,
     > {
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
+        let options = request.options().clone();
         Box::pin(async move {
-            let path = allocate_async_temp(&entries, true);
+            let path = allocate_async_temp(
+                &entries,
+                true,
+                options.parent.as_ref(),
+                &options.prefix,
+                &options.suffix,
+                fault,
+            );
             Ok(qubit_fs::spi::OpenedAsyncTempDirectory::new(
                 Self::info(&path),
                 Box::new(AsyncTempSession {
@@ -1809,12 +1874,30 @@ impl qubit_fs::spi::AsyncFileWriteSession for AsyncMemoryWriter {
 fn allocate_async_temp(
     entries: &Arc<Mutex<HashMap<String, Entry>>>,
     directory: bool,
+    parent: Option<&Path>,
+    prefix: &str,
+    suffix: &str,
+    fault: AsyncMemoryFault,
 ) -> Path {
     let mut entries = entries
         .lock()
         .expect("async memory state lock must succeed");
-    let path = Path::parse(&format!("/contract/.async-tmp-{}", entries.len()))
-        .expect("generated temporary path must be valid");
+    let parent = if fault == AsyncMemoryFault::TempIgnoresOptions {
+        "/contract"
+    } else {
+        parent.map_or("/contract", Path::as_str)
+    };
+    let (prefix, suffix) = if fault == AsyncMemoryFault::TempIgnoresOptions {
+        (".async-tmp-", "")
+    } else {
+        (prefix, suffix)
+    };
+    let separator = if parent == "/" { "" } else { "/" };
+    let path = Path::parse(&format!(
+        "{parent}{separator}{prefix}{}{suffix}",
+        entries.len()
+    ))
+    .expect("generated temporary path must be valid");
     entries.insert(
         path.as_str().to_owned(),
         if directory {
