@@ -23,20 +23,11 @@ mod file_system_fixture;
 mod fixture_error;
 mod fixture_support;
 
-pub use async_copy_fixture_case::{
-    AsyncCopyCancellationStage,
-    AsyncCopyFixtureCase,
-};
+pub use async_copy_fixture_case::{AsyncCopyCancellationStage, AsyncCopyFixtureCase};
 pub use async_file_system_contract_suite::AsyncFileSystemContractSuite;
-pub use async_file_system_fixture::{
-    AsyncFileSystemFixture,
-    FixtureFuture,
-};
+pub use async_file_system_fixture::{AsyncFileSystemFixture, FixtureFuture};
 pub use copy_fixture_case::CopyFixtureCase;
 pub use file_system_contract_suite::FileSystemContractSuite;
 pub use file_system_fixture::FileSystemFixture;
-pub use fixture_error::{
-    FixtureError,
-    FixtureResult,
-};
+pub use fixture_error::{FixtureError, FixtureResult};
 pub use fixture_support::FixtureSupport;

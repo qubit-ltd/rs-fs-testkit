@@ -9,37 +9,19 @@
 
 use std::{
     future::Future,
-    task::{
-        Context,
-        Poll,
-        Waker,
-    },
+    task::{Context, Poll, Waker},
 };
 
 use qubit_fs::{
-    AsyncCopyOperationState,
-    CopyFailureState,
-    CopyMethod,
-    CreateDirectoryOptions,
-    DeleteOptions,
-    FileSystemCapability,
-    FsErrorKind,
-    FsOperation,
-    RenameOptions,
-    TempDirectoryOptions,
-    TempFileOptions,
+    AchievedAtomicity, AsyncCopyOperationState, AtomicityRequirement, CopyFailureState, CopyMethod,
+    CopyOptions, CreateDirectoryOptions, DeleteOptions, DurabilityRequirement,
+    FileSystemCapability, FsErrorKind, FsOperation, RenameOptions, TempDirectoryOptions,
+    TempFileOptions, WriteDisposition, WriteOptions,
 };
-use qubit_io::{
-    AsyncInput,
-    AsyncOutput,
-};
+use qubit_io::{AsyncInput, AsyncOutput};
 
 use crate::contract_context::ContractContext;
-use crate::{
-    AsyncCopyCancellationStage,
-    AsyncFileSystemFixture,
-    FixtureSupport,
-};
+use crate::{AsyncCopyCancellationStage, AsyncFileSystemFixture, FixtureSupport};
 
 /// Runs asynchronous provider contracts against one isolated fixture.
 pub struct AsyncFileSystemContractSuite<'a> {
@@ -68,6 +50,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.assert_delete().await;
         self.assert_copy().await;
         self.assert_rename().await;
+        self.assert_append().await;
+        self.assert_recursive_delete().await;
+        self.assert_atomic_rename().await;
+        self.assert_atomic_replace().await;
+        self.assert_durable_copy().await;
         self.assert_temp_resources().await;
         self.assert_error_context().await;
         self.finish().await;
@@ -121,12 +108,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .stat(&path)
             .await
             .expect_err("stat contract: missing path succeeded");
-        self.assert_error(
-            &error,
-            FsErrorKind::NotFound,
-            FsOperation::Stat,
-            &path,
-        );
+        self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
     }
     /// Checks asynchronous reader behavior.
     pub async fn assert_read(&mut self) {
@@ -138,9 +120,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .open_reader(&path, Default::default())
                 .await
-                .expect_err(
-                    "read contract: unadvertised reader open succeeded",
-                );
+                .expect_err("read contract: unadvertised reader open succeeded");
             self.assert_error(
                 &error,
                 FsErrorKind::UnsupportedCapability,
@@ -179,9 +159,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 );
             }
             FixtureSupport::Unsupported => {
-                panic!(
-                    "read contract: advertised capability requires fixture.seed_file support"
-                )
+                panic!("read contract: advertised capability requires fixture.seed_file support")
             }
         }
     }
@@ -195,9 +173,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .open_writer(&path, Default::default())
                 .await
-                .expect_err(
-                    "write contract: unadvertised writer open succeeded",
-                );
+                .expect_err("write contract: unadvertised writer open succeeded");
             self.assert_error(
                 &error,
                 FsErrorKind::UnsupportedCapability,
@@ -240,9 +216,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 )
             }
             FixtureSupport::Unsupported => {
-                panic!(
-                    "write contract: Write capability requires fixture.read_file support"
-                )
+                panic!("write contract: Write capability requires fixture.read_file support")
             }
         }
     }
@@ -274,10 +248,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             actual.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             let mut expected = vec![first, second];
             expected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-            assert_eq!(
-                actual, expected,
-                "list contract: direct children mismatch"
-            );
+            assert_eq!(actual, expected, "list contract: direct children mismatch");
         } else {
             let error = self
                 .fixture
@@ -307,9 +278,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .create_directory(&path, CreateDirectoryOptions::default())
                 .await
-                .expect(
-                    "create-directory contract: advertised creation failed",
-                );
+                .expect("create-directory contract: advertised creation failed");
             self.context.record_created(path.clone());
             let metadata = self
                 .fixture
@@ -355,12 +324,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .stat(&path)
                 .await
                 .expect_err("delete contract: deleted file remained");
-            self.assert_error(
-                &error,
-                FsErrorKind::NotFound,
-                FsOperation::Stat,
-                &path,
-            );
+            self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
         } else {
             let error = self
                 .fixture
@@ -387,9 +351,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Default::default(),
             ) {
                 Err(error) => error,
-                Ok(_) => panic!(
-                    "async copy contract: unadvertised copy preflight succeeded"
-                ),
+                Ok(_) => panic!("async copy contract: unadvertised copy preflight succeeded"),
             };
             self.assert_error(
                 error.error(),
@@ -422,10 +384,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 outcome.used_fallback(),
                 "async copy contract: streamed copy was not reported as fallback"
             ),
-            CopyMethod::Native
-            | CopyMethod::Clone
-            | CopyMethod::ServerSide
-            | CopyMethod::Mixed => {
+            CopyMethod::Native | CopyMethod::Clone | CopyMethod::ServerSide | CopyMethod::Mixed => {
                 assert!(
                     !outcome.used_fallback(),
                     "async copy contract: completed fast path was reported as fallback"
@@ -480,15 +439,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             drop(execution);
             assert_eq!(
                 operation.state(),
-                AsyncCopyOperationState::Failed(
-                    CopyFailureState::Indeterminate
-                ),
+                AsyncCopyOperationState::Failed(CopyFailureState::Indeterminate),
                 "async copy contract: cancellation did not become indeterminate"
             );
             if matches!(
                 stage,
-                AsyncCopyCancellationStage::Writer
-                    | AsyncCopyCancellationStage::Commit
+                AsyncCopyCancellationStage::Writer | AsyncCopyCancellationStage::Commit
             ) {
                 assert!(
                     operation.take_recovery_writer().is_some(),
@@ -512,16 +468,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .rename(&source, &target, RenameOptions::default())
                 .await
                 .expect("rename contract: advertised rename failed");
-            let error =
-                self.fixture.file_system().stat(&source).await.expect_err(
-                    "rename contract: source remained after success",
-                );
-            self.assert_error(
-                &error,
-                FsErrorKind::NotFound,
-                FsOperation::Stat,
-                &source,
-            );
+            let error = self
+                .fixture
+                .file_system()
+                .stat(&source)
+                .await
+                .expect_err("rename contract: source remained after success");
+            self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &source);
             self.fixture
                 .file_system()
                 .stat(&target)
@@ -543,6 +496,254 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
         }
     }
+    /// Checks asynchronous append writes when the provider advertises them.
+    pub async fn assert_append(&mut self) {
+        self.context.begin("append");
+        let path = self.path("async-append-target");
+        let options = WriteOptions {
+            disposition: WriteDisposition::Append,
+            ..WriteOptions::default()
+        };
+        if !self.capable(FileSystemCapability::Append) {
+            let error = self
+                .fixture
+                .file_system()
+                .open_writer(&path, options)
+                .await
+                .expect_err("append contract: unadvertised append preflight succeeded");
+            self.assert_requirement_error(
+                &error,
+                FsOperation::OpenWriter,
+                FileSystemCapability::Append,
+                "append contract",
+            );
+            return;
+        }
+        let path = self
+            .required_seed("async-append-target", b"before", "append")
+            .await;
+        let mut writer = self
+            .fixture
+            .file_system()
+            .open_writer(&path, options)
+            .await
+            .expect("append contract: writer open failed");
+        writer
+            .write_fully_async(b"-after")
+            .await
+            .expect("append contract: write failed");
+        writer
+            .commit_async()
+            .await
+            .expect("append contract: commit failed");
+        self.assert_bytes(
+            &path,
+            b"before-after",
+            "append contract: existing bytes were not retained",
+        )
+        .await;
+    }
+
+    /// Checks asynchronous recursive deletion when the provider advertises it.
+    pub async fn assert_recursive_delete(&mut self) {
+        self.context.begin("recursive_delete");
+        let root = self.path("async-recursive-delete-root");
+        let options = DeleteOptions {
+            recursive: true,
+            ..DeleteOptions::default()
+        };
+        if !self.capable(FileSystemCapability::RecursiveDelete) {
+            let error = self
+                .fixture
+                .file_system()
+                .delete_directory(&root, options)
+                .await
+                .expect_err("recursive-delete contract: unadvertised preflight succeeded");
+            self.assert_requirement_error(
+                &error,
+                FsOperation::Delete,
+                FileSystemCapability::RecursiveDelete,
+                "recursive-delete contract",
+            );
+            return;
+        }
+        self.fixture
+            .file_system()
+            .create_directory(&root, CreateDirectoryOptions::default())
+            .await
+            .expect("recursive-delete contract: root creation failed");
+        let child = self
+            .required_seed(
+                "async-recursive-delete-root/child",
+                b"child",
+                "recursive-delete",
+            )
+            .await;
+        self.fixture
+            .file_system()
+            .delete_directory(&root, options)
+            .await
+            .expect("recursive-delete contract: recursive removal failed");
+        assert!(
+            !self
+                .fixture
+                .file_system()
+                .exists(&root)
+                .await
+                .expect("recursive-delete contract: root existence check failed")
+        );
+        assert!(
+            !self
+                .fixture
+                .file_system()
+                .exists(&child)
+                .await
+                .expect("recursive-delete contract: child existence check failed")
+        );
+    }
+
+    /// Checks asynchronous atomic rename publication when advertised.
+    pub async fn assert_atomic_rename(&mut self) {
+        self.context.begin("atomic_rename");
+        let source = self.path("async-atomic-rename-source");
+        let target = self.path("async-atomic-rename-target");
+        let options = RenameOptions {
+            atomicity: AtomicityRequirement::Required,
+            ..RenameOptions::default()
+        };
+        if !self.capable(FileSystemCapability::AtomicRename) {
+            let failure = self
+                .fixture
+                .file_system()
+                .rename(&source, &target, options)
+                .await
+                .expect_err("atomic-rename contract: unadvertised preflight succeeded");
+            self.assert_requirement_error(
+                failure.error(),
+                FsOperation::Rename,
+                FileSystemCapability::AtomicRename,
+                "atomic-rename contract",
+            );
+            return;
+        }
+        let source = self
+            .required_seed(
+                "async-atomic-rename-source",
+                b"atomic rename",
+                "atomic-rename",
+            )
+            .await;
+        let outcome = self
+            .fixture
+            .file_system()
+            .rename(&source, &target, options)
+            .await
+            .expect("atomic-rename contract: required rename failed");
+        assert_eq!(
+            outcome.atomicity(),
+            AchievedAtomicity::Atomic,
+            "atomic-rename contract: non-atomic outcome"
+        );
+        self.context.record_created(target);
+    }
+
+    /// Checks asynchronous atomic replacement publication when advertised.
+    pub async fn assert_atomic_replace(&mut self) {
+        self.context.begin("atomic_replace");
+        let path = self.path("async-atomic-replace-target");
+        let options = WriteOptions {
+            atomicity: AtomicityRequirement::Required,
+            ..WriteOptions::default()
+        };
+        if !self.capable(FileSystemCapability::AtomicReplace) {
+            let error = self
+                .fixture
+                .file_system()
+                .open_writer(&path, options)
+                .await
+                .expect_err("atomic-replace contract: unadvertised preflight succeeded");
+            self.assert_requirement_error(
+                &error,
+                FsOperation::OpenWriter,
+                FileSystemCapability::AtomicReplace,
+                "atomic-replace contract",
+            );
+            return;
+        }
+        let mut writer = self
+            .fixture
+            .file_system()
+            .open_writer(&path, options)
+            .await
+            .expect("atomic-replace contract: writer open failed");
+        writer
+            .write_fully_async(b"atomic replacement")
+            .await
+            .expect("atomic-replace contract: write failed");
+        let outcome = writer
+            .commit_async()
+            .await
+            .expect("atomic-replace contract: commit failed");
+        assert_eq!(
+            outcome.atomicity,
+            AchievedAtomicity::Atomic,
+            "atomic-replace contract: non-atomic outcome"
+        );
+        self.context.record_created(path);
+    }
+
+    /// Checks asynchronous durable copy publication when advertised.
+    pub async fn assert_durable_copy(&mut self) {
+        self.context.begin("durable_copy");
+        let source = self.path("async-durable-copy-source");
+        let target = self.path("async-durable-copy-target");
+        let options = CopyOptions {
+            durability: DurabilityRequirement::Required,
+            ..CopyOptions::default()
+        };
+        if !self.capable(FileSystemCapability::DurableCopy) {
+            let error = match self
+                .fixture
+                .file_system()
+                .begin_copy(source, target, options)
+            {
+                Err(error) => error,
+                Ok(_) => panic!("durable-copy contract: unadvertised preflight succeeded"),
+            };
+            self.assert_requirement_error(
+                error.error(),
+                FsOperation::Copy,
+                FileSystemCapability::DurableCopy,
+                "durable-copy contract",
+            );
+            return;
+        }
+        let source = self
+            .required_seed("async-durable-copy-source", b"durable copy", "durable-copy")
+            .await;
+        let mut operation = self
+            .fixture
+            .file_system()
+            .begin_copy(source.clone(), target.clone(), options)
+            .expect("durable-copy contract: preflight failed");
+        let outcome = operation
+            .execute()
+            .await
+            .expect("durable-copy contract: copy failed");
+        assert!(
+            outcome.durable(),
+            "durable-copy contract: non-durable outcome"
+        );
+        self.assert_bytes(
+            &target,
+            b"durable copy",
+            "durable-copy contract: target bytes mismatch",
+        )
+        .await;
+        self.context.record_created(source);
+        self.context.record_created(target);
+    }
+
     /// Checks asynchronous temporary-resource lifecycle behavior.
     pub async fn assert_temp_resources(&mut self) {
         self.context.begin("temp_resources");
@@ -564,12 +765,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .stat(&path)
                 .await
                 .expect_err("temp-file contract: cleanup retained source");
-            self.assert_error(
-                &error,
-                FsErrorKind::NotFound,
-                FsOperation::Stat,
-                &path,
-            );
+            self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
         } else {
             let error = match self
                 .fixture
@@ -577,9 +773,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .create_temp_file(TempFileOptions::default())
                 .await
             {
-                Ok(_) => panic!(
-                    "temp-file contract: unadvertised creation succeeded"
-                ),
+                Ok(_) => panic!("temp-file contract: unadvertised creation succeeded"),
                 Err(error) => error,
             };
             self.assert_error(
@@ -601,16 +795,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .cleanup()
                 .await
                 .expect("temp-directory contract: cleanup failed");
-            let error =
-                self.fixture.file_system().stat(&path).await.expect_err(
-                    "temp-directory contract: cleanup retained source",
-                );
-            self.assert_error(
-                &error,
-                FsErrorKind::NotFound,
-                FsOperation::Stat,
-                &path,
-            );
+            let error = self
+                .fixture
+                .file_system()
+                .stat(&path)
+                .await
+                .expect_err("temp-directory contract: cleanup retained source");
+            self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
         } else {
             let error = match self
                 .fixture
@@ -618,9 +809,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .create_temp_directory(TempDirectoryOptions::default())
                 .await
             {
-                Ok(_) => panic!(
-                    "temp-directory contract: unadvertised creation succeeded"
-                ),
+                Ok(_) => panic!("temp-directory contract: unadvertised creation succeeded"),
                 Err(error) => error,
             };
             self.assert_error(
@@ -641,12 +830,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .stat(&path)
             .await
             .expect_err("error contract: missing path succeeded");
-        self.assert_error(
-            &error,
-            FsErrorKind::NotFound,
-            FsOperation::Stat,
-            &path,
-        );
+        self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
     }
 
     /// Resolves a fixture path or identifies setup failure at the contract
@@ -693,12 +877,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Reads a fixture-owned file and checks its exact bytes after copy.
-    async fn assert_bytes(
-        &self,
-        path: &qubit_fs::Path,
-        expected: &[u8],
-        message: &str,
-    ) {
+    async fn assert_bytes(&self, path: &qubit_fs::Path, expected: &[u8], message: &str) {
         match self
             .fixture
             .read_file(path)
@@ -709,9 +888,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 assert_eq!(actual, expected, "{message}")
             }
             FixtureSupport::Unsupported => {
-                panic!(
-                    "async copy contract: Copy capability requires fixture.read_file support"
-                )
+                panic!("async copy contract: Copy capability requires fixture.read_file support")
             }
         }
     }
@@ -731,5 +908,30 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             "error contract: context mismatch"
         );
         assert_eq!(error.path(), Some(path), "error contract: path mismatch");
+    }
+
+    /// Validates option-derived asynchronous capability preflight errors.
+    fn assert_requirement_error(
+        &self,
+        error: &qubit_fs::FsError,
+        operation: FsOperation,
+        capability: FileSystemCapability,
+        contract: &str,
+    ) {
+        assert_eq!(
+            error.kind(),
+            FsErrorKind::RequirementNotMet,
+            "{contract}: error kind mismatch"
+        );
+        assert_eq!(
+            error.operation(),
+            operation,
+            "{contract}: error operation mismatch"
+        );
+        assert_eq!(
+            error.required_capability(),
+            Some(capability),
+            "{contract}: missing required-capability context"
+        );
     }
 }
