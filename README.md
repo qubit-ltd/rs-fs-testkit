@@ -54,8 +54,8 @@ operations the provider does not advertise.
 - Contracts for facade properties, core operations, capability preflight,
   structured error context, cleanup, and supported optional operations. Both
   suites verify advertised append, recursive deletion, required-atomic
-  rename/replacement, and required-durable copy. The synchronous suite also
-  verifies atomic temporary-resource persistence.
+  rename/replacement, required-durable copy, and atomic temporary-resource
+  persistence.
 
 Provider crates remain responsible for their own platform behavior, path
 encoding, security boundaries, service registration, and capabilities outside

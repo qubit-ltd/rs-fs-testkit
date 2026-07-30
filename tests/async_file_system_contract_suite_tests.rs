@@ -19,7 +19,11 @@ use common::{
     AsyncMemoryFault,
     AsyncMemoryFixture,
 };
-use qubit_fs_testkit::AsyncFileSystemContractSuite;
+use qubit_fs::FileSystemCapability;
+use qubit_fs_testkit::{
+    AsyncFileSystemContractSuite,
+    AsyncFileSystemFixture,
+};
 
 /// Polls one copy contract that is expected to complete without suspension.
 fn assert_copy_contract(fixture: &AsyncMemoryFixture) {
@@ -37,6 +41,20 @@ fn assert_copy_contract(fixture: &AsyncMemoryFixture) {
 #[test]
 fn test_conforming_async_memory_provider_satisfies_full_suite() {
     let fixture = AsyncMemoryFixture::new();
+    let capabilities = fixture.file_system().properties().capabilities();
+    for capability in [
+        FileSystemCapability::Append,
+        FileSystemCapability::RecursiveDelete,
+        FileSystemCapability::AtomicRename,
+        FileSystemCapability::AtomicReplace,
+        FileSystemCapability::DurableCopy,
+        FileSystemCapability::AtomicTempPersist,
+    ] {
+        assert!(
+            capabilities.contains(capability),
+            "conforming async fixture must exercise {capability:?}"
+        );
+    }
     let mut assertion =
         Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     let waker = Waker::noop();
@@ -165,6 +183,13 @@ fn test_single_faults_are_rejected_by_async_suite() {
         AsyncMemoryFault::CopyDropsTarget,
         AsyncMemoryFault::RenameNoOp,
         AsyncMemoryFault::TempCleanupNoOp,
+        AsyncMemoryFault::AppendOverwrites,
+        AsyncMemoryFault::RecursiveDeleteLeavesChildren,
+        AsyncMemoryFault::AtomicRenameNonAtomic,
+        AsyncMemoryFault::AtomicReplaceNonAtomic,
+        AsyncMemoryFault::DurableCopyNonDurable,
+        AsyncMemoryFault::TempPersistWrongTarget,
+        AsyncMemoryFault::AtomicTempPersistNonAtomic,
     ] {
         let fixture = AsyncMemoryFixture::with_fault(fault);
         let result =

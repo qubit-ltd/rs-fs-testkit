@@ -29,6 +29,7 @@ use qubit_fs::{
     FileSystemCapability,
     FsErrorKind,
     FsOperation,
+    PersistOptions,
     RenameOptions,
     TempDirectoryOptions,
     TempFileOptions,
@@ -941,6 +942,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FsOperation::Stat,
                 &path,
             );
+            let mut temporary = self
+                .fixture
+                .file_system()
+                .create_temp_file(TempFileOptions::default())
+                .await
+                .expect("temp-file contract: persist setup failed");
+            let target = self.path("async-temp-persisted-file");
+            self.assert_temp_file_persist(&mut temporary, &target).await;
+            self.context.record_created(target);
         } else {
             let error = match self
                 .fixture
@@ -982,6 +992,16 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FsOperation::Stat,
                 &path,
             );
+            let mut temporary = self
+                .fixture
+                .file_system()
+                .create_temp_directory(TempDirectoryOptions::default())
+                .await
+                .expect("temp-directory contract: persist setup failed");
+            let target = self.path("async-temp-persisted-directory");
+            self.assert_temp_directory_persist(&mut temporary, &target)
+                .await;
+            self.context.record_created(target);
         } else {
             let error = match self
                 .fixture
@@ -1001,6 +1021,81 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 &qubit_fs::Path::root(),
             );
         }
+    }
+
+    /// Verifies asynchronous temporary-file persistence publication.
+    async fn assert_temp_file_persist(
+        &self,
+        temporary: &mut qubit_fs::AsyncTempFile,
+        target: &qubit_fs::Path,
+    ) {
+        let outcome = temporary
+            .persist(target, self.temp_persist_options())
+            .await
+            .expect("temp-file contract: persist failed");
+        self.assert_temp_persist_outcome(
+            &outcome,
+            target,
+            "temp-file contract",
+        )
+        .await;
+    }
+
+    /// Verifies asynchronous temporary-directory persistence publication.
+    async fn assert_temp_directory_persist(
+        &self,
+        temporary: &mut qubit_fs::AsyncTempDirectory,
+        target: &qubit_fs::Path,
+    ) {
+        let outcome = temporary
+            .persist(target, self.temp_persist_options())
+            .await
+            .expect("temp-directory contract: persist failed");
+        self.assert_temp_persist_outcome(
+            &outcome,
+            target,
+            "temp-directory contract",
+        )
+        .await;
+    }
+
+    /// Builds persistence options matching the advertised atomic guarantee.
+    #[inline]
+    fn temp_persist_options(&self) -> PersistOptions {
+        PersistOptions {
+            atomicity: if self.capable(FileSystemCapability::AtomicTempPersist)
+            {
+                AtomicityRequirement::Required
+            } else {
+                AtomicityRequirement::Preferred
+            },
+            ..PersistOptions::default()
+        }
+    }
+
+    /// Checks persistence reporting and destination publication.
+    async fn assert_temp_persist_outcome(
+        &self,
+        outcome: &qubit_fs::PersistOutcome,
+        target: &qubit_fs::Path,
+        label: &str,
+    ) {
+        assert_eq!(outcome.target, *target, "{label}: persist target mismatch");
+        if self.capable(FileSystemCapability::AtomicTempPersist) {
+            assert_eq!(
+                outcome.atomicity,
+                AchievedAtomicity::Atomic,
+                "{label}: required operation reported non-atomic publication"
+            );
+        }
+        assert!(
+            self.fixture
+                .file_system()
+                .exists(target)
+                .await
+                .expect("temporary resource contract: target exists failed"),
+            "{label}: persist did not publish target"
+        );
     }
 
     /// Checks asynchronous structured-error context and redaction behavior.

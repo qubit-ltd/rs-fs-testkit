@@ -1010,6 +1010,20 @@ pub enum AsyncMemoryFault {
     RenameNoOp,
     /// Reports temporary cleanup success without removing the resource.
     TempCleanupNoOp,
+    /// Appends by replacing existing bytes.
+    AppendOverwrites,
+    /// Removes only the requested directory during recursive deletion.
+    RecursiveDeleteLeavesChildren,
+    /// Reports non-atomic completion for a required atomic rename.
+    AtomicRenameNonAtomic,
+    /// Reports non-atomic completion for a required atomic replacement.
+    AtomicReplaceNonAtomic,
+    /// Reports non-durable completion for a required durable copy.
+    DurableCopyNonDurable,
+    /// Publishes the requested destination but reports a different target.
+    TempPersistWrongTarget,
+    /// Reports non-atomic completion for required temporary persistence.
+    AtomicTempPersistNonAtomic,
 }
 
 impl AsyncMemoryFixture {
@@ -1257,7 +1271,13 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                 .with(FileSystemCapability::Delete)
                 .with(FileSystemCapability::Rename)
                 .with(FileSystemCapability::TempFile)
-                .with(FileSystemCapability::TempDirectory);
+                .with(FileSystemCapability::TempDirectory)
+                .with(FileSystemCapability::Append)
+                .with(FileSystemCapability::RecursiveDelete)
+                .with(FileSystemCapability::AtomicRename)
+                .with(FileSystemCapability::AtomicReplace)
+                .with(FileSystemCapability::DurableCopy)
+                .with(FileSystemCapability::AtomicTempPersist);
         }
         if self.core_capabilities {
             capabilities = capabilities
@@ -1402,6 +1422,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
         let info = Self::info(&path);
         let state = Arc::clone(&self.entries);
         let fault = self.fault;
+        let disposition = request.options().options().disposition;
+        let atomicity = request.options().options().atomicity;
         Box::pin(async move {
             Ok(qubit_fs::spi::OpenedAsyncWriter::new(
                 info,
@@ -1411,6 +1433,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                     path,
                     bytes: Vec::new(),
                     fault,
+                    disposition,
+                    atomicity,
                 }),
             ))
         })
@@ -1459,12 +1483,27 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     ) -> qubit_fs::spi::SpiFuture<'a, FsResult<DeleteOutcome>> {
         let path = request.path().clone();
         let entries = Arc::clone(&self.entries);
+        let recursive = request.options().options().recursive;
+        let fault = self.fault;
         Box::pin(async move {
-            let missing = entries
-                .lock()
-                .expect("async memory state lock must succeed")
-                .remove(path.as_str())
-                .is_none();
+            let missing = if fault == AsyncMemoryFault::DeleteNoOp {
+                true
+            } else {
+                let mut entries = entries
+                    .lock()
+                    .expect("async memory state lock must succeed");
+                let missing = entries.remove(path.as_str()).is_none();
+                if recursive
+                    && fault != AsyncMemoryFault::RecursiveDeleteLeavesChildren
+                {
+                    let prefix =
+                        format!("{}/", path.as_str().trim_end_matches('/'));
+                    entries.retain(|entry_path, _| {
+                        !entry_path.starts_with(&prefix)
+                    });
+                }
+                missing
+            };
             Ok(DeleteOutcome::new(missing))
         })
     }
@@ -1481,10 +1520,14 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
         {
             return Box::pin(future::pending());
         }
-        if self.native_copy {
+        let options = request.options().options();
+        let durable =
+            options.durability == qubit_fs::DurabilityRequirement::Required;
+        if self.native_copy || durable {
             let source = request.source().clone();
             let target = request.target().clone();
             let entries = Arc::clone(&self.entries);
+            let fault = self.fault;
             return Box::pin(async move {
                 let mut entries = entries
                     .lock()
@@ -1505,15 +1548,21 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                     Entry::Directory => 0,
                 };
                 entries.insert(target.as_str().to_owned(), entry);
-                Ok(CopyAttempt::Completed(qubit_fs::CopyOutcome::new(
-                    qubit_fs::CopyStats {
-                        files: 1,
-                        bytes,
-                        ..qubit_fs::CopyStats::default()
-                    },
-                    qubit_fs::CopyMethod::Native,
-                    AchievedAtomicity::NonAtomic,
-                )))
+                Ok(CopyAttempt::Completed(
+                    qubit_fs::CopyOutcome::new(
+                        qubit_fs::CopyStats {
+                            files: 1,
+                            bytes,
+                            ..qubit_fs::CopyStats::default()
+                        },
+                        qubit_fs::CopyMethod::Native,
+                        AchievedAtomicity::NonAtomic,
+                    )
+                    .with_durable(
+                        durable
+                            && fault != AsyncMemoryFault::DurableCopyNonDurable,
+                    ),
+                ))
             });
         }
         Box::pin(async {
@@ -1532,6 +1581,7 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
         let target = request.target().clone();
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
+        let atomicity = request.options().options().atomicity;
         Box::pin(async move {
             if fault != AsyncMemoryFault::RenameNoOp {
                 let mut entries = entries
@@ -1552,7 +1602,13 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
             Ok(RenameOutcome::new(
                 source,
                 target,
-                AchievedAtomicity::NonAtomic,
+                if atomicity == AtomicityRequirement::Required
+                    && fault != AsyncMemoryFault::AtomicRenameNonAtomic
+                {
+                    AchievedAtomicity::Atomic
+                } else {
+                    AchievedAtomicity::NonAtomic
+                },
                 PublicationMethod::Direct,
             ))
         })
@@ -1651,6 +1707,8 @@ struct AsyncMemoryWriter {
     path: Path,
     bytes: Vec<u8>,
     fault: AsyncMemoryFault,
+    disposition: WriteDisposition,
+    atomicity: AtomicityRequirement,
 }
 
 impl AsyncOutput for AsyncMemoryWriter {
@@ -1696,18 +1754,37 @@ impl qubit_fs::spi::AsyncFileWriteSession for AsyncMemoryWriter {
         let path = this.path.clone();
         let bytes = this.bytes.clone();
         let fault = this.fault;
+        let disposition = this.disposition;
+        let atomicity = this.atomicity;
         Box::pin(async move {
             if fault != AsyncMemoryFault::WriteDropsBytes
                 && !(fault == AsyncMemoryFault::CopyDropsTarget
                     && path.as_str().contains("async-copy-positive-target"))
             {
-                state
-                    .lock()
-                    .expect("async memory state lock must succeed")
-                    .insert(path.as_str().to_owned(), Entry::File(bytes));
+                let mut state =
+                    state.lock().expect("async memory state lock must succeed");
+                let bytes = if disposition == WriteDisposition::Append
+                    && fault != AsyncMemoryFault::AppendOverwrites
+                {
+                    let mut combined = match state.get(path.as_str()) {
+                        Some(Entry::File(existing)) => existing.clone(),
+                        Some(Entry::Directory) | None => Vec::new(),
+                    };
+                    combined.extend_from_slice(&bytes);
+                    combined
+                } else {
+                    bytes
+                };
+                state.insert(path.as_str().to_owned(), Entry::File(bytes));
             }
             Ok(qubit_fs::WriteOutcome::new(
-                AchievedAtomicity::NonAtomic,
+                if atomicity == AtomicityRequirement::Required
+                    && fault != AsyncMemoryFault::AtomicReplaceNonAtomic
+                {
+                    AchievedAtomicity::Atomic
+                } else {
+                    AchievedAtomicity::NonAtomic
+                },
                 PublicationMethod::Direct,
             ))
         })
@@ -1796,6 +1873,8 @@ impl qubit_fs::spi::AsyncTempResourceSpi for AsyncTempSession {
         let entries = Arc::clone(&this.entries);
         let source = this.path.clone();
         let target = request.target().clone();
+        let atomicity = request.options().atomicity;
+        let fault = this.fault;
         Box::pin(async move {
             let mut entries = entries
                 .lock()
@@ -1804,9 +1883,22 @@ impl qubit_fs::spi::AsyncTempResourceSpi for AsyncTempSession {
                 .remove(source.as_str())
                 .expect("temporary entry must exist");
             entries.insert(target.as_str().to_owned(), entry);
+            let reported_target =
+                if fault == AsyncMemoryFault::TempPersistWrongTarget {
+                    Path::parse("/contract/async-wrong-persist-target")
+                        .expect("generated path must be valid")
+                } else {
+                    target
+                };
             Ok(PersistOutcome::new(
-                target,
-                AchievedAtomicity::NonAtomic,
+                reported_target,
+                if atomicity == AtomicityRequirement::Required
+                    && fault != AsyncMemoryFault::AtomicTempPersistNonAtomic
+                {
+                    AchievedAtomicity::Atomic
+                } else {
+                    AchievedAtomicity::NonAtomic
+                },
                 PublicationMethod::Direct,
             ))
         })

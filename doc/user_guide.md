@@ -60,12 +60,13 @@ let fixture = TestFixture::new();
 FileSystemContractSuite::new(&fixture).assert_all();
 ```
 
-The synchronous suite checks properties, `stat`, read, write, list, directory
-creation, delete, copy, rename, append, recursive deletion, required-atomic
-rename/replacement, required-durable copy, temporary resources, error context,
-and then performs cleanup. Unadvertised core operations are checked for
-structured `UnsupportedCapability` preflight. Unadvertised stronger guarantees
-are checked for structured `RequirementNotMet` preflight.
+Both suites check properties, `stat`, read, write, list, directory creation,
+delete, copy, rename, append, recursive deletion, required-atomic
+rename/replacement, required-durable copy, temporary resources including
+atomic persistence, and error context, then perform cleanup. Unadvertised core
+operations are checked for structured `UnsupportedCapability` preflight.
+Unadvertised stronger guarantees are checked for structured `RequirementNotMet`
+preflight.
 
 For an async facade, await the parallel suite:
 
