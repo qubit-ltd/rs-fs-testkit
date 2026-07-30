@@ -23,10 +23,9 @@ provider test
 
 A fixture exposes the concrete facade under test and maps non-empty,
 `/`-separated testkit-relative names to provider paths. It also maps list
-prefixes. Optional fixture hooks can seed/read files, expose representation
-cases, prepare native-copy cases, and supply stable entry identities. The async
-fixture supplies equivalent future-based observations and optional copy
-cancellation cases.
+prefixes. Optional fixture hooks can seed/read files and prepare native-copy
+cases. The async fixture supplies equivalent future-based observations and
+optional copy cancellation cases.
 
 ## Scenario
 
@@ -62,10 +61,11 @@ FileSystemContractSuite::new(&fixture).assert_all();
 ```
 
 The synchronous suite checks properties, `stat`, read, write, list, directory
-creation, delete, copy, rename, temporary resources, error context, and then
-performs cleanup. Core operations not advertised by the facade are checked for
-structured unsupported-capability preflight; optional unadvertised operations
-are skipped where applicable.
+creation, delete, copy, rename, append, recursive deletion, required-atomic
+rename/replacement, required-durable copy, temporary resources, error context,
+and then performs cleanup. Unadvertised core operations are checked for
+structured `UnsupportedCapability` preflight. Unadvertised stronger guarantees
+are checked for structured `RequirementNotMet` preflight.
 
 For an async facade, await the parallel suite:
 
@@ -80,9 +80,13 @@ AsyncFileSystemContractSuite::new(&fixture).assert_all().await;
 
 Use optional fixture hooks only when the generic suite needs a provider-owned
 observation outside the operation being checked. Examples include `seed_file`,
-`read_file`, `empty_directory_path`, `symlink_path`, `copy_fast_path_case`, and
-`entry_identity`. Return `FixtureSupport::Unsupported` for an optional
-observation the provider cannot supply; it is not a fabricated assertion.
+`read_file`, and `copy_fast_path_case`. Return `FixtureSupport::Unsupported`
+for an optional observation the provider cannot supply; it is not a fabricated
+assertion.
+
+When individual phases are called directly, call `finish()` afterward to clean
+the resources those phases created. `assert_all()` calls it automatically; the
+synchronous suite also cleans up before rethrowing an assertion panic.
 
 `AsyncFileSystemFixture` additionally has `copy_cancellation_case` for
 provider-owned pending-stage controls. It is optional, as are the other

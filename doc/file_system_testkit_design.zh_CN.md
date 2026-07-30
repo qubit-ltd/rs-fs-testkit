@@ -228,17 +228,15 @@ Capability 处理遵循两个方向。
 
 ### 6.1 已声明 capability
 
-只要 provider 声明 capability，suite 就验证对应稳定语义保证。例如：
+当前实现会对以下已声明 capability 验证稳定语义保证：
 
-- `Read`：完整读取与 open identity；
-- `RangeRead`：range 边界与返回长度；
-- `ConditionalRead`：match/non-match；
-- `Write`、`Append`、`ConditionalWrite`；
+- `Read`：完整读取；
+- `Write`、`Append`；
 - `List` 与 page-size hint；
 - `CreateDirectory`；
-- `Delete`、`RecursiveDelete`、`ConditionalDelete`；
+- `Delete`、`RecursiveDelete`；
 - `Rename`、`AtomicRename`、`AtomicReplace`；
-- `Copy`、`ServerSideCopy`；
+- `Copy`、`ServerSideCopy`、`DurableCopy`；
 - `TempFile`、`TempDirectory`、`AtomicTempPersist`；
 - checksum validation。
 
@@ -254,8 +252,7 @@ failure，最终门面结果仍需满足 resolved requirements。
 如果 provider 声明 `ServerSideCopy`、clone 等需要动态适用 case 的 capability，完整
 suite 要求 fixture 至少提供一个对应 `copy_fast_path_case`。此时返回
 `FixtureSupport::Unsupported` 是 fixture contract failure，不能借此跳过已声明能力。
-对于未声明 capability 或 entry identity 等非强制 representation probe，
-`Unsupported` 才表示合法跳过。
+对于未声明 capability，`Unsupported` 才表示合法跳过。
 
 ### 6.2 未声明 capability
 
@@ -347,8 +344,6 @@ Limit contract 至少覆盖：
 - `CopyFailureState` 与 partial stats 符合可观察 target 状态；
 - rename 成功后 source 消失；
 - `RenameFailureState::{Unchanged, Renamed, Indeterminate}` 与可观察状态一致；
-- fixture 能安全观察 entry identity 时，rename 保留 identity，证明它不是
-  copy+delete；
 - type conflict、overwrite 和 precondition；
 - required atomicity 不降级；
 - outcome source/target context 完整。

@@ -21,8 +21,8 @@ provider 测试
 ```
 
 fixture 暴露待测具体门面，并将 testkit 的非空、`/` 分隔相对名称映射为 provider 路径，同时映射
-list prefix。可选 fixture hook 可预置/读取文件、提供表示用例、准备 native-copy 用例及稳定 entry
-identity。异步 fixture 提供对应的 future 观察，以及可选 copy cancellation 用例。
+list prefix。可选 fixture hook 可预置/读取文件并准备 native-copy 用例。异步 fixture
+提供对应的 future 观察，以及可选 copy cancellation 用例。
 
 ## 贯穿场景
 
@@ -52,8 +52,10 @@ FileSystemContractSuite::new(&fixture).assert_all();
 ```
 
 同步套件依次检查 properties、`stat`、read、write、list、创建目录、delete、copy、rename、临时
-资源和错误上下文，随后执行清理。门面未声明的核心操作会被检查是否返回结构化的 unsupported-capability
-预检错误；适用位置未声明的可选操作会被跳过。
+资源和错误上下文，随后执行清理。同步套件还会在声明对应能力时检查追加写、递归删除、
+必需原子 rename/replace 和必需持久 copy。门面未声明的核心操作会被检查是否返回结构化的
+`UnsupportedCapability` 预检错误；未声明的强化保证会被检查是否返回结构化的
+`RequirementNotMet` 预检错误。
 
 对于异步门面，await 对应套件：
 
@@ -67,8 +69,11 @@ AsyncFileSystemContractSuite::new(&fixture).assert_all().await;
 ## 进阶用法
 
 只有当通用套件需要在被测操作外进行 provider 所有的观察时，才实现可选 fixture hook。例如
-`seed_file`、`read_file`、`empty_directory_path`、`symlink_path`、`copy_fast_path_case` 和
-`entry_identity`。对于 provider 无法提供的可选观察，返回 `FixtureSupport::Unsupported`，而非伪造断言。
+`seed_file`、`read_file` 和 `copy_fast_path_case`。对于 provider 无法提供的可选观察，返回
+`FixtureSupport::Unsupported`，而非伪造断言。
+
+若直接单独调用阶段方法，结束后应调用 `finish()` 清理这些阶段创建的资源。`assert_all()` 会
+自动调用它；同步套件在断言 panic 后重新抛出前也会执行清理。
 
 `AsyncFileSystemFixture` 还提供 `copy_cancellation_case`，用于 provider 所有的 pending-stage 控制。
 它与其他 provider 特有观察一样是可选的。
