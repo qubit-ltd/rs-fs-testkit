@@ -9,33 +9,15 @@
 mod common;
 
 use std::future::Future;
-use std::task::{
-    Context,
-    Poll,
-    Waker,
-};
+use std::task::{Context, Poll, Waker};
 
-use qubit_fs::{
-    CopyMethod,
-    FileSystem,
-    Path,
-};
+use qubit_fs::{CopyMethod, FileSystem, Path};
 use qubit_fs_testkit::{
-    AsyncCopyCancellationStage,
-    AsyncCopyFixtureCase,
-    AsyncFileSystemFixture,
-    CopyFixtureCase,
-    FileSystemFixture,
-    FixtureEntryIdentity,
-    FixtureError,
-    FixtureResult,
-    FixtureSupport,
+    AsyncCopyCancellationStage, AsyncCopyFixtureCase, AsyncFileSystemFixture, CopyFixtureCase,
+    FileSystemFixture, FixtureError, FixtureResult, FixtureSupport,
 };
 
-use common::{
-    AsyncMemoryFixture,
-    MemoryFixture,
-};
+use common::{AsyncMemoryFixture, MemoryFixture};
 
 /// Fixture that uses every synchronous optional-hook default.
 struct DefaultSyncFixture<'a> {
@@ -78,9 +60,7 @@ impl AsyncFileSystemFixture for DefaultAsyncFixture<'_> {
 }
 
 /// Polls a fixture future that completes without suspension.
-fn poll_fixture_future<T>(
-    future: impl Future<Output = FixtureResult<T>>,
-) -> FixtureResult<T> {
+fn poll_fixture_future<T>(future: impl Future<Output = FixtureResult<T>>) -> FixtureResult<T> {
     let mut future = Box::pin(future);
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
@@ -95,10 +75,8 @@ fn poll_fixture_future<T>(
 /// Verifies that setup failures remain distinguishable from unavailable probes.
 #[test]
 fn test_fixture_support_does_not_conflate_error_with_unsupported() {
-    let unsupported: FixtureResult<FixtureSupport<Path>> =
-        Ok(FixtureSupport::Unsupported);
-    let failure: FixtureResult<FixtureSupport<Path>> =
-        Err(FixtureError::new("setup failed"));
+    let unsupported: FixtureResult<FixtureSupport<Path>> = Ok(FixtureSupport::Unsupported);
+    let failure: FixtureResult<FixtureSupport<Path>> = Err(FixtureError::new("setup failed"));
 
     assert!(matches!(unsupported, Ok(FixtureSupport::Unsupported)));
     assert!(failure.is_err());
@@ -123,19 +101,7 @@ fn test_synchronous_fixture_defaults_are_unsupported() {
         Ok(FixtureSupport::Unsupported)
     ));
     assert!(matches!(
-        fixture.empty_directory_path(),
-        Ok(FixtureSupport::Unsupported)
-    ));
-    assert!(matches!(
-        fixture.symlink_path(),
-        Ok(FixtureSupport::Unsupported)
-    ));
-    assert!(matches!(
         fixture.copy_fast_path_case(CopyMethod::Native),
-        Ok(FixtureSupport::Unsupported)
-    ));
-    assert!(matches!(
-        fixture.entry_identity(&path),
         Ok(FixtureSupport::Unsupported)
     ));
 }
@@ -159,22 +125,6 @@ fn test_asynchronous_fixture_defaults_are_unsupported() {
         Ok(FixtureSupport::Unsupported)
     ));
     assert!(matches!(
-        fixture.empty_directory_path(),
-        Ok(FixtureSupport::Unsupported)
-    ));
-    assert!(matches!(
-        fixture.symlink_path(),
-        Ok(FixtureSupport::Unsupported)
-    ));
-    assert!(matches!(
-        fixture.copy_fast_path_case(CopyMethod::Native),
-        Ok(FixtureSupport::Unsupported)
-    ));
-    assert!(matches!(
-        poll_fixture_future(fixture.entry_identity(&path)),
-        Ok(FixtureSupport::Unsupported)
-    ));
-    assert!(matches!(
         fixture.copy_cancellation_case(AsyncCopyCancellationStage::Reader),
         Ok(FixtureSupport::Unsupported)
     ));
@@ -188,10 +138,7 @@ fn test_fixture_error_preserves_message_and_source() {
     assert_eq!(plain.to_string(), "plain failure");
     assert!(std::error::Error::source(&plain).is_none());
 
-    let sourced = FixtureError::with_source(
-        "outer failure",
-        std::io::Error::other("inner"),
-    );
+    let sourced = FixtureError::with_source("outer failure", std::io::Error::other("inner"));
     assert_eq!(sourced.to_string(), "outer failure");
     assert_eq!(
         std::error::Error::source(&sourced)
@@ -209,11 +156,7 @@ fn test_fixture_error_preserves_message_and_source() {
 fn test_copy_fixture_cases_expose_and_transfer_request_parts() {
     let source = Path::parse("/defaults/source").expect("valid source path");
     let target = Path::parse("/defaults/target").expect("valid target path");
-    let case = CopyFixtureCase::new(
-        source.clone(),
-        target.clone(),
-        Default::default(),
-    );
+    let case = CopyFixtureCase::new(source.clone(), target.clone(), Default::default());
     assert_eq!(case.source(), &source);
     assert_eq!(case.target(), &target);
     assert_eq!(case.options(), &qubit_fs::CopyOptions::default());
@@ -222,11 +165,8 @@ fn test_copy_fixture_cases_expose_and_transfer_request_parts() {
     assert_eq!(actual_target, target);
     assert_eq!(actual_options, qubit_fs::CopyOptions::default());
 
-    let async_case = AsyncCopyFixtureCase::new(
-        actual_source.clone(),
-        actual_target.clone(),
-        actual_options,
-    );
+    let async_case =
+        AsyncCopyFixtureCase::new(actual_source.clone(), actual_target.clone(), actual_options);
     assert_eq!(async_case.source(), &actual_source);
     assert_eq!(async_case.target(), &actual_target);
     assert_eq!(async_case.options(), &qubit_fs::CopyOptions::default());
@@ -234,17 +174,4 @@ fn test_copy_fixture_cases_expose_and_transfer_request_parts() {
     assert_eq!(source, actual_source);
     assert_eq!(target, actual_target);
     assert_eq!(options, qubit_fs::CopyOptions::default());
-}
-
-/// Opaque fixture identities compare their provider-owned bytes exactly.
-#[test]
-fn test_fixture_entry_identity_compares_provider_bytes() {
-    assert_eq!(
-        FixtureEntryIdentity::new(vec![1, 2, 3]),
-        FixtureEntryIdentity::new(vec![1, 2, 3])
-    );
-    assert_ne!(
-        FixtureEntryIdentity::new(vec![1, 2, 3]),
-        FixtureEntryIdentity::new(vec![3, 2, 1])
-    );
 }
