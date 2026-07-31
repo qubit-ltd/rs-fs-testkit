@@ -10,6 +10,8 @@
 use qubit_fs::{
     AchievedAtomicity,
     AtomicityRequirement,
+    ChecksumPolicy,
+    CopyConflictPolicy,
     CopyMethod,
     CopyOptions,
     CreateDirectoryOptions,
@@ -22,14 +24,20 @@ use qubit_fs::{
     ListOptions,
     PersistFailureState,
     PersistOptions,
+    ReadOptions,
     RenameOptions,
+    RenameFailureState,
+    ResourceVersion,
+    ServerSidePreference,
     TempDirectory,
     TempDirectoryOptions,
     TempFile,
     TempFileOptions,
     WriteDisposition,
     WriteOptions,
+    WritePrecondition,
 };
+use qubit_io::Output;
 use std::panic::{
     AssertUnwindSafe,
     catch_unwind,
@@ -42,6 +50,7 @@ use crate::internal::{
     assert_unsupported_error,
 };
 use crate::{
+    FileSystemContract,
     FileSystemFixture,
     FixtureSupport,
 };
@@ -85,26 +94,52 @@ impl<'a> FileSystemContractSuite<'a> {
     /// observation fails. Cleanup still runs before the panic is resumed.
     pub fn assert_all(mut self) {
         let result = catch_unwind(AssertUnwindSafe(|| {
-            self.assert_properties();
-            self.assert_stat();
-            self.assert_read();
-            self.assert_write();
-            self.assert_list();
-            self.assert_create_directory();
-            self.assert_delete();
-            self.assert_copy();
-            self.assert_rename();
-            self.assert_append();
-            self.assert_recursive_delete();
-            self.assert_atomic_rename();
-            self.assert_atomic_replace();
-            self.assert_durable_copy();
-            self.assert_temp_resources();
-            self.assert_error_context();
+            for contract in FileSystemContract::ALL {
+                self.assert_contract_inner(contract);
+            }
         }));
         self.finish();
         if let Err(payload) = result {
             resume_unwind(payload);
+        }
+    }
+
+    /// Runs one named synchronous contract and always performs cleanup.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the provider violates the selected contract or cleanup
+    /// fails. Cleanup runs before an assertion panic is resumed.
+    pub fn assert_contract(mut self, contract: FileSystemContract) {
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            self.assert_contract_inner(contract);
+        }));
+        self.finish();
+        if let Err(payload) = result {
+            resume_unwind(payload);
+        }
+    }
+
+    /// Dispatches one named phase without changing cleanup ownership.
+    fn assert_contract_inner(&mut self, contract: FileSystemContract) {
+        match contract {
+            FileSystemContract::Properties => self.assert_properties(),
+            FileSystemContract::Stat => self.assert_stat(),
+            FileSystemContract::Read => self.assert_read(),
+            FileSystemContract::Write => self.assert_write(),
+            FileSystemContract::List => self.assert_list(),
+            FileSystemContract::CreateDirectory => self.assert_create_directory(),
+            FileSystemContract::Representations => self.assert_representations(),
+            FileSystemContract::Delete => self.assert_delete(),
+            FileSystemContract::Copy => self.assert_copy(),
+            FileSystemContract::Rename => self.assert_rename(),
+            FileSystemContract::Append => self.assert_append(),
+            FileSystemContract::RecursiveDelete => self.assert_recursive_delete(),
+            FileSystemContract::AtomicRename => self.assert_atomic_rename(),
+            FileSystemContract::AtomicReplace => self.assert_atomic_replace(),
+            FileSystemContract::DurableCopy => self.assert_durable_copy(),
+            FileSystemContract::TempResources => self.assert_temp_resources(),
+            FileSystemContract::ErrorContext => self.assert_error_context(),
         }
     }
 
@@ -187,10 +222,9 @@ impl<'a> FileSystemContractSuite<'a> {
             let metadata = file_system
                 .stat(&path)
                 .expect("stat contract: seeded file is not statable");
-            assert_eq!(
-                metadata.kind,
-                FileKind::File,
-                "stat contract: file kind mismatch"
+            assert!(
+                metadata.is_file_like(),
+                "stat contract: seeded resource is not file-like"
             );
             assert_eq!(
                 metadata.len,
@@ -250,6 +284,103 @@ impl<'a> FileSystemContractSuite<'a> {
             &path,
             None,
         );
+        self.assert_read_options(&path);
+    }
+
+    /// Checks range, conditional, and checksum read guarantees.
+    fn assert_read_options(&self, path: &qubit_fs::Path) {
+        let range = ReadOptions {
+            offset: Some(5),
+            length: Some(8),
+            ..ReadOptions::default()
+        };
+        if self.capable(FileSystemCapability::RangeRead) {
+            let bytes = self
+                .fixture
+                .file_system()
+                .read_all(path, range, 64)
+                .expect("read contract: advertised range read failed");
+            assert_eq!(bytes, b"contract", "read contract: range mismatch");
+        } else {
+            let error = self
+                .fixture
+                .file_system()
+                .open_reader(path, range)
+                .expect_err("read contract: unadvertised range read succeeded");
+            self.assert_requirement_error(
+                &error,
+                FsOperation::OpenReader,
+                FileSystemCapability::RangeRead,
+                "range-read contract",
+            );
+        }
+
+        let version_support = self
+            .fixture
+            .resource_version(path)
+            .expect("read contract: version observation failed");
+        let conditional = ReadOptions {
+            if_match: Some(match &version_support {
+                FixtureSupport::Supported(version) => version.clone(),
+                FixtureSupport::Unsupported => {
+                    ResourceVersion::new("contract-version")
+                }
+            }),
+            ..ReadOptions::default()
+        };
+        if self.capable(FileSystemCapability::ConditionalRead) {
+            assert!(
+                matches!(version_support, FixtureSupport::Supported(_)),
+                "conditional-read contract: advertised capability requires fixture.resource_version support"
+            );
+            let bytes = self
+                .fixture
+                .file_system()
+                .read_all(path, conditional, 64)
+                .expect("read contract: advertised conditional read failed");
+            assert_eq!(bytes, b"read contract bytes");
+        } else {
+            let error = self
+                .fixture
+                .file_system()
+                .open_reader(path, conditional)
+                .expect_err(
+                    "read contract: unadvertised conditional read succeeded",
+                );
+            self.assert_requirement_error(
+                &error,
+                FsOperation::OpenReader,
+                FileSystemCapability::ConditionalRead,
+                "conditional-read contract",
+            );
+        }
+
+        let checksummed = ReadOptions {
+            checksum: ChecksumPolicy::Required,
+            ..ReadOptions::default()
+        };
+        if self.capable(FileSystemCapability::ChecksumValidation) {
+            let bytes = self
+                .fixture
+                .file_system()
+                .read_all(path, checksummed, 64)
+                .expect("read contract: advertised checksum validation failed");
+            assert_eq!(bytes, b"read contract bytes");
+        } else {
+            let error = self
+                .fixture
+                .file_system()
+                .open_reader(path, checksummed)
+                .expect_err(
+                    "read contract: unadvertised checksum validation succeeded",
+                );
+            self.assert_requirement_error(
+                &error,
+                FsOperation::OpenReader,
+                FileSystemCapability::ChecksumValidation,
+                "checksum-read contract",
+            );
+        }
     }
 
     /// Checks writer behavior.
@@ -284,10 +415,15 @@ impl<'a> FileSystemContractSuite<'a> {
             return;
         }
         let path = self.path("write-file");
-        self.fixture
+        self.context.record_created(path.clone());
+        let outcome = self
+            .fixture
             .file_system()
             .write_all(&path, b"written", WriteOptions::default())
             .expect("writer contract: write failed");
+        if let Some(bytes_written) = outcome.bytes_written {
+            assert_eq!(bytes_written, 7, "writer contract: byte count mismatch");
+        }
         match self
             .fixture
             .read_file(&path)
@@ -305,7 +441,121 @@ impl<'a> FileSystemContractSuite<'a> {
                 )
             }
         }
-        self.context.record_created(path);
+        self.assert_write_options(&path);
+    }
+
+    /// Checks write dispositions, abort behavior, and conditional writes.
+    fn assert_write_options(&mut self, existing: &qubit_fs::Path) {
+        let create_new = WriteOptions {
+            disposition: WriteDisposition::CreateNew,
+            ..WriteOptions::default()
+        };
+        let failure = self
+            .fixture
+            .file_system()
+            .write_all(existing, b"unexpected", create_new)
+            .expect_err("writer contract: create-new replaced an existing target");
+        self.assert_error(
+            failure.error(),
+            FsErrorKind::AlreadyExists,
+            failure.error().operation(),
+            existing,
+            None,
+        );
+        assert!(
+            matches!(
+                failure.error().operation(),
+                FsOperation::OpenWriter | FsOperation::CommitWriter
+            ),
+            "writer contract: create-new failed at an unrelated operation"
+        );
+        self.assert_bytes(
+            existing,
+            b"written",
+            "writer contract: failed create-new changed the target",
+        );
+
+        self.fixture
+            .file_system()
+            .write_all(existing, b"replaced", WriteOptions::default())
+            .expect("writer contract: replacement failed");
+        self.assert_bytes(
+            existing,
+            b"replaced",
+            "writer contract: replacement bytes mismatch",
+        );
+
+        let aborted_path = self.path("write-aborted");
+        self.context.record_created(aborted_path.clone());
+        let mut writer = self
+            .fixture
+            .file_system()
+            .open_writer(&aborted_path, WriteOptions::default())
+            .expect("writer contract: abort writer open failed");
+        Output::write_fully(&mut writer, b"aborted")
+            .expect("writer contract: abort writer rejected bytes");
+        writer.abort().expect("writer contract: abort failed");
+        assert!(
+            !self
+                .fixture
+                .file_system()
+                .exists(&aborted_path)
+                .expect("writer contract: aborted path observation failed"),
+            "writer contract: abort published the target"
+        );
+
+        let conditional_path = self.path("write-conditional");
+        let conditional = WriteOptions {
+            precondition: WritePrecondition::IfAbsent,
+            ..WriteOptions::default()
+        };
+        if self.capable(FileSystemCapability::ConditionalWrite) {
+            self.context.record_created(conditional_path.clone());
+            self.fixture
+                .file_system()
+                .write_all(&conditional_path, b"conditional", conditional.clone())
+                .expect("writer contract: advertised conditional write failed");
+            let failure = self
+                .fixture
+                .file_system()
+                .write_all(&conditional_path, b"unexpected", conditional)
+                .expect_err(
+                    "writer contract: failed conditional write unexpectedly succeeded",
+                );
+            self.assert_error(
+                failure.error(),
+                FsErrorKind::PreconditionFailed,
+                failure.error().operation(),
+                &conditional_path,
+                None,
+            );
+            assert!(
+                matches!(
+                    failure.error().operation(),
+                    FsOperation::OpenWriter | FsOperation::CommitWriter
+                ),
+                "writer contract: conditional write failed at an unrelated operation"
+            );
+            self.assert_bytes(
+                &conditional_path,
+                b"conditional",
+                "writer contract: failed condition changed target bytes",
+            );
+        } else {
+            let error = self
+                .fixture
+                .file_system()
+                .open_writer(&conditional_path, conditional)
+                .expect_err(
+                    "writer contract: unadvertised conditional write succeeded",
+                );
+            self.assert_requirement_error(
+                &error,
+                FsOperation::OpenWriter,
+                FileSystemCapability::ConditionalWrite,
+                "conditional-write contract",
+            );
+        }
     }
 
     /// Checks directory listing behavior.
@@ -360,9 +610,15 @@ impl<'a> FileSystemContractSuite<'a> {
         let nested =
             self.required_seed("list-root/prefixed/nested", b"nested", "list");
         self.context.record_created(nested.clone());
+        let nested_second = self.required_seed(
+            "list-root/prefixed/second",
+            b"second nested",
+            "list",
+        );
+        self.context.record_created(nested_second.clone());
         let prefix = self
             .fixture
-            .list_prefix(&root, "prefixed/nested")
+            .list_prefix(&root, "prefixed")
             .expect("list contract: fixture prefix failed");
         let mut stream = self
             .fixture
@@ -377,22 +633,34 @@ impl<'a> FileSystemContractSuite<'a> {
                 },
             )
             .expect("list contract: prefix listing failed");
-        let entry = stream
+        let mut prefixed = Vec::new();
+        while let Some(entry) = stream
             .next_entry()
             .expect("list contract: prefix stream error")
-            .expect("list contract: nested prefix result missing");
-        assert_eq!(nested, entry.path, "list contract: prefix mismatch");
+        {
+            assert!(
+                entry.metadata.is_some(),
+                "list contract: requested entry metadata is missing"
+            );
+            prefixed.push(entry.path);
+        }
+        prefixed.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        let mut expected = vec![nested, nested_second];
+        let prefix_entry = qubit_fs::Path::parse(
+            expected[0]
+                .as_str()
+                .rsplit_once('/')
+                .expect("list contract: nested path must have a parent")
+                .0,
+        )
+        .expect("list contract: generated prefix path must be valid");
+        if prefixed.contains(&prefix_entry) {
+            expected.push(prefix_entry);
+        }
+        expected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         assert_eq!(
-            entry.metadata.and_then(|metadata| metadata.len),
-            Some(6),
-            "list contract: requested entry metadata is missing or incorrect"
-        );
-        assert!(
-            stream
-                .next_entry()
-                .expect("list contract: prefix stream error")
-                .is_none(),
-            "list contract: prefix returned extra entries"
+            prefixed, expected,
+            "list contract: paged prefix results mismatch"
         );
     }
 
@@ -426,6 +694,7 @@ impl<'a> FileSystemContractSuite<'a> {
             return;
         }
         let path = self.path("created-directory");
+        self.context.record_created(path.clone());
         self.fixture
             .file_system()
             .create_directory(&path, CreateDirectoryOptions::default())
@@ -454,7 +723,79 @@ impl<'a> FileSystemContractSuite<'a> {
             outcome.already_existed(),
             "namespace contract: existing directory outcome was not reported"
         );
-        self.context.record_created(path);
+        let parent = self.path("created-recursive-parent");
+        let child = self.path("created-recursive-parent/child");
+        self.context.record_created(parent);
+        self.context.record_created(child.clone());
+        let outcome = self
+            .fixture
+            .file_system()
+            .create_directory(
+                &child,
+                CreateDirectoryOptions {
+                    recursive: true,
+                    ..CreateDirectoryOptions::default()
+                },
+            )
+            .expect("namespace contract: recursive directory creation failed");
+        if let Some(created_ancestors) = outcome.created_ancestors() {
+            assert!(
+                created_ancestors > 0,
+                "namespace contract: recursive ancestor count is zero"
+            );
+        }
+    }
+
+    /// Checks advertised empty-directory and symbolic-link representations.
+    pub fn assert_representations(&mut self) {
+        self.context.begin("representations");
+        if self.capable(FileSystemCapability::EmptyDirectory) {
+            let relative = self.context.relative_name("empty-directory");
+            let path = match self
+                .fixture
+                .seed_empty_directory(&relative)
+                .expect("representation contract: empty-directory setup failed")
+            {
+                FixtureSupport::Supported(path) => path,
+                FixtureSupport::Unsupported => panic!(
+                    "representation contract: EmptyDirectory requires fixture.seed_empty_directory support"
+                ),
+            };
+            self.context.record_created(path.clone());
+            let metadata = self
+                .fixture
+                .file_system()
+                .stat(&path)
+                .expect("representation contract: empty directory is not statable");
+            assert!(
+                metadata.is_directory_like(),
+                "representation contract: empty directory is not directory-like"
+            );
+        }
+        if self.capable(FileSystemCapability::Symlink) {
+            let relative = self.context.relative_name("symlink");
+            let path = match self
+                .fixture
+                .seed_symlink(&relative)
+                .expect("representation contract: symlink setup failed")
+            {
+                FixtureSupport::Supported(path) => path,
+                FixtureSupport::Unsupported => panic!(
+                    "representation contract: Symlink requires fixture.seed_symlink support"
+                ),
+            };
+            self.context.record_created(path.clone());
+            let metadata = self
+                .fixture
+                .file_system()
+                .stat(&path)
+                .expect("representation contract: symlink is not statable");
+            assert_eq!(
+                metadata.kind,
+                FileKind::Symlink,
+                "representation contract: seeded link kind mismatch"
+            );
+        }
     }
 
     /// Checks deletion behavior.
@@ -488,10 +829,18 @@ impl<'a> FileSystemContractSuite<'a> {
         }
         let path = self.required_seed("delete-file", b"delete", "delete");
         self.context.record_created(path.clone());
-        self.fixture
+        let outcome = self
+            .fixture
             .file_system()
             .delete_file(&path, DeleteOptions::default())
             .expect("delete contract: deletion failed");
+        assert!(
+            !outcome.already_missing(),
+            "delete contract: existing file was reported missing"
+        );
+        if let Some(deleted_entries) = outcome.deleted_entries() {
+            assert!(deleted_entries > 0, "delete contract: deleted count is zero");
+        }
         assert!(
             !self
                 .fixture
@@ -500,6 +849,82 @@ impl<'a> FileSystemContractSuite<'a> {
                 .expect("delete contract: exists failed"),
             "delete contract: deleted file remained"
         );
+        self.assert_delete_options();
+    }
+
+    /// Checks missing-ok and conditional deletion semantics.
+    fn assert_delete_options(&mut self) {
+        let missing = self.path("delete-missing-ok");
+        let outcome = self
+            .fixture
+            .file_system()
+            .delete_file(
+                &missing,
+                DeleteOptions {
+                    missing_ok: true,
+                    ..DeleteOptions::default()
+                },
+            )
+            .expect("delete contract: missing-ok deletion failed");
+        assert!(
+            outcome.already_missing(),
+            "delete contract: missing-ok outcome did not report absence"
+        );
+
+        let path = self.path("delete-conditional");
+        let options = DeleteOptions {
+            if_match: Some(ResourceVersion::new("contract-version")),
+            ..DeleteOptions::default()
+        };
+        if self.capable(FileSystemCapability::ConditionalDelete) {
+            let path = self.required_seed(
+                "delete-conditional",
+                b"conditional delete",
+                "conditional-delete",
+            );
+            self.context.record_created(path.clone());
+            let version = match self
+                .fixture
+                .resource_version(&path)
+                .expect("delete contract: version observation failed")
+            {
+                FixtureSupport::Supported(version) => version,
+                FixtureSupport::Unsupported => panic!(
+                    "conditional-delete contract: advertised capability requires fixture.resource_version support"
+                ),
+            };
+            self.fixture
+                .file_system()
+                .delete_file(
+                    &path,
+                    DeleteOptions {
+                        if_match: Some(version),
+                        ..DeleteOptions::default()
+                    },
+                )
+                .expect("delete contract: advertised conditional delete failed");
+            assert!(
+                !self
+                    .fixture
+                    .file_system()
+                    .exists(&path)
+                    .expect("delete contract: conditional target observation failed")
+            );
+        } else {
+            let error = self
+                .fixture
+                .file_system()
+                .delete_file(&path, options)
+                .expect_err(
+                    "delete contract: unadvertised conditional delete succeeded",
+                );
+            self.assert_requirement_error(
+                &error,
+                FsOperation::Delete,
+                FileSystemCapability::ConditionalDelete,
+                "conditional-delete contract",
+            );
+        }
     }
 
     /// Checks native and fallback copy behavior.
@@ -534,6 +959,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let source = self.required_seed("copy-source", b"copy bytes", "copy");
         self.context.record_created(source.clone());
         let target = self.path("copy-target");
+        self.context.record_created(target.clone());
         let outcome = self
             .fixture
             .file_system()
@@ -554,6 +980,16 @@ impl<'a> FileSystemContractSuite<'a> {
                 )
             }
         }
+        assert_eq!(
+            outcome.stats().bytes,
+            10,
+            "copy contract: copied byte count mismatch"
+        );
+        assert_eq!(
+            outcome.stats().files + outcome.stats().objects,
+            1,
+            "copy contract: copied resource count mismatch"
+        );
         self.assert_bytes(
             &source,
             b"copy bytes",
@@ -564,7 +1000,7 @@ impl<'a> FileSystemContractSuite<'a> {
             b"copy bytes",
             "copy contract: target bytes mismatch",
         );
-        self.context.record_created(target);
+        self.assert_copy_conflicts(&source);
         if self.capable(FileSystemCapability::CreateDirectory) {
             let directory_source = self.path("copy-directory-source");
             self.fixture
@@ -581,18 +1017,18 @@ impl<'a> FileSystemContractSuite<'a> {
                 "copy",
             );
             let directory_target = self.path("copy-directory-target");
+            self.context.record_created(directory_target.clone());
+            let target_child = self.path("copy-directory-target/child");
+            self.context.record_created(target_child.clone());
             self.fixture
                 .file_system()
                 .copy(&directory_source, &directory_target, CopyOptions::tree())
                 .expect("copy contract: directory copy failed");
-            self.context.record_created(directory_target.clone());
-            let target_child = self.path("copy-directory-target/child");
             self.assert_bytes(
                 &target_child,
                 b"directory copy",
                 "copy contract: directory child bytes mismatch",
             );
-            self.context.record_created(target_child);
             self.context.record_created(directory_child);
         }
         if self.capable(FileSystemCapability::ServerSideCopy) {
@@ -602,6 +1038,8 @@ impl<'a> FileSystemContractSuite<'a> {
                 .expect("copy contract: fixture fast-path setup failed")
             {
                 FixtureSupport::Supported(case) => {
+                    self.context.record_created(case.source().clone());
+                    self.context.record_created(case.target().clone());
                     let outcome = self
                         .fixture
                         .file_system()
@@ -620,14 +1058,110 @@ impl<'a> FileSystemContractSuite<'a> {
                         !outcome.used_fallback(),
                         "copy contract: native case unexpectedly fell back"
                     );
-                    self.context.record_created(case.source().clone());
-                    self.context.record_created(case.target().clone());
                 }
                 FixtureSupport::Unsupported => panic!(
                     "copy contract: advertised native capability lacks an applicable fixture case"
                 ),
             }
+        } else {
+            let source = self.path("copy-server-side-unavailable-source");
+            let target = self.path("copy-server-side-unavailable-target");
+            let failure = self
+                .fixture
+                .file_system()
+                .copy(
+                    &source,
+                    &target,
+                    CopyOptions {
+                        server_side: ServerSidePreference::Require,
+                        ..CopyOptions::default()
+                    },
+                )
+                .expect_err(
+                    "copy contract: unadvertised server-side copy succeeded",
+                );
+            self.assert_requirement_error(
+                failure.error(),
+                FsOperation::Copy,
+                FileSystemCapability::ServerSideCopy,
+                "server-side-copy contract",
+            );
         }
+    }
+
+    /// Checks destination conflict policies and copy statistics.
+    fn assert_copy_conflicts(&mut self, source: &qubit_fs::Path) {
+        let target = self.required_seed(
+            "copy-conflict-target",
+            b"existing",
+            "copy-conflict",
+        );
+        self.context.record_created(target.clone());
+        let failure = self
+            .fixture
+            .file_system()
+            .copy(source, &target, CopyOptions::file())
+            .expect_err("copy contract: default conflict replaced target");
+        self.assert_error(
+            failure.error(),
+            FsErrorKind::AlreadyExists,
+            FsOperation::Copy,
+            source,
+            Some(&target),
+        );
+        self.assert_bytes(
+            &target,
+            b"existing",
+            "copy contract: failed conflict changed target",
+        );
+
+        let skipped = self
+            .fixture
+            .file_system()
+            .copy(
+                source,
+                &target,
+                CopyOptions {
+                    mode: qubit_fs::CopyMode::File,
+                    conflict: CopyConflictPolicy::Skip,
+                    ..CopyOptions::default()
+                },
+            )
+            .expect("copy contract: skip conflict failed");
+        assert_eq!(
+            skipped.stats().skipped,
+            1,
+            "copy contract: skipped count mismatch"
+        );
+        self.assert_bytes(
+            &target,
+            b"existing",
+            "copy contract: skipped copy changed target",
+        );
+
+        let overwritten = self
+            .fixture
+            .file_system()
+            .copy(
+                source,
+                &target,
+                CopyOptions {
+                    mode: qubit_fs::CopyMode::File,
+                    conflict: CopyConflictPolicy::Overwrite,
+                    ..CopyOptions::default()
+                },
+            )
+            .expect("copy contract: overwrite conflict failed");
+        assert_eq!(
+            overwritten.stats().overwritten,
+            1,
+            "copy contract: overwritten count mismatch"
+        );
+        self.assert_bytes(
+            &target,
+            b"copy bytes",
+            "copy contract: overwrite bytes mismatch",
+        );
     }
 
     /// Checks rename behavior.
@@ -663,6 +1197,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let source = self.required_seed("rename-source", b"rename", "rename");
         self.context.record_created(source.clone());
         let target = self.path("rename-target");
+        self.context.record_created(target.clone());
         let outcome = self
             .fixture
             .file_system()
@@ -693,7 +1228,74 @@ impl<'a> FileSystemContractSuite<'a> {
                 .expect("rename contract: target exists failed"),
             "rename contract: target missing after success"
         );
-        self.context.record_created(target);
+        self.assert_rename_conflicts();
+    }
+
+    /// Checks rename destination conflicts and explicit overwrite.
+    fn assert_rename_conflicts(&mut self) {
+        let source = self.required_seed(
+            "rename-conflict-source",
+            b"rename source",
+            "rename-conflict",
+        );
+        let target = self.required_seed(
+            "rename-conflict-target",
+            b"rename target",
+            "rename-conflict",
+        );
+        self.context.record_created(source.clone());
+        self.context.record_created(target.clone());
+        let failure = self
+            .fixture
+            .file_system()
+            .rename(&source, &target, RenameOptions::default())
+            .expect_err("rename contract: default conflict replaced target");
+        assert_eq!(
+            failure.state(),
+            RenameFailureState::Unchanged,
+            "rename contract: conflict failure state mismatch"
+        );
+        self.assert_error(
+            failure.error(),
+            FsErrorKind::AlreadyExists,
+            FsOperation::Rename,
+            &source,
+            Some(&target),
+        );
+        self.assert_bytes(
+            &source,
+            b"rename source",
+            "rename contract: conflict removed source",
+        );
+        self.assert_bytes(
+            &target,
+            b"rename target",
+            "rename contract: conflict changed target",
+        );
+
+        self.fixture
+            .file_system()
+            .rename(
+                &source,
+                &target,
+                RenameOptions {
+                    overwrite: true,
+                    ..RenameOptions::default()
+                },
+            )
+            .expect("rename contract: overwrite failed");
+        assert!(
+            !self
+                .fixture
+                .file_system()
+                .exists(&source)
+                .expect("rename contract: overwrite source observation failed")
+        );
+        self.assert_bytes(
+            &target,
+            b"rename source",
+            "rename contract: overwrite target mismatch",
+        );
     }
 
     /// Checks append writes when the provider advertises that guarantee.
@@ -726,6 +1328,7 @@ impl<'a> FileSystemContractSuite<'a> {
             return;
         }
         let path = self.required_seed("append-target", b"before", "append");
+        self.context.record_created(path.clone());
         self.fixture
             .file_system()
             .write_all(&path, b"-after", options)
@@ -735,7 +1338,6 @@ impl<'a> FileSystemContractSuite<'a> {
             b"before-after",
             "append contract: existing bytes were not retained",
         );
-        self.context.record_created(path);
     }
 
     /// Checks recursive directory removal when the provider advertises it.
@@ -765,10 +1367,12 @@ impl<'a> FileSystemContractSuite<'a> {
             );
             return;
         }
-        self.fixture
-            .file_system()
-            .create_directory(&root, CreateDirectoryOptions::default())
-            .expect("recursive-delete contract: root creation failed");
+        if self.capable(FileSystemCapability::CreateDirectory) {
+            self.fixture
+                .file_system()
+                .create_directory(&root, CreateDirectoryOptions::default())
+                .expect("recursive-delete contract: root creation failed");
+        }
         let child = self.required_seed(
             "recursive-delete-root/child",
             b"child",
@@ -830,6 +1434,8 @@ impl<'a> FileSystemContractSuite<'a> {
             "atomic-rename",
         );
         let target = self.path("atomic-rename-target");
+        self.context.record_created(source.clone());
+        self.context.record_created(target.clone());
         let outcome = self
             .fixture
             .file_system()
@@ -840,7 +1446,6 @@ impl<'a> FileSystemContractSuite<'a> {
             AchievedAtomicity::Atomic,
             "atomic-rename contract: required operation reported non-atomic publication"
         );
-        self.context.record_created(target);
     }
 
     /// Checks required-atomic replacement when the provider advertises it.
@@ -872,6 +1477,7 @@ impl<'a> FileSystemContractSuite<'a> {
             );
             return;
         }
+        self.context.record_created(path.clone());
         let outcome = self
             .fixture
             .file_system()
@@ -882,7 +1488,6 @@ impl<'a> FileSystemContractSuite<'a> {
             AchievedAtomicity::Atomic,
             "atomic-replace contract: required operation reported non-atomic publication"
         );
-        self.context.record_created(path);
     }
 
     /// Checks required-durable copy publication when the provider advertises
@@ -922,6 +1527,8 @@ impl<'a> FileSystemContractSuite<'a> {
             "durable-copy",
         );
         let target = self.path("durable-copy-target");
+        self.context.record_created(source.clone());
+        self.context.record_created(target.clone());
         let outcome = self
             .fixture
             .file_system()
@@ -936,8 +1543,6 @@ impl<'a> FileSystemContractSuite<'a> {
             b"durable copy",
             "durable-copy contract: target bytes mismatch",
         );
-        self.context.record_created(source);
-        self.context.record_created(target);
     }
 
     /// Checks temporary resource lifecycle behavior.
@@ -992,8 +1597,19 @@ impl<'a> FileSystemContractSuite<'a> {
                 .create_temp_file(Default::default())
                 .expect("temp-file contract: persist setup failed");
             let target = self.path("temp-persisted-file");
+            self.context.record_created(target.clone());
             self.assert_temp_persist(&mut temporary, &target, "temp-file");
-            self.context.record_created(target);
+        } else {
+            let error = file_system
+                .create_temp_file(TempFileOptions::default())
+                .expect_err("temp-file contract: unadvertised creation succeeded");
+            self.assert_error(
+                &error,
+                FsErrorKind::UnsupportedCapability,
+                FsOperation::CreateTemp,
+                &qubit_fs::Path::root(),
+                None,
+            );
         }
         if self.capable(FileSystemCapability::TempDirectory) {
             let parent = self.path("temp-directory-parent");
@@ -1038,11 +1654,24 @@ impl<'a> FileSystemContractSuite<'a> {
                 .create_temp_directory(Default::default())
                 .expect("temp-directory contract: persist setup failed");
             let target = self.path("temp-persisted-directory");
+            self.context.record_created(target.clone());
             self.assert_temp_directory_persist(&mut temporary, &target);
-            self.context.record_created(target);
             if self.capable(FileSystemCapability::CreateDirectory) {
                 self.assert_temp_directory_overwrite();
             }
+        } else {
+            let error = file_system
+                .create_temp_directory(TempDirectoryOptions::default())
+                .expect_err(
+                    "temp-directory contract: unadvertised creation succeeded",
+                );
+            self.assert_error(
+                &error,
+                FsErrorKind::UnsupportedCapability,
+                FsOperation::CreateTemp,
+                &qubit_fs::Path::root(),
+                None,
+            );
         }
     }
 
@@ -1355,6 +1984,7 @@ impl<'a> FileSystemContractSuite<'a> {
     fn assert_temp_directory_overwrite(&mut self) {
         let file_system = self.fixture.file_system();
         let target = self.path("temp-overwritten-directory");
+        self.context.record_created(target.clone());
         file_system
             .create_directory(&target, CreateDirectoryOptions::default())
             .expect(
@@ -1391,7 +2021,6 @@ impl<'a> FileSystemContractSuite<'a> {
             ),
             "temp-directory overwrite contract: replacement did not publish target"
         );
-        self.context.record_created(target);
     }
 
     /// Persists one temporary file using the strongest guarantee it advertises.

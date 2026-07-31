@@ -9,7 +9,6 @@
 
 use qubit_fs::{
     AsyncFileSystem,
-    FileKind,
     FileSystem,
     FileSystemCapability,
     FileSystemProperties,
@@ -143,7 +142,7 @@ impl ContractContext {
                     self.current_contract
                 ),
             };
-            let result = if metadata.kind == FileKind::Directory {
+            let result = if metadata.is_directory_like() {
                 file_system.delete_directory(&path, Default::default())
             } else {
                 file_system.delete_file(&path, Default::default())
@@ -187,7 +186,7 @@ impl ContractContext {
                     self.current_contract
                 ),
             };
-            let result = if metadata.kind == FileKind::Directory {
+            let result = if metadata.is_directory_like() {
                 file_system
                     .delete_directory(&path, Default::default())
                     .await

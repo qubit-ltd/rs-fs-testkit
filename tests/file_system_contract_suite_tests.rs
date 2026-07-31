@@ -21,6 +21,51 @@ use qubit_fs_testkit::{
 
 use common::MemoryFixture;
 
+/// Both suites intentionally cover every capability in this stable order.
+const COVERED_CAPABILITIES: [FileSystemCapability; 23] = [
+    FileSystemCapability::List,
+    FileSystemCapability::Read,
+    FileSystemCapability::RangeRead,
+    FileSystemCapability::ConditionalRead,
+    FileSystemCapability::ChecksumValidation,
+    FileSystemCapability::Write,
+    FileSystemCapability::Append,
+    FileSystemCapability::ConditionalWrite,
+    FileSystemCapability::CreateDirectory,
+    FileSystemCapability::EmptyDirectory,
+    FileSystemCapability::Delete,
+    FileSystemCapability::RecursiveDelete,
+    FileSystemCapability::ConditionalDelete,
+    FileSystemCapability::Rename,
+    FileSystemCapability::AtomicRename,
+    FileSystemCapability::AtomicReplace,
+    FileSystemCapability::Copy,
+    FileSystemCapability::ServerSideCopy,
+    FileSystemCapability::Symlink,
+    FileSystemCapability::TempFile,
+    FileSystemCapability::TempDirectory,
+    FileSystemCapability::AtomicTempPersist,
+    FileSystemCapability::DurableCopy,
+];
+
+/// Adding a capability to qubit-fs requires an explicit testkit coverage choice.
+#[test]
+fn test_contract_capability_map_is_exhaustive() {
+    assert_eq!(FileSystemCapability::ALL, COVERED_CAPABILITIES);
+}
+
+/// Every advertised capability executes its positive synchronous contract.
+#[test]
+fn test_all_capabilities_execute_sync_contracts() {
+    let fixture = MemoryFixture::with_all_capabilities();
+    assert_eq!(
+        fixture.file_system().properties().capabilities().iter().collect::<Vec<_>>(),
+        FileSystemCapability::ALL
+    );
+    FileSystemContractSuite::new(&fixture).assert_all();
+    assert!(fixture.is_empty(), "all-capability suite must clean up");
+}
+
 /// A conforming provider satisfies every synchronous suite phase.
 #[test]
 fn test_conforming_memory_provider_satisfies_sync_suite() {
@@ -102,6 +147,39 @@ fn test_sync_copy_accepts_native_outcome() {
     let fixture = MemoryFixture::with_native_copy();
     let mut suite = FileSystemContractSuite::new(&fixture);
     suite.assert_copy();
+}
+
+/// Object and prefix metadata kinds satisfy provider-neutral file and cleanup
+/// contracts.
+#[test]
+fn test_sync_suite_accepts_object_and_prefix_kinds() {
+    let fixture = MemoryFixture::with_object_kinds();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    suite.assert_stat();
+    suite.assert_create_directory();
+    suite.finish();
+    assert!(fixture.is_empty(), "object resources must be cleaned");
+}
+
+/// Recursive prefix deletion does not imply directory-creation support.
+#[test]
+fn test_sync_recursive_delete_does_not_require_create_directory() {
+    let fixture = MemoryFixture::recursive_delete_without_create_directory();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    suite.assert_recursive_delete();
+    suite.finish();
+    assert!(fixture.is_empty(), "recursive deletion must remove the prefix");
+}
+
+/// A failed assertion still cleans paths that may have been published.
+#[test]
+fn test_sync_suite_cleans_resources_before_resuming_panic() {
+    let fixture = MemoryFixture::with_fault(common::MemoryFault::WriteDropsBytes);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        FileSystemContractSuite::new(&fixture).assert_all();
+    }));
+    assert!(result.is_err(), "injected write fault must fail the suite");
+    assert!(fixture.is_empty(), "failed suite must clean published paths");
 }
 
 /// Unadvertised core operations still exercise the facade's structured

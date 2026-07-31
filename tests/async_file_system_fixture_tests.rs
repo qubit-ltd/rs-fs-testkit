@@ -17,6 +17,7 @@ use std::task::{
 
 use qubit_fs::{
     AsyncFileSystem,
+    CopyMethod,
     Path,
 };
 use qubit_fs_testkit::{
@@ -81,6 +82,22 @@ fn test_async_file_system_fixture_defaults_are_unsupported() {
     ));
     assert!(matches!(
         poll_fixture_future(fixture.read_file(&path)),
+        Ok(FixtureSupport::Unsupported)
+    ));
+    assert!(matches!(
+        poll_fixture_future(fixture.resource_version(&path)),
+        Ok(FixtureSupport::Unsupported)
+    ));
+    assert!(matches!(
+        poll_fixture_future(fixture.seed_empty_directory("directory")),
+        Ok(FixtureSupport::Unsupported)
+    ));
+    assert!(matches!(
+        poll_fixture_future(fixture.seed_symlink("link")),
+        Ok(FixtureSupport::Unsupported)
+    ));
+    assert!(matches!(
+        poll_fixture_future(fixture.copy_fast_path_case(CopyMethod::Native)),
         Ok(FixtureSupport::Unsupported)
     ));
     assert!(matches!(

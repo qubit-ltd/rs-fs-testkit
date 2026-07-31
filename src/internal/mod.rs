@@ -8,8 +8,10 @@
 //! Private helpers shared by filesystem contract assertions.
 
 mod assertions;
+mod catch_unwind_future;
 
 pub(crate) use assertions::{
     assert_error_with_target,
     assert_unsupported_error,
 };
+pub(crate) use catch_unwind_future::catch_unwind_future;
