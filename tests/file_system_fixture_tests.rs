@@ -62,6 +62,18 @@ fn test_file_system_fixture_defaults_are_unsupported() {
         Ok(FixtureSupport::Unsupported)
     ));
     assert!(matches!(
+        fixture.resource_version(&path),
+        Ok(FixtureSupport::Unsupported)
+    ));
+    assert!(matches!(
+        fixture.seed_empty_directory("directory"),
+        Ok(FixtureSupport::Unsupported)
+    ));
+    assert!(matches!(
+        fixture.seed_symlink("link"),
+        Ok(FixtureSupport::Unsupported)
+    ));
+    assert!(matches!(
         fixture.copy_fast_path_case(CopyMethod::Native),
         Ok(FixtureSupport::Unsupported)
     ));

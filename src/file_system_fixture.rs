@@ -11,6 +11,7 @@ use qubit_fs::{
     CopyMethod,
     FileSystem,
     Path,
+    ResourceVersion,
 };
 
 use crate::{
@@ -113,6 +114,36 @@ pub trait FileSystemFixture {
     #[inline]
     fn read_file(&self, path: &Path) -> FixtureResult<FixtureSupport<Vec<u8>>> {
         let _ = path;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Observes the current provider version outside the operation under test.
+    #[inline]
+    fn resource_version(
+        &self,
+        path: &Path,
+    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+        let _ = path;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Seeds an empty directory or prefix outside the operation under test.
+    #[inline]
+    fn seed_empty_directory(
+        &self,
+        relative: &str,
+    ) -> FixtureResult<FixtureSupport<Path>> {
+        let _ = relative;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Seeds a symbolic link outside the operation under test.
+    #[inline]
+    fn seed_symlink(
+        &self,
+        relative: &str,
+    ) -> FixtureResult<FixtureSupport<Path>> {
+        let _ = relative;
         Ok(FixtureSupport::Unsupported)
     }
 

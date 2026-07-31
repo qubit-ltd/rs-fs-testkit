@@ -14,12 +14,15 @@ use std::{
 
 use qubit_fs::{
     AsyncFileSystem,
+    CopyMethod,
     Path,
+    ResourceVersion,
 };
 
 use crate::{
     AsyncCopyCancellationStage,
     AsyncCopyFixtureCase,
+    CopyFixtureCase,
     FixtureResult,
     FixtureSupport,
 };
@@ -131,6 +134,46 @@ pub trait AsyncFileSystemFixture: Sync {
         path: &'a Path,
     ) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
         let _ = path;
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
+    /// Asynchronously observes the current provider resource version.
+    #[inline]
+    fn resource_version<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+        let _ = path;
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
+    /// Asynchronously seeds an empty directory or prefix.
+    #[inline]
+    fn seed_empty_directory<'a>(
+        &'a self,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+        let _ = relative;
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
+    /// Asynchronously seeds a symbolic link.
+    #[inline]
+    fn seed_symlink<'a>(
+        &'a self,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+        let _ = relative;
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
+    /// Supplies an asynchronously prepared native copy fast-path case.
+    #[inline]
+    fn copy_fast_path_case<'a>(
+        &'a self,
+        method: CopyMethod,
+    ) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
+        let _ = method;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 

@@ -66,6 +66,25 @@ fn test_conforming_async_memory_provider_satisfies_full_suite() {
     assert!(fixture.is_empty(), "suite must clean up created resources");
 }
 
+/// Every advertised capability executes its positive asynchronous contract.
+#[test]
+fn test_all_capabilities_execute_async_contracts() {
+    let fixture = AsyncMemoryFixture::with_all_capabilities();
+    assert_eq!(
+        fixture.file_system().properties().capabilities().iter().collect::<Vec<_>>(),
+        FileSystemCapability::ALL
+    );
+    let mut assertion =
+        Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(matches!(
+        assertion.as_mut().poll(&mut context),
+        Poll::Ready(())
+    ));
+    assert!(fixture.is_empty(), "all-capability suite must clean up");
+}
+
 /// An asynchronous filesystem may use its own identifier as the provider
 /// identifier.
 #[test]
@@ -94,6 +113,60 @@ fn test_async_copy_allows_fixture_without_cancellation_cases() {
 fn test_async_copy_accepts_native_outcome() {
     let fixture = AsyncMemoryFixture::with_native_copy();
     assert_copy_contract(&fixture);
+}
+
+/// Object and prefix metadata kinds satisfy asynchronous provider-neutral
+/// contracts and cleanup.
+#[test]
+fn test_async_suite_accepts_object_and_prefix_kinds() {
+    let fixture = AsyncMemoryFixture::with_object_kinds();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let mut assertion = Box::pin(async {
+        suite.assert_stat().await;
+        suite.assert_create_directory().await;
+        suite.finish().await;
+    });
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(matches!(
+        assertion.as_mut().poll(&mut context),
+        Poll::Ready(())
+    ));
+    assert!(fixture.is_empty(), "object resources must be cleaned");
+}
+
+/// Recursive prefix deletion does not imply asynchronous directory creation.
+#[test]
+fn test_async_recursive_delete_does_not_require_create_directory() {
+    let fixture =
+        AsyncMemoryFixture::recursive_delete_without_create_directory();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let mut assertion = Box::pin(async {
+        suite.assert_recursive_delete().await;
+        suite.finish().await;
+    });
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(matches!(
+        assertion.as_mut().poll(&mut context),
+        Poll::Ready(())
+    ));
+    assert!(fixture.is_empty(), "recursive deletion must remove the prefix");
+}
+
+/// An asynchronous assertion panic is resumed only after cleanup completes.
+#[test]
+fn test_async_suite_cleans_resources_before_resuming_panic() {
+    let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::WriteDropsBytes);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut assertion =
+            Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+        let _ = assertion.as_mut().poll(&mut context);
+    }));
+    assert!(result.is_err(), "injected write fault must fail the suite");
+    assert!(fixture.is_empty(), "failed suite must clean published paths");
 }
 
 /// Unadvertised async core operations still exercise facade preflight errors.
