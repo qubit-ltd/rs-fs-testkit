@@ -22,21 +22,23 @@ cargo add --dev qubit-fs-testkit
 ## Quick Start
 
 For a provider that exposes a fresh test filesystem, implement
-`FileSystemFixture` and run every synchronous contract against it:
+`FileSystemFixture` and register independently named synchronous contracts:
 
 ```rust,ignore
-let fixture = TestFixture::new();
-qubit_fs_testkit::FileSystemContractSuite::new(&fixture).assert_all();
+qubit_fs_testkit::register_file_system_contract_tests! {
+    module: provider_contracts,
+    fixture: super::TestFixture::new,
+}
 ```
 
-For an asynchronous provider, implement `AsyncFileSystemFixture` and await the
-matching suite:
+For an asynchronous provider, supply the provider runtime's future runner:
 
 ```rust,ignore
-let fixture = AsyncTestFixture::new();
-qubit_fs_testkit::AsyncFileSystemContractSuite::new(&fixture)
-    .assert_all()
-    .await;
+qubit_fs_testkit::register_async_file_system_contract_tests! {
+    module: async_provider_contracts,
+    fixture: super::AsyncTestFixture::new,
+    runner: super::runtime::block_on,
+}
 ```
 
 The suite follows advertised capabilities. It checks supported behavior and
@@ -51,11 +53,13 @@ operations the provider does not advertise.
 - `FileSystemContractSuite::new(&fixture).assert_all()` and the asynchronous
   `AsyncFileSystemContractSuite` counterpart, each running a fixed,
   dependency-safe workflow.
+- Registration macros that create one isolated, cleanup-safe test per named
+  `FileSystemContract` phase.
 - Contracts for facade properties, core operations, capability preflight,
   structured error context, cleanup, and supported optional operations. Both
-  suites verify advertised append, recursive deletion, required-atomic
-  rename/replacement, required-durable copy, and atomic temporary-resource
-  persistence.
+  suites cover every `FileSystemCapability`, including ranges, conditions,
+  checksums, representations, copy policies, required guarantees, and temporary
+  resource persistence.
 
 Provider crates remain responsible for their own platform behavior, path
 encoding, security boundaries, service registration, and capabilities outside

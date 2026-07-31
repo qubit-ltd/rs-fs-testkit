@@ -19,20 +19,23 @@ cargo add --dev qubit-fs-testkit
 
 ## 快速开始
 
-对于能提供全新测试文件系统的 provider，请实现 `FileSystemFixture`，并在其上运行全部同步契约：
+对于能提供全新测试文件系统的 provider，请实现 `FileSystemFixture`，并注册具名同步契约：
 
 ```rust,ignore
-let fixture = TestFixture::new();
-qubit_fs_testkit::FileSystemContractSuite::new(&fixture).assert_all();
+qubit_fs_testkit::register_file_system_contract_tests! {
+    module: provider_contracts,
+    fixture: super::TestFixture::new,
+}
 ```
 
-对于异步 provider，请实现 `AsyncFileSystemFixture`，并 await 对应套件：
+对于异步 provider，请提供所用 runtime 的 future runner：
 
 ```rust,ignore
-let fixture = AsyncTestFixture::new();
-qubit_fs_testkit::AsyncFileSystemContractSuite::new(&fixture)
-    .assert_all()
-    .await;
+qubit_fs_testkit::register_async_file_system_contract_tests! {
+    module: async_provider_contracts,
+    fixture: super::AsyncTestFixture::new,
+    runner: super::runtime::block_on,
+}
 ```
 
 套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝，同时跳过 provider
@@ -44,9 +47,10 @@ qubit_fs_testkit::AsyncFileSystemContractSuite::new(&fixture)
   hooks 可在被测操作之外执行准备和观察。
 - `FileSystemContractSuite::new(&fixture).assert_all()` 与异步
   `AsyncFileSystemContractSuite` 对应方法，均按固定、依赖安全的工作流运行。
+- 注册宏为每个具名 `FileSystemContract` 阶段生成独立 fixture、自动清理的测试。
 - 覆盖门面属性、核心操作、capability 预检、结构化错误上下文、清理和已支持的可选操作的契约。
-  同步与异步套件都会在 provider 声明时验证 append、递归删除、必需原子 rename/replacement、
-  必需 durable copy 和临时资源持久化的原子性。
+  同步与异步套件对全部 `FileSystemCapability` 保持对称覆盖，包括范围/条件读取、checksum、
+  representation、copy policy、强化保证和临时资源持久化。
 
 provider crate 仍需自行负责平台行为、路径编码、安全边界、服务注册，以及当前套件覆盖范围外的
 capability。

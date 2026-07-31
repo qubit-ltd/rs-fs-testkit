@@ -21,8 +21,8 @@ provider 测试
 ```
 
 fixture 暴露待测具体门面，并将 testkit 的非空、`/` 分隔相对名称映射为 provider 路径，同时映射
-list prefix。可选 fixture hook 可预置/读取文件并准备 native-copy 用例。异步 fixture
-提供对应的 future 观察，以及可选 copy cancellation 用例。
+list prefix。可选 fixture hook 可预置/读取文件、观察资源版本、预置空目录或 symlink，并准备
+native-copy 用例。异步 fixture 提供对应的 future 观察，以及可选 copy cancellation 用例。
 
 ## 贯穿场景
 
@@ -43,13 +43,13 @@ cargo add --dev qubit-fs-testkit
 
 ## 核心工作流
 
-在 provider 的集成测试中放入套件，并为每次测试运行新建 fixture：
+使用注册宏为每个契约阶段创建全新 fixture 和精确测试名：
 
 ```rust,ignore
-use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
-
-let fixture = TestFixture::new();
-FileSystemContractSuite::new(&fixture).assert_all();
+qubit_fs_testkit::register_file_system_contract_tests! {
+    module: provider_contracts,
+    fixture: super::TestFixture::new,
+}
 ```
 
 同步与异步套件都会依次检查 properties、`stat`、read、write、list、创建目录、delete、copy、
@@ -58,27 +58,30 @@ rename、追加写、递归删除、必需原子 rename/replace、必需持久 c
 `UnsupportedCapability` 预检错误；未声明的强化保证会被检查是否返回结构化的
 `RequirementNotMet` 预检错误。
 
-对于异步门面，await 对应套件：
+对于异步门面，传入 runtime 对应的 future runner：
 
 ```rust,ignore
-use qubit_fs_testkit::AsyncFileSystemContractSuite;
-
-let fixture = AsyncTestFixture::new();
-AsyncFileSystemContractSuite::new(&fixture).assert_all().await;
+qubit_fs_testkit::register_async_file_system_contract_tests! {
+    module: async_provider_contracts,
+    fixture: super::AsyncTestFixture::new,
+    runner: super::runtime::block_on,
+}
 ```
 
 ## 进阶用法
 
 只有当通用套件需要在被测操作外进行 provider 所有的观察时，才实现可选 fixture hook。例如
-`seed_file`、`read_file` 和 `copy_fast_path_case`。对于 provider 无法提供的可选观察，返回
+`seed_file`、`read_file`、`resource_version`、`seed_empty_directory`、`seed_symlink`
+和 `copy_fast_path_case`。对于 provider 无法提供的可选观察，返回
 `FixtureSupport::Unsupported`，而非伪造断言。
 
 `seed_file` 与 `read_file` 必须通过独立于待测门面的通道完成观察。例如，本地 provider 的 fixture 可
 直接用原生文件系统 API 预置和检查隔离临时目录。若用同一个门面完成准备或观察，彼此匹配的读写缺陷可能
 仍会通过契约套件。
 
-若直接单独调用阶段方法，结束后应调用 `finish()` 清理这些阶段创建的资源。`assert_all()` 会
-自动调用它；同步套件在断言 panic 后重新抛出前也会执行清理。
+单独运行阶段时优先使用 `assert_contract(FileSystemContract)`，它会在重新抛出 panic 前清理。
+若直接调用底层阶段方法，结束后应调用 `finish()`。`assert_all()` 与两个注册宏均会自动清理，
+包括异步断言 panic 的情况。
 
 `AsyncFileSystemFixture` 还提供 `copy_cancellation_case`，用于 provider 所有的 pending-stage 控制。
 它与其他 provider 特有观察一样是可选的。
