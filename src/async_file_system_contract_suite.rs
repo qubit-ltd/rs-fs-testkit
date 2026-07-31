@@ -37,8 +37,8 @@ use qubit_fs::{
     PersistFailureState,
     PersistOptions,
     ReadOptions,
-    RenameOptions,
     RenameFailureState,
+    RenameOptions,
     ResourceVersion,
     ServerSidePreference,
     TempDirectoryOptions,
@@ -56,9 +56,9 @@ use crate::internal::{
     catch_unwind_future,
 };
 use crate::{
-    FileSystemContract,
     AsyncCopyCancellationStage,
     AsyncFileSystemFixture,
+    FileSystemContract,
     FixtureSupport,
 };
 
@@ -306,7 +306,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .file_system()
                     .read_all(&path, Default::default(), 64)
                     .await
-                    .expect("read contract: facade could not read seeded bytes");
+                    .expect(
+                        "read contract: facade could not read seeded bytes",
+                    );
                 assert_eq!(
                     actual, b"async bytes",
                     "read contract: seeded bytes mismatch"
@@ -485,7 +487,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("write contract: writer commit failed");
         if let Some(bytes_written) = outcome.bytes_written {
-            assert_eq!(bytes_written, 13, "writer contract: byte count mismatch");
+            assert_eq!(
+                bytes_written, 13,
+                "writer contract: byte count mismatch"
+            );
         }
         match self
             .fixture
@@ -521,10 +526,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
         {
             Ok(mut writer) => {
-                writer
-                    .write_fully_async(b"unexpected")
-                    .await
-                    .expect("writer contract: create-new writer rejected bytes");
+                writer.write_fully_async(b"unexpected").await.expect(
+                    "writer contract: create-new writer rejected bytes",
+                );
                 writer.commit_async().await.expect_err(
                     "writer contract: create-new replaced an existing target",
                 )
@@ -627,10 +631,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .await
             {
                 Ok(mut retry) => {
-                    retry
-                        .write_fully_async(b"unexpected")
-                        .await
-                        .expect("writer contract: conditional retry rejected bytes");
+                    retry.write_fully_async(b"unexpected").await.expect(
+                        "writer contract: conditional retry rejected bytes",
+                    );
                     retry.commit_async().await.expect_err(
                         "writer contract: failed conditional write unexpectedly succeeded",
                     )
@@ -712,11 +715,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 "list contract: direct children mismatch"
             );
             let nested = self
-                .required_seed(
-                    "async-list/prefixed/nested",
-                    b"nested",
-                    "list",
-                )
+                .required_seed("async-list/prefixed/nested", b"nested", "list")
                 .await;
             let nested_second = self
                 .required_seed(
@@ -853,9 +852,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     },
                 )
                 .await
-                .expect(
-                    "create-directory contract: recursive creation failed",
-                );
+                .expect("create-directory contract: recursive creation failed");
             if let Some(created_ancestors) = outcome.created_ancestors() {
                 assert!(created_ancestors > 0);
             }
@@ -875,7 +872,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         }
     }
 
-    /// Checks advertised asynchronous empty-directory and symlink representations.
+    /// Checks advertised asynchronous empty-directory and symlink
+    /// representations.
     pub async fn assert_representations(&mut self) {
         self.context.begin("representations");
         if self.capable(FileSystemCapability::EmptyDirectory) {
@@ -892,12 +890,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 ),
             };
             self.context.record_created(path.clone());
-            let metadata = self
-                .fixture
-                .file_system()
-                .stat(&path)
-                .await
-                .expect("representation contract: empty directory is not statable");
+            let metadata = self.fixture.file_system().stat(&path).await.expect(
+                "representation contract: empty directory is not statable",
+            );
             assert!(
                 metadata.is_directory_like(),
                 "representation contract: empty directory is not directory-like"
@@ -1039,15 +1034,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     },
                 )
                 .await
-                .expect("delete contract: advertised conditional delete failed");
-            assert!(
-                !self
-                    .fixture
-                    .file_system()
-                    .exists(&path)
-                    .await
-                    .expect("delete contract: conditional target observation failed")
-            );
+                .expect(
+                    "delete contract: advertised conditional delete failed",
+                );
+            assert!(!self.fixture.file_system().exists(&path).await.expect(
+                "delete contract: conditional target observation failed"
+            ));
         } else {
             let error = self
                 .fixture
@@ -1169,7 +1161,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     CreateDirectoryOptions::default(),
                 )
                 .await
-                .expect("async copy contract: directory source creation failed");
+                .expect(
+                    "async copy contract: directory source creation failed",
+                );
             self.context.record_created(directory_source.clone());
             let directory_child = self
                 .required_seed(
@@ -2014,7 +2008,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .create_temp_directory(TempDirectoryOptions::default())
                 .await
-                .expect("temp-directory contract: atomic preflight setup failed");
+                .expect(
+                    "temp-directory contract: atomic preflight setup failed",
+                );
             let source = retry.path().clone();
             let failure = retry
                 .persist(
@@ -2042,10 +2038,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .expect("temp-directory contract: source exists failed"),
                 "temp-directory contract: required atomic preflight removed source"
             );
-            retry
-                .cleanup()
-                .await
-                .expect("temp-directory contract: retained source cleanup failed");
+            retry.cleanup().await.expect(
+                "temp-directory contract: retained source cleanup failed",
+            );
         }
     }
 
@@ -2057,13 +2052,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .file_system()
             .create_directory(&target, CreateDirectoryOptions::default())
             .await
-            .expect("temp-directory overwrite contract: destination setup failed");
+            .expect(
+                "temp-directory overwrite contract: destination setup failed",
+            );
         let mut temporary = self
             .fixture
             .file_system()
             .create_temp_directory(TempDirectoryOptions::default())
             .await
-            .expect("temp-directory overwrite contract: temporary creation failed");
+            .expect(
+                "temp-directory overwrite contract: temporary creation failed",
+            );
         let outcome = temporary
             .persist(
                 &target,
@@ -2075,13 +2074,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("temp-directory overwrite contract: persist failed");
         assert_eq!(outcome.target, target);
-        assert!(
-            self.fixture
-                .file_system()
-                .exists(&target)
-                .await
-                .expect("temp-directory overwrite contract: target observation failed")
-        );
+        assert!(self.fixture.file_system().exists(&target).await.expect(
+            "temp-directory overwrite contract: target observation failed"
+        ));
     }
 
     /// Checks asynchronous temporary-file parent and affix options.
@@ -2170,12 +2165,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let parent = self.path(relative);
         self.fixture
             .file_system()
-            .create_directory(
-                &parent,
-                CreateDirectoryOptions::default(),
-            )
+            .create_directory(&parent, CreateDirectoryOptions::default())
             .await
-            .expect("temporary resource contract: option parent creation failed");
+            .expect(
+                "temporary resource contract: option parent creation failed",
+            );
         self.context.record_created(parent.clone());
         Some(parent)
     }
@@ -2211,9 +2205,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let parent_prefix =
                 format!("{}/", parent.as_str().trim_end_matches('/'));
             assert!(
-                path.as_str().strip_prefix(&parent_prefix).is_some_and(
-                    |relative| !relative.contains('/'),
-                ),
+                path.as_str()
+                    .strip_prefix(&parent_prefix)
+                    .is_some_and(|relative| !relative.contains('/'),),
                 "{contract}: temporary resource was not an immediate child of the requested parent"
             );
         }

@@ -71,7 +71,12 @@ fn test_conforming_async_memory_provider_satisfies_full_suite() {
 fn test_all_capabilities_execute_async_contracts() {
     let fixture = AsyncMemoryFixture::with_all_capabilities();
     assert_eq!(
-        fixture.file_system().properties().capabilities().iter().collect::<Vec<_>>(),
+        fixture
+            .file_system()
+            .properties()
+            .capabilities()
+            .iter()
+            .collect::<Vec<_>>(),
         FileSystemCapability::ALL
     );
     let mut assertion =
@@ -151,13 +156,17 @@ fn test_async_recursive_delete_does_not_require_create_directory() {
         assertion.as_mut().poll(&mut context),
         Poll::Ready(())
     ));
-    assert!(fixture.is_empty(), "recursive deletion must remove the prefix");
+    assert!(
+        fixture.is_empty(),
+        "recursive deletion must remove the prefix"
+    );
 }
 
 /// An asynchronous assertion panic is resumed only after cleanup completes.
 #[test]
 fn test_async_suite_cleans_resources_before_resuming_panic() {
-    let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::WriteDropsBytes);
+    let fixture =
+        AsyncMemoryFixture::with_fault(AsyncMemoryFault::WriteDropsBytes);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut assertion =
             Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
@@ -166,7 +175,10 @@ fn test_async_suite_cleans_resources_before_resuming_panic() {
         let _ = assertion.as_mut().poll(&mut context);
     }));
     assert!(result.is_err(), "injected write fault must fail the suite");
-    assert!(fixture.is_empty(), "failed suite must clean published paths");
+    assert!(
+        fixture.is_empty(),
+        "failed suite must clean published paths"
+    );
 }
 
 /// Unadvertised async core operations still exercise facade preflight errors.

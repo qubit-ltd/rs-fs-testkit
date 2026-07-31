@@ -48,7 +48,8 @@ const COVERED_CAPABILITIES: [FileSystemCapability; 23] = [
     FileSystemCapability::DurableCopy,
 ];
 
-/// Adding a capability to qubit-fs requires an explicit testkit coverage choice.
+/// Adding a capability to qubit-fs requires an explicit testkit coverage
+/// choice.
 #[test]
 fn test_contract_capability_map_is_exhaustive() {
     assert_eq!(FileSystemCapability::ALL, COVERED_CAPABILITIES);
@@ -59,7 +60,12 @@ fn test_contract_capability_map_is_exhaustive() {
 fn test_all_capabilities_execute_sync_contracts() {
     let fixture = MemoryFixture::with_all_capabilities();
     assert_eq!(
-        fixture.file_system().properties().capabilities().iter().collect::<Vec<_>>(),
+        fixture
+            .file_system()
+            .properties()
+            .capabilities()
+            .iter()
+            .collect::<Vec<_>>(),
         FileSystemCapability::ALL
     );
     FileSystemContractSuite::new(&fixture).assert_all();
@@ -168,18 +174,25 @@ fn test_sync_recursive_delete_does_not_require_create_directory() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     suite.assert_recursive_delete();
     suite.finish();
-    assert!(fixture.is_empty(), "recursive deletion must remove the prefix");
+    assert!(
+        fixture.is_empty(),
+        "recursive deletion must remove the prefix"
+    );
 }
 
 /// A failed assertion still cleans paths that may have been published.
 #[test]
 fn test_sync_suite_cleans_resources_before_resuming_panic() {
-    let fixture = MemoryFixture::with_fault(common::MemoryFault::WriteDropsBytes);
+    let fixture =
+        MemoryFixture::with_fault(common::MemoryFault::WriteDropsBytes);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         FileSystemContractSuite::new(&fixture).assert_all();
     }));
     assert!(result.is_err(), "injected write fault must fail the suite");
-    assert!(fixture.is_empty(), "failed suite must clean published paths");
+    assert!(
+        fixture.is_empty(),
+        "failed suite must clean published paths"
+    );
 }
 
 /// Unadvertised core operations still exercise the facade's structured

@@ -25,8 +25,8 @@ use qubit_fs::{
     PersistFailureState,
     PersistOptions,
     ReadOptions,
-    RenameOptions,
     RenameFailureState,
+    RenameOptions,
     ResourceVersion,
     ServerSidePreference,
     TempDirectory,
@@ -128,13 +128,19 @@ impl<'a> FileSystemContractSuite<'a> {
             FileSystemContract::Read => self.assert_read(),
             FileSystemContract::Write => self.assert_write(),
             FileSystemContract::List => self.assert_list(),
-            FileSystemContract::CreateDirectory => self.assert_create_directory(),
-            FileSystemContract::Representations => self.assert_representations(),
+            FileSystemContract::CreateDirectory => {
+                self.assert_create_directory()
+            }
+            FileSystemContract::Representations => {
+                self.assert_representations()
+            }
             FileSystemContract::Delete => self.assert_delete(),
             FileSystemContract::Copy => self.assert_copy(),
             FileSystemContract::Rename => self.assert_rename(),
             FileSystemContract::Append => self.assert_append(),
-            FileSystemContract::RecursiveDelete => self.assert_recursive_delete(),
+            FileSystemContract::RecursiveDelete => {
+                self.assert_recursive_delete()
+            }
             FileSystemContract::AtomicRename => self.assert_atomic_rename(),
             FileSystemContract::AtomicReplace => self.assert_atomic_replace(),
             FileSystemContract::DurableCopy => self.assert_durable_copy(),
@@ -422,7 +428,10 @@ impl<'a> FileSystemContractSuite<'a> {
             .write_all(&path, b"written", WriteOptions::default())
             .expect("writer contract: write failed");
         if let Some(bytes_written) = outcome.bytes_written {
-            assert_eq!(bytes_written, 7, "writer contract: byte count mismatch");
+            assert_eq!(
+                bytes_written, 7,
+                "writer contract: byte count mismatch"
+            );
         }
         match self
             .fixture
@@ -454,7 +463,9 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .write_all(existing, b"unexpected", create_new)
-            .expect_err("writer contract: create-new replaced an existing target");
+            .expect_err(
+                "writer contract: create-new replaced an existing target",
+            );
         self.assert_error(
             failure.error(),
             FsErrorKind::AlreadyExists,
@@ -513,7 +524,11 @@ impl<'a> FileSystemContractSuite<'a> {
             self.context.record_created(conditional_path.clone());
             self.fixture
                 .file_system()
-                .write_all(&conditional_path, b"conditional", conditional.clone())
+                .write_all(
+                    &conditional_path,
+                    b"conditional",
+                    conditional.clone(),
+                )
                 .expect("writer contract: advertised conditional write failed");
             let failure = self
                 .fixture
@@ -762,11 +777,9 @@ impl<'a> FileSystemContractSuite<'a> {
                 ),
             };
             self.context.record_created(path.clone());
-            let metadata = self
-                .fixture
-                .file_system()
-                .stat(&path)
-                .expect("representation contract: empty directory is not statable");
+            let metadata = self.fixture.file_system().stat(&path).expect(
+                "representation contract: empty directory is not statable",
+            );
             assert!(
                 metadata.is_directory_like(),
                 "representation contract: empty directory is not directory-like"
@@ -839,7 +852,10 @@ impl<'a> FileSystemContractSuite<'a> {
             "delete contract: existing file was reported missing"
         );
         if let Some(deleted_entries) = outcome.deleted_entries() {
-            assert!(deleted_entries > 0, "delete contract: deleted count is zero");
+            assert!(
+                deleted_entries > 0,
+                "delete contract: deleted count is zero"
+            );
         }
         assert!(
             !self
@@ -902,14 +918,12 @@ impl<'a> FileSystemContractSuite<'a> {
                         ..DeleteOptions::default()
                     },
                 )
-                .expect("delete contract: advertised conditional delete failed");
-            assert!(
-                !self
-                    .fixture
-                    .file_system()
-                    .exists(&path)
-                    .expect("delete contract: conditional target observation failed")
-            );
+                .expect(
+                    "delete contract: advertised conditional delete failed",
+                );
+            assert!(!self.fixture.file_system().exists(&path).expect(
+                "delete contract: conditional target observation failed"
+            ));
         } else {
             let error = self
                 .fixture
@@ -1602,7 +1616,9 @@ impl<'a> FileSystemContractSuite<'a> {
         } else {
             let error = file_system
                 .create_temp_file(TempFileOptions::default())
-                .expect_err("temp-file contract: unadvertised creation succeeded");
+                .expect_err(
+                    "temp-file contract: unadvertised creation succeeded",
+                );
             self.assert_error(
                 &error,
                 FsErrorKind::UnsupportedCapability,

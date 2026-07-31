@@ -703,12 +703,11 @@ impl FileSystemSpi for MemorySpi {
             bytes.clone()
         };
         let options = request.options().options();
-        let start = options.offset.unwrap_or(0).min(bytes.len() as u64) as usize;
-        let end = options
-            .length
-            .map_or(bytes.len(), |length| {
-                start.saturating_add(length as usize).min(bytes.len())
-            });
+        let start =
+            options.offset.unwrap_or(0).min(bytes.len() as u64) as usize;
+        let end = options.length.map_or(bytes.len(), |length| {
+            start.saturating_add(length as usize).min(bytes.len())
+        });
         bytes = bytes[start..end].to_vec();
         Ok(OpenedReader::new(
             Self::info(request.path().clone()),
@@ -1843,7 +1842,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
             if fault == AsyncMemoryFault::ReadWrongBytes {
                 bytes = b"wrong bytes".to_vec();
             }
-            let start = options.offset.unwrap_or(0).min(bytes.len() as u64) as usize;
+            let start =
+                options.offset.unwrap_or(0).min(bytes.len() as u64) as usize;
             let end = options.length.map_or(bytes.len(), |length| {
                 start.saturating_add(length as usize).min(bytes.len())
             });
@@ -2320,7 +2320,8 @@ impl qubit_fs::spi::AsyncFileWriteSession for AsyncMemoryWriter {
                 .lock()
                 .expect("async memory state lock must succeed")
                 .contains_key(path.as_str());
-            if disposition == WriteDisposition::CreateNew && destination_exists {
+            if disposition == WriteDisposition::CreateNew && destination_exists
+            {
                 return Err(qubit_fs::WriteFailure::new(
                     FsError::new(
                         FsErrorKind::AlreadyExists,
@@ -2330,7 +2331,8 @@ impl qubit_fs::spi::AsyncFileWriteSession for AsyncMemoryWriter {
                     WriteFailureState::NotPublished,
                 ));
             }
-            if precondition == WritePrecondition::IfAbsent && destination_exists {
+            if precondition == WritePrecondition::IfAbsent && destination_exists
+            {
                 return Err(qubit_fs::WriteFailure::new(
                     FsError::new(
                         FsErrorKind::PreconditionFailed,

@@ -18,7 +18,9 @@ macro_rules! register_file_system_contract_tests {
                     fn $name() {
                         let fixture = ($fixture)();
                         $crate::FileSystemContractSuite::new(&fixture)
-                            .assert_contract($crate::FileSystemContract::$contract);
+                            .assert_contract(
+                                $crate::FileSystemContract::$contract,
+                            );
                     }
                 };
             }
@@ -44,7 +46,8 @@ macro_rules! register_file_system_contract_tests {
     };
 }
 
-/// Registers one independently named asynchronous test for every contract phase.
+/// Registers one independently named asynchronous test for every contract
+/// phase.
 ///
 /// `runner` must be a function or closure that drives the supplied future to
 /// completion using the provider crate's asynchronous runtime.
