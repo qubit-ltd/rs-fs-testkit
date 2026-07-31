@@ -23,9 +23,10 @@ provider test
 
 A fixture exposes the concrete facade under test and maps non-empty,
 `/`-separated testkit-relative names to provider paths. It also maps list
-prefixes. Optional fixture hooks can seed/read files and prepare native-copy
-cases. The async fixture supplies equivalent future-based observations and
-optional copy cancellation cases.
+prefixes. Optional fixture hooks can seed/read files, observe resource versions,
+seed empty directories or symlinks, and prepare native-copy cases. The async
+fixture supplies equivalent future-based observations and optional copy
+cancellation cases.
 
 ## Scenario
 
@@ -50,14 +51,14 @@ mapping methods and is `Sync`.
 
 ## Core Workflow
 
-Put the suite in the provider's integration tests and create a new fixture per
-test run:
+Use the registration macro to create a fresh fixture and a precise test name for
+each contract phase:
 
 ```rust,ignore
-use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
-
-let fixture = TestFixture::new();
-FileSystemContractSuite::new(&fixture).assert_all();
+qubit_fs_testkit::register_file_system_contract_tests! {
+    module: provider_contracts,
+    fixture: super::TestFixture::new,
+}
 ```
 
 Both suites check properties, `stat`, read, write, list, directory creation,
@@ -68,20 +69,22 @@ operations are checked for structured `UnsupportedCapability` preflight.
 Unadvertised stronger guarantees are checked for structured `RequirementNotMet`
 preflight.
 
-For an async facade, await the parallel suite:
+For an async facade, pass a runtime-specific future runner:
 
 ```rust,ignore
-use qubit_fs_testkit::AsyncFileSystemContractSuite;
-
-let fixture = AsyncTestFixture::new();
-AsyncFileSystemContractSuite::new(&fixture).assert_all().await;
+qubit_fs_testkit::register_async_file_system_contract_tests! {
+    module: async_provider_contracts,
+    fixture: super::AsyncTestFixture::new,
+    runner: super::runtime::block_on,
+}
 ```
 
 ## Advanced Usage
 
 Use optional fixture hooks only when the generic suite needs a provider-owned
 observation outside the operation being checked. Examples include `seed_file`,
-`read_file`, and `copy_fast_path_case`. Return `FixtureSupport::Unsupported`
+`read_file`, `resource_version`, `seed_empty_directory`, `seed_symlink`, and
+`copy_fast_path_case`. Return `FixtureSupport::Unsupported`
 for an optional observation the provider cannot supply; it is not a fabricated
 assertion.
 
@@ -91,9 +94,10 @@ its isolated temporary directory through native filesystem APIs. Reusing the
 same facade for setup or observation can make a matching read/write defect pass
 the contract suite.
 
-When individual phases are called directly, call `finish()` afterward to clean
-the resources those phases created. `assert_all()` calls it automatically; the
-synchronous suite also cleans up before rethrowing an assertion panic.
+Prefer `assert_contract(FileSystemContract)` for one phase because it cleans up
+before resuming a panic. When low-level phase methods are called directly, call
+`finish()` afterward. `assert_all()` and both registration macros clean up
+automatically, including asynchronous assertion panics.
 
 `AsyncFileSystemFixture` additionally has `copy_cancellation_case` for
 provider-owned pending-stage controls. It is optional, as are the other

@@ -42,7 +42,7 @@ Testkit 不构造 `qubit_fs::spi::*Request`，也不直接调用 operation SPI�
 - 绕过门面测试 raw SPI；
 - 代替 provider 的平台、协议、性能或安全测试；
 - 在 testkit 中绑定所有 async provider 必须使用的 runtime；
-- 通过宏承载或复制 contract 执行逻辑；
+- 在宏中承载或复制 contract 断言逻辑；宏只负责注册 suite phase；
 - 要求只支持部分能力的 provider 为测试伪造额外生产能力。
 
 ## 3. Fixture
@@ -78,12 +78,19 @@ pub trait FileSystemFixture {
         path: &Path,
     ) -> FixtureResult<FixtureSupport<Vec<u8>>>;
 
-    fn empty_directory_path(
+    fn resource_version(
         &self,
+        path: &Path,
+    ) -> FixtureResult<FixtureSupport<ResourceVersion>>;
+
+    fn seed_empty_directory(
+        &self,
+        relative: &str,
     ) -> FixtureResult<FixtureSupport<Path>>;
 
-    fn symlink_path(
+    fn seed_symlink(
         &self,
+        relative: &str,
     ) -> FixtureResult<FixtureSupport<Path>>;
 
     fn copy_fast_path_case(
@@ -91,10 +98,6 @@ pub trait FileSystemFixture {
         method: CopyMethod,
     ) -> FixtureResult<FixtureSupport<CopyFixtureCase>>;
 
-    fn entry_identity(
-        &self,
-        path: &Path,
-    ) -> FixtureResult<FixtureSupport<FixtureEntryIdentity>>;
 }
 ```
 
@@ -115,11 +118,10 @@ Fixture 不负责重新解释 capability 或放宽 contract。
 不能把它当成 unsupported 而跳过测试。构造核心 logical `Path` 是所有 fixture 的基本
 责任，因此 `path()` 返回 `FixtureResult<Path>`，没有 `Unsupported` 分支。
 
-`copy_fast_path_case`、`entry_identity` 等 representation probe 有默认
+`resource_version`、representation seed 和 `copy_fast_path_case` 有默认
 `Unsupported` 实现。`CopyFixtureCase` 包含已经准备好的 source、target 和 options；
 它必须保证请求的 `CopyMethod` 在 provider 声明的静态适用范围内。
-`FixtureEntryIdentity` 是只用于相等性比较的 opaque test value，不进入
-`qubit-fs` 公共 API。`FixtureError` 是具体、可保留 typed source 的错误，并满足同步
+`FixtureError` 是具体、可保留 typed source 的错误，并满足同步
 与异步 fixture 所需的 `Send + Sync + 'static` 边界。
 
 ### 3.2 异步 fixture
@@ -194,9 +196,9 @@ fn test_file_system_contract() {
 
 也可以为受限 provider 单独运行适用方法。
 
-可选薄 macro 命名为 `register_file_system_contract_tests!`，为 Rust test harness
+`register_file_system_contract_tests!` 和异步对应宏为 Rust test harness
 生成多个独立 `#[test]` wrapper，以获得并行执行和精确测试名称。该 macro 只能调用
-suite 方法，不能包含 assertion、fixture mutation 或 capability 判断；不使用 macro
+`assert_contract(FileSystemContract)`，不能包含 assertion、fixture mutation 或 capability 判断；不使用 macro
 的 provider 必须能获得完全相同的 contract coverage。
 
 ## 5. Suite 运行上下文
@@ -228,7 +230,7 @@ Capability 处理遵循两个方向。
 
 ### 6.1 已声明 capability
 
-当前实现会对以下已声明 capability 验证稳定语义保证：
+当前实现会对 `FileSystemCapability::ALL` 中全部已声明 capability 验证稳定语义保证：
 
 - `Read`：完整读取；
 - `Write`、`Append`；
@@ -238,7 +240,9 @@ Capability 处理遵循两个方向。
 - `Rename`、`AtomicRename`、`AtomicReplace`；
 - `Copy`、`ServerSideCopy`、`DurableCopy`；
 - `TempFile`、`TempDirectory`、`AtomicTempPersist`；
-- checksum validation。
+- `RangeRead`、`ConditionalRead`、checksum validation；
+- `ConditionalWrite`、`ConditionalDelete`；
+- `EmptyDirectory`、`Symlink` representation。
 
 声明能力但对 capability 明确保证范围内的 fixture case 只能返回
 `UnsupportedCapability`，视为 contract failure。
