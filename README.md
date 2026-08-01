@@ -60,6 +60,10 @@ operations the provider does not advertise.
   suites cover every `FileSystemCapability`, including ranges, conditions,
   checksums, representations, copy policies, required guarantees, and temporary
   resource persistence.
+- `AsyncFileSystemContractSuite::assert_copy_cancellation()` exposes the
+  asynchronous pending-stage cancellation checks as an independently runnable
+  phase. `copy_cancellation_case` may return `Unsupported` when a provider
+  cannot control its own pending stages.
 
 Provider crates remain responsible for their own platform behavior, path
 encoding, security boundaries, service registration, and capabilities outside

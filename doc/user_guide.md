@@ -65,7 +65,11 @@ Both suites check properties, `stat`, read, write, list, directory creation,
 delete, copy, rename, append, recursive deletion, required-atomic
 rename/replacement, required-durable copy, temporary resources including
 atomic persistence, and error context, then perform cleanup. Unadvertised core
-operations are checked for structured `UnsupportedCapability` preflight.
+operations are checked for structured `UnsupportedCapability` preflight. Copy
+is the exception: when `Copy` is not advertised, the facade skips the native
+fast path and may use the allowlisted stream fallback when `Read` and `Write`
+are available; missing fallback prerequisites still produce a structured
+unsupported-capability failure.
 Unadvertised stronger guarantees are checked for structured `RequirementNotMet`
 preflight.
 
@@ -100,8 +104,10 @@ before resuming a panic. When low-level phase methods are called directly, call
 automatically, including asynchronous assertion panics.
 
 `AsyncFileSystemFixture` additionally has `copy_cancellation_case` for
-provider-owned pending-stage controls. It is optional, as are the other
-provider-specific observations.
+provider-owned pending-stage controls. The corresponding
+`AsyncFileSystemContractSuite::assert_copy_cancellation()` phase can be run
+independently when a provider wants a focused check. The hook is optional, as
+are the other provider-specific observations.
 
 ## Errors and Diagnostics
 

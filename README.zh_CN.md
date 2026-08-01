@@ -51,6 +51,9 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 - 覆盖门面属性、核心操作、capability 预检、结构化错误上下文、清理和已支持的可选操作的契约。
   同步与异步套件对全部 `FileSystemCapability` 保持对称覆盖，包括范围/条件读取、checksum、
   representation、copy policy、强化保证和临时资源持久化。
+- `AsyncFileSystemContractSuite::assert_copy_cancellation()` 将异步 pending-stage 取消检查
+  暴露为可独立运行的阶段。若 provider 无法控制自身 pending 阶段，`copy_cancellation_case`
+  可以返回 `Unsupported`。
 
 provider crate 仍需自行负责平台行为、路径编码、安全边界、服务注册，以及当前套件覆盖范围外的
 capability。
