@@ -770,7 +770,7 @@ impl FileSystemSpi for MemorySpi {
         } else {
             let removed = state.entries.remove(request.path().as_str());
             let mut removed_descendant = false;
-            if request.options().options().recursive
+            if request.options().options().recursive()
                 && state.fault != MemoryFault::RecursiveDeleteLeavesChildren
             {
                 let prefix = format!(
@@ -916,7 +916,7 @@ impl FileSystemSpi for MemorySpi {
     ) -> Result<RenameOutcome, SpiRenameFailure> {
         let mut state =
             self.state.lock().expect("memory state lock must succeed");
-        if !request.options().options().overwrite
+        if !request.options().options().overwrite()
             && state.entries.contains_key(request.target().as_str())
         {
             return Err(SpiRenameFailure::new(
@@ -951,7 +951,7 @@ impl FileSystemSpi for MemorySpi {
         Ok(RenameOutcome::new(
             request.source().clone(),
             request.target().clone(),
-            if request.options().options().atomicity
+            if request.options().options().atomicity()
                 == AtomicityRequirement::Required
                 && state.fault != MemoryFault::AtomicRenameNonAtomic
             {
@@ -1180,7 +1180,7 @@ impl TempResourceSpi for TempSession {
         };
         Ok(PersistOutcome::new(
             target,
-            if request.options().atomicity == AtomicityRequirement::Required
+            if request.options().atomicity() == AtomicityRequirement::Required
                 && state.fault != MemoryFault::AtomicTempPersistNonAtomic
             {
                 AchievedAtomicity::Atomic
@@ -1932,7 +1932,7 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
     ) -> qubit_fs::spi::SpiFuture<'a, FsResult<DeleteOutcome>> {
         let path = request.path().clone();
         let entries = Arc::clone(&self.entries);
-        let recursive = request.options().options().recursive;
+        let recursive = request.options().options().recursive();
         let fault = self.fault;
         Box::pin(async move {
             let missing = if fault == AsyncMemoryFault::DeleteNoOp {
@@ -2098,8 +2098,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
         let target = request.target().clone();
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
-        let atomicity = request.options().options().atomicity;
-        let overwrite = request.options().options().overwrite;
+        let atomicity = request.options().options().atomicity();
+        let overwrite = request.options().options().overwrite();
         Box::pin(async move {
             let mut entries = entries
                 .lock()
@@ -2479,7 +2479,7 @@ impl qubit_fs::spi::AsyncTempResourceSpi for AsyncTempSession {
         let entries = Arc::clone(&this.entries);
         let source = this.path.clone();
         let target = request.target().clone();
-        let atomicity = request.options().atomicity;
+        let atomicity = request.options().atomicity();
         let fault = this.fault;
         Box::pin(async move {
             let mut entries = entries

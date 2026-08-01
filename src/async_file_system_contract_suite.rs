@@ -824,10 +824,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .create_directory(
                     &path,
-                    CreateDirectoryOptions {
-                        exists_ok: true,
-                        ..CreateDirectoryOptions::default()
-                    },
+                    CreateDirectoryOptions::default().with_exists_ok(true),
                 )
                 .await
                 .expect("create-directory contract: existing directory was not accepted");
@@ -844,10 +841,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .create_directory(
                     &child,
-                    CreateDirectoryOptions {
-                        recursive: true,
-                        ..CreateDirectoryOptions::default()
-                    },
+                    CreateDirectoryOptions::default().with_recursive(true),
                 )
                 .await
                 .expect("create-directory contract: recursive creation failed");
@@ -992,10 +986,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .file_system()
             .delete_file(
                 &missing,
-                DeleteOptions {
-                    missing_ok: true,
-                    ..DeleteOptions::default()
-                },
+                DeleteOptions::default().with_missing_ok(true),
             )
             .await
             .expect("delete contract: missing-ok deletion failed");
@@ -1028,10 +1019,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .delete_file(
                     &path,
-                    DeleteOptions {
-                        if_match: Some(version),
-                        ..DeleteOptions::default()
-                    },
+                    DeleteOptions::default().with_if_match(Some(version)),
                 )
                 .await
                 .expect(
@@ -1046,10 +1034,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .delete_file(
                     &path,
-                    DeleteOptions {
-                        if_match: Some(ResourceVersion::new("contract-version")),
-                        ..DeleteOptions::default()
-                    },
+                    DeleteOptions::default().with_if_match(Some(
+                        ResourceVersion::new("contract-version"),
+                    )),
                 )
                 .await
                 .expect_err("delete contract: unadvertised conditional delete succeeded");
@@ -1500,10 +1487,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .rename(
                 &source,
                 &target,
-                RenameOptions {
-                    overwrite: true,
-                    ..RenameOptions::default()
-                },
+                RenameOptions::default().with_overwrite(true),
             )
             .await
             .expect("rename contract: overwrite failed");
@@ -1585,10 +1569,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     pub async fn assert_recursive_delete(&mut self) {
         self.context.begin("recursive_delete");
         let root = self.path("async-recursive-delete-root");
-        let options = DeleteOptions {
-            recursive: true,
-            ..DeleteOptions::default()
-        };
+        let options = DeleteOptions::default().with_recursive(true);
         if !self.capable(FileSystemCapability::RecursiveDelete) {
             let error = self
                 .fixture
@@ -1645,10 +1626,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.context.begin("atomic_rename");
         let source = self.path("async-atomic-rename-source");
         let target = self.path("async-atomic-rename-target");
-        let options = RenameOptions {
-            atomicity: AtomicityRequirement::Required,
-            ..RenameOptions::default()
-        };
+        let options = RenameOptions::default()
+            .with_atomicity(AtomicityRequirement::Required);
         if !self.capable(FileSystemCapability::AtomicRename) {
             let failure = self
                 .fixture
@@ -2054,10 +2033,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let outcome = temporary
             .persist(
                 &target,
-                PersistOptions {
-                    overwrite: true,
-                    ..self.temp_persist_options()
-                },
+                self.temp_persist_options().with_overwrite(true),
             )
             .await
             .expect("temp-directory overwrite contract: persist failed");
@@ -2212,15 +2188,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Builds persistence options matching the advertised atomic guarantee.
     #[inline]
     fn temp_persist_options(&self) -> PersistOptions {
-        PersistOptions {
-            atomicity: if self.capable(FileSystemCapability::AtomicTempPersist)
-            {
+        PersistOptions::default().with_atomicity(
+            if self.capable(FileSystemCapability::AtomicTempPersist) {
                 AtomicityRequirement::Required
             } else {
                 AtomicityRequirement::Preferred
             },
-            ..PersistOptions::default()
-        }
+        )
     }
 
     /// Checks persistence reporting and destination publication.
