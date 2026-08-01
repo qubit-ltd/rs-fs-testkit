@@ -55,8 +55,10 @@ qubit_fs_testkit::register_file_system_contract_tests! {
 同步与异步套件都会依次检查 properties、`stat`、read、write、list、创建目录、delete、copy、
 rename、追加写、递归删除、必需原子 rename/replace、必需持久 copy、包括原子持久化在内的临时
 资源和错误上下文，随后执行清理。门面未声明的核心操作会被检查是否返回结构化的
-`UnsupportedCapability` 预检错误；未声明的强化保证会被检查是否返回结构化的
-`RequirementNotMet` 预检错误。
+`UnsupportedCapability` 预检错误。`Copy` 是例外：未声明 `Copy` 时，门面会跳过 native
+fast path；当 `Read` 与 `Write` 可用且请求属于 allowlist 时，仍可使用流式 fallback，只有
+fallback 前提缺失时才返回结构化的 unsupported-capability 错误。未声明的强化保证会被检查
+是否返回结构化的 `RequirementNotMet` 预检错误。
 
 对于异步门面，传入 runtime 对应的 future runner：
 
@@ -84,7 +86,8 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 包括异步断言 panic 的情况。
 
 `AsyncFileSystemFixture` 还提供 `copy_cancellation_case`，用于 provider 所有的 pending-stage 控制。
-它与其他 provider 特有观察一样是可选的。
+对应的 `AsyncFileSystemContractSuite::assert_copy_cancellation()` 阶段可以独立运行，适合
+对取消语义进行聚焦检查。该 hook 与其他 provider 特有观察一样是可选的。
 
 ## 错误与诊断
 
