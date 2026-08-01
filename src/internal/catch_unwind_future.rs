@@ -10,23 +10,31 @@
 
 use std::{
     any::Any,
-    future::{Future, poll_fn},
-    panic::{AssertUnwindSafe, catch_unwind},
+    future::{
+        Future,
+        poll_fn,
+    },
+    panic::{
+        AssertUnwindSafe,
+        catch_unwind,
+    },
     task::Poll,
 };
 
 /// Polls a future while converting an assertion panic into a result.
-pub(crate) async fn catch_unwind_future<F>(future: F) -> Result<F::Output, Box<dyn Any + Send>>
+pub(crate) async fn catch_unwind_future<F>(
+    future: F,
+) -> Result<F::Output, Box<dyn Any + Send>>
 where
     F: Future,
 {
     let mut future = Box::pin(future);
-    poll_fn(
-        move |context| match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
+    poll_fn(move |context| {
+        match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
             Ok(Poll::Ready(output)) => Poll::Ready(Ok(output)),
             Ok(Poll::Pending) => Poll::Pending,
             Err(payload) => Poll::Ready(Err(payload)),
-        },
-    )
+        }
+    })
     .await
 }

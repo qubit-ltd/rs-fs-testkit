@@ -8,8 +8,17 @@
 
 mod common;
 
-use qubit_fs::{CopyMethod, FileSystem, Path};
-use qubit_fs_testkit::{FileSystemFixture, FixtureError, FixtureResult, FixtureSupport};
+use qubit_fs::{
+    CopyMethod,
+    FileSystem,
+    Path,
+};
+use qubit_fs_testkit::{
+    FileSystemFixture,
+    FixtureError,
+    FixtureResult,
+    FixtureSupport,
+};
 
 use common::MemoryFixture;
 

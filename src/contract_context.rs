@@ -8,7 +8,12 @@
 //! Mutable state shared by one contract-suite run.
 
 use qubit_fs::{
-    AsyncFileSystem, FileSystem, FileSystemCapability, FileSystemProperties, FsErrorKind, Path,
+    AsyncFileSystem,
+    FileSystem,
+    FileSystemCapability,
+    FileSystemProperties,
+    FsErrorKind,
+    Path,
 };
 
 /// Holds the immutable snapshot and mutable namespace bookkeeping for a suite.
@@ -160,7 +165,10 @@ impl ContractContext {
     ///
     /// Panics when metadata inspection or deletion fails for a recorded path,
     /// except when inspection reports that the path is already absent.
-    pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) {
+    pub(crate) async fn cleanup_async(
+        &mut self,
+        file_system: &AsyncFileSystem,
+    ) {
         if !self
             .properties
             .capabilities()
