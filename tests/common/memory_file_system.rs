@@ -969,9 +969,9 @@ impl FileSystemSpi for MemorySpi {
     ) -> FsResult<OpenedTempFile> {
         let path = self.create_temp(
             false,
-            request.options().parent.as_ref(),
-            &request.options().prefix,
-            &request.options().suffix,
+            request.options().parent(),
+            request.options().prefix(),
+            request.options().suffix(),
         );
         Ok(OpenedTempFile::new(
             Self::info(path.clone())
@@ -989,9 +989,9 @@ impl FileSystemSpi for MemorySpi {
     ) -> FsResult<OpenedTempDirectory> {
         let path = self.create_temp(
             true,
-            request.options().parent.as_ref(),
-            &request.options().prefix,
-            &request.options().suffix,
+            request.options().parent(),
+            request.options().prefix(),
+            request.options().suffix(),
         );
         Ok(OpenedTempDirectory::new(
             Self::info(path.clone())
@@ -2168,9 +2168,9 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
             let path = allocate_async_temp(
                 &entries,
                 false,
-                options.parent.as_ref(),
-                &options.prefix,
-                &options.suffix,
+                options.parent(),
+                options.prefix(),
+                options.suffix(),
                 fault,
             );
             Ok(qubit_fs::spi::OpenedAsyncTempFile::new(
@@ -2199,9 +2199,9 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
             let path = allocate_async_temp(
                 &entries,
                 true,
-                options.parent.as_ref(),
-                &options.prefix,
-                &options.suffix,
+                options.parent(),
+                options.prefix(),
+                options.suffix(),
                 fault,
             );
             Ok(qubit_fs::spi::OpenedAsyncTempDirectory::new(

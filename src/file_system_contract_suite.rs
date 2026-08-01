@@ -1534,13 +1534,13 @@ impl<'a> FileSystemContractSuite<'a> {
                     .expect("temp-file contract: parent creation failed");
                 self.context.record_created(parent.clone());
             }
-            let options = TempFileOptions {
-                parent: self
-                    .capable(FileSystemCapability::CreateDirectory)
-                    .then_some(parent),
-                prefix: "contract-file-".to_owned(),
-                suffix: ".tmp".to_owned(),
-            };
+            let options = TempFileOptions::default()
+                .with_parent(
+                    self.capable(FileSystemCapability::CreateDirectory)
+                        .then_some(parent),
+                )
+                .with_prefix("contract-file-".to_owned())
+                .with_suffix(".tmp".to_owned());
             let mut temporary = file_system
                 .create_temp_file(options)
                 .expect("temp-file contract: create failed");
@@ -1593,13 +1593,13 @@ impl<'a> FileSystemContractSuite<'a> {
                     .expect("temp-directory contract: parent creation failed");
                 self.context.record_created(parent.clone());
             }
-            let options = TempDirectoryOptions {
-                parent: self
-                    .capable(FileSystemCapability::CreateDirectory)
-                    .then_some(parent),
-                prefix: "contract-directory-".to_owned(),
-                suffix: ".tmp".to_owned(),
-            };
+            let options = TempDirectoryOptions::default()
+                .with_parent(
+                    self.capable(FileSystemCapability::CreateDirectory)
+                        .then_some(parent),
+                )
+                .with_prefix("contract-directory-".to_owned())
+                .with_suffix(".tmp".to_owned());
             let mut temporary = file_system
                 .create_temp_directory(options)
                 .expect("temp-directory contract: create failed");
