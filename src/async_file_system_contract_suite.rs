@@ -2056,11 +2056,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let mut temporary = self
             .fixture
             .file_system()
-            .create_temp_file(TempFileOptions {
-                parent: parent.clone(),
-                prefix: "async-file-".to_owned(),
-                suffix: ".tmp".to_owned(),
-            })
+            .create_temp_file(
+                TempFileOptions::default()
+                    .with_parent(parent.clone())
+                    .with_prefix("async-file-".to_owned())
+                    .with_suffix(".tmp".to_owned()),
+            )
             .await
             .expect("temp-file contract: option-aware creation failed");
         self.assert_temp_path(
@@ -2089,11 +2090,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let mut temporary = self
             .fixture
             .file_system()
-            .create_temp_directory(TempDirectoryOptions {
-                parent: parent.clone(),
-                prefix: "async-directory-".to_owned(),
-                suffix: ".tmpdir".to_owned(),
-            })
+            .create_temp_directory(
+                TempDirectoryOptions::default()
+                    .with_parent(parent.clone())
+                    .with_prefix("async-directory-".to_owned())
+                    .with_suffix(".tmpdir".to_owned()),
+            )
             .await
             .expect("temp-directory contract: option-aware creation failed");
         self.assert_temp_path(
