@@ -716,10 +716,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .file_system()
             .create_directory(
                 &path,
-                CreateDirectoryOptions {
-                    exists_ok: true,
-                    ..CreateDirectoryOptions::default()
-                },
+                CreateDirectoryOptions::default().with_exists_ok(true),
             )
             .expect("namespace contract: existing directory was not accepted");
         assert!(
@@ -735,10 +732,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .file_system()
             .create_directory(
                 &child,
-                CreateDirectoryOptions {
-                    recursive: true,
-                    ..CreateDirectoryOptions::default()
-                },
+                CreateDirectoryOptions::default().with_recursive(true),
             )
             .expect("namespace contract: recursive directory creation failed");
         if let Some(created_ancestors) = outcome.created_ancestors() {
@@ -866,10 +860,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .file_system()
             .delete_file(
                 &missing,
-                DeleteOptions {
-                    missing_ok: true,
-                    ..DeleteOptions::default()
-                },
+                DeleteOptions::default().with_missing_ok(true),
             )
             .expect("delete contract: missing-ok deletion failed");
         assert!(
@@ -878,10 +869,9 @@ impl<'a> FileSystemContractSuite<'a> {
         );
 
         let path = self.path("delete-conditional");
-        let options = DeleteOptions {
-            if_match: Some(ResourceVersion::new("contract-version")),
-            ..DeleteOptions::default()
-        };
+        let options = DeleteOptions::default().with_if_match(Some(
+            ResourceVersion::new("contract-version"),
+        ));
         if self.capable(FileSystemCapability::ConditionalDelete) {
             let path = self.required_seed(
                 "delete-conditional",
@@ -903,10 +893,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 .file_system()
                 .delete_file(
                     &path,
-                    DeleteOptions {
-                        if_match: Some(version),
-                        ..DeleteOptions::default()
-                    },
+                    DeleteOptions::default().with_if_match(Some(version)),
                 )
                 .expect(
                     "delete contract: advertised conditional delete failed",
@@ -1274,10 +1261,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .rename(
                 &source,
                 &target,
-                RenameOptions {
-                    overwrite: true,
-                    ..RenameOptions::default()
-                },
+                RenameOptions::default().with_overwrite(true),
             )
             .expect("rename contract: overwrite failed");
         assert!(
@@ -1343,10 +1327,7 @@ impl<'a> FileSystemContractSuite<'a> {
     pub fn assert_recursive_delete(&mut self) {
         self.context.begin("recursive_delete");
         let root = self.path("recursive-delete-root");
-        let options = DeleteOptions {
-            recursive: true,
-            ..DeleteOptions::default()
-        };
+        let options = DeleteOptions::default().with_recursive(true);
         if !self.capable(FileSystemCapability::RecursiveDelete) {
             let error = self
                 .fixture
@@ -1402,10 +1383,8 @@ impl<'a> FileSystemContractSuite<'a> {
         self.context.begin("atomic_rename");
         let source = self.path("atomic-rename-source");
         let target = self.path("atomic-rename-target");
-        let options = RenameOptions {
-            atomicity: AtomicityRequirement::Required,
-            ..RenameOptions::default()
-        };
+        let options = RenameOptions::default()
+            .with_atomicity(AtomicityRequirement::Required);
         if !self.capable(FileSystemCapability::AtomicRename) {
             let failure = self
                 .fixture
@@ -1896,16 +1875,13 @@ impl<'a> FileSystemContractSuite<'a> {
         let outcome = temporary
             .persist(
                 target,
-                PersistOptions {
-                    atomicity: if self
-                        .capable(FileSystemCapability::AtomicTempPersist)
-                    {
+                PersistOptions::default().with_atomicity(
+                    if self.capable(FileSystemCapability::AtomicTempPersist) {
                         AtomicityRequirement::Required
                     } else {
                         AtomicityRequirement::Preferred
                     },
-                    ..PersistOptions::default()
-                },
+                ),
             )
             .expect("temp-directory contract: persist failed");
         assert_eq!(
@@ -1991,17 +1967,15 @@ impl<'a> FileSystemContractSuite<'a> {
         let outcome = temporary
             .persist(
                 &target,
-                PersistOptions {
-                    overwrite: true,
-                    atomicity: if self
-                        .capable(FileSystemCapability::AtomicTempPersist)
-                    {
-                        AtomicityRequirement::Required
-                    } else {
-                        AtomicityRequirement::Preferred
-                    },
-                    ..PersistOptions::default()
-                },
+                PersistOptions::default()
+                    .with_overwrite(true)
+                    .with_atomicity(
+                        if self.capable(FileSystemCapability::AtomicTempPersist) {
+                            AtomicityRequirement::Required
+                        } else {
+                            AtomicityRequirement::Preferred
+                        },
+                    ),
             )
             .expect("temp-directory overwrite contract: persist failed");
         assert_eq!(
@@ -2038,16 +2012,13 @@ impl<'a> FileSystemContractSuite<'a> {
         let outcome = temporary
             .persist(
                 target,
-                PersistOptions {
-                    atomicity: if self
-                        .capable(FileSystemCapability::AtomicTempPersist)
-                    {
+                PersistOptions::default().with_atomicity(
+                    if self.capable(FileSystemCapability::AtomicTempPersist) {
                         AtomicityRequirement::Required
                     } else {
                         AtomicityRequirement::Preferred
                     },
-                    ..PersistOptions::default()
-                },
+                ),
             )
             .expect("temp-file contract: persist failed");
         assert_eq!(
