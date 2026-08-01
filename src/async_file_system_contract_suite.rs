@@ -1059,29 +1059,29 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.context.begin("copy");
         if !self.capable(FileSystemCapability::Copy) {
             let source = self.path("async-copy-unavailable");
-            let error = match self.fixture.file_system().begin_copy(
-                source.clone(),
-                source.clone(),
-                Default::default(),
-            ) {
-                Err(error) => error,
-                Ok(_) => panic!(
-                    "async copy contract: unadvertised copy preflight succeeded"
-                ),
-            };
+            let target = self.path("async-copy-unavailable-target");
+            let mut operation = self
+                .fixture
+                .file_system()
+                .begin_copy(source.clone(), target.clone(), Default::default())
+                .expect("async copy contract: fallback selection failed");
+            let error = operation
+                .execute()
+                .await
+                .expect_err("async copy contract: unavailable fallback succeeded");
             assert_error_with_target(
                 error.error(),
                 FsErrorKind::UnsupportedCapability,
                 FsOperation::Copy,
                 Some(&source),
-                Some(&source),
+                Some(&target),
                 Some(self.context.properties().info().provider_id()),
-                Some(FileSystemCapability::Copy),
+                Some(FileSystemCapability::Read),
             );
             assert_eq!(
                 error.error().required_capability(),
-                Some(FileSystemCapability::Copy),
-                "async copy contract: missing required-capability context"
+                Some(FileSystemCapability::Read),
+                "async copy contract: fallback missing read-capability context"
             );
             return;
         }
@@ -1236,6 +1236,29 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 "server-side-copy contract",
             );
         }
+        self.assert_copy_cancellation_inner().await;
+    }
+
+    /// Checks asynchronous copy cancellation and recovery-state semantics.
+    ///
+    /// The fixture may opt out of individual probes when it cannot control a
+    /// provider-owned pending stage. Advertised copy support is still required
+    /// for this phase; unsupported copy returns without running probes.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a supported cancellation probe does not suspend, does not
+    /// transition to an indeterminate state, or loses a recoverable writer.
+    pub async fn assert_copy_cancellation(&mut self) {
+        self.context.begin("copy-cancellation");
+        self.assert_copy_cancellation_inner().await;
+    }
+
+    /// Runs the cancellation probes without changing the current phase name.
+    async fn assert_copy_cancellation_inner(&mut self) {
+        if !self.capable(FileSystemCapability::Copy) {
+            return;
+        }
         for stage in [
             AsyncCopyCancellationStage::NativeAttempt,
             AsyncCopyCancellationStage::Reader,
@@ -1245,7 +1268,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let case = self
                 .fixture
                 .copy_cancellation_case(stage)
-                .expect("async copy contract: fixture setup failed");
+                .expect("async copy cancellation contract: fixture setup failed");
             let case = match case {
                 FixtureSupport::Supported(case) => case,
                 FixtureSupport::Unsupported => continue,
@@ -1260,13 +1283,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     case.target().clone(),
                     case.options().clone(),
                 )
-                .expect("async copy contract: preflight failed");
+                .expect("async copy cancellation contract: preflight failed");
             let mut execution = Box::pin(operation.execute());
             let waker = Waker::noop();
             let mut task = Context::from_waker(waker);
             assert!(
                 matches!(execution.as_mut().poll(&mut task), Poll::Pending),
-                "async copy contract: fixture stage {stage:?} did not pend"
+                "async copy cancellation contract: fixture stage {stage:?} did not pend"
             );
             drop(execution);
             assert_eq!(
@@ -1274,7 +1297,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 AsyncCopyOperationState::Failed(
                     CopyFailureState::Indeterminate
                 ),
-                "async copy contract: cancellation did not become indeterminate"
+                "async copy cancellation contract: cancellation did not become indeterminate"
             );
             if matches!(
                 stage,
@@ -1283,7 +1306,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             ) {
                 assert!(
                     operation.take_recovery_writer().is_some(),
-                    "async copy contract: recovery writer was lost"
+                    "async copy cancellation contract: recovery writer was lost"
                 );
             }
         }

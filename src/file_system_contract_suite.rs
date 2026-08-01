@@ -926,22 +926,23 @@ impl<'a> FileSystemContractSuite<'a> {
         self.context.begin("copy");
         if !self.capable(FileSystemCapability::Copy) {
             let source = self.path("copy-unavailable");
+            let target = self.path("copy-unavailable-target");
             let error = self
                 .fixture
                 .file_system()
-                .copy(&source, &source, CopyOptions::default())
-                .expect_err("copy contract: unadvertised copy succeeded");
+                .copy(&source, &target, CopyOptions::default())
+                .expect_err("copy contract: unavailable fallback succeeded");
             self.assert_error(
                 error.error(),
                 FsErrorKind::UnsupportedCapability,
                 FsOperation::Copy,
                 &source,
-                Some(&source),
+                Some(&target),
             );
             assert_eq!(
                 error.error().required_capability(),
-                Some(FileSystemCapability::Copy),
-                "copy contract: missing required-capability context"
+                Some(FileSystemCapability::Read),
+                "copy contract: fallback missing read-capability context"
             );
             return;
         }
