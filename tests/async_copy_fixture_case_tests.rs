@@ -6,10 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_fs::{
-    CopyOptions,
-    Path,
-};
+use qubit_fs::{CopyOptions, Path};
 use qubit_fs_testkit::AsyncCopyFixtureCase;
 
 /// Prepared asynchronous copy cases preserve and transfer their request parts.
@@ -17,11 +14,7 @@ use qubit_fs_testkit::AsyncCopyFixtureCase;
 fn test_async_copy_fixture_case_exposes_and_transfers_request_parts() {
     let source = Path::parse("/defaults/source").expect("valid source path");
     let target = Path::parse("/defaults/target").expect("valid target path");
-    let case = AsyncCopyFixtureCase::new(
-        source.clone(),
-        target.clone(),
-        CopyOptions::default(),
-    );
+    let case = AsyncCopyFixtureCase::new(source.clone(), target.clone(), CopyOptions::default());
 
     assert_eq!(case.source(), &source);
     assert_eq!(case.target(), &target);

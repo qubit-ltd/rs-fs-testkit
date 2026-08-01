@@ -7,16 +7,9 @@
 mod common;
 
 use std::future::Future;
-use std::task::{
-    Context,
-    Poll,
-    Waker,
-};
+use std::task::{Context, Poll, Waker};
 
-use common::{
-    AsyncMemoryFixture,
-    MemoryFixture,
-};
+use common::{AsyncMemoryFixture, MemoryFixture};
 
 /// Drives a ready-only memory fixture future used by macro registration tests.
 fn run_ready(future: impl Future<Output = ()>) {

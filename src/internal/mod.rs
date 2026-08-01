@@ -11,6 +11,7 @@ mod assertions;
 mod catch_unwind_future;
 
 pub(crate) use assertions::{
+    assert_error_with_source_or_target,
     assert_error_with_target,
     assert_unsupported_error,
 };
