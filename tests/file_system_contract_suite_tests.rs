@@ -210,7 +210,7 @@ fn test_core_capability_negative_branches_are_exercised() {
     suite.assert_rename();
     assert_eq!(
         fixture.path_call_count(),
-        8,
+        9,
         "negative capability branches must exercise their facade paths"
     );
 }

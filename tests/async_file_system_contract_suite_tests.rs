@@ -113,6 +113,24 @@ fn test_async_copy_allows_fixture_without_cancellation_cases() {
     assert_copy_contract(&fixture);
 }
 
+/// Copy cancellation is independently callable for fixtures with probes.
+#[test]
+fn test_async_copy_cancellation_contract_is_independently_executable() {
+    let fixture = AsyncMemoryFixture::new();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let mut assertion = Box::pin(async {
+        suite.assert_copy_cancellation().await;
+        suite.finish().await;
+    });
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(matches!(
+        assertion.as_mut().poll(&mut context),
+        Poll::Ready(())
+    ));
+    assert!(fixture.is_empty(), "cancellation contract must clean resources");
+}
+
 /// A successful provider-native copy is a valid advertised Copy implementation.
 #[test]
 fn test_async_copy_accepts_native_outcome() {
@@ -203,7 +221,7 @@ fn test_async_core_capability_negative_branches_are_exercised() {
     ));
     assert_eq!(
         fixture.path_call_count(),
-        8,
+        9,
         "negative capability branches must exercise their facade paths"
     );
 }
