@@ -7,23 +7,12 @@
 // =============================================================================
 //! Typed asynchronous fixtures for filesystem contract suites.
 
-use std::{
-    future::Future,
-    pin::Pin,
-};
+use std::{future::Future, pin::Pin};
 
-use qubit_fs::{
-    AsyncFileSystem,
-    CopyMethod,
-    Path,
-    ResourceVersion,
-};
+use qubit_fs::{AsyncFileSystem, CopyMethod, Path, ResourceVersion};
 
 use crate::{
-    AsyncCopyCancellationStage,
-    AsyncCopyFixtureCase,
-    CopyFixtureCase,
-    FixtureResult,
+    AsyncCopyCancellationStage, AsyncCopyFixtureCase, CopyFixtureCase, FixtureResult,
     FixtureSupport,
 };
 
@@ -33,8 +22,7 @@ use crate::{
 ///
 /// * `'a` - Lifetime shared by the fixture and borrowed request data.
 /// * `T` - Successful value produced by the asynchronous hook.
-pub type FixtureFuture<'a, T> =
-    Pin<Box<dyn Future<Output = FixtureResult<T>> + Send + 'a>>;
+pub type FixtureFuture<'a, T> = Pin<Box<dyn Future<Output = FixtureResult<T>> + Send + 'a>>;
 
 /// Supplies an isolated asynchronous facade and optional provider observations.
 pub trait AsyncFileSystemFixture: Sync {
@@ -77,11 +65,7 @@ pub trait AsyncFileSystemFixture: Sync {
     /// Returns [`FixtureError`](crate::FixtureError) when the prefix cannot be
     /// represented for the supplied root.
     #[inline]
-    fn list_prefix(
-        &self,
-        root: &Path,
-        relative: &str,
-    ) -> FixtureResult<String> {
+    fn list_prefix(&self, root: &Path, relative: &str) -> FixtureResult<String> {
         let _ = root;
         Ok(relative.to_owned())
     }
@@ -129,10 +113,7 @@ pub trait AsyncFileSystemFixture: Sync {
     /// The future returns [`FixtureError`](crate::FixtureError) when
     /// provider-specific observation fails.
     #[inline]
-    fn read_file<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
+    fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
         let _ = path;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
@@ -159,10 +140,7 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Asynchronously seeds a symbolic link.
     #[inline]
-    fn seed_symlink<'a>(
-        &'a self,
-        relative: &'a str,
-    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_symlink<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = relative;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
