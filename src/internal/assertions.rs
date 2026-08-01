@@ -8,7 +8,13 @@
 // qubit-style: allow source-test-pair
 //! Structured filesystem error assertions.
 
-use qubit_fs::{FileSystemCapability, FsError, FsErrorKind, FsOperation, Path};
+use qubit_fs::{
+    FileSystemCapability,
+    FsError,
+    FsErrorKind,
+    FsOperation,
+    Path,
+};
 
 /// Checks all structured fields required by one filesystem contract.
 ///
@@ -98,17 +104,29 @@ pub(crate) fn assert_error_with_source_or_target(
     capability: Option<FileSystemCapability>,
 ) {
     assert_eq!(kind, error.kind(), "filesystem error kind must match");
-    assert_eq!(operation, error.operation(), "filesystem error operation must match");
+    assert_eq!(
+        operation,
+        error.operation(),
+        "filesystem error operation must match"
+    );
     assert!(
         matches!(error.path(), Some(path) if path == source || path == target),
         "filesystem error path must identify the source or target failure location",
     );
-    assert_eq!(Some(target), error.target(), "filesystem error target must match");
+    assert_eq!(
+        Some(target),
+        error.target(),
+        "filesystem error target must match"
+    );
     assert!(
         error.provider().is_none() || error.provider() == provider,
         "filesystem error provider must be absent or match the configured provider",
     );
-    assert_eq!(capability, error.required_capability(), "filesystem error required capability must match");
+    assert_eq!(
+        capability,
+        error.required_capability(),
+        "filesystem error required capability must match"
+    );
 }
 
 /// Checks the required fields of an unsupported-operation error.

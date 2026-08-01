@@ -7,7 +7,10 @@
 // =============================================================================
 //! Provider-prepared synchronous copy fixture cases.
 
-use qubit_fs::{CopyOptions, Path};
+use qubit_fs::{
+    CopyOptions,
+    Path,
+};
 
 /// Provider-prepared case that makes one native copy method applicable.
 #[must_use]
