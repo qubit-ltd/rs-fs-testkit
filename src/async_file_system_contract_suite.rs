@@ -157,7 +157,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             FileSystemContract::AtomicReplace => {
                 self.assert_atomic_replace().await
             }
-            FileSystemContract::DurableCopy => self.assert_durable_copy().await,
+            FileSystemContract::DurableFileCopy => {
+                self.assert_durable_copy().await
+            }
             FileSystemContract::TempResources => {
                 self.assert_temp_resources().await
             }
@@ -1065,10 +1067,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .begin_copy(source.clone(), target.clone(), Default::default())
                 .expect("async copy contract: fallback selection failed");
-            let error = operation
-                .execute()
-                .await
-                .expect_err("async copy contract: unavailable fallback succeeded");
+            let error = operation.execute().await.expect_err(
+                "async copy contract: unavailable fallback succeeded",
+            );
             assert_error_with_target(
                 error.error(),
                 FsErrorKind::UnsupportedCapability,
@@ -1265,10 +1266,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             AsyncCopyCancellationStage::Writer,
             AsyncCopyCancellationStage::Commit,
         ] {
-            let case = self
-                .fixture
-                .copy_cancellation_case(stage)
-                .expect("async copy cancellation contract: fixture setup failed");
+            let case = self.fixture.copy_cancellation_case(stage).expect(
+                "async copy cancellation contract: fixture setup failed",
+            );
             let case = match case {
                 FixtureSupport::Supported(case) => case,
                 FixtureSupport::Unsupported => continue,
@@ -1751,7 +1751,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let target = self.path("async-durable-copy-target");
         let options = CopyOptions::default()
             .with_durability(DurabilityRequirement::Required);
-        if !self.capable(FileSystemCapability::DurableCopy) {
+        if !self.capable(FileSystemCapability::DurableFileCopy) {
             let error = match self
                 .fixture
                 .file_system()
@@ -1765,7 +1765,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             self.assert_requirement_error(
                 error.error(),
                 FsOperation::Copy,
-                FileSystemCapability::DurableCopy,
+                FileSystemCapability::DurableFileCopy,
                 "durable-copy contract",
             );
             return;
@@ -2054,10 +2054,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 "temp-directory overwrite contract: temporary creation failed",
             );
         let outcome = temporary
-            .persist(
-                &target,
-                self.temp_persist_options().with_overwrite(true),
-            )
+            .persist(&target, self.temp_persist_options().with_overwrite(true))
             .await
             .expect("temp-directory overwrite contract: persist failed");
         assert_eq!(outcome.target(), &target);

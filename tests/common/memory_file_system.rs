@@ -153,7 +153,7 @@ pub enum MemoryFault {
     /// Reports non-atomic completion for an atomic-required write.
     AtomicReplaceNonAtomic,
     /// Reports a non-durable completion for a durability-required copy.
-    DurableCopyNonDurable,
+    DurableFileCopyNonDurable,
     /// Reports non-atomic completion for an atomic-required temp persist.
     AtomicTempPersistNonAtomic,
     /// Reports a non-server-side completion for a server-side-required copy.
@@ -566,7 +566,8 @@ impl FileSystemSpi for MemorySpi {
                 .with(FileSystemCapability::Append)
                 .with(FileSystemCapability::AtomicRename)
                 .with(FileSystemCapability::AtomicReplace)
-                .with(FileSystemCapability::DurableCopy)
+                .with(FileSystemCapability::AtomicFileCopy)
+                .with(FileSystemCapability::DurableFileCopy)
                 .with(FileSystemCapability::AtomicTempPersist)
                 .with(FileSystemCapability::ServerSideCopy);
         }
@@ -583,6 +584,8 @@ impl FileSystemSpi for MemorySpi {
                 FileSystemCapability::EmptyDirectory,
                 FileSystemCapability::ConditionalDelete,
                 FileSystemCapability::Symlink,
+                FileSystemCapability::AtomicTreeCopy,
+                FileSystemCapability::DurableTreeCopy,
             ] {
                 capabilities.insert(capability);
             }
@@ -725,7 +728,11 @@ impl FileSystemSpi for MemorySpi {
                 bytes: Vec::new(),
                 disposition: request.options().options().disposition(),
                 atomicity: request.options().options().atomicity(),
-                precondition: request.options().options().precondition().clone(),
+                precondition: request
+                    .options()
+                    .options()
+                    .precondition()
+                    .clone(),
             }),
         ))
     }
@@ -842,10 +849,10 @@ impl FileSystemSpi for MemorySpi {
                 Entry::File(bytes) => bytes.len() as u64,
                 Entry::Directory | Entry::Symlink => 0,
             };
-            let overwritten = state
-                .entries
-                .contains_key(request.target().as_str())
-                && options.conflict() == qubit_fs::CopyConflictPolicy::Overwrite;
+            let overwritten =
+                state.entries.contains_key(request.target().as_str())
+                    && options.conflict()
+                        == qubit_fs::CopyConflictPolicy::Overwrite;
             state
                 .entries
                 .insert(request.target().as_str().to_owned(), entry);
@@ -878,7 +885,8 @@ impl FileSystemSpi for MemorySpi {
                     state.entries.insert(path, entry);
                 }
             }
-            let method = if options.server_side() == ServerSidePreference::Require
+            let method = if options.server_side()
+                == ServerSidePreference::Require
                 && state.fault != MemoryFault::ServerSideCopyFallsBack
             {
                 CopyMethod::ServerSide
@@ -903,7 +911,8 @@ impl FileSystemSpi for MemorySpi {
                 .with_durable(
                     options.durability()
                         == qubit_fs::DurabilityRequirement::Required
-                        && state.fault != MemoryFault::DurableCopyNonDurable,
+                        && state.fault
+                            != MemoryFault::DurableFileCopyNonDurable,
                 ),
             ));
         }
@@ -1254,7 +1263,7 @@ pub enum AsyncMemoryFault {
     /// Reports non-atomic completion for a required atomic replacement.
     AtomicReplaceNonAtomic,
     /// Reports non-durable completion for a required durable copy.
-    DurableCopyNonDurable,
+    DurableFileCopyNonDurable,
     /// Publishes the requested destination but reports a different target.
     TempPersistWrongTarget,
     /// Reports non-atomic completion for required temporary persistence.
@@ -1662,7 +1671,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                 .with(FileSystemCapability::RecursiveDelete)
                 .with(FileSystemCapability::AtomicRename)
                 .with(FileSystemCapability::AtomicReplace)
-                .with(FileSystemCapability::DurableCopy)
+                .with(FileSystemCapability::AtomicFileCopy)
+                .with(FileSystemCapability::DurableFileCopy)
                 .with(FileSystemCapability::AtomicTempPersist)
                 .with(FileSystemCapability::ServerSideCopy);
         }
@@ -1679,6 +1689,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                 FileSystemCapability::EmptyDirectory,
                 FileSystemCapability::ConditionalDelete,
                 FileSystemCapability::Symlink,
+                FileSystemCapability::AtomicTreeCopy,
+                FileSystemCapability::DurableTreeCopy,
             ] {
                 capabilities.insert(capability);
             }
@@ -1975,7 +1987,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
         let options = request.options().options();
         let durable =
             options.durability() == qubit_fs::DurabilityRequirement::Required;
-        let server_side = options.server_side() == ServerSidePreference::Require;
+        let server_side =
+            options.server_side() == ServerSidePreference::Require;
         let conflict = options.conflict();
         if self.native_copy
             || durable
@@ -2077,7 +2090,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                     )
                     .with_durable(
                         durable
-                            && fault != AsyncMemoryFault::DurableCopyNonDurable,
+                            && fault
+                                != AsyncMemoryFault::DurableFileCopyNonDurable,
                     ),
                 ))
             });
@@ -2380,10 +2394,8 @@ impl qubit_fs::spi::AsyncFileWriteSession for AsyncMemoryWriter {
 
     fn abort_async<'a>(
         self: Pin<&'a mut Self>,
-    ) -> qubit_fs::spi::SpiFuture<
-        'a,
-        FsResult<qubit_fs::WriteAbortOutcome>,
-    > {
+    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<qubit_fs::WriteAbortOutcome>>
+    {
         let _ = self;
         Box::pin(async { Ok(qubit_fs::WriteAbortOutcome::NotPublished) })
     }

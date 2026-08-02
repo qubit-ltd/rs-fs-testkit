@@ -238,7 +238,8 @@ Capability 处理遵循两个方向。
 - `CreateDirectory`；
 - `Delete`、`RecursiveDelete`；
 - `Rename`、`AtomicRename`、`AtomicReplace`；
-- `Copy`、`ServerSideCopy`、`DurableCopy`；
+- `Copy`、`ServerSideCopy`、`AtomicFileCopy`、`AtomicTreeCopy`、
+  `DurableFileCopy`、`DurableTreeCopy`；
 - `TempFile`、`TempDirectory`、`AtomicTempPersist`；
 - `RangeRead`、`ConditionalRead`、checksum validation；
 - `ConditionalWrite`、`ConditionalDelete`；

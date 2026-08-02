@@ -37,7 +37,7 @@ pub enum FileSystemContract {
     /// Required atomic replacement.
     AtomicReplace,
     /// Required durable copy.
-    DurableCopy,
+    DurableFileCopy,
     /// Temporary file and directory lifecycle and persistence.
     TempResources,
     /// Structured public error context.
@@ -61,7 +61,7 @@ impl FileSystemContract {
         Self::RecursiveDelete,
         Self::AtomicRename,
         Self::AtomicReplace,
-        Self::DurableCopy,
+        Self::DurableFileCopy,
         Self::TempResources,
         Self::ErrorContext,
     ];

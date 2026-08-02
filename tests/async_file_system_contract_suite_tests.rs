@@ -47,7 +47,7 @@ fn test_conforming_async_memory_provider_satisfies_full_suite() {
         FileSystemCapability::RecursiveDelete,
         FileSystemCapability::AtomicRename,
         FileSystemCapability::AtomicReplace,
-        FileSystemCapability::DurableCopy,
+        FileSystemCapability::DurableFileCopy,
         FileSystemCapability::AtomicTempPersist,
     ] {
         assert!(
@@ -128,7 +128,10 @@ fn test_async_copy_cancellation_contract_is_independently_executable() {
         assertion.as_mut().poll(&mut context),
         Poll::Ready(())
     ));
-    assert!(fixture.is_empty(), "cancellation contract must clean resources");
+    assert!(
+        fixture.is_empty(),
+        "cancellation contract must clean resources"
+    );
 }
 
 /// A successful provider-native copy is a valid advertised Copy implementation.
@@ -294,7 +297,7 @@ fn test_single_faults_are_rejected_by_async_suite() {
         AsyncMemoryFault::RecursiveDeleteLeavesChildren,
         AsyncMemoryFault::AtomicRenameNonAtomic,
         AsyncMemoryFault::AtomicReplaceNonAtomic,
-        AsyncMemoryFault::DurableCopyNonDurable,
+        AsyncMemoryFault::DurableFileCopyNonDurable,
         AsyncMemoryFault::TempPersistWrongTarget,
         AsyncMemoryFault::AtomicTempPersistNonAtomic,
         AsyncMemoryFault::TempIgnoresOptions,

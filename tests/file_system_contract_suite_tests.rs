@@ -22,7 +22,7 @@ use qubit_fs_testkit::{
 use common::MemoryFixture;
 
 /// Both suites intentionally cover every capability in this stable order.
-const COVERED_CAPABILITIES: [FileSystemCapability; 23] = [
+const COVERED_CAPABILITIES: [FileSystemCapability; 26] = [
     FileSystemCapability::List,
     FileSystemCapability::Read,
     FileSystemCapability::RangeRead,
@@ -45,7 +45,10 @@ const COVERED_CAPABILITIES: [FileSystemCapability; 23] = [
     FileSystemCapability::TempFile,
     FileSystemCapability::TempDirectory,
     FileSystemCapability::AtomicTempPersist,
-    FileSystemCapability::DurableCopy,
+    FileSystemCapability::AtomicFileCopy,
+    FileSystemCapability::AtomicTreeCopy,
+    FileSystemCapability::DurableFileCopy,
+    FileSystemCapability::DurableTreeCopy,
 ];
 
 /// Adding a capability to qubit-fs requires an explicit testkit coverage
@@ -240,7 +243,7 @@ fn test_sync_suite_rejects_advertised_option_and_guarantee_faults() {
         common::MemoryFault::RecursiveDeleteLeavesChildren,
         common::MemoryFault::AtomicRenameNonAtomic,
         common::MemoryFault::AtomicReplaceNonAtomic,
-        common::MemoryFault::DurableCopyNonDurable,
+        common::MemoryFault::DurableFileCopyNonDurable,
         common::MemoryFault::AtomicTempPersistNonAtomic,
         common::MemoryFault::ServerSideCopyFallsBack,
     ] {
