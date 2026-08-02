@@ -1148,8 +1148,8 @@ impl FileWriterSpi for MemoryWriter {
         ))
     }
 
-    fn abort(&mut self) -> FsResult<()> {
-        Ok(())
+    fn abort(&mut self) -> FsResult<qubit_fs::WriteAbortOutcome> {
+        Ok(qubit_fs::WriteAbortOutcome::NotPublished)
     }
 }
 
@@ -2380,9 +2380,12 @@ impl qubit_fs::spi::AsyncFileWriteSession for AsyncMemoryWriter {
 
     fn abort_async<'a>(
         self: Pin<&'a mut Self>,
-    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<()>> {
+    ) -> qubit_fs::spi::SpiFuture<
+        'a,
+        FsResult<qubit_fs::WriteAbortOutcome>,
+    > {
         let _ = self;
-        Box::pin(async { Ok(()) })
+        Box::pin(async { Ok(qubit_fs::WriteAbortOutcome::NotPublished) })
     }
 
     fn cancel_on_drop(self: Pin<&mut Self>) {
