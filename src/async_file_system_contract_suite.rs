@@ -586,7 +586,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .write_fully_async(b"aborted")
             .await
             .expect("writer contract: abort writer rejected bytes");
-        writer
+        let _ = writer
             .abort_async()
             .await
             .expect("writer contract: abort failed");

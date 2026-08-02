@@ -499,7 +499,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .expect("writer contract: abort writer open failed");
         Output::write_fully(&mut writer, b"aborted")
             .expect("writer contract: abort writer rejected bytes");
-        writer.abort().expect("writer contract: abort failed");
+        let _ = writer.abort().expect("writer contract: abort failed");
         assert!(
             !self
                 .fixture
