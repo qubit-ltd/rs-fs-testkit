@@ -144,7 +144,7 @@ impl<'a> FileSystemContractSuite<'a> {
             }
             FileSystemContract::AtomicRename => self.assert_atomic_rename(),
             FileSystemContract::AtomicReplace => self.assert_atomic_replace(),
-            FileSystemContract::DurableCopy => self.assert_durable_copy(),
+            FileSystemContract::DurableFileCopy => self.assert_durable_copy(),
             FileSystemContract::TempResources => self.assert_temp_resources(),
             FileSystemContract::ErrorContext => self.assert_error_context(),
         }
@@ -869,9 +869,8 @@ impl<'a> FileSystemContractSuite<'a> {
         );
 
         let path = self.path("delete-conditional");
-        let options = DeleteOptions::default().with_if_match(Some(
-            ResourceVersion::new("contract-version"),
-        ));
+        let options = DeleteOptions::default()
+            .with_if_match(Some(ResourceVersion::new("contract-version")));
         if self.capable(FileSystemCapability::ConditionalDelete) {
             let path = self.required_seed(
                 "delete-conditional",
@@ -1475,7 +1474,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let target = self.path("durable-copy-target");
         let options = CopyOptions::default()
             .with_durability(DurabilityRequirement::Required);
-        if !self.capable(FileSystemCapability::DurableCopy) {
+        if !self.capable(FileSystemCapability::DurableFileCopy) {
             let failure = self
                 .fixture
                 .file_system()
@@ -1486,7 +1485,7 @@ impl<'a> FileSystemContractSuite<'a> {
             self.assert_requirement_error(
                 failure.error(),
                 FsOperation::Copy,
-                FileSystemCapability::DurableCopy,
+                FileSystemCapability::DurableFileCopy,
                 "durable-copy contract",
             );
             return;
@@ -1971,7 +1970,8 @@ impl<'a> FileSystemContractSuite<'a> {
                 PersistOptions::default()
                     .with_overwrite(true)
                     .with_atomicity(
-                        if self.capable(FileSystemCapability::AtomicTempPersist) {
+                        if self.capable(FileSystemCapability::AtomicTempPersist)
+                        {
                             AtomicityRequirement::Required
                         } else {
                             AtomicityRequirement::Preferred
