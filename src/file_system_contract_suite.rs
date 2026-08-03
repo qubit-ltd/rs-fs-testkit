@@ -143,6 +143,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 self.assert_recursive_delete()
             }
             FileSystemContract::AtomicRename => self.assert_atomic_rename(),
+            FileSystemContract::DurableRename => self.assert_durable_rename(),
             FileSystemContract::AtomicReplace => self.assert_atomic_replace(),
             FileSystemContract::DurableFileCopy => self.assert_durable_copy(),
             FileSystemContract::TempResources => self.assert_temp_resources(),
@@ -1418,6 +1419,52 @@ impl<'a> FileSystemContractSuite<'a> {
             outcome.atomicity(),
             AchievedAtomicity::Atomic,
             "atomic-rename contract: required operation reported non-atomic publication"
+        );
+    }
+
+    /// Checks required-durable rename publication when advertised.
+    pub fn assert_durable_rename(&mut self) {
+        self.context.begin("durable_rename");
+        let source = self.path("durable-rename-source");
+        let target = self.path("durable-rename-target");
+        let options = RenameOptions::default()
+            .with_durability(DurabilityRequirement::Required);
+        if !self.capable(FileSystemCapability::DurableRename) {
+            let failure = self
+                .fixture
+                .file_system()
+                .rename(&source, &target, options)
+                .expect_err(
+                    "durable-rename contract: unadvertised preflight succeeded",
+                );
+            self.assert_requirement_error(
+                failure.error(),
+                FsOperation::Rename,
+                FileSystemCapability::DurableRename,
+                "durable-rename contract",
+            );
+            return;
+        }
+        let source = self.required_seed(
+            "durable-rename-source",
+            b"durable rename",
+            "durable-rename",
+        );
+        self.context.record_created(source.clone());
+        self.context.record_created(target.clone());
+        let outcome = self
+            .fixture
+            .file_system()
+            .rename(&source, &target, options)
+            .expect("durable-rename contract: required rename failed");
+        assert!(
+            outcome.durable(),
+            "durable-rename contract: required operation reported non-durable publication"
+        );
+        self.assert_bytes(
+            &target,
+            b"durable rename",
+            "durable-rename contract: target bytes mismatch",
         );
     }
 

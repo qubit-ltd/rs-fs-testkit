@@ -155,6 +155,8 @@ pub enum MemoryFault {
     AtomicReplaceNonAtomic,
     /// Reports a non-durable completion for a durability-required copy.
     DurableFileCopyNonDurable,
+    /// Reports a non-durable completion for a durability-required rename.
+    DurableRenameNonDurable,
     /// Reports non-atomic completion for an atomic-required temp persist.
     AtomicTempPersistNonAtomic,
     /// Reports a non-server-side completion for a server-side-required copy.
@@ -974,7 +976,11 @@ impl FileSystemSpi for MemorySpi {
             },
             PublicationMethod::Direct,
         )
-        .with_durable(durability == qubit_fs::DurabilityRequirement::Required))
+        .with_durable(
+            request.options().options().durability()
+                == qubit_fs::DurabilityRequirement::Required
+                && state.fault != MemoryFault::DurableRenameNonDurable,
+        ))
     }
 
     fn create_temp_file(
@@ -1269,6 +1275,8 @@ pub enum AsyncMemoryFault {
     AtomicReplaceNonAtomic,
     /// Reports non-durable completion for a required durable copy.
     DurableFileCopyNonDurable,
+    /// Reports non-durable completion for a required durable rename.
+    DurableRenameNonDurable,
     /// Publishes the requested destination but reports a different target.
     TempPersistWrongTarget,
     /// Reports non-atomic completion for required temporary persistence.
@@ -2174,7 +2182,8 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                 PublicationMethod::Direct,
             )
             .with_durable(
-                durability == qubit_fs::DurabilityRequirement::Required,
+                durability == qubit_fs::DurabilityRequirement::Required
+                    && fault != AsyncMemoryFault::DurableRenameNonDurable,
             ))
         })
     }
