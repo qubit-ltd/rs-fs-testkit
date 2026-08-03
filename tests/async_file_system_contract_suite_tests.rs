@@ -77,7 +77,7 @@ fn test_all_capabilities_execute_async_contracts() {
             .capabilities()
             .iter()
             .collect::<Vec<_>>(),
-        FileSystemCapability::ALL
+        FileSystemCapability::ALL.to_vec()
     );
     let mut assertion =
         Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
@@ -263,6 +263,7 @@ fn test_async_contract_entry_points_run_individually() {
         suite.assert_append().await;
         suite.assert_recursive_delete().await;
         suite.assert_atomic_rename().await;
+        suite.assert_durable_rename().await;
         suite.assert_atomic_replace().await;
         suite.assert_durable_copy().await;
         suite.assert_temp_resources().await;
@@ -298,6 +299,7 @@ fn test_single_faults_are_rejected_by_async_suite() {
         AsyncMemoryFault::AtomicRenameNonAtomic,
         AsyncMemoryFault::AtomicReplaceNonAtomic,
         AsyncMemoryFault::DurableFileCopyNonDurable,
+        AsyncMemoryFault::DurableRenameNonDurable,
         AsyncMemoryFault::TempPersistWrongTarget,
         AsyncMemoryFault::AtomicTempPersistNonAtomic,
         AsyncMemoryFault::TempIgnoresOptions,

@@ -34,6 +34,8 @@ pub enum FileSystemContract {
     RecursiveDelete,
     /// Required atomic rename.
     AtomicRename,
+    /// Required durable rename.
+    DurableRename,
     /// Required atomic replacement.
     AtomicReplace,
     /// Required durable copy.
@@ -46,7 +48,7 @@ pub enum FileSystemContract {
 
 impl FileSystemContract {
     /// Every named contract in dependency-safe execution order.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::Properties,
         Self::Stat,
         Self::Read,
@@ -60,6 +62,7 @@ impl FileSystemContract {
         Self::Append,
         Self::RecursiveDelete,
         Self::AtomicRename,
+        Self::DurableRename,
         Self::AtomicReplace,
         Self::DurableFileCopy,
         Self::TempResources,

@@ -70,7 +70,7 @@ fn test_all_capabilities_execute_sync_contracts() {
             .capabilities()
             .iter()
             .collect::<Vec<_>>(),
-        FileSystemCapability::ALL
+        FileSystemCapability::ALL.to_vec()
     );
     FileSystemContractSuite::new(&fixture).assert_all();
     assert!(fixture.is_empty(), "all-capability suite must clean up");
@@ -228,6 +228,7 @@ fn test_stronger_capability_negative_branches_are_exercised() {
     suite.assert_append();
     suite.assert_recursive_delete();
     suite.assert_atomic_rename();
+    suite.assert_durable_rename();
     suite.assert_atomic_replace();
     suite.assert_durable_copy();
 }
@@ -245,6 +246,7 @@ fn test_sync_suite_rejects_advertised_option_and_guarantee_faults() {
         common::MemoryFault::AtomicRenameNonAtomic,
         common::MemoryFault::AtomicReplaceNonAtomic,
         common::MemoryFault::DurableFileCopyNonDurable,
+        common::MemoryFault::DurableRenameNonDurable,
         common::MemoryFault::AtomicTempPersistNonAtomic,
         common::MemoryFault::ServerSideCopyFallsBack,
     ] {

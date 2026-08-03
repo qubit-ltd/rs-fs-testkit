@@ -38,6 +38,7 @@ macro_rules! register_file_system_contract_tests {
             contract_test!(append, Append);
             contract_test!(recursive_delete, RecursiveDelete);
             contract_test!(atomic_rename, AtomicRename);
+            contract_test!(durable_rename, DurableRename);
             contract_test!(atomic_replace, AtomicReplace);
             contract_test!(durable_copy, DurableFileCopy);
             contract_test!(temp_resources, TempResources);
@@ -88,6 +89,7 @@ macro_rules! register_async_file_system_contract_tests {
             contract_test!(append, Append);
             contract_test!(recursive_delete, RecursiveDelete);
             contract_test!(atomic_rename, AtomicRename);
+            contract_test!(durable_rename, DurableRename);
             contract_test!(atomic_replace, AtomicReplace);
             contract_test!(durable_copy, DurableFileCopy);
             contract_test!(temp_resources, TempResources);
