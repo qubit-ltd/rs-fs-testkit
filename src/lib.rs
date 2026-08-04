@@ -13,9 +13,13 @@
 
 #![deny(missing_docs)]
 
+#[cfg(feature = "async")]
 mod async_copy_cancellation_stage;
+#[cfg(feature = "async")]
 mod async_copy_fixture_case;
+#[cfg(feature = "async")]
 mod async_file_system_contract_suite;
+#[cfg(feature = "async")]
 mod async_file_system_fixture;
 mod contract_context;
 mod contract_registration;
@@ -27,9 +31,13 @@ mod fixture_error;
 mod fixture_support;
 mod internal;
 
+#[cfg(feature = "async")]
 pub use async_copy_cancellation_stage::AsyncCopyCancellationStage;
+#[cfg(feature = "async")]
 pub use async_copy_fixture_case::AsyncCopyFixtureCase;
+#[cfg(feature = "async")]
 pub use async_file_system_contract_suite::AsyncFileSystemContractSuite;
+#[cfg(feature = "async")]
 pub use async_file_system_fixture::{
     AsyncFileSystemFixture,
     FixtureFuture,

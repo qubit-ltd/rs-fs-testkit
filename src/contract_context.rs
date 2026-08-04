@@ -7,8 +7,9 @@
 // =============================================================================
 //! Mutable state shared by one contract-suite run.
 
+#[cfg(feature = "async")]
+use qubit_fs::AsyncFileSystem;
 use qubit_fs::{
-    AsyncFileSystem,
     FileSystem,
     FileSystemCapability,
     FileSystemProperties,
@@ -165,6 +166,7 @@ impl ContractContext {
     ///
     /// Panics when metadata inspection or deletion fails for a recorded path,
     /// except when inspection reports that the path is already absent.
+    #[cfg(feature = "async")]
     pub(crate) async fn cleanup_async(
         &mut self,
         file_system: &AsyncFileSystem,
