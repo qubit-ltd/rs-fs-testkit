@@ -19,6 +19,9 @@ dependency graphs.
 cargo add --dev qubit-fs-testkit
 ```
 
+The synchronous contract suite is enabled by default. Add features = ["async"]
+to the development dependency when using the asynchronous suite.
+
 ## Quick Start
 
 For a provider that exposes a fresh test filesystem, implement

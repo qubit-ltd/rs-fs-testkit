@@ -28,8 +28,12 @@ categories = ["development-tools::testing", "filesystem"]
 name = "qubit_fs_testkit"
 doctest = true
 
+[features]
+default = []
+async = ["qubit-fs/async"]
+
 [dependencies]
-qubit-fs = { path = "../rs-fs", version = "0.2", features = ["async"] }
+qubit-fs = { path = "../rs-fs", version = "0.2", default-features = false }
 qubit-io = "0.14"
 
 [lints.rust]
