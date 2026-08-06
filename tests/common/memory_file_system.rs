@@ -87,6 +87,7 @@ use qubit_fs::{
     RenameFailureState,
     RenameOutcome,
     ServerSidePreference,
+    SymlinkPolicy,
     WriteDisposition,
     WriteFailureState,
     WriteOutcome,
@@ -568,6 +569,7 @@ impl FileSystemSpi for MemorySpi {
                 .with(FileSystemCapability::AtomicReplace)
                 .with(FileSystemCapability::AtomicFileCopy)
                 .with(FileSystemCapability::DurableFileCopy)
+                .with(FileSystemCapability::DurableRename)
                 .with(FileSystemCapability::AtomicTempPersist)
                 .with(FileSystemCapability::ServerSideCopy);
         }
@@ -615,6 +617,7 @@ impl FileSystemSpi for MemorySpi {
             capabilities,
             FileSystemLimits::unknown(),
             PathConstraints::absolute(),
+            SymlinkPolicy::Reject,
         )
         .expect("memory properties must be valid")
     }
@@ -925,6 +928,7 @@ impl FileSystemSpi for MemorySpi {
     ) -> Result<RenameOutcome, SpiRenameFailure> {
         let mut state =
             self.state.lock().expect("memory state lock must succeed");
+        let durability = request.options().options().durability();
         if !request.options().options().overwrite()
             && state.entries.contains_key(request.target().as_str())
         {
@@ -969,7 +973,8 @@ impl FileSystemSpi for MemorySpi {
                 AchievedAtomicity::NonAtomic
             },
             PublicationMethod::Direct,
-        ))
+        )
+        .with_durable(durability == qubit_fs::DurabilityRequirement::Required))
     }
 
     fn create_temp_file(
@@ -1673,6 +1678,7 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                 .with(FileSystemCapability::AtomicReplace)
                 .with(FileSystemCapability::AtomicFileCopy)
                 .with(FileSystemCapability::DurableFileCopy)
+                .with(FileSystemCapability::DurableRename)
                 .with(FileSystemCapability::AtomicTempPersist)
                 .with(FileSystemCapability::ServerSideCopy);
         }
@@ -1712,6 +1718,7 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
             capabilities,
             FileSystemLimits::unknown(),
             PathConstraints::absolute(),
+            SymlinkPolicy::Reject,
         )
         .expect("async memory properties must be valid")
     }
@@ -2113,6 +2120,7 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
         let atomicity = request.options().options().atomicity();
+        let durability = request.options().options().durability();
         let overwrite = request.options().options().overwrite();
         Box::pin(async move {
             let mut entries = entries
@@ -2164,6 +2172,9 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                     AchievedAtomicity::NonAtomic
                 },
                 PublicationMethod::Direct,
+            )
+            .with_durable(
+                durability == qubit_fs::DurabilityRequirement::Required,
             ))
         })
     }
