@@ -22,7 +22,7 @@ use qubit_fs_testkit::{
 use common::MemoryFixture;
 
 /// Both suites intentionally cover every capability in this stable order.
-const COVERED_CAPABILITIES: [FileSystemCapability; 26] = [
+const COVERED_CAPABILITIES: [FileSystemCapability; 27] = [
     FileSystemCapability::List,
     FileSystemCapability::Read,
     FileSystemCapability::RangeRead,
@@ -49,6 +49,7 @@ const COVERED_CAPABILITIES: [FileSystemCapability; 26] = [
     FileSystemCapability::AtomicTreeCopy,
     FileSystemCapability::DurableFileCopy,
     FileSystemCapability::DurableTreeCopy,
+    FileSystemCapability::DurableRename,
 ];
 
 /// Adding a capability to qubit-fs requires an explicit testkit coverage

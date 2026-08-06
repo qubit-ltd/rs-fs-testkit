@@ -29,7 +29,7 @@ name = "qubit_fs_testkit"
 doctest = true
 
 [dependencies]
-qubit-fs = { path = "../rs-fs", version = "0.2" }
+qubit-fs = { path = "../rs-fs", version = "0.2", features = ["async"] }
 qubit-io = "0.14"
 
 [lints.rust]
