@@ -930,7 +930,7 @@ impl FileSystemSpi for MemorySpi {
     ) -> Result<RenameOutcome, SpiRenameFailure> {
         let mut state =
             self.state.lock().expect("memory state lock must succeed");
-        let durability = request.options().options().durability();
+        let _durability = request.options().options().durability();
         if !request.options().options().overwrite()
             && state.entries.contains_key(request.target().as_str())
         {
