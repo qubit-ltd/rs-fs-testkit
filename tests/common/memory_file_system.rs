@@ -563,21 +563,21 @@ impl FileSystemSpi for MemorySpi {
         let mut capabilities = FileSystemCapabilities::new();
         if state.optional_capabilities {
             capabilities = capabilities
-                .with(FileSystemCapability::Rename)
-                .with(FileSystemCapability::TempFile)
-                .with(FileSystemCapability::TempDirectory)
-                .with(FileSystemCapability::Append)
-                .with(FileSystemCapability::AtomicRename)
-                .with(FileSystemCapability::AtomicReplace)
-                .with(FileSystemCapability::AtomicFileCopy)
-                .with(FileSystemCapability::DurableFileCopy)
-                .with(FileSystemCapability::DurableRename)
-                .with(FileSystemCapability::AtomicTempPersist)
-                .with(FileSystemCapability::ServerSideCopy);
+                .with_guaranteed(FileSystemCapability::Rename)
+                .with_guaranteed(FileSystemCapability::TempFile)
+                .with_guaranteed(FileSystemCapability::TempDirectory)
+                .with_guaranteed(FileSystemCapability::Append)
+                .with_guaranteed(FileSystemCapability::AtomicRename)
+                .with_guaranteed(FileSystemCapability::AtomicReplace)
+                .with_guaranteed(FileSystemCapability::AtomicFileCopy)
+                .with_guaranteed(FileSystemCapability::DurableFileCopy)
+                .with_guaranteed(FileSystemCapability::DurableRename)
+                .with_guaranteed(FileSystemCapability::AtomicTempPersist)
+                .with_guaranteed(FileSystemCapability::ServerSideCopy);
         }
         if state.create_directory_capability {
-            capabilities =
-                capabilities.with(FileSystemCapability::CreateDirectory);
+            capabilities = capabilities
+                .with_guaranteed(FileSystemCapability::CreateDirectory);
         }
         if state.extended_capabilities {
             for capability in [
@@ -591,21 +591,22 @@ impl FileSystemSpi for MemorySpi {
                 FileSystemCapability::AtomicTreeCopy,
                 FileSystemCapability::DurableTreeCopy,
             ] {
-                capabilities.insert(capability);
+                capabilities = capabilities.with_guaranteed(capability);
             }
         }
         if state.core_capabilities {
             capabilities = capabilities
-                .with(FileSystemCapability::Read)
-                .with(FileSystemCapability::Write)
-                .with(FileSystemCapability::List)
-                .with(FileSystemCapability::Copy);
+                .with_guaranteed(FileSystemCapability::Read)
+                .with_guaranteed(FileSystemCapability::Write)
+                .with_guaranteed(FileSystemCapability::List)
+                .with_guaranteed(FileSystemCapability::Copy);
         }
         if state.delete_capability {
-            capabilities = capabilities.with(FileSystemCapability::Delete);
+            capabilities =
+                capabilities.with_guaranteed(FileSystemCapability::Delete);
             if state.optional_capabilities {
-                capabilities =
-                    capabilities.with(FileSystemCapability::RecursiveDelete);
+                capabilities = capabilities
+                    .with_guaranteed(FileSystemCapability::RecursiveDelete);
             }
         }
         drop(state);
@@ -1676,23 +1677,23 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
         let mut capabilities = FileSystemCapabilities::new();
         if self.optional_capabilities {
             capabilities = capabilities
-                .with(FileSystemCapability::Delete)
-                .with(FileSystemCapability::Rename)
-                .with(FileSystemCapability::TempFile)
-                .with(FileSystemCapability::TempDirectory)
-                .with(FileSystemCapability::Append)
-                .with(FileSystemCapability::RecursiveDelete)
-                .with(FileSystemCapability::AtomicRename)
-                .with(FileSystemCapability::AtomicReplace)
-                .with(FileSystemCapability::AtomicFileCopy)
-                .with(FileSystemCapability::DurableFileCopy)
-                .with(FileSystemCapability::DurableRename)
-                .with(FileSystemCapability::AtomicTempPersist)
-                .with(FileSystemCapability::ServerSideCopy);
+                .with_guaranteed(FileSystemCapability::Delete)
+                .with_guaranteed(FileSystemCapability::Rename)
+                .with_guaranteed(FileSystemCapability::TempFile)
+                .with_guaranteed(FileSystemCapability::TempDirectory)
+                .with_guaranteed(FileSystemCapability::Append)
+                .with_guaranteed(FileSystemCapability::RecursiveDelete)
+                .with_guaranteed(FileSystemCapability::AtomicRename)
+                .with_guaranteed(FileSystemCapability::AtomicReplace)
+                .with_guaranteed(FileSystemCapability::AtomicFileCopy)
+                .with_guaranteed(FileSystemCapability::DurableFileCopy)
+                .with_guaranteed(FileSystemCapability::DurableRename)
+                .with_guaranteed(FileSystemCapability::AtomicTempPersist)
+                .with_guaranteed(FileSystemCapability::ServerSideCopy);
         }
         if self.create_directory_capability {
-            capabilities =
-                capabilities.with(FileSystemCapability::CreateDirectory);
+            capabilities = capabilities
+                .with_guaranteed(FileSystemCapability::CreateDirectory);
         }
         if self.extended_capabilities {
             for capability in [
@@ -1706,15 +1707,15 @@ impl qubit_fs::spi::AsyncFileSystemSpi for AsyncMemorySpi {
                 FileSystemCapability::AtomicTreeCopy,
                 FileSystemCapability::DurableTreeCopy,
             ] {
-                capabilities.insert(capability);
+                capabilities = capabilities.with_guaranteed(capability);
             }
         }
         if self.core_capabilities {
             capabilities = capabilities
-                .with(FileSystemCapability::Copy)
-                .with(FileSystemCapability::Read)
-                .with(FileSystemCapability::Write)
-                .with(FileSystemCapability::List);
+                .with_guaranteed(FileSystemCapability::Copy)
+                .with_guaranteed(FileSystemCapability::Read)
+                .with_guaranteed(FileSystemCapability::Write)
+                .with_guaranteed(FileSystemCapability::List);
         }
         FileSystemProperties::new(
             FileSystemInfo::new(

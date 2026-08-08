@@ -1752,7 +1752,7 @@ impl<'a> FileSystemContractSuite<'a> {
         self.context
             .properties()
             .capabilities()
-            .contains(capability)
+            .supports(capability)
     }
 
     /// Seeds a resource and makes support mandatory for the requested

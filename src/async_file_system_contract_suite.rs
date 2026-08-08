@@ -2360,7 +2360,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.context
             .properties()
             .capabilities()
-            .contains(capability)
+            .supports(capability)
     }
 
     /// Seeds a resource and makes fixture support mandatory for the contract.

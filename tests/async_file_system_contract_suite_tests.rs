@@ -51,7 +51,7 @@ fn test_conforming_async_memory_provider_satisfies_full_suite() {
         FileSystemCapability::AtomicTempPersist,
     ] {
         assert!(
-            capabilities.contains(capability),
+            capabilities.supports(capability),
             "conforming async fixture must exercise {capability:?}"
         );
     }
