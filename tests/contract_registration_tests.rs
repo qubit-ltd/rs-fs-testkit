@@ -13,6 +13,8 @@ use std::task::Waker;
 
 use common::AsyncMemoryFixture;
 use common::MemoryFixture;
+use qubit_fs_testkit::register_async_file_system_contract_tests;
+use qubit_fs_testkit::register_file_system_contract_tests;
 
 /// Drives a ready-only memory fixture future used by macro registration tests.
 fn run_ready(future: impl Future<Output = ()>) {
@@ -25,12 +27,12 @@ fn run_ready(future: impl Future<Output = ()>) {
     ));
 }
 
-qubit_fs_testkit::register_file_system_contract_tests! {
+register_file_system_contract_tests! {
     module: registered_sync_contracts,
     fixture: super::MemoryFixture::new,
 }
 
-qubit_fs_testkit::register_async_file_system_contract_tests! {
+register_async_file_system_contract_tests! {
     module: registered_async_contracts,
     fixture: super::AsyncMemoryFixture::new,
     runner: super::run_ready,
