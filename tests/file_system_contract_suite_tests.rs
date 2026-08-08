@@ -8,6 +8,7 @@
 
 mod common;
 
+use common::MemoryFault;
 use common::MemoryFixture;
 use qubit_fs::FileSystemCapability;
 use qubit_fs::FsError;
@@ -128,14 +129,14 @@ fn test_sync_suite_skips_unadvertised_optional_capabilities() {
 #[test]
 fn test_single_faults_are_rejected_by_sync_suite() {
     for fault in [
-        common::MemoryFault::WrongStatKind,
-        common::MemoryFault::KeepTempOnCleanup,
-        common::MemoryFault::WrongPersistTarget,
-        common::MemoryFault::EmptyList,
-        common::MemoryFault::ReadWrongBytes,
-        common::MemoryFault::WriteDropsBytes,
-        common::MemoryFault::DeleteNoOp,
-        common::MemoryFault::RenameNoOp,
+        MemoryFault::WrongStatKind,
+        MemoryFault::KeepTempOnCleanup,
+        MemoryFault::WrongPersistTarget,
+        MemoryFault::EmptyList,
+        MemoryFault::ReadWrongBytes,
+        MemoryFault::WriteDropsBytes,
+        MemoryFault::DeleteNoOp,
+        MemoryFault::RenameNoOp,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
         let result =
@@ -182,8 +183,7 @@ fn test_sync_recursive_delete_does_not_require_create_directory() {
 /// A failed assertion still cleans paths that may have been published.
 #[test]
 fn test_sync_suite_cleans_resources_before_resuming_panic() {
-    let fixture =
-        MemoryFixture::with_fault(common::MemoryFault::WriteDropsBytes);
+    let fixture = MemoryFixture::with_fault(MemoryFault::WriteDropsBytes);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         FileSystemContractSuite::new(&fixture).assert_all();
     }));
@@ -233,17 +233,17 @@ fn test_stronger_capability_negative_branches_are_exercised() {
 #[test]
 fn test_sync_suite_rejects_advertised_option_and_guarantee_faults() {
     for fault in [
-        common::MemoryFault::ListDropsMetadata,
-        common::MemoryFault::DirectoryCopyDropsChildren,
-        common::MemoryFault::TempIgnoresOptions,
-        common::MemoryFault::AppendOverwrites,
-        common::MemoryFault::RecursiveDeleteLeavesChildren,
-        common::MemoryFault::AtomicRenameNonAtomic,
-        common::MemoryFault::AtomicReplaceNonAtomic,
-        common::MemoryFault::DurableFileCopyNonDurable,
-        common::MemoryFault::DurableRenameNonDurable,
-        common::MemoryFault::AtomicTempPersistNonAtomic,
-        common::MemoryFault::ServerSideCopyFallsBack,
+        MemoryFault::ListDropsMetadata,
+        MemoryFault::DirectoryCopyDropsChildren,
+        MemoryFault::TempIgnoresOptions,
+        MemoryFault::AppendOverwrites,
+        MemoryFault::RecursiveDeleteLeavesChildren,
+        MemoryFault::AtomicRenameNonAtomic,
+        MemoryFault::AtomicReplaceNonAtomic,
+        MemoryFault::DurableFileCopyNonDurable,
+        MemoryFault::DurableRenameNonDurable,
+        MemoryFault::AtomicTempPersistNonAtomic,
+        MemoryFault::ServerSideCopyFallsBack,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
         let result =
