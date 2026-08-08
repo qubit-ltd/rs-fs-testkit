@@ -7,10 +7,8 @@
 // =============================================================================
 //! Provider-prepared asynchronous copy fixture cases.
 
-use qubit_fs::{
-    CopyOptions,
-    Path,
-};
+use qubit_fs::CopyOptions;
+use qubit_fs::Path;
 
 /// Provider-prepared asynchronous copy request used for cancellation probing.
 #[must_use]

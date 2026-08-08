@@ -38,16 +38,13 @@ pub use async_copy_fixture_case::AsyncCopyFixtureCase;
 #[cfg(feature = "async")]
 pub use async_file_system_contract_suite::AsyncFileSystemContractSuite;
 #[cfg(feature = "async")]
-pub use async_file_system_fixture::{
-    AsyncFileSystemFixture,
-    FixtureFuture,
-};
+pub use async_file_system_fixture::AsyncFileSystemFixture;
+#[cfg(feature = "async")]
+pub use async_file_system_fixture::FixtureFuture;
 pub use copy_fixture_case::CopyFixtureCase;
 pub use file_system_contract::FileSystemContract;
 pub use file_system_contract_suite::FileSystemContractSuite;
 pub use file_system_fixture::FileSystemFixture;
-pub use fixture_error::{
-    FixtureError,
-    FixtureResult,
-};
+pub use fixture_error::FixtureError;
+pub use fixture_error::FixtureResult;
 pub use fixture_support::FixtureSupport;

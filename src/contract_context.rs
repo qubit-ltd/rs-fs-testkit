@@ -9,13 +9,11 @@
 
 #[cfg(feature = "async")]
 use qubit_fs::AsyncFileSystem;
-use qubit_fs::{
-    FileSystem,
-    FileSystemCapability,
-    FileSystemProperties,
-    FsErrorKind,
-    Path,
-};
+use qubit_fs::FileSystem;
+use qubit_fs::FileSystemCapability;
+use qubit_fs::FileSystemProperties;
+use qubit_fs::FsErrorKind;
+use qubit_fs::Path;
 
 /// Holds the immutable snapshot and mutable namespace bookkeeping for a suite.
 pub(crate) struct ContractContext {
@@ -167,10 +165,7 @@ impl ContractContext {
     /// Panics when metadata inspection or deletion fails for a recorded path,
     /// except when inspection reports that the path is already absent.
     #[cfg(feature = "async")]
-    pub(crate) async fn cleanup_async(
-        &mut self,
-        file_system: &AsyncFileSystem,
-    ) {
+    pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) {
         if !self
             .properties
             .capabilities()
