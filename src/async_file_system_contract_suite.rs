@@ -15,22 +15,28 @@ use std::task::Waker;
 
 use qubit_fs::AchievedAtomicity;
 use qubit_fs::AsyncCopyOperationState;
+use qubit_fs::AsyncTempDirectory;
+use qubit_fs::AsyncTempFile;
 use qubit_fs::AtomicityRequirement;
 use qubit_fs::ChecksumPolicy;
 use qubit_fs::CopyConflictPolicy;
 use qubit_fs::CopyFailureState;
 use qubit_fs::CopyMethod;
+use qubit_fs::CopyMode;
 use qubit_fs::CopyOptions;
 use qubit_fs::CreateDirectoryOptions;
 use qubit_fs::DeleteOptions;
 use qubit_fs::DurabilityRequirement;
 use qubit_fs::FileKind;
 use qubit_fs::FileSystemCapability;
+use qubit_fs::FsError;
 use qubit_fs::FsErrorKind;
 use qubit_fs::FsOperation;
 use qubit_fs::ListOptions;
+use qubit_fs::Path;
 use qubit_fs::PersistFailureState;
 use qubit_fs::PersistOptions;
+use qubit_fs::PersistOutcome;
 use qubit_fs::ReadOptions;
 use qubit_fs::RenameFailureState;
 use qubit_fs::RenameOptions;
@@ -333,7 +339,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous range, conditional, and checksum read guarantees.
-    async fn assert_read_options(&self, path: &qubit_fs::Path) {
+    async fn assert_read_options(&self, path: &Path) {
         let range = ReadOptions::default()
             .with_offset(Some(6))
             .with_length(Some(5));
@@ -505,7 +511,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous write dispositions, abort, and conditions.
-    async fn assert_write_options(&mut self, existing: &qubit_fs::Path) {
+    async fn assert_write_options(&mut self, existing: &Path) {
         let create_new = WriteOptions::default()
             .with_disposition(WriteDisposition::CreateNew);
         let error = match self
@@ -747,7 +753,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             }
             prefixed.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             let mut expected = vec![nested, nested_second];
-            let prefix_entry = qubit_fs::Path::parse(
+            let prefix_entry = Path::parse(
                 expected[0]
                     .as_str()
                     .rsplit_once('/')
@@ -1303,7 +1309,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous destination conflict policies and statistics.
-    async fn assert_copy_conflicts(&mut self, source: &qubit_fs::Path) {
+    async fn assert_copy_conflicts(&mut self, source: &Path) {
         let target = self
             .required_seed(
                 "async-copy-conflict-target",
@@ -1343,7 +1349,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 source.clone(),
                 target.clone(),
                 CopyOptions::default()
-                    .with_mode(qubit_fs::CopyMode::File)
+                    .with_mode(CopyMode::File)
                     .with_conflict(CopyConflictPolicy::Skip),
             )
             .expect("copy contract: skip preflight failed");
@@ -1366,7 +1372,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 source.clone(),
                 target.clone(),
                 CopyOptions::default()
-                    .with_mode(qubit_fs::CopyMode::File)
+                    .with_mode(CopyMode::File)
                     .with_conflict(CopyConflictPolicy::Overwrite),
             )
             .expect("copy contract: overwrite preflight failed");
@@ -1897,7 +1903,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 &error,
                 FsErrorKind::UnsupportedCapability,
                 FsOperation::CreateTemp,
-                &qubit_fs::Path::root(),
+                &Path::root(),
             );
         }
         if self.capable(FileSystemCapability::TempDirectory) {
@@ -1952,7 +1958,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 &error,
                 FsErrorKind::UnsupportedCapability,
                 FsOperation::CreateTemp,
-                &qubit_fs::Path::root(),
+                &Path::root(),
             );
         }
     }
@@ -1960,8 +1966,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Verifies asynchronous temporary-file persistence publication.
     async fn assert_temp_file_persist(
         &self,
-        temporary: &mut qubit_fs::AsyncTempFile,
-        target: &qubit_fs::Path,
+        temporary: &mut AsyncTempFile,
+        target: &Path,
     ) {
         let outcome = temporary
             .persist(target, self.temp_persist_options())
@@ -2017,8 +2023,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Verifies asynchronous temporary-directory persistence publication.
     async fn assert_temp_directory_persist(
         &self,
-        temporary: &mut qubit_fs::AsyncTempDirectory,
-        target: &qubit_fs::Path,
+        temporary: &mut AsyncTempDirectory,
+        target: &Path,
     ) {
         let outcome = temporary
             .persist(target, self.temp_persist_options())
@@ -2184,7 +2190,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     async fn prepare_temp_options_parent(
         &mut self,
         relative: &str,
-    ) -> Option<qubit_fs::Path> {
+    ) -> Option<Path> {
         if !self.capable(FileSystemCapability::CreateDirectory) {
             return None;
         }
@@ -2216,8 +2222,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// requested `parent`, or does not honor the requested affixes.
     fn assert_temp_path(
         &self,
-        path: &qubit_fs::Path,
-        parent: Option<&qubit_fs::Path>,
+        path: &Path,
+        parent: Option<&Path>,
         prefix: &str,
         suffix: &str,
         contract: &str,
@@ -2262,8 +2268,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Checks persistence reporting and destination publication.
     async fn assert_temp_persist_outcome(
         &self,
-        outcome: &qubit_fs::PersistOutcome,
-        target: &qubit_fs::Path,
+        outcome: &PersistOutcome,
+        target: &Path,
         label: &str,
     ) {
         assert_eq!(
@@ -2326,7 +2332,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when the fixture cannot map the generated relative name.
     #[inline]
-    fn path(&self, relative: &str) -> qubit_fs::Path {
+    fn path(&self, relative: &str) -> Path {
         let relative = self.context.relative_name(relative);
         self.fixture
             .path(&relative)
@@ -2371,7 +2377,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         relative: &str,
         bytes: &[u8],
         contract: &str,
-    ) -> qubit_fs::Path {
+    ) -> Path {
         let relative = self.context.relative_name(relative);
         match self
             .fixture
@@ -2403,12 +2409,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when observation fails, is unsupported, or returns different
     /// content.
-    async fn assert_bytes(
-        &self,
-        path: &qubit_fs::Path,
-        expected: &[u8],
-        message: &str,
-    ) {
+    async fn assert_bytes(&self, path: &Path, expected: &[u8], message: &str) {
         match self
             .fixture
             .read_file(path)
@@ -2440,10 +2441,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Panics when any expected structured field differs.
     fn assert_error(
         &self,
-        error: &qubit_fs::FsError,
+        error: &FsError,
         kind: FsErrorKind,
         operation: FsOperation,
-        path: &qubit_fs::Path,
+        path: &Path,
     ) {
         let provider = Some(self.context.properties().info().provider_id());
         if kind == FsErrorKind::UnsupportedCapability {
@@ -2482,7 +2483,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Panics when the error kind, operation, or required capability differs.
     fn assert_requirement_error(
         &self,
-        error: &qubit_fs::FsError,
+        error: &FsError,
         operation: FsOperation,
         capability: FileSystemCapability,
         contract: &str,
