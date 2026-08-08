@@ -16,15 +16,18 @@ use qubit_fs::AtomicityRequirement;
 use qubit_fs::ChecksumPolicy;
 use qubit_fs::CopyConflictPolicy;
 use qubit_fs::CopyMethod;
+use qubit_fs::CopyMode;
 use qubit_fs::CopyOptions;
 use qubit_fs::CreateDirectoryOptions;
 use qubit_fs::DeleteOptions;
 use qubit_fs::DurabilityRequirement;
 use qubit_fs::FileKind;
 use qubit_fs::FileSystemCapability;
+use qubit_fs::FsError;
 use qubit_fs::FsErrorKind;
 use qubit_fs::FsOperation;
 use qubit_fs::ListOptions;
+use qubit_fs::Path;
 use qubit_fs::PersistFailureState;
 use qubit_fs::PersistOptions;
 use qubit_fs::ReadOptions;
@@ -289,7 +292,7 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Checks range, conditional, and checksum read guarantees.
-    fn assert_read_options(&self, path: &qubit_fs::Path) {
+    fn assert_read_options(&self, path: &Path) {
         let range = ReadOptions::default()
             .with_offset(Some(5))
             .with_length(Some(8));
@@ -444,7 +447,7 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Checks write dispositions, abort behavior, and conditional writes.
-    fn assert_write_options(&mut self, existing: &qubit_fs::Path) {
+    fn assert_write_options(&mut self, existing: &Path) {
         let create_new = WriteOptions::default()
             .with_disposition(WriteDisposition::CreateNew);
         let failure = self
@@ -643,7 +646,7 @@ impl<'a> FileSystemContractSuite<'a> {
         }
         prefixed.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         let mut expected = vec![nested, nested_second];
-        let prefix_entry = qubit_fs::Path::parse(
+        let prefix_entry = Path::parse(
             expected[0]
                 .as_str()
                 .rsplit_once('/')
@@ -1071,7 +1074,7 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Checks destination conflict policies and copy statistics.
-    fn assert_copy_conflicts(&mut self, source: &qubit_fs::Path) {
+    fn assert_copy_conflicts(&mut self, source: &Path) {
         let target = self.required_seed(
             "copy-conflict-target",
             b"existing",
@@ -1103,7 +1106,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 source,
                 &target,
                 CopyOptions::default()
-                    .with_mode(qubit_fs::CopyMode::File)
+                    .with_mode(CopyMode::File)
                     .with_conflict(CopyConflictPolicy::Skip),
             )
             .expect("copy contract: skip conflict failed");
@@ -1125,7 +1128,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 source,
                 &target,
                 CopyOptions::default()
-                    .with_mode(qubit_fs::CopyMode::File)
+                    .with_mode(CopyMode::File)
                     .with_conflict(CopyConflictPolicy::Overwrite),
             )
             .expect("copy contract: overwrite conflict failed");
@@ -1618,7 +1621,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 &error,
                 FsErrorKind::UnsupportedCapability,
                 FsOperation::CreateTemp,
-                &qubit_fs::Path::root(),
+                &Path::root(),
                 None,
             );
         }
@@ -1680,7 +1683,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 &error,
                 FsErrorKind::UnsupportedCapability,
                 FsOperation::CreateTemp,
-                &qubit_fs::Path::root(),
+                &Path::root(),
                 None,
             );
         }
@@ -1724,7 +1727,7 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when the fixture cannot map the generated relative name.
     #[inline]
-    fn path(&self, relative: &str) -> qubit_fs::Path {
+    fn path(&self, relative: &str) -> Path {
         let relative = self.context.relative_name(relative);
         self.fixture
             .path(&relative)
@@ -1771,7 +1774,7 @@ impl<'a> FileSystemContractSuite<'a> {
         relative: &str,
         bytes: &[u8],
         contract: &str,
-    ) -> qubit_fs::Path {
+    ) -> Path {
         match self.seed(relative, bytes) {
             FixtureSupport::Supported(path) => path,
             FixtureSupport::Unsupported => panic!(
@@ -1795,11 +1798,7 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when provider-specific fixture setup returns an error.
     #[inline]
-    fn seed(
-        &self,
-        relative: &str,
-        bytes: &[u8],
-    ) -> FixtureSupport<qubit_fs::Path> {
+    fn seed(&self, relative: &str, bytes: &[u8]) -> FixtureSupport<Path> {
         let relative = self.context.relative_name(relative);
         self.fixture
             .seed_file(&relative, bytes)
@@ -1818,12 +1817,7 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when observation fails, is unsupported, or returns different
     /// content.
-    fn assert_bytes(
-        &self,
-        path: &qubit_fs::Path,
-        expected: &[u8],
-        message: &str,
-    ) {
+    fn assert_bytes(&self, path: &Path, expected: &[u8], message: &str) {
         match self
             .fixture
             .read_file(path)
@@ -1855,7 +1849,7 @@ impl<'a> FileSystemContractSuite<'a> {
     fn assert_temp_persist(
         &self,
         temporary: &mut TempFile,
-        target: &qubit_fs::Path,
+        target: &Path,
         label: &str,
     ) {
         self.assert_temp_file_persist_result(temporary, target, label);
@@ -1910,7 +1904,7 @@ impl<'a> FileSystemContractSuite<'a> {
     fn assert_temp_directory_persist(
         &self,
         temporary: &mut TempDirectory,
-        target: &qubit_fs::Path,
+        target: &Path,
     ) {
         let outcome = temporary
             .persist(
@@ -2047,7 +2041,7 @@ impl<'a> FileSystemContractSuite<'a> {
     fn assert_temp_file_persist_result(
         &self,
         temporary: &mut TempFile,
-        target: &qubit_fs::Path,
+        target: &Path,
         label: &str,
     ) {
         let outcome = temporary
@@ -2099,11 +2093,11 @@ impl<'a> FileSystemContractSuite<'a> {
     /// Panics when any expected structured field differs.
     fn assert_error(
         &self,
-        error: &qubit_fs::FsError,
+        error: &FsError,
         kind: FsErrorKind,
         operation: FsOperation,
-        path: &qubit_fs::Path,
-        target: Option<&qubit_fs::Path>,
+        path: &Path,
+        target: Option<&Path>,
     ) {
         let provider = Some(self.context.properties().info().provider_id());
         if kind == FsErrorKind::UnsupportedCapability && target.is_none() {
@@ -2154,7 +2148,7 @@ impl<'a> FileSystemContractSuite<'a> {
     /// Panics when the error kind, operation, or required capability differs.
     fn assert_requirement_error(
         &self,
-        error: &qubit_fs::FsError,
+        error: &FsError,
         operation: FsOperation,
         capability: FileSystemCapability,
         contract: &str,
