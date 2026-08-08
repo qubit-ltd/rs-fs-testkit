@@ -96,7 +96,7 @@ fn test_conforming_memory_provider_satisfies_sync_suite() {
                 .file_system()
                 .properties()
                 .capabilities()
-                .contains(capability)
+                .supports(capability)
         );
     }
     FileSystemContractSuite::new(&fixture).assert_all();

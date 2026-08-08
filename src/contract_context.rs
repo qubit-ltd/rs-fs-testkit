@@ -129,7 +129,7 @@ impl ContractContext {
         if !self
             .properties
             .capabilities()
-            .contains(FileSystemCapability::Delete)
+            .supports(FileSystemCapability::Delete)
         {
             self.created_paths.clear();
             return;
@@ -174,7 +174,7 @@ impl ContractContext {
         if !self
             .properties
             .capabilities()
-            .contains(FileSystemCapability::Delete)
+            .supports(FileSystemCapability::Delete)
         {
             self.created_paths.clear();
             return;
