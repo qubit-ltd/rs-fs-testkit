@@ -8,9 +8,8 @@
 
 mod common;
 
-use qubit_fs_testkit::FileSystemContractSuite;
-
 use common::MemoryFixture;
+use qubit_fs_testkit::FileSystemContractSuite;
 
 /// Repeated phases use distinct context names and cleanup all recorded paths.
 #[test]
