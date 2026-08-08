@@ -9,26 +9,19 @@
 mod common;
 
 use std::future::Future;
-use std::task::{
-    Context,
-    Poll,
-    Waker,
-};
-
-use qubit_fs::{
-    AsyncFileSystem,
-    CopyMethod,
-    Path,
-};
-use qubit_fs_testkit::{
-    AsyncCopyCancellationStage,
-    AsyncFileSystemFixture,
-    FixtureError,
-    FixtureResult,
-    FixtureSupport,
-};
+use std::task::Context;
+use std::task::Poll;
+use std::task::Waker;
 
 use common::AsyncMemoryFixture;
+use qubit_fs::AsyncFileSystem;
+use qubit_fs::CopyMethod;
+use qubit_fs::Path;
+use qubit_fs_testkit::AsyncCopyCancellationStage;
+use qubit_fs_testkit::AsyncFileSystemFixture;
+use qubit_fs_testkit::FixtureError;
+use qubit_fs_testkit::FixtureResult;
+use qubit_fs_testkit::FixtureSupport;
 
 /// Fixture that uses every asynchronous optional-hook default.
 struct DefaultAsyncFixture<'a> {
@@ -47,9 +40,7 @@ impl AsyncFileSystemFixture for DefaultAsyncFixture<'_> {
 }
 
 /// Polls a fixture future that completes without suspension.
-fn poll_fixture_future<T>(
-    future: impl Future<Output = FixtureResult<T>>,
-) -> FixtureResult<T> {
+fn poll_fixture_future<T>(future: impl Future<Output = FixtureResult<T>>) -> FixtureResult<T> {
     let mut future = Box::pin(future);
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);

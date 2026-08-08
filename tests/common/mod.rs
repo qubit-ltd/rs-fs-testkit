@@ -9,9 +9,10 @@
 mod memory_file_system;
 
 #[allow(unused_imports)]
-pub use memory_file_system::{
-    AsyncMemoryFault,
-    AsyncMemoryFixture,
-    MemoryFault,
-    MemoryFixture,
-};
+pub use memory_file_system::AsyncMemoryFault;
+#[allow(unused_imports)]
+pub use memory_file_system::AsyncMemoryFixture;
+#[allow(unused_imports)]
+pub use memory_file_system::MemoryFault;
+#[allow(unused_imports)]
+pub use memory_file_system::MemoryFixture;
