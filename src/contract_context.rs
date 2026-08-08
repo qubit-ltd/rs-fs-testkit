@@ -165,7 +165,10 @@ impl ContractContext {
     /// Panics when metadata inspection or deletion fails for a recorded path,
     /// except when inspection reports that the path is already absent.
     #[cfg(feature = "async")]
-    pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) {
+    pub(crate) async fn cleanup_async(
+        &mut self,
+        file_system: &AsyncFileSystem,
+    ) {
         if !self
             .properties
             .capabilities()

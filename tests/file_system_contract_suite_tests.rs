@@ -138,9 +138,10 @@ fn test_single_faults_are_rejected_by_sync_suite() {
         common::MemoryFault::RenameNoOp,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).assert_all();
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_all();
+            }));
         assert!(result.is_err(), "suite accepted injected fault: {fault:?}");
     }
 }
@@ -181,7 +182,8 @@ fn test_sync_recursive_delete_does_not_require_create_directory() {
 /// A failed assertion still cleans paths that may have been published.
 #[test]
 fn test_sync_suite_cleans_resources_before_resuming_panic() {
-    let fixture = MemoryFixture::with_fault(common::MemoryFault::WriteDropsBytes);
+    let fixture =
+        MemoryFixture::with_fault(common::MemoryFault::WriteDropsBytes);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         FileSystemContractSuite::new(&fixture).assert_all();
     }));
@@ -244,9 +246,10 @@ fn test_sync_suite_rejects_advertised_option_and_guarantee_faults() {
         common::MemoryFault::ServerSideCopyFallsBack,
     ] {
         let fixture = MemoryFixture::with_fault(fault);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).assert_all();
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_all();
+            }));
         assert!(
             result.is_err(),
             "suite accepted advertised option or guarantee fault: {fault:?}"
