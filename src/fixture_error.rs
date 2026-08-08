@@ -7,15 +7,11 @@
 // =============================================================================
 //! Errors raised while a fixture prepares or observes a contract resource.
 
-use std::{
-    error::Error,
-    fmt::{
-        Debug,
-        Display,
-        Formatter,
-        Result as FmtResult,
-    },
-};
+use std::error::Error;
+use std::fmt::Debug;
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::fmt::Result as FmtResult;
 
 /// Failure raised by fixture setup or out-of-band observation.
 #[must_use]

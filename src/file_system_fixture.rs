@@ -7,18 +7,14 @@
 // =============================================================================
 //! Typed synchronous fixtures for filesystem contract suites.
 
-use qubit_fs::{
-    CopyMethod,
-    FileSystem,
-    Path,
-    ResourceVersion,
-};
+use qubit_fs::CopyMethod;
+use qubit_fs::FileSystem;
+use qubit_fs::Path;
+use qubit_fs::ResourceVersion;
 
-use crate::{
-    CopyFixtureCase,
-    FixtureResult,
-    FixtureSupport,
-};
+use crate::CopyFixtureCase;
+use crate::FixtureResult;
+use crate::FixtureSupport;
 
 /// Supplies an isolated facade and provider-specific contract observations.
 pub trait FileSystemFixture {
@@ -61,11 +57,7 @@ pub trait FileSystemFixture {
     /// Returns [`FixtureError`](crate::FixtureError) when the prefix cannot be
     /// represented for the supplied root.
     #[inline]
-    fn list_prefix(
-        &self,
-        root: &Path,
-        relative: &str,
-    ) -> FixtureResult<String> {
+    fn list_prefix(&self, root: &Path, relative: &str) -> FixtureResult<String> {
         let _ = root;
         Ok(relative.to_owned())
     }
@@ -87,11 +79,7 @@ pub trait FileSystemFixture {
     /// Returns [`FixtureError`](crate::FixtureError) when provider-specific
     /// setup fails.
     #[inline]
-    fn seed_file(
-        &self,
-        relative: &str,
-        bytes: &[u8],
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
         let _ = (relative, bytes);
         Ok(FixtureSupport::Unsupported)
     }
@@ -119,30 +107,21 @@ pub trait FileSystemFixture {
 
     /// Observes the current provider version outside the operation under test.
     #[inline]
-    fn resource_version(
-        &self,
-        path: &Path,
-    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+    fn resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let _ = path;
         Ok(FixtureSupport::Unsupported)
     }
 
     /// Seeds an empty directory or prefix outside the operation under test.
     #[inline]
-    fn seed_empty_directory(
-        &self,
-        relative: &str,
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_empty_directory(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let _ = relative;
         Ok(FixtureSupport::Unsupported)
     }
 
     /// Seeds a symbolic link outside the operation under test.
     #[inline]
-    fn seed_symlink(
-        &self,
-        relative: &str,
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_symlink(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let _ = relative;
         Ok(FixtureSupport::Unsupported)
     }

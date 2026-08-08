@@ -11,10 +11,8 @@ mod assertions;
 #[cfg(feature = "async")]
 mod catch_unwind_future;
 
-pub(crate) use assertions::{
-    assert_error_with_source_or_target,
-    assert_error_with_target,
-    assert_unsupported_error,
-};
+pub(crate) use assertions::assert_error_with_source_or_target;
+pub(crate) use assertions::assert_error_with_target;
+pub(crate) use assertions::assert_unsupported_error;
 #[cfg(feature = "async")]
 pub(crate) use catch_unwind_future::catch_unwind_future;
