@@ -29,10 +29,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "qubit-budget"
+version = "0.4.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "qubit-fs"
 version = "0.2.0"
 dependencies = [
  "fluent-uri",
+ "qubit-budget",
  "qubit-io",
  "qubit-redact",
 ]
@@ -56,11 +64,10 @@ dependencies = [
 
 [[package]]
 name = "qubit-redact"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a80d4179cd319d8a85e6d6271efdbb596c59bfe6862d9adfc5373e28cac93e61"
+version = "0.5.0"
 dependencies = [
  "fluent-uri",
+ "qubit-budget",
 ]
 
 [[package]]
@@ -136,6 +143,26 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
