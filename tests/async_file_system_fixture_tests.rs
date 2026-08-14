@@ -40,9 +40,7 @@ impl AsyncFileSystemFixture for DefaultAsyncFixture<'_> {
 }
 
 /// Polls a fixture future that completes without suspension.
-fn poll_fixture_future<T>(
-    future: impl Future<Output = FixtureResult<T>>,
-) -> FixtureResult<T> {
+fn poll_fixture_future<T>(future: impl Future<Output = FixtureResult<T>>) -> FixtureResult<T> {
     let mut future = Box::pin(future);
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
