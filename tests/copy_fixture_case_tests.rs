@@ -15,7 +15,11 @@ use qubit_fs_testkit::CopyFixtureCase;
 fn test_copy_fixture_case_exposes_and_transfers_request_parts() {
     let source = Path::parse("/defaults/source").expect("valid source path");
     let target = Path::parse("/defaults/target").expect("valid target path");
-    let case = CopyFixtureCase::new(source.clone(), target.clone(), CopyOptions::default());
+    let case = CopyFixtureCase::new(
+        source.clone(),
+        target.clone(),
+        CopyOptions::default(),
+    );
 
     assert_eq!(case.source(), &source);
     assert_eq!(case.target(), &target);
