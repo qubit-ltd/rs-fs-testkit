@@ -394,11 +394,7 @@ impl FileSystemFixture for MemoryFixture {
         Self::path_for(relative)
     }
 
-    fn seed_file(
-        &self,
-        relative: &str,
-        bytes: &[u8],
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
         let path = Self::path_for(relative)?;
         self.state
             .lock()
@@ -418,16 +414,11 @@ impl FileSystemFixture for MemoryFixture {
             .cloned();
         Ok(match entry {
             Some(Entry::File(bytes)) => FixtureSupport::Supported(bytes),
-            Some(Entry::Directory | Entry::Symlink) | None => {
-                FixtureSupport::Unsupported
-            }
+            Some(Entry::Directory | Entry::Symlink) | None => FixtureSupport::Unsupported,
         })
     }
 
-    fn resource_version(
-        &self,
-        path: &Path,
-    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+    fn resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let exists = self
             .state
             .lock()
@@ -441,10 +432,7 @@ impl FileSystemFixture for MemoryFixture {
         })
     }
 
-    fn seed_empty_directory(
-        &self,
-        relative: &str,
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_empty_directory(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let path = Self::path_for(relative)?;
         self.state
             .lock()
@@ -454,10 +442,7 @@ impl FileSystemFixture for MemoryFixture {
         Ok(FixtureSupport::Supported(path))
     }
 
-    fn seed_symlink(
-        &self,
-        relative: &str,
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_symlink(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let path = Self::path_for(relative)?;
         self.state
             .lock()
@@ -487,8 +472,7 @@ impl FileSystemFixture for MemoryFixture {
         Ok(FixtureSupport::Supported(CopyFixtureCase::new(
             source,
             target,
-            CopyOptions::default()
-                .with_server_side(ServerSidePreference::Require),
+            CopyOptions::default().with_server_side(ServerSidePreference::Require),
         )))
     }
 }
@@ -511,8 +495,7 @@ impl MemorySpi {
     /// Returns the provider identity for an opened temporary resource.
     fn info(path: Path) -> OpenedFileInfo {
         OpenedFileInfo::new(
-            FileSystemId::new("memory-contract")
-                .expect("memory provider id must be valid"),
+            FileSystemId::new("memory-contract").expect("memory provider id must be valid"),
             path,
         )
     }
@@ -525,8 +508,7 @@ impl MemorySpi {
         prefix: &str,
         suffix: &str,
     ) -> Path {
-        let mut state =
-            self.state.lock().expect("memory state lock must succeed");
+        let mut state = self.state.lock().expect("memory state lock must succeed");
         let parent = if state.fault == MemoryFault::TempIgnoresOptions {
             "/contract"
         } else {
@@ -542,11 +524,8 @@ impl MemorySpi {
         } else {
             suffix
         };
-        let path = Path::parse(&format!(
-            "{parent}/{prefix}{}{suffix}",
-            state.next_temp
-        ))
-        .expect("generated temporary path must be valid");
+        let path = Path::parse(&format!("{parent}/{prefix}{}{suffix}", state.next_temp))
+            .expect("generated temporary path must be valid");
         state.next_temp += 1;
         state.entries.insert(
             path.as_str().to_owned(),
@@ -579,8 +558,7 @@ impl FileSystemSpi for MemorySpi {
                 .with_guaranteed(FileSystemCapability::ServerSideCopy);
         }
         if state.create_directory_capability {
-            capabilities = capabilities
-                .with_guaranteed(FileSystemCapability::CreateDirectory);
+            capabilities = capabilities.with_guaranteed(FileSystemCapability::CreateDirectory);
         }
         if state.extended_capabilities {
             for capability in [
@@ -605,18 +583,15 @@ impl FileSystemSpi for MemorySpi {
                 .with_guaranteed(FileSystemCapability::Copy);
         }
         if state.delete_capability {
-            capabilities =
-                capabilities.with_guaranteed(FileSystemCapability::Delete);
+            capabilities = capabilities.with_guaranteed(FileSystemCapability::Delete);
             if state.optional_capabilities {
-                capabilities = capabilities
-                    .with_guaranteed(FileSystemCapability::RecursiveDelete);
+                capabilities = capabilities.with_guaranteed(FileSystemCapability::RecursiveDelete);
             }
         }
         drop(state);
         FileSystemProperties::new(
             FileSystemInfo::new(
-                FileSystemId::new("memory-contract")
-                    .expect("memory provider id must be valid"),
+                FileSystemId::new("memory-contract").expect("memory provider id must be valid"),
                 self.provider_id,
                 PathSemantics::Hierarchical,
             ),
@@ -652,10 +627,7 @@ impl FileSystemSpi for MemorySpi {
         Ok(StatResponse::new(request.path().clone(), metadata))
     }
 
-    fn list(
-        &self,
-        request: ListRequest<'_>,
-    ) -> FsResult<OpenedDirectoryStream> {
+    fn list(&self, request: ListRequest<'_>) -> FsResult<OpenedDirectoryStream> {
         let state = self.state.lock().expect("memory state lock must succeed");
         let entries = if state.fault == MemoryFault::EmptyList {
             Vec::new()
@@ -674,14 +646,9 @@ impl FileSystemSpi for MemorySpi {
         )))
     }
 
-    fn open_reader(
-        &self,
-        request: OpenReaderRequest<'_>,
-    ) -> FsResult<OpenedReader> {
+    fn open_reader(&self, request: OpenReaderRequest<'_>) -> FsResult<OpenedReader> {
         let state = self.state.lock().expect("memory state lock must succeed");
-        let Some(Entry::File(bytes)) =
-            state.entries.get(request.path().as_str())
-        else {
+        let Some(Entry::File(bytes)) = state.entries.get(request.path().as_str()) else {
             return Err(FsError::new(
                 FsErrorKind::NotFound,
                 FsOperation::OpenReader,
@@ -713,8 +680,7 @@ impl FileSystemSpi for MemorySpi {
             bytes.clone()
         };
         let options = request.options().options();
-        let start =
-            options.offset().unwrap_or(0).min(bytes.len() as u64) as usize;
+        let start = options.offset().unwrap_or(0).min(bytes.len() as u64) as usize;
         let end = options.length().map_or(bytes.len(), |length| {
             start.saturating_add(length as usize).min(bytes.len())
         });
@@ -725,10 +691,7 @@ impl FileSystemSpi for MemorySpi {
         ))
     }
 
-    fn open_writer(
-        &self,
-        request: OpenWriterRequest<'_>,
-    ) -> FsResult<OpenedWriter> {
+    fn open_writer(&self, request: OpenWriterRequest<'_>) -> FsResult<OpenedWriter> {
         Ok(OpenedWriter::new(
             Self::info(request.path().clone()),
             Box::new(MemoryWriter {
@@ -737,11 +700,7 @@ impl FileSystemSpi for MemorySpi {
                 bytes: Vec::new(),
                 disposition: request.options().options().disposition(),
                 atomicity: request.options().options().atomicity(),
-                precondition: request
-                    .options()
-                    .options()
-                    .precondition()
-                    .clone(),
+                precondition: request.options().options().precondition().clone(),
             }),
         ))
     }
@@ -750,10 +709,8 @@ impl FileSystemSpi for MemorySpi {
         &self,
         request: CreateDirectoryRequest<'_>,
     ) -> FsResult<CreateDirectoryOutcome> {
-        let mut state =
-            self.state.lock().expect("memory state lock must succeed");
-        let already_existed =
-            state.entries.contains_key(request.path().as_str());
+        let mut state = self.state.lock().expect("memory state lock must succeed");
+        let already_existed = state.entries.contains_key(request.path().as_str());
         state
             .entries
             .entry(request.path().as_str().to_owned())
@@ -761,12 +718,8 @@ impl FileSystemSpi for MemorySpi {
         Ok(CreateDirectoryOutcome::new(already_existed))
     }
 
-    fn delete_file(
-        &self,
-        request: DeleteFileRequest<'_>,
-    ) -> FsResult<DeleteOutcome> {
-        let mut state =
-            self.state.lock().expect("memory state lock must succeed");
+    fn delete_file(&self, request: DeleteFileRequest<'_>) -> FsResult<DeleteOutcome> {
+        let mut state = self.state.lock().expect("memory state lock must succeed");
         let removed = if state.fault == MemoryFault::DeleteNoOp {
             None
         } else {
@@ -775,12 +728,8 @@ impl FileSystemSpi for MemorySpi {
         Ok(DeleteOutcome::new(removed.is_none()))
     }
 
-    fn delete_directory(
-        &self,
-        request: DeleteDirectoryRequest<'_>,
-    ) -> FsResult<DeleteOutcome> {
-        let mut state =
-            self.state.lock().expect("memory state lock must succeed");
+    fn delete_directory(&self, request: DeleteDirectoryRequest<'_>) -> FsResult<DeleteOutcome> {
+        let mut state = self.state.lock().expect("memory state lock must succeed");
         let already_missing = if state.fault == MemoryFault::DeleteNoOp {
             true
         } else {
@@ -789,10 +738,7 @@ impl FileSystemSpi for MemorySpi {
             if request.options().options().recursive()
                 && state.fault != MemoryFault::RecursiveDeleteLeavesChildren
             {
-                let prefix = format!(
-                    "{}/",
-                    request.path().as_str().trim_end_matches('/')
-                );
+                let prefix = format!("{}/", request.path().as_str().trim_end_matches('/'));
                 let before = state.entries.len();
                 state.entries.retain(|path, _| !path.starts_with(&prefix));
                 removed_descendant = state.entries.len() != before;
@@ -802,12 +748,8 @@ impl FileSystemSpi for MemorySpi {
         Ok(DeleteOutcome::new(already_missing))
     }
 
-    fn try_copy(
-        &self,
-        request: CopyRequest<'_>,
-    ) -> Result<CopyAttempt, SpiCopyFailure> {
-        let mut state =
-            self.state.lock().expect("memory state lock must succeed");
+    fn try_copy(&self, request: CopyRequest<'_>) -> Result<CopyAttempt, SpiCopyFailure> {
+        let mut state = self.state.lock().expect("memory state lock must succeed");
         let options = request.options().options();
         if state.native_copy
             || options.mode() == CopyMode::Tree
@@ -815,9 +757,7 @@ impl FileSystemSpi for MemorySpi {
             || options.durability() == DurabilityRequirement::Required
             || options.conflict() == CopyConflictPolicy::Overwrite
         {
-            let Some(entry) =
-                state.entries.get(request.source().as_str()).cloned()
-            else {
+            let Some(entry) = state.entries.get(request.source().as_str()).cloned() else {
                 return Err(SpiCopyFailure::new(
                     FsError::new(
                         FsErrorKind::NotFound,
@@ -858,9 +798,8 @@ impl FileSystemSpi for MemorySpi {
                 Entry::File(bytes) => bytes.len() as u64,
                 Entry::Directory | Entry::Symlink => 0,
             };
-            let overwritten =
-                state.entries.contains_key(request.target().as_str())
-                    && options.conflict() == CopyConflictPolicy::Overwrite;
+            let overwritten = state.entries.contains_key(request.target().as_str())
+                && options.conflict() == CopyConflictPolicy::Overwrite;
             state
                 .entries
                 .insert(request.target().as_str().to_owned(), entry);
@@ -869,32 +808,21 @@ impl FileSystemSpi for MemorySpi {
                 Some(Entry::Directory)
             ) && state.fault != MemoryFault::DirectoryCopyDropsChildren
             {
-                let source_prefix = format!(
-                    "{}/",
-                    request.source().as_str().trim_end_matches('/')
-                );
-                let target_prefix = format!(
-                    "{}/",
-                    request.target().as_str().trim_end_matches('/')
-                );
+                let source_prefix = format!("{}/", request.source().as_str().trim_end_matches('/'));
+                let target_prefix = format!("{}/", request.target().as_str().trim_end_matches('/'));
                 let descendants = state
                     .entries
                     .iter()
                     .filter_map(|(path, entry)| {
-                        path.strip_prefix(&source_prefix).map(|relative| {
-                            (
-                                format!("{target_prefix}{relative}"),
-                                entry.clone(),
-                            )
-                        })
+                        path.strip_prefix(&source_prefix)
+                            .map(|relative| (format!("{target_prefix}{relative}"), entry.clone()))
                     })
                     .collect::<Vec<_>>();
                 for (path, entry) in descendants {
                     state.entries.insert(path, entry);
                 }
             }
-            let method = if options.server_side()
-                == ServerSidePreference::Require
+            let method = if options.server_side() == ServerSidePreference::Require
                 && state.fault != MemoryFault::ServerSideCopyFallsBack
             {
                 CopyMethod::ServerSide
@@ -918,20 +846,15 @@ impl FileSystemSpi for MemorySpi {
                 )
                 .with_durable(
                     options.durability() == DurabilityRequirement::Required
-                        && state.fault
-                            != MemoryFault::DurableFileCopyNonDurable,
+                        && state.fault != MemoryFault::DurableFileCopyNonDurable,
                 ),
             ));
         }
         Ok(CopyAttempt::Declined(CopyDeclineReason::NotImplemented))
     }
 
-    fn rename(
-        &self,
-        request: RenameRequest<'_>,
-    ) -> Result<RenameOutcome, SpiRenameFailure> {
-        let mut state =
-            self.state.lock().expect("memory state lock must succeed");
+    fn rename(&self, request: RenameRequest<'_>) -> Result<RenameOutcome, SpiRenameFailure> {
+        let mut state = self.state.lock().expect("memory state lock must succeed");
         let _durability = request.options().options().durability();
         if !request.options().options().overwrite()
             && state.entries.contains_key(request.target().as_str())
@@ -945,8 +868,7 @@ impl FileSystemSpi for MemorySpi {
                 RenameFailureState::Unchanged,
             ));
         }
-        let Some(entry) = state.entries.remove(request.source().as_str())
-        else {
+        let Some(entry) = state.entries.remove(request.source().as_str()) else {
             return Err(SpiRenameFailure::new(
                 FsError::new(
                     FsErrorKind::NotFound,
@@ -968,8 +890,7 @@ impl FileSystemSpi for MemorySpi {
         Ok(RenameOutcome::new(
             request.source().clone(),
             request.target().clone(),
-            if request.options().options().atomicity()
-                == AtomicityRequirement::Required
+            if request.options().options().atomicity() == AtomicityRequirement::Required
                 && state.fault != MemoryFault::AtomicRenameNonAtomic
             {
                 AchievedAtomicity::Atomic
@@ -979,16 +900,12 @@ impl FileSystemSpi for MemorySpi {
             PublicationMethod::Direct,
         )
         .with_durable(
-            request.options().options().durability()
-                == DurabilityRequirement::Required
+            request.options().options().durability() == DurabilityRequirement::Required
                 && state.fault != MemoryFault::DurableRenameNonDurable,
         ))
     }
 
-    fn create_temp_file(
-        &self,
-        request: CreateTempFileRequest,
-    ) -> FsResult<OpenedTempFile> {
+    fn create_temp_file(&self, request: CreateTempFileRequest) -> FsResult<OpenedTempFile> {
         let path = self.create_temp(
             false,
             request.options().parent(),
@@ -996,8 +913,7 @@ impl FileSystemSpi for MemorySpi {
             request.options().suffix(),
         );
         Ok(OpenedTempFile::new(
-            Self::info(path.clone())
-                .with_metadata(FileMetadata::new(FileKind::File)),
+            Self::info(path.clone()).with_metadata(FileMetadata::new(FileKind::File)),
             Box::new(TempSession {
                 state: Arc::clone(&self.state),
                 path,
@@ -1016,8 +932,7 @@ impl FileSystemSpi for MemorySpi {
             request.options().suffix(),
         );
         Ok(OpenedTempDirectory::new(
-            Self::info(path.clone())
-                .with_metadata(FileMetadata::new(FileKind::Directory)),
+            Self::info(path.clone()).with_metadata(FileMetadata::new(FileKind::Directory)),
             Box::new(TempSession {
                 state: Arc::clone(&self.state),
                 path,
@@ -1048,9 +963,7 @@ fn listed_entries(
         .filter_map(|(text, entry)| {
             let relative = text.strip_prefix(&prefix)?;
             if relative.is_empty()
-                || (!options.recursive()
-                    && options.prefix().is_none()
-                    && relative.contains('/'))
+                || (!options.recursive() && options.prefix().is_none() && relative.contains('/'))
             {
                 return None;
             }
@@ -1068,8 +981,7 @@ fn listed_entries(
                 Entry::Symlink => FileKind::Symlink,
             };
             let mut result = DirEntry::new(
-                Path::parse(text)
-                    .expect("stored memory path must remain valid"),
+                Path::parse(text).expect("stored memory path must remain valid"),
                 kind.clone(),
             );
             if options.include_metadata() && include_metadata {
@@ -1113,8 +1025,7 @@ impl Output for MemoryWriter {
 
 impl FileWriterSpi for MemoryWriter {
     fn commit(&mut self) -> Result<WriteOutcome, SpiWriteFailure> {
-        let mut state =
-            self.state.lock().expect("memory state lock must succeed");
+        let mut state = self.state.lock().expect("memory state lock must succeed");
         if self.disposition == WriteDisposition::CreateNew
             && state.entries.contains_key(self.path.as_str())
         {
@@ -1147,9 +1058,7 @@ impl FileWriterSpi for MemoryWriter {
                     Some(Entry::File(existing)) => {
                         [existing.as_slice(), self.bytes.as_slice()].concat()
                     }
-                    Some(Entry::Directory | Entry::Symlink) | None => {
-                        self.bytes.clone()
-                    }
+                    Some(Entry::Directory | Entry::Symlink) | None => self.bytes.clone(),
                 }
             } else {
                 self.bytes.clone()
@@ -1185,8 +1094,7 @@ impl TempResourceSpi for TempSession {
         &mut self,
         request: PersistRequest<'_>,
     ) -> Result<PersistOutcome, SpiPersistFailure> {
-        let mut state =
-            self.state.lock().expect("memory state lock must succeed");
+        let mut state = self.state.lock().expect("memory state lock must succeed");
         let entry = state
             .entries
             .remove(self.path.as_str())
@@ -1195,8 +1103,7 @@ impl TempResourceSpi for TempSession {
             .entries
             .insert(request.target().as_str().to_owned(), entry);
         let target = if state.fault == MemoryFault::WrongPersistTarget {
-            Path::parse("/contract/wrong-persist-target")
-                .expect("generated path must be valid")
+            Path::parse("/contract/wrong-persist-target").expect("generated path must be valid")
         } else {
             request.target().clone()
         };
@@ -1218,8 +1125,7 @@ impl TempResourceSpi for TempSession {
     }
 
     fn cleanup(&mut self) -> FsResult<()> {
-        let mut state =
-            self.state.lock().expect("memory state lock must succeed");
+        let mut state = self.state.lock().expect("memory state lock must succeed");
         if state.fault != MemoryFault::KeepTempOnCleanup {
             state.entries.remove(self.path.as_str());
         }
@@ -1456,8 +1362,7 @@ impl AsyncMemoryFixture {
         capabilities: AsyncCapabilityProfile,
         provider_id: &'static str,
     ) -> Self {
-        let stage =
-            Arc::new(Mutex::new(AsyncCopyCancellationStage::NativeAttempt));
+        let stage = Arc::new(Mutex::new(AsyncCopyCancellationStage::NativeAttempt));
         let entries = Arc::new(Mutex::new(HashMap::new()));
         let path_calls = Arc::new(AtomicUsize::new(0));
         let file_system = AsyncFileSystem::from_spi(AsyncMemorySpi {
@@ -1520,10 +1425,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
-    fn read_file<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
+    fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
         Box::pin(async move {
             let entry = self
                 .entries
@@ -1533,9 +1435,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 .cloned();
             Ok(match entry {
                 Some(Entry::File(bytes)) => FixtureSupport::Supported(bytes),
-                Some(Entry::Directory | Entry::Symlink) | None => {
-                    FixtureSupport::Unsupported
-                }
+                Some(Entry::Directory | Entry::Symlink) | None => FixtureSupport::Unsupported,
             })
         })
     }
@@ -1572,10 +1472,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
-    fn seed_symlink<'a>(
-        &'a self,
-        relative: &'a str,
-    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_symlink<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
             let path = self.path(relative)?;
             self.entries
@@ -1606,8 +1503,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             Ok(FixtureSupport::Supported(CopyFixtureCase::new(
                 source,
                 target,
-                CopyOptions::default()
-                    .with_server_side(ServerSidePreference::Require),
+                CopyOptions::default().with_server_side(ServerSidePreference::Require),
             )))
         })
     }
@@ -1657,8 +1553,7 @@ impl AsyncMemorySpi {
     /// Returns the fixed provider identity for a opened handle.
     fn info(path: &Path) -> OpenedFileInfo {
         OpenedFileInfo::new(
-            FileSystemId::new("async-memory-contract")
-                .expect("async provider id must be valid"),
+            FileSystemId::new("async-memory-contract").expect("async provider id must be valid"),
             path.clone(),
         )
     }
@@ -1693,8 +1588,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 .with_guaranteed(FileSystemCapability::ServerSideCopy);
         }
         if self.create_directory_capability {
-            capabilities = capabilities
-                .with_guaranteed(FileSystemCapability::CreateDirectory);
+            capabilities = capabilities.with_guaranteed(FileSystemCapability::CreateDirectory);
         }
         if self.extended_capabilities {
             for capability in [
@@ -1733,10 +1627,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         .expect("async memory properties must be valid")
     }
 
-    fn stat<'a>(
-        &'a self,
-        request: StatRequest<'a>,
-    ) -> SpiFuture<'a, FsResult<StatResponse>> {
+    fn stat<'a>(&'a self, request: StatRequest<'a>) -> SpiFuture<'a, FsResult<StatResponse>> {
         let path = request.path().clone();
         let entry = self
             .entries
@@ -1748,38 +1639,33 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         Box::pin(async move {
             match entry {
                 Some(Entry::File(bytes)) => {
-                    let mut metadata = FileMetadata::new(
-                        if fault == AsyncMemoryFault::ObjectKinds {
+                    let mut metadata =
+                        FileMetadata::new(if fault == AsyncMemoryFault::ObjectKinds {
                             FileKind::Object
                         } else {
                             FileKind::File
-                        },
-                    );
+                        });
                     metadata = metadata.with_len(Some(bytes.len() as u64));
                     if fault == AsyncMemoryFault::WrongStatMetadata {
-                        metadata = metadata
-                            .with_kind(FileKind::Directory)
-                            .with_len(None);
+                        metadata = metadata.with_kind(FileKind::Directory).with_len(None);
                     }
                     Ok(StatResponse::new(path, metadata))
                 }
                 Some(Entry::Directory) => Ok(StatResponse::new(
                     path,
-                    FileMetadata::new(
-                        if fault == AsyncMemoryFault::ObjectKinds {
-                            FileKind::Prefix
-                        } else {
-                            FileKind::Directory
-                        },
-                    ),
+                    FileMetadata::new(if fault == AsyncMemoryFault::ObjectKinds {
+                        FileKind::Prefix
+                    } else {
+                        FileKind::Directory
+                    }),
                 )),
                 Some(Entry::Symlink) => Ok(StatResponse::new(
                     path,
                     FileMetadata::new(FileKind::Symlink),
                 )),
-                None if fault == AsyncMemoryFault::MissingPathExists => Ok(
-                    StatResponse::new(path, FileMetadata::new(FileKind::File)),
-                ),
+                None if fault == AsyncMemoryFault::MissingPathExists => {
+                    Ok(StatResponse::new(path, FileMetadata::new(FileKind::File)))
+                }
                 None => Err(FsError::new(
                     FsErrorKind::NotFound,
                     FsOperation::Stat,
@@ -1795,8 +1681,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
     ) -> SpiFuture<'a, FsResult<OpenedAsyncDirectoryStream>> {
         let entries = if self.fault == AsyncMemoryFault::ListEscapesNamespace {
             vec![DirEntry::new(
-                Path::parse("/outside-list-root")
-                    .expect("fixed list entry path must be valid"),
+                Path::parse("/outside-list-root").expect("fixed list entry path must be valid"),
                 FileKind::Directory,
             )]
         } else if self.fault == AsyncMemoryFault::EmptyList {
@@ -1866,8 +1751,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             if fault == AsyncMemoryFault::ReadWrongBytes {
                 bytes = b"wrong bytes".to_vec();
             }
-            let start =
-                options.offset().unwrap_or(0).min(bytes.len() as u64) as usize;
+            let start = options.offset().unwrap_or(0).min(bytes.len() as u64) as usize;
             let end = options.length().map_or(bytes.len(), |length| {
                 start.saturating_add(length as usize).min(bytes.len())
             });
@@ -1883,8 +1767,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         &'a self,
         request: OpenWriterRequest<'a>,
     ) -> SpiFuture<'a, FsResult<OpenedAsyncWriter>> {
-        let stage = if request.path().as_str() == "/contract/async-copy-target"
-        {
+        let stage = if request.path().as_str() == "/contract/async-copy-target" {
             self.stage()
         } else {
             AsyncCopyCancellationStage::NativeAttempt
@@ -1967,15 +1850,10 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     .expect("async memory state lock must succeed");
                 let removed = entries.remove(path.as_str());
                 let mut removed_descendant = false;
-                if recursive
-                    && fault != AsyncMemoryFault::RecursiveDeleteLeavesChildren
-                {
-                    let prefix =
-                        format!("{}/", path.as_str().trim_end_matches('/'));
+                if recursive && fault != AsyncMemoryFault::RecursiveDeleteLeavesChildren {
+                    let prefix = format!("{}/", path.as_str().trim_end_matches('/'));
                     let before = entries.len();
-                    entries.retain(|entry_path, _| {
-                        !entry_path.starts_with(&prefix)
-                    });
+                    entries.retain(|entry_path, _| !entry_path.starts_with(&prefix));
                     removed_descendant = entries.len() != before;
                 }
                 removed.is_none() && !removed_descendant
@@ -1995,8 +1873,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         }
         let options = request.options().options();
         let durable = options.durability() == DurabilityRequirement::Required;
-        let server_side =
-            options.server_side() == ServerSidePreference::Require;
+        let server_side = options.server_side() == ServerSidePreference::Require;
         let conflict = options.conflict();
         if self.native_copy
             || durable
@@ -2037,16 +1914,14 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                             ));
                         }
                         CopyConflictPolicy::Skip => {
-                            return Ok(CopyAttempt::Completed(
-                                CopyOutcome::new(
-                                    CopyStats {
-                                        skipped: 1,
-                                        ..CopyStats::default()
-                                    },
-                                    CopyMethod::Native,
-                                    AchievedAtomicity::NonAtomic,
-                                ),
-                            ));
+                            return Ok(CopyAttempt::Completed(CopyOutcome::new(
+                                CopyStats {
+                                    skipped: 1,
+                                    ..CopyStats::default()
+                                },
+                                CopyMethod::Native,
+                                AchievedAtomicity::NonAtomic,
+                            )));
                         }
                         CopyConflictPolicy::Overwrite => {}
                     }
@@ -2059,21 +1934,14 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 let overwritten = entries.contains_key(target.as_str())
                     && conflict == CopyConflictPolicy::Overwrite;
                 entries.insert(target.as_str().to_owned(), entry);
-                if directory
-                    && fault != AsyncMemoryFault::DirectoryCopyDropsChildren
-                {
-                    let source_prefix =
-                        format!("{}/", source.as_str().trim_end_matches('/'));
-                    let target_prefix =
-                        format!("{}/", target.as_str().trim_end_matches('/'));
+                if directory && fault != AsyncMemoryFault::DirectoryCopyDropsChildren {
+                    let source_prefix = format!("{}/", source.as_str().trim_end_matches('/'));
+                    let target_prefix = format!("{}/", target.as_str().trim_end_matches('/'));
                     let descendants = entries
                         .iter()
                         .filter_map(|(path, entry)| {
                             path.strip_prefix(&source_prefix).map(|relative| {
-                                (
-                                    format!("{target_prefix}{relative}"),
-                                    entry.clone(),
-                                )
+                                (format!("{target_prefix}{relative}"), entry.clone())
                             })
                         })
                         .collect::<Vec<_>>();
@@ -2096,17 +1964,11 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                         },
                         AchievedAtomicity::NonAtomic,
                     )
-                    .with_durable(
-                        durable
-                            && fault
-                                != AsyncMemoryFault::DurableFileCopyNonDurable,
-                    ),
+                    .with_durable(durable && fault != AsyncMemoryFault::DurableFileCopyNonDurable),
                 ))
             });
         }
-        Box::pin(async {
-            Ok(CopyAttempt::Declined(CopyDeclineReason::NotApplicable))
-        })
+        Box::pin(async { Ok(CopyAttempt::Declined(CopyDeclineReason::NotApplicable)) })
     }
 
     fn rename<'a>(
@@ -2195,8 +2057,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 fault,
             );
             Ok(OpenedAsyncTempFile::new(
-                Self::info(&path)
-                    .with_metadata(FileMetadata::new(FileKind::File)),
+                Self::info(&path).with_metadata(FileMetadata::new(FileKind::File)),
                 Box::new(AsyncTempSession {
                     entries,
                     path,
@@ -2223,8 +2084,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 fault,
             );
             Ok(OpenedAsyncTempDirectory::new(
-                Self::info(&path)
-                    .with_metadata(FileMetadata::new(FileKind::Directory)),
+                Self::info(&path).with_metadata(FileMetadata::new(FileKind::Directory)),
                 Box::new(AsyncTempSession {
                     entries,
                     path,
@@ -2240,9 +2100,7 @@ struct AsyncMemoryDirectoryStream {
 }
 
 impl AsyncDirectoryStreamSession for AsyncMemoryDirectoryStream {
-    fn next_entry_async<'a>(
-        &'a mut self,
-    ) -> SpiFuture<'a, FsResult<Option<DirEntry>>> {
+    fn next_entry_async<'a>(&'a mut self) -> SpiFuture<'a, FsResult<Option<DirEntry>>> {
         Box::pin(async move { Ok(self.entries.next()) })
     }
 }
@@ -2267,9 +2125,8 @@ impl AsyncInput for AsyncMemoryReader {
             Poll::Ready(Ok(0))
         } else {
             let length = count.min(this.bytes.len() - this.offset);
-            output[index..index + length].copy_from_slice(
-                &this.bytes[this.offset..this.offset + length],
-            );
+            output[index..index + length]
+                .copy_from_slice(&this.bytes[this.offset..this.offset + length]);
             this.offset += length;
             Poll::Ready(Ok(length))
         }
@@ -2306,10 +2163,7 @@ impl AsyncOutput for AsyncMemoryWriter {
         }
     }
 
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        _: &mut Context<'_>,
-    ) -> Poll<IoResult<()>> {
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<IoResult<()>> {
         let _ = self;
         Poll::Ready(Ok(()))
     }
@@ -2335,8 +2189,7 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                 .lock()
                 .expect("async memory state lock must succeed")
                 .contains_key(path.as_str());
-            if disposition == WriteDisposition::CreateNew && destination_exists
-            {
+            if disposition == WriteDisposition::CreateNew && destination_exists {
                 return Err(WriteFailure::new(
                     FsError::new(
                         FsErrorKind::AlreadyExists,
@@ -2346,8 +2199,7 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                     WriteFailureState::NotPublished,
                 ));
             }
-            if precondition == WritePrecondition::IfAbsent && destination_exists
-            {
+            if precondition == WritePrecondition::IfAbsent && destination_exists {
                 return Err(WriteFailure::new(
                     FsError::new(
                         FsErrorKind::PreconditionFailed,
@@ -2361,16 +2213,13 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                 && !(fault == AsyncMemoryFault::CopyDropsTarget
                     && path.as_str().contains("async-copy-positive-target"))
             {
-                let mut state =
-                    state.lock().expect("async memory state lock must succeed");
+                let mut state = state.lock().expect("async memory state lock must succeed");
                 let bytes = if disposition == WriteDisposition::Append
                     && fault != AsyncMemoryFault::AppendOverwrites
                 {
                     let mut combined = match state.get(path.as_str()) {
                         Some(Entry::File(existing)) => existing.clone(),
-                        Some(Entry::Directory | Entry::Symlink) | None => {
-                            Vec::new()
-                        }
+                        Some(Entry::Directory | Entry::Symlink) | None => Vec::new(),
                     };
                     combined.extend_from_slice(&bytes);
                     combined
@@ -2392,9 +2241,7 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
         })
     }
 
-    fn abort_async<'a>(
-        self: Pin<&'a mut Self>,
-    ) -> SpiFuture<'a, FsResult<WriteAbortOutcome>> {
+    fn abort_async<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, FsResult<WriteAbortOutcome>> {
         let _ = self;
         Box::pin(async { Ok(WriteAbortOutcome::NotPublished) })
     }
@@ -2496,13 +2343,12 @@ impl AsyncTempResourceSpi for AsyncTempSession {
                 .remove(source.as_str())
                 .expect("temporary entry must exist");
             entries.insert(target.as_str().to_owned(), entry);
-            let reported_target =
-                if fault == AsyncMemoryFault::TempPersistWrongTarget {
-                    Path::parse("/contract/async-wrong-persist-target")
-                        .expect("generated path must be valid")
-                } else {
-                    target
-                };
+            let reported_target = if fault == AsyncMemoryFault::TempPersistWrongTarget {
+                Path::parse("/contract/async-wrong-persist-target")
+                    .expect("generated path must be valid")
+            } else {
+                target
+            };
             Ok(PersistOutcome::new(
                 reported_target,
                 if atomicity == AtomicityRequirement::Required
