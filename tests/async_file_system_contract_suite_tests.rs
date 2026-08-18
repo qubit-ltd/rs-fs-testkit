@@ -1,4 +1,6 @@
 // =============================================================================
+
+#![cfg(feature = "async")]
 //    Copyright (c) 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
@@ -15,7 +17,7 @@ use std::task::Waker;
 
 use common::AsyncMemoryFault;
 use common::AsyncMemoryFixture;
-use qubit_fs::FileSystemCapability;
+use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
 

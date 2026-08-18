@@ -6,17 +6,24 @@
 
 mod common;
 
+#[cfg(feature = "async")]
 use std::future::Future;
+#[cfg(feature = "async")]
 use std::task::Context;
+#[cfg(feature = "async")]
 use std::task::Poll;
+#[cfg(feature = "async")]
 use std::task::Waker;
 
+#[cfg(feature = "async")]
 use common::AsyncMemoryFixture;
 use common::MemoryFixture;
+#[cfg(feature = "async")]
 use qubit_fs_testkit::register_async_file_system_contract_tests;
 use qubit_fs_testkit::register_file_system_contract_tests;
 
 /// Drives a ready-only memory fixture future used by macro registration tests.
+#[cfg(feature = "async")]
 fn run_ready(future: impl Future<Output = ()>) {
     let mut future = Box::pin(future);
     let waker = Waker::noop();
@@ -32,6 +39,7 @@ register_file_system_contract_tests! {
     fixture: super::MemoryFixture::new,
 }
 
+#[cfg(feature = "async")]
 register_async_file_system_contract_tests! {
     module: registered_async_contracts,
     fixture: super::AsyncMemoryFixture::new,

@@ -11,9 +11,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use qubit_fs::AsyncFileSystem;
-use qubit_fs::CopyMethod;
-use qubit_fs::Path;
-use qubit_fs::ResourceVersion;
+use qubit_fs::copy::CopyMethod;
+use qubit_fs::metadata::ResourceVersion;
+use qubit_fs::path::Path;
 
 use crate::AsyncCopyCancellationStage;
 use crate::AsyncCopyFixtureCase;

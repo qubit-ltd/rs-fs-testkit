@@ -6,8 +6,8 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_fs::CopyOptions;
-use qubit_fs::Path;
+use qubit_fs::copy::CopyOptions;
+use qubit_fs::path::Path;
 use qubit_fs_testkit::CopyFixtureCase;
 
 /// Prepared synchronous copy cases preserve and transfer their request parts.

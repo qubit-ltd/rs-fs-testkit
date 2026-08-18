@@ -10,10 +10,10 @@
 #[cfg(feature = "async")]
 use qubit_fs::AsyncFileSystem;
 use qubit_fs::FileSystem;
-use qubit_fs::FileSystemCapability;
-use qubit_fs::FileSystemProperties;
-use qubit_fs::FsErrorKind;
-use qubit_fs::Path;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::FileSystemProperties;
+use qubit_fs::path::Path;
 
 /// Holds the immutable snapshot and mutable namespace bookkeeping for a suite.
 pub(crate) struct ContractContext {

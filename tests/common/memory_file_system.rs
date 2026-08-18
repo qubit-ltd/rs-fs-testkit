@@ -10,65 +10,68 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+#[cfg(feature = "async")]
 use std::future;
 use std::io::Cursor;
 use std::io::Result as IoResult;
+#[cfg(feature = "async")]
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+#[cfg(feature = "async")]
 use std::task::Context;
+#[cfg(feature = "async")]
 use std::task::Poll;
 
-use qubit_fs::AchievedAtomicity;
+#[cfg(feature = "async")]
 use qubit_fs::AsyncFileSystem;
-use qubit_fs::AtomicityRequirement;
-use qubit_fs::CopyConflictPolicy;
-use qubit_fs::CopyFailureState;
-use qubit_fs::CopyMethod;
-use qubit_fs::CopyMode;
-use qubit_fs::CopyOptions;
-use qubit_fs::CopyOutcome;
-use qubit_fs::CopyStats;
-use qubit_fs::CreateDirectoryOutcome;
-use qubit_fs::DeleteOutcome;
-use qubit_fs::DirEntry;
-use qubit_fs::DurabilityRequirement;
-use qubit_fs::FileKind;
-use qubit_fs::FileMetadata;
 use qubit_fs::FileSystem;
-use qubit_fs::FileSystemCapabilities;
-use qubit_fs::FileSystemCapability;
-use qubit_fs::FileSystemId;
-use qubit_fs::FileSystemInfo;
-use qubit_fs::FileSystemLimits;
-use qubit_fs::FileSystemProperties;
-use qubit_fs::FsError;
-use qubit_fs::FsErrorKind;
-use qubit_fs::FsOperation;
-use qubit_fs::FsResult;
-use qubit_fs::ListOptions;
-use qubit_fs::OpenedFileInfo;
-use qubit_fs::Path;
-use qubit_fs::PathConstraints;
-use qubit_fs::PathSemantics;
-use qubit_fs::PersistOutcome;
-use qubit_fs::PublicationMethod;
-use qubit_fs::RenameFailureState;
-use qubit_fs::RenameOutcome;
-use qubit_fs::ResourceVersion;
-use qubit_fs::ServerSidePreference;
-use qubit_fs::SymlinkPolicy;
-use qubit_fs::WriteAbortOutcome;
-use qubit_fs::WriteDisposition;
-use qubit_fs::WriteFailure;
-use qubit_fs::WriteFailureState;
-use qubit_fs::WriteOutcome;
-use qubit_fs::WritePrecondition;
+use qubit_fs::copy::CopyConflictPolicy;
+use qubit_fs::copy::CopyFailureState;
+use qubit_fs::copy::CopyMethod;
+use qubit_fs::copy::CopyMode;
+use qubit_fs::copy::CopyOptions;
+use qubit_fs::copy::CopyOutcome;
+use qubit_fs::copy::CopyStats;
+use qubit_fs::copy::ServerSidePreference;
+use qubit_fs::directory::CreateDirectoryOutcome;
+use qubit_fs::directory::DeleteOutcome;
+use qubit_fs::directory::ListOptions;
+use qubit_fs::error::FsError;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
+use qubit_fs::error::FsResult;
+use qubit_fs::metadata::AchievedAtomicity;
+use qubit_fs::metadata::AtomicityRequirement;
+use qubit_fs::metadata::DirEntry;
+use qubit_fs::metadata::DurabilityRequirement;
+use qubit_fs::metadata::FileKind;
+use qubit_fs::metadata::FileMetadata;
+use qubit_fs::metadata::FileSystemCapabilities;
+use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::FileSystemId;
+use qubit_fs::metadata::FileSystemInfo;
+use qubit_fs::metadata::FileSystemLimits;
+use qubit_fs::metadata::FileSystemProperties;
+use qubit_fs::metadata::OpenedFileInfo;
+use qubit_fs::metadata::PublicationMethod;
+use qubit_fs::metadata::ResourceVersion;
+use qubit_fs::metadata::SymlinkPolicy;
+use qubit_fs::metadata::WriteOutcome;
+use qubit_fs::path::Path;
+use qubit_fs::path::PathConstraints;
+use qubit_fs::path::PathSemantics;
+use qubit_fs::rename::RenameFailureState;
+use qubit_fs::rename::RenameOutcome;
+#[cfg(feature = "async")]
 use qubit_fs::spi::AsyncDirectoryStreamSession;
+#[cfg(feature = "async")]
 use qubit_fs::spi::AsyncFileSystemSpi;
+#[cfg(feature = "async")]
 use qubit_fs::spi::AsyncFileWriteSession;
+#[cfg(feature = "async")]
 use qubit_fs::spi::AsyncTempResourceSpi;
 use qubit_fs::spi::CopyAttempt;
 use qubit_fs::spi::CopyDeclineReason;
@@ -84,10 +87,15 @@ use qubit_fs::spi::FileWriterSpi;
 use qubit_fs::spi::ListRequest;
 use qubit_fs::spi::OpenReaderRequest;
 use qubit_fs::spi::OpenWriterRequest;
+#[cfg(feature = "async")]
 use qubit_fs::spi::OpenedAsyncDirectoryStream;
+#[cfg(feature = "async")]
 use qubit_fs::spi::OpenedAsyncReader;
+#[cfg(feature = "async")]
 use qubit_fs::spi::OpenedAsyncTempDirectory;
+#[cfg(feature = "async")]
 use qubit_fs::spi::OpenedAsyncTempFile;
+#[cfg(feature = "async")]
 use qubit_fs::spi::OpenedAsyncWriter;
 use qubit_fs::spi::OpenedDirectoryStream;
 use qubit_fs::spi::OpenedReader;
@@ -95,8 +103,12 @@ use qubit_fs::spi::OpenedTempDirectory;
 use qubit_fs::spi::OpenedTempFile;
 use qubit_fs::spi::OpenedWriter;
 use qubit_fs::spi::PersistRequest;
+use qubit_fs::spi::ProviderOperation;
+use qubit_fs::spi::ProviderOperations;
+use qubit_fs::spi::ProviderProperties;
 use qubit_fs::spi::RenameRequest;
 use qubit_fs::spi::SpiCopyFailure;
+#[cfg(feature = "async")]
 use qubit_fs::spi::SpiFuture;
 use qubit_fs::spi::SpiPersistFailure;
 use qubit_fs::spi::SpiRenameFailure;
@@ -104,18 +116,54 @@ use qubit_fs::spi::SpiWriteFailure;
 use qubit_fs::spi::StatRequest;
 use qubit_fs::spi::StatResponse;
 use qubit_fs::spi::TempResourceSpi;
+use qubit_fs::temp::PersistOutcome;
+use qubit_fs::write::WriteAbortOutcome;
+use qubit_fs::write::WriteDisposition;
+#[cfg(feature = "async")]
+use qubit_fs::write::WriteFailure;
+use qubit_fs::write::WriteFailureState;
+use qubit_fs::write::WritePrecondition;
+#[cfg(feature = "async")]
 use qubit_fs_testkit::AsyncCopyCancellationStage;
+#[cfg(feature = "async")]
 use qubit_fs_testkit::AsyncCopyFixtureCase;
+#[cfg(feature = "async")]
 use qubit_fs_testkit::AsyncFileSystemFixture;
 use qubit_fs_testkit::CopyFixtureCase;
 use qubit_fs_testkit::FileSystemFixture;
 use qubit_fs_testkit::FixtureError;
+#[cfg(feature = "async")]
 use qubit_fs_testkit::FixtureFuture;
 use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
+#[cfg(feature = "async")]
 use qubit_io::AsyncInput;
+#[cfg(feature = "async")]
 use qubit_io::AsyncOutput;
 use qubit_io::Output;
+
+fn provider_properties(properties: FileSystemProperties) -> ProviderProperties {
+    ProviderProperties::new(
+        properties.info().clone(),
+        ProviderOperations::new()
+            .with(ProviderOperation::Stat)
+            .with(ProviderOperation::List)
+            .with(ProviderOperation::OpenReader)
+            .with(ProviderOperation::OpenWriter)
+            .with(ProviderOperation::CreateDirectory)
+            .with(ProviderOperation::DeleteFile)
+            .with(ProviderOperation::DeleteDirectory)
+            .with(ProviderOperation::TryCopy)
+            .with(ProviderOperation::Rename)
+            .with(ProviderOperation::CreateTempFile)
+            .with(ProviderOperation::CreateTempDirectory),
+        properties.capabilities(),
+        *properties.limits(),
+        properties.path_constraints().clone(),
+        properties.symlink_policy(),
+    )
+    .expect("memory provider properties must be valid")
+}
 
 /// One isolated contract fixture backed by the public synchronous facade.
 pub struct MemoryFixture {
@@ -561,7 +609,7 @@ impl MemorySpi {
 }
 
 impl FileSystemSpi for MemorySpi {
-    fn properties(&self) -> FileSystemProperties {
+    fn properties(&self) -> ProviderProperties {
         let state = self.state.lock().expect("memory state lock must succeed");
         let mut capabilities = FileSystemCapabilities::new();
         if state.optional_capabilities {
@@ -613,19 +661,21 @@ impl FileSystemSpi for MemorySpi {
             }
         }
         drop(state);
-        FileSystemProperties::new(
-            FileSystemInfo::new(
-                FileSystemId::new("memory-contract")
-                    .expect("memory provider id must be valid"),
-                self.provider_id,
-                PathSemantics::Hierarchical,
-            ),
-            capabilities,
-            FileSystemLimits::unknown(),
-            PathConstraints::absolute(),
-            SymlinkPolicy::Reject,
+        provider_properties(
+            FileSystemProperties::new(
+                FileSystemInfo::new(
+                    FileSystemId::new("memory-contract")
+                        .expect("memory provider id must be valid"),
+                    self.provider_id,
+                    PathSemantics::Hierarchical,
+                ),
+                capabilities,
+                FileSystemLimits::unknown(),
+                PathConstraints::absolute(),
+                SymlinkPolicy::Reject,
+            )
+            .expect("memory properties must be valid"),
         )
-        .expect("memory properties must be valid")
     }
 
     fn stat(&self, request: StatRequest<'_>) -> FsResult<StatResponse> {
@@ -1228,6 +1278,7 @@ impl TempResourceSpi for TempSession {
 }
 
 /// Async fixture whose copy pipeline exposes one real pending point per stage.
+#[cfg(feature = "async")]
 pub struct AsyncMemoryFixture {
     file_system: AsyncFileSystem,
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
@@ -1238,6 +1289,7 @@ pub struct AsyncMemoryFixture {
 
 /// A single injected asynchronous provider defect used by the self-test matrix.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(feature = "async")]
 pub enum AsyncMemoryFault {
     /// Behaves conformingly.
     None,
@@ -1291,6 +1343,7 @@ pub enum AsyncMemoryFault {
 
 /// Capability switches used by asynchronous memory fixture profiles.
 #[derive(Clone, Copy)]
+#[cfg(feature = "async")]
 struct AsyncCapabilityProfile {
     core: bool,
     optional: bool,
@@ -1298,6 +1351,7 @@ struct AsyncCapabilityProfile {
     extended: bool,
 }
 
+#[cfg(feature = "async")]
 impl AsyncCapabilityProfile {
     const NONE: Self = Self {
         core: false,
@@ -1331,6 +1385,7 @@ impl AsyncCapabilityProfile {
     };
 }
 
+#[cfg(feature = "async")]
 impl AsyncMemoryFixture {
     /// Creates an isolated asynchronous copy fixture.
     pub fn new() -> Self {
@@ -1495,6 +1550,7 @@ impl AsyncMemoryFixture {
     }
 }
 
+#[cfg(feature = "async")]
 impl AsyncFileSystemFixture for AsyncMemoryFixture {
     fn file_system(&self) -> &AsyncFileSystem {
         &self.file_system
@@ -1636,6 +1692,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
     }
 }
 
+#[cfg(feature = "async")]
 struct AsyncMemorySpi {
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
@@ -1648,6 +1705,7 @@ struct AsyncMemorySpi {
     provider_id: &'static str,
 }
 
+#[cfg(feature = "async")]
 impl AsyncMemorySpi {
     /// Reads the currently selected pending stage.
     fn stage(&self) -> AsyncCopyCancellationStage {
@@ -1673,8 +1731,9 @@ impl AsyncMemorySpi {
     }
 }
 
+#[cfg(feature = "async")]
 impl AsyncFileSystemSpi for AsyncMemorySpi {
-    fn properties(&self) -> FileSystemProperties {
+    fn properties(&self) -> ProviderProperties {
         let mut capabilities = FileSystemCapabilities::new();
         if self.optional_capabilities {
             capabilities = capabilities
@@ -1718,19 +1777,21 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 .with_guaranteed(FileSystemCapability::Write)
                 .with_guaranteed(FileSystemCapability::List);
         }
-        FileSystemProperties::new(
-            FileSystemInfo::new(
-                FileSystemId::new("async-memory-contract")
-                    .expect("async provider id must be valid"),
-                self.provider_id,
-                PathSemantics::Hierarchical,
-            ),
-            capabilities,
-            FileSystemLimits::unknown(),
-            PathConstraints::absolute(),
-            SymlinkPolicy::Reject,
+        provider_properties(
+            FileSystemProperties::new(
+                FileSystemInfo::new(
+                    FileSystemId::new("async-memory-contract")
+                        .expect("async provider id must be valid"),
+                    self.provider_id,
+                    PathSemantics::Hierarchical,
+                ),
+                capabilities,
+                FileSystemLimits::unknown(),
+                PathConstraints::absolute(),
+                SymlinkPolicy::Reject,
+            )
+            .expect("async memory properties must be valid"),
         )
-        .expect("async memory properties must be valid")
     }
 
     fn stat<'a>(
@@ -2235,10 +2296,12 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
     }
 }
 
+#[cfg(feature = "async")]
 struct AsyncMemoryDirectoryStream {
     entries: std::vec::IntoIter<DirEntry>,
 }
 
+#[cfg(feature = "async")]
 impl AsyncDirectoryStreamSession for AsyncMemoryDirectoryStream {
     fn next_entry_async<'a>(
         &'a mut self,
@@ -2247,11 +2310,13 @@ impl AsyncDirectoryStreamSession for AsyncMemoryDirectoryStream {
     }
 }
 
+#[cfg(feature = "async")]
 struct AsyncMemoryReader {
     bytes: Vec<u8>,
     offset: usize,
 }
 
+#[cfg(feature = "async")]
 impl AsyncInput for AsyncMemoryReader {
     type Item = u8;
 
@@ -2276,6 +2341,7 @@ impl AsyncInput for AsyncMemoryReader {
     }
 }
 
+#[cfg(feature = "async")]
 struct AsyncMemoryWriter {
     stage: AsyncCopyCancellationStage,
     state: Arc<Mutex<HashMap<String, Entry>>>,
@@ -2287,6 +2353,7 @@ struct AsyncMemoryWriter {
     precondition: WritePrecondition,
 }
 
+#[cfg(feature = "async")]
 impl AsyncOutput for AsyncMemoryWriter {
     type Item = u8;
 
@@ -2315,6 +2382,7 @@ impl AsyncOutput for AsyncMemoryWriter {
     }
 }
 
+#[cfg(feature = "async")]
 impl AsyncFileWriteSession for AsyncMemoryWriter {
     fn commit_async<'a>(
         self: Pin<&'a mut Self>,
@@ -2408,6 +2476,7 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
 ///
 /// `entries` owns the fixture namespace and `directory` selects the resource
 /// kind. The returned path is already present in that namespace.
+#[cfg(feature = "async")]
 fn allocate_async_temp(
     entries: &Arc<Mutex<HashMap<String, Entry>>>,
     directory: bool,
@@ -2450,12 +2519,14 @@ fn allocate_async_temp(
 ///
 /// The session mutates the shared fixture namespace and applies its configured
 /// fault when cleanup is requested.
+#[cfg(feature = "async")]
 struct AsyncTempSession {
     entries: Arc<Mutex<HashMap<String, Entry>>>,
     path: Path,
     fault: AsyncMemoryFault,
 }
 
+#[cfg(feature = "async")]
 impl AsyncTempResourceSpi for AsyncTempSession {
     fn cleanup<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, FsResult<()>> {
         let this = self.get_mut();
