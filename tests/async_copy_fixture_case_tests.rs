@@ -1,4 +1,6 @@
 // =============================================================================
+
+#![cfg(feature = "async")]
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
@@ -6,8 +8,8 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use qubit_fs::CopyOptions;
-use qubit_fs::Path;
+use qubit_fs::copy::CopyOptions;
+use qubit_fs::path::Path;
 use qubit_fs_testkit::AsyncCopyFixtureCase;
 
 /// Prepared asynchronous copy cases preserve and transfer their request parts.

@@ -9,9 +9,9 @@
 mod common;
 
 use common::MemoryFixture;
-use qubit_fs::CopyMethod;
 use qubit_fs::FileSystem;
-use qubit_fs::Path;
+use qubit_fs::copy::CopyMethod;
+use qubit_fs::path::Path;
 use qubit_fs_testkit::FileSystemFixture;
 use qubit_fs_testkit::FixtureError;
 use qubit_fs_testkit::FixtureResult;

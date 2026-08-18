@@ -9,8 +9,10 @@
 mod memory_file_system;
 
 #[allow(unused)]
+#[cfg(feature = "async")]
 pub use memory_file_system::AsyncMemoryFault;
 #[allow(unused)]
+#[cfg(feature = "async")]
 pub use memory_file_system::AsyncMemoryFixture;
 #[allow(unused)]
 pub use memory_file_system::MemoryFault;

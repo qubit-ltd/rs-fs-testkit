@@ -8,11 +8,11 @@
 // qubit-style: allow source-test-pair
 //! Structured filesystem error assertions.
 
-use qubit_fs::FileSystemCapability;
-use qubit_fs::FsError;
-use qubit_fs::FsErrorKind;
-use qubit_fs::FsOperation;
-use qubit_fs::Path;
+use qubit_fs::error::FsError;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
+use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::path::Path;
 
 /// Checks all structured fields required by one filesystem contract.
 ///

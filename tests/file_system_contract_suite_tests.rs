@@ -10,10 +10,10 @@ mod common;
 
 use common::MemoryFault;
 use common::MemoryFixture;
-use qubit_fs::FileSystemCapability;
-use qubit_fs::FsError;
-use qubit_fs::FsErrorKind;
-use qubit_fs::FsOperation;
+use qubit_fs::error::FsError;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
+use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
 
