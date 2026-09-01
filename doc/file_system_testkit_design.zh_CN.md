@@ -368,6 +368,8 @@ Limit contract 至少覆盖：
 - persist required atomicity；
 - child/descendant path 安全；
 - async lifecycle future cancellation。
+- successful `keep` returns a reachable generated target and terminal state;
+- recoverable keep failure retains the temporary resource for retry.
 
 需要注入 failure 的状态主要由 `qubit-fs` fake SPI 测试。Provider 黑盒 suite 在 provider
 声明相应 fixture fault hook 时复用这些 contract；不要求生产 provider 暴露故障注入。

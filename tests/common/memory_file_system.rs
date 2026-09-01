@@ -1263,8 +1263,20 @@ impl TempResourceSpi for TempSession {
         ))
     }
 
-    fn keep(&mut self) -> FsResult<()> {
-        Ok(())
+    fn keep(&mut self) -> Result<PersistOutcome, SpiPersistFailure> {
+        let target = keep_target(&self.path);
+        let mut state =
+            self.state.lock().expect("memory state lock must succeed");
+        let entry = state
+            .entries
+            .remove(self.path.as_str())
+            .expect("temporary entry must exist");
+        state.entries.insert(target.as_str().to_owned(), entry);
+        Ok(PersistOutcome::new(
+            target,
+            AchievedAtomicity::Atomic,
+            PublicationMethod::Direct,
+        ))
     }
 
     fn cleanup(&mut self) -> FsResult<()> {
@@ -2472,6 +2484,15 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
     }
 }
 
+/// Derives a fixture-local publication target from the temporary source path.
+///
+/// Keeping the source suffix makes independent temporary resources publish to
+/// distinct paths without relying on a global mutable counter.
+fn keep_target(source: &Path) -> Path {
+    Path::parse(&format!("/kept{}", source.as_str()))
+        .expect("generated keep target must be valid")
+}
+
 /// Allocates an isolated path and inserts its temporary resource entry.
 ///
 /// `entries` owns the fixture namespace and `directory` selects the resource
@@ -2544,9 +2565,27 @@ impl AsyncTempResourceSpi for AsyncTempSession {
         })
     }
 
-    fn keep<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, FsResult<()>> {
-        let _ = self;
-        Box::pin(async { Ok(()) })
+    fn keep<'a>(
+        self: Pin<&'a mut Self>,
+    ) -> SpiFuture<'a, Result<PersistOutcome, SpiPersistFailure>> {
+        let this = self.get_mut();
+        let entries = Arc::clone(&this.entries);
+        let source = this.path.clone();
+        Box::pin(async move {
+            let target = keep_target(&source);
+            let mut entries = entries
+                .lock()
+                .expect("async memory state lock must succeed");
+            let entry = entries
+                .remove(source.as_str())
+                .expect("temporary entry must exist");
+            entries.insert(target.as_str().to_owned(), entry);
+            Ok(PersistOutcome::new(
+                target,
+                AchievedAtomicity::Atomic,
+                PublicationMethod::Direct,
+            ))
+        })
     }
 
     fn persist<'a>(
