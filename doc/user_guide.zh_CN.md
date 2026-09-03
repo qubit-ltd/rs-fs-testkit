@@ -24,7 +24,7 @@ fixture 暴露待测具体门面，并将 testkit 的非空、`/` 分隔相对�
 list prefix。可选 fixture hook 可预置/读取文件、观察资源版本、预置空目录或 symlink，并准备
 native-copy 用例。异步 fixture 提供对应的 future 观察，以及可选 copy cancellation 用例。
 
-## 贯穿场景
+## 实战场景
 
 你正在新增 provider，需要确认其已声明 capability 与可观察的文件系统行为一致。成功标准是一个全新、
 隔离的 fixture 能完成套件；当支持 delete 时，套件还会清理其创建的测试资源。
