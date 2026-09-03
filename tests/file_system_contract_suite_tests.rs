@@ -18,7 +18,7 @@ use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
 
 /// Both suites intentionally cover every capability in this stable order.
-const COVERED_CAPABILITIES: [FileSystemCapability; 27] = [
+const COVERED_CAPABILITIES: [FileSystemCapability; 28] = [
     FileSystemCapability::List,
     FileSystemCapability::Read,
     FileSystemCapability::RangeRead,
@@ -46,6 +46,7 @@ const COVERED_CAPABILITIES: [FileSystemCapability; 27] = [
     FileSystemCapability::DurableFileCopy,
     FileSystemCapability::DurableTreeCopy,
     FileSystemCapability::DurableRename,
+    FileSystemCapability::DurableWrite,
 ];
 
 /// Adding a capability to qubit-fs requires an explicit testkit coverage

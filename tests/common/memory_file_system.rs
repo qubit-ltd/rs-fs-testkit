@@ -623,6 +623,7 @@ impl FileSystemSpi for MemorySpi {
                 .with_guaranteed(FileSystemCapability::AtomicFileCopy)
                 .with_guaranteed(FileSystemCapability::DurableFileCopy)
                 .with_guaranteed(FileSystemCapability::DurableRename)
+                .with_guaranteed(FileSystemCapability::DurableWrite)
                 .with_guaranteed(FileSystemCapability::AtomicTempPersist)
                 .with_guaranteed(FileSystemCapability::ServerSideCopy);
         }
@@ -1760,6 +1761,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 .with_guaranteed(FileSystemCapability::AtomicFileCopy)
                 .with_guaranteed(FileSystemCapability::DurableFileCopy)
                 .with_guaranteed(FileSystemCapability::DurableRename)
+                .with_guaranteed(FileSystemCapability::DurableWrite)
                 .with_guaranteed(FileSystemCapability::AtomicTempPersist)
                 .with_guaranteed(FileSystemCapability::ServerSideCopy);
         }
