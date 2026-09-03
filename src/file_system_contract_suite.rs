@@ -1611,7 +1611,7 @@ impl<'a> FileSystemContractSuite<'a> {
             let options = TempFileOptions::default()
                 .with_parent(
                     self.capable(FileSystemCapability::CreateDirectory)
-                        .then_some(parent),
+                        .then_some(parent.clone()),
                 )
                 .with_prefix("contract-file-".to_owned())
                 .with_suffix(".tmp".to_owned());
@@ -1637,9 +1637,14 @@ impl<'a> FileSystemContractSuite<'a> {
                 "temp-file contract: cleanup retained source"
             );
             let mut temporary = file_system
-                .create_temp_file(Default::default())
+                .create_temp_file(
+                    TempFileOptions::default().with_parent(
+                        self.capable(FileSystemCapability::CreateDirectory)
+                            .then_some(parent),
+                    ),
+                )
                 .expect("temp-file contract: persist setup failed");
-            let target = self.path("temp-persisted-file");
+            let target = self.path("temp-file-parent/persisted-file");
             self.context.record_created(target.clone());
             self.assert_temp_persist(&mut temporary, &target, "temp-file");
         } else {
@@ -1668,7 +1673,7 @@ impl<'a> FileSystemContractSuite<'a> {
             let options = TempDirectoryOptions::default()
                 .with_parent(
                     self.capable(FileSystemCapability::CreateDirectory)
-                        .then_some(parent),
+                        .then_some(parent.clone()),
                 )
                 .with_prefix("contract-directory-".to_owned())
                 .with_suffix(".tmp".to_owned());
@@ -1694,9 +1699,14 @@ impl<'a> FileSystemContractSuite<'a> {
                 "temp-directory contract: cleanup retained source"
             );
             let mut temporary = file_system
-                .create_temp_directory(Default::default())
+                .create_temp_directory(
+                    TempDirectoryOptions::default().with_parent(
+                        self.capable(FileSystemCapability::CreateDirectory)
+                            .then_some(parent),
+                    ),
+                )
                 .expect("temp-directory contract: persist setup failed");
-            let target = self.path("temp-persisted-directory");
+            let target = self.path("temp-directory-parent/persisted-directory");
             self.context.record_created(target.clone());
             self.assert_temp_directory_persist(&mut temporary, &target);
             if self.capable(FileSystemCapability::CreateDirectory) {
@@ -2053,7 +2063,13 @@ impl<'a> FileSystemContractSuite<'a> {
     /// observation violates the temporary-directory contract.
     fn assert_temp_directory_overwrite(&mut self) {
         let file_system = self.fixture.file_system();
-        let target = self.path("temp-overwritten-directory");
+        let parent = self.path("temp-overwrite-parent");
+        self.context.record_created(parent.clone());
+        file_system
+            .create_directory(&parent, CreateDirectoryOptions::default())
+            .expect("temp-directory overwrite contract: parent setup failed");
+        let target =
+            self.path("temp-overwrite-parent/temp-overwritten-directory");
         self.context.record_created(target.clone());
         file_system
             .create_directory(&target, CreateDirectoryOptions::default())
@@ -2061,7 +2077,9 @@ impl<'a> FileSystemContractSuite<'a> {
                 "temp-directory overwrite contract: destination setup failed",
             );
         let mut temporary = file_system
-            .create_temp_directory(Default::default())
+            .create_temp_directory(
+                TempDirectoryOptions::default().with_parent(Some(parent)),
+            )
             .expect(
                 "temp-directory overwrite contract: temporary creation failed",
             );
