@@ -78,7 +78,7 @@ impl<'a> FileSystemContractSuite<'a> {
     /// Verifies the finite write boundary without exceeding the probe budget.
     fn record_write_limit(&mut self, limit: FileSystemLimit) {
         let outcome = match finite_probe(limit, MAX_PROBE_BYTES) {
-            Some((maximum, over)) if maximum > 0 => {
+            Some((maximum, over)) => {
                 let maximum_bytes = usize::try_from(maximum).expect("write contract: bounded probe must fit usize");
                 let at_limit = vec![b'x'; maximum_bytes];
                 let boundary_path = self.path("write-limit-boundary");
@@ -112,9 +112,6 @@ impl<'a> FileSystemContractSuite<'a> {
                 );
                 ContractCheckOutcome::Passed
             }
-            Some(_) => ContractCheckOutcome::SkippedOptional {
-                reason: "write boundary exceeds the bounded probe budget".to_owned(),
-            },
             None => ContractCheckOutcome::SkippedOptional {
                 reason: "write limit is unknown, inapplicable, or unbounded".to_owned(),
             },

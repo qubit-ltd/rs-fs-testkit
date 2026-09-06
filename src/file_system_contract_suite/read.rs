@@ -106,7 +106,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 ContractCheckOutcome::Passed,
             );
             let outcome = match finite_probe(range_limit, MAX_PROBE_BYTES) {
-                Some((maximum, over)) if maximum > 0 => {
+                Some((maximum, over)) => {
                     let maximum_bytes = usize::try_from(maximum).expect("read contract: bounded range must fit usize");
                     let bounded = self
                         .fixture
@@ -131,9 +131,6 @@ impl<'a> FileSystemContractSuite<'a> {
                     );
                     ContractCheckOutcome::Passed
                 }
-                Some(_) => ContractCheckOutcome::SkippedOptional {
-                    reason: "zero range boundary is not a valid provider limit".to_owned(),
-                },
                 None if range_limit.maximum().is_some() => ContractCheckOutcome::SkippedOptional {
                     reason: "range boundary exceeds the bounded probe budget".to_owned(),
                 },
