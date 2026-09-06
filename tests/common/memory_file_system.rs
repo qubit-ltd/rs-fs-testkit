@@ -187,6 +187,8 @@ pub enum MemoryFault {
     EmptyList,
     /// Returns bytes different from the provider's stored content.
     ReadWrongBytes,
+    /// Ignores the requested read range.
+    ReadIgnoresRange,
     /// Accepts writes without publishing their content.
     WriteDropsBytes,
     /// Reports deletion success without removing the resource.
@@ -236,12 +238,20 @@ struct State {
     create_directory_capability: bool,
     extended_capabilities: bool,
     native_copy: bool,
+    open_metadata: bool,
 }
 
 impl MemoryFixture {
     /// Creates a fresh conforming fixture.
     pub fn new() -> Self {
         Self::with_fault(MemoryFault::None)
+    }
+
+    /// Creates a conforming fixture whose reader reports full-resource metadata.
+    pub fn with_open_metadata() -> Self {
+        let fixture = Self::new();
+        fixture.state.lock().expect("memory state lock must succeed").open_metadata = true;
+        fixture
     }
 
     /// Creates a conforming fixture whose copy primitive completes natively.
@@ -258,6 +268,11 @@ impl MemoryFixture {
     /// Creates a fresh fixture with exactly one provider fault.
     pub fn with_fault(fault: MemoryFault) -> Self {
         Self::with_capabilities(fault, true, true)
+    }
+
+    /// Creates a fixture advertising range reads for range-specific faults.
+    pub fn with_range_fault(fault: MemoryFault) -> Self {
+        Self::with_configuration(fault, true, true, true, true, true, "memory-contract-provider")
     }
 
     /// Creates a fixture whose facade does not advertise deletion.
@@ -392,6 +407,7 @@ impl MemoryFixture {
             create_directory_capability,
             extended_capabilities,
             native_copy: false,
+            open_metadata: false,
         }));
         let path_calls = Arc::new(AtomicUsize::new(0));
         let file_system = FileSystem::from_spi(MemorySpi {
@@ -763,15 +779,26 @@ impl FileSystemSpi for MemorySpi {
         } else {
             bytes.clone()
         };
+        let full_length = bytes.len() as u64;
         let options = request.options().options();
-        let start =
-            options.offset().unwrap_or(0).min(bytes.len() as u64) as usize;
-        let end = options.length().map_or(bytes.len(), |length| {
-            start.saturating_add(length as usize).min(bytes.len())
-        });
+        let (start, end) = if state.fault == MemoryFault::ReadIgnoresRange {
+            (0, bytes.len())
+        } else {
+            let start = options.offset().unwrap_or(0).min(bytes.len() as u64) as usize;
+            let end = options.length().map_or(bytes.len(), |length| {
+                start.saturating_add(length as usize).min(bytes.len())
+            });
+            (start, end)
+        };
         bytes = bytes[start..end].to_vec();
+        let info = if state.open_metadata {
+            Self::info(request.path().clone())
+                .with_metadata(FileMetadata::new(FileKind::File).with_len(Some(full_length)))
+        } else {
+            Self::info(request.path().clone())
+        };
         Ok(OpenedReader::new(
-            Self::info(request.path().clone()),
+            info,
             Box::new(Cursor::new(bytes)),
         ))
     }
@@ -1312,6 +1339,8 @@ pub enum AsyncMemoryFault {
     WrongStatMetadata,
     /// Returns bytes different from the provider's seeded content.
     ReadWrongBytes,
+    /// Ignores the requested read range.
+    ReadIgnoresRange,
     /// Accepts writes but does not publish their bytes.
     WriteDropsBytes,
     /// Produces a listing entry outside the requested namespace.
@@ -1408,6 +1437,17 @@ impl AsyncMemoryFixture {
     /// Creates an asynchronous fixture with exactly one provider fault.
     pub fn with_fault(fault: AsyncMemoryFault) -> Self {
         Self::with_copy_behavior(fault, true, false)
+    }
+
+    /// Creates an asynchronous fixture advertising range reads for range faults.
+    pub fn with_range_fault(fault: AsyncMemoryFault) -> Self {
+        Self::with_configuration(
+            fault,
+            true,
+            false,
+            AsyncCapabilityProfile::ALL,
+            "async-memory-contract-provider",
+        )
     }
 
     /// Creates a conforming fixture without optional cancellation probes.
@@ -1941,11 +1981,15 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             if fault == AsyncMemoryFault::ReadWrongBytes {
                 bytes = b"wrong bytes".to_vec();
             }
-            let start =
-                options.offset().unwrap_or(0).min(bytes.len() as u64) as usize;
-            let end = options.length().map_or(bytes.len(), |length| {
-                start.saturating_add(length as usize).min(bytes.len())
-            });
+            let (start, end) = if fault == AsyncMemoryFault::ReadIgnoresRange {
+                (0, bytes.len())
+            } else {
+                let start = options.offset().unwrap_or(0).min(bytes.len() as u64) as usize;
+                let end = options.length().map_or(bytes.len(), |length| {
+                    start.saturating_add(length as usize).min(bytes.len())
+                });
+                (start, end)
+            };
             bytes = bytes[start..end].to_vec();
             Ok(OpenedAsyncReader::new(
                 info,

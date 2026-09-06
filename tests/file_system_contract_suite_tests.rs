@@ -100,6 +100,13 @@ fn test_conforming_memory_provider_satisfies_sync_suite() {
     assert!(fixture.is_empty(), "suite must clean up created resources");
 }
 
+#[test]
+fn test_sync_suite_accepts_open_reader_metadata() {
+    let fixture = MemoryFixture::with_open_metadata();
+    FileSystemContractSuite::new(&fixture).assert_all();
+    assert!(fixture.is_empty());
+}
+
 /// A filesystem may use its own identifier as the provider identifier.
 #[test]
 fn test_sync_suite_allows_matching_filesystem_and_provider_ids() {
@@ -135,11 +142,16 @@ fn test_single_faults_are_rejected_by_sync_suite() {
         MemoryFault::WrongPersistTarget,
         MemoryFault::EmptyList,
         MemoryFault::ReadWrongBytes,
+        MemoryFault::ReadIgnoresRange,
         MemoryFault::WriteDropsBytes,
         MemoryFault::DeleteNoOp,
         MemoryFault::RenameNoOp,
     ] {
-        let fixture = MemoryFixture::with_fault(fault);
+        let fixture = if fault == MemoryFault::ReadIgnoresRange {
+            MemoryFixture::with_range_fault(fault)
+        } else {
+            MemoryFixture::with_fault(fault)
+        };
         let result =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 FileSystemContractSuite::new(&fixture).assert_all();
