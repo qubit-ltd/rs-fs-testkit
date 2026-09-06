@@ -17,6 +17,7 @@ use std::task::Waker;
 
 use common::AsyncMemoryFault;
 use common::AsyncMemoryFixture;
+use common::run_controlled;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
@@ -113,17 +114,11 @@ fn test_async_copy_allows_fixture_without_cancellation_cases() {
 #[test]
 fn test_async_copy_cancellation_contract_is_independently_executable() {
     let fixture = AsyncMemoryFixture::new();
-    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-    let mut assertion = Box::pin(async {
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         suite.assert_copy_cancellation().await;
         suite.finish().await;
     });
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
     assert!(
         fixture.is_empty(),
         "cancellation contract must clean resources"

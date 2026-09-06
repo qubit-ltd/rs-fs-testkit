@@ -130,8 +130,12 @@ use qubit_fs_testkit::AsyncCopyCancellationStage;
 use qubit_fs_testkit::AsyncCopyFixtureCase;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::AsyncFileSystemFixture;
+#[cfg(feature = "async")]
+use qubit_fs_testkit::CopyCancellationProbe;
 use qubit_fs_testkit::CopyFixtureCase;
 use qubit_fs_testkit::FixtureCase;
+#[cfg(feature = "async")]
+use qubit_fs_testkit::FixtureError;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::FixtureFuture;
 use qubit_fs_testkit::FixtureResult;
@@ -184,12 +188,159 @@ pub(crate) fn run_controlled<T>(future: impl Future<Output = T>) -> T {
 pub struct AsyncMemoryFixture {
     file_system: AsyncFileSystem,
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
+    copy_gate: Arc<Mutex<CopyGate>>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
     versions: Arc<Mutex<HashMap<String, u64>>>,
     supports_cancellation_cases: bool,
     path_calls: Arc<AtomicUsize>,
     limits: FileSystemLimits,
     unavailable_case: Option<FixtureCase>,
+}
+
+/// Shared stage gate used by the asynchronous cancellation self-test.
+#[cfg(feature = "async")]
+struct CopyGate {
+    stage: AsyncCopyCancellationStage,
+    pending_before_reached: u8,
+    target_reached: bool,
+    armed: bool,
+    waker: Option<Waker>,
+}
+
+#[cfg(feature = "async")]
+impl CopyGate {
+    /// Creates a disarmed gate with no retained caller waker.
+    fn new() -> Self {
+        Self {
+            stage: AsyncCopyCancellationStage::NativeAttempt,
+            pending_before_reached: 0,
+            target_reached: false,
+            armed: false,
+            waker: None,
+        }
+    }
+
+    /// Arms a stage with two deliberate pre-acknowledgement suspensions.
+    fn arm(&mut self, stage: AsyncCopyCancellationStage) {
+        self.stage = stage;
+        self.pending_before_reached = 2;
+        self.target_reached = false;
+        self.armed = true;
+        self.waker = None;
+    }
+
+    /// Returns whether this gate currently controls the supplied stage.
+    fn controls(&self, stage: AsyncCopyCancellationStage) -> bool {
+        self.armed && self.stage == stage
+    }
+
+    /// Suspends the provider operation until the target stage is reached.
+    fn poll_stage(&mut self, stage: AsyncCopyCancellationStage, context: &Context<'_>) -> Poll<()> {
+        if !self.armed || self.stage != stage {
+            return Poll::Ready(());
+        }
+        self.waker = Some(context.waker().clone());
+        if self.pending_before_reached != 0 {
+            self.pending_before_reached -= 1;
+            context.waker().wake_by_ref();
+            return Poll::Pending;
+        }
+        if !self.target_reached {
+            self.target_reached = true;
+            context.waker().wake_by_ref();
+        }
+        Poll::Pending
+    }
+
+    /// Polls stage acknowledgement using the caller's real waker.
+    fn poll_reached(&mut self, context: &Context<'_>) -> Poll<FixtureResult<()>> {
+        if self.target_reached {
+            return Poll::Ready(Ok(()));
+        }
+        if !self.armed {
+            return Poll::Ready(Err(FixtureError::new(
+                "asynchronous copy cancellation gate was disarmed before acknowledgement",
+            )));
+        }
+        self.waker = Some(context.waker().clone());
+        Poll::Pending
+    }
+
+    /// Releases the gate and wakes the operation owner, without doing I/O.
+    fn disarm(&mut self) -> FixtureResult<()> {
+        self.armed = false;
+        self.target_reached = false;
+        if let Some(waker) = self.waker.take() {
+            waker.wake();
+        }
+        Ok(())
+    }
+}
+
+/// Provider-owned cancellation probe backed by the memory fixture gate.
+#[cfg(feature = "async")]
+struct AsyncMemoryCopyCancellationProbe {
+    case: AsyncCopyFixtureCase,
+    gate: Arc<Mutex<CopyGate>>,
+}
+
+#[cfg(feature = "async")]
+impl CopyCancellationProbe for AsyncMemoryCopyCancellationProbe {
+    /// Returns the isolated request controlled by this probe.
+    fn case(&self) -> &AsyncCopyFixtureCase {
+        &self.case
+    }
+
+    /// Reports only the provider-observed target stage.
+    fn poll_reached(&self, context: &mut Context<'_>) -> Poll<FixtureResult<()>> {
+        self.gate
+            .lock()
+            .expect("async copy gate lock must succeed")
+            .poll_reached(context)
+    }
+
+    /// Releases the gate without starting an asynchronous operation.
+    fn disarm(&self) -> FixtureResult<()> {
+        self.gate
+            .lock()
+            .expect("async copy gate lock must succeed")
+            .disarm()
+    }
+}
+
+#[cfg(feature = "async")]
+impl Drop for AsyncMemoryCopyCancellationProbe {
+    /// Ensures a dropped probe cannot leave a provider gate armed.
+    fn drop(&mut self) {
+        let _ = self.disarm();
+    }
+}
+
+/// Future that drives one provider stage gate with caller wake notifications.
+#[cfg(feature = "async")]
+struct CopyGateFuture {
+    gate: Arc<Mutex<CopyGate>>,
+    stage: AsyncCopyCancellationStage,
+}
+
+#[cfg(feature = "async")]
+impl Future for CopyGateFuture {
+    type Output = ();
+
+    /// Polls the gate and never completes while cancellation owns it.
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        self.gate
+            .lock()
+            .expect("async copy gate lock must succeed")
+            .poll_stage(self.stage, context)
+    }
+}
+
+/// Waits at a provider stage and remains pending after explicit disarm.
+#[cfg(feature = "async")]
+async fn wait_copy_gate(gate: Arc<Mutex<CopyGate>>, stage: AsyncCopyCancellationStage) -> ! {
+    CopyGateFuture { gate, stage }.await;
+    future::pending().await
 }
 
 /// A single injected asynchronous provider defect used by the self-test matrix.
@@ -498,11 +649,13 @@ impl AsyncMemoryFixture {
         unavailable_case: Option<FixtureCase>,
     ) -> Self {
         let stage = Arc::new(Mutex::new(AsyncCopyCancellationStage::NativeAttempt));
+        let copy_gate = Arc::new(Mutex::new(CopyGate::new()));
         let entries = Arc::new(Mutex::new(HashMap::new()));
         let versions = Arc::new(Mutex::new(HashMap::new()));
         let path_calls = Arc::new(AtomicUsize::new(0));
         let file_system = AsyncFileSystem::from_spi(AsyncMemorySpi {
             stage: Arc::clone(&stage),
+            copy_gate: Arc::clone(&copy_gate),
             entries: Arc::clone(&entries),
             versions: Arc::clone(&versions),
             fault,
@@ -519,6 +672,7 @@ impl AsyncMemoryFixture {
         Self {
             file_system,
             stage,
+            copy_gate,
             entries,
             versions,
             supports_cancellation_cases,
@@ -731,6 +885,40 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
+    fn prepare_copy_cancellation<'a>(
+        &'a self,
+        stage: AsyncCopyCancellationStage,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Box<dyn CopyCancellationProbe>>> {
+        Box::pin(async move {
+            if !self.supports_cancellation_cases {
+                return Ok(FixtureSupport::Unsupported);
+            }
+            *self.stage.lock().expect("async stage lock must succeed") = stage;
+            self.copy_gate
+                .lock()
+                .expect("async copy gate lock must succeed")
+                .arm(stage);
+            let source_relative = format!("{relative}-source");
+            let target_relative = format!("{relative}-target");
+            let source = self.path(&source_relative)?;
+            let target = self.path(&target_relative)?;
+            self.entries
+                .lock()
+                .expect("async memory state lock must succeed")
+                .insert(
+                    source.as_str().to_owned(),
+                    Entry::File(b"copy bytes".to_vec()),
+                );
+            Ok(FixtureSupport::Supported(Box::new(
+                AsyncMemoryCopyCancellationProbe {
+                    case: AsyncCopyFixtureCase::new(source, target, CopyOptions::default()),
+                    gate: Arc::clone(&self.copy_gate),
+                },
+            )))
+        })
+    }
+
     fn copy_cancellation_case(
         &self,
         stage: AsyncCopyCancellationStage,
@@ -799,6 +987,7 @@ fn stale_version(
 #[cfg(feature = "async")]
 struct AsyncMemorySpi {
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
+    copy_gate: Arc<Mutex<CopyGate>>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
     versions: Arc<Mutex<HashMap<String, u64>>>,
     fault: AsyncMemoryFault,
@@ -817,6 +1006,14 @@ impl AsyncMemorySpi {
     /// Reads the currently selected pending stage.
     fn stage(&self) -> AsyncCopyCancellationStage {
         *self.stage.lock().expect("async stage lock must succeed")
+    }
+
+    /// Returns whether a cancellation probe currently controls this stage.
+    fn gate_controls(&self, stage: AsyncCopyCancellationStage) -> bool {
+        self.copy_gate
+            .lock()
+            .expect("async copy gate lock must succeed")
+            .controls(stage)
     }
 
     /// Returns the fixed provider identity for a opened handle.
@@ -986,10 +1183,11 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         &'a self,
         request: OpenReaderRequest<'a>,
     ) -> SpiFuture<'a, FsResult<OpenedAsyncReader>> {
-        if request.path().as_str() == "/contract/async-copy-source"
-            && self.stage() == AsyncCopyCancellationStage::Reader
-        {
-            return Box::pin(future::pending());
+        if self.gate_controls(AsyncCopyCancellationStage::Reader) {
+            let gate = Arc::clone(&self.copy_gate);
+            return Box::pin(async move {
+                wait_copy_gate(gate, AsyncCopyCancellationStage::Reader).await
+            });
         }
         let path = request.path().clone();
         let info = Self::info(&path);
@@ -1061,8 +1259,11 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         &'a self,
         request: OpenWriterRequest<'a>,
     ) -> SpiFuture<'a, FsResult<OpenedAsyncWriter>> {
-        let stage = if request.path().as_str() == "/contract/async-copy-target" {
-            self.stage()
+        let selected_stage = self.stage();
+        let stage = if self.gate_controls(AsyncCopyCancellationStage::Writer)
+            || self.gate_controls(AsyncCopyCancellationStage::Commit)
+        {
+            selected_stage
         } else {
             AsyncCopyCancellationStage::NativeAttempt
         };
@@ -1070,6 +1271,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let info = Self::info(&path);
         let state = Arc::clone(&self.entries);
         let versions = Arc::clone(&self.versions);
+        let copy_gate = Arc::clone(&self.copy_gate);
         let fault = self.fault;
         let disposition = request.options().options().disposition();
         let atomicity = request.options().options().atomicity();
@@ -1082,6 +1284,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     stage,
                     state,
                     versions,
+                    copy_gate,
                     path,
                     bytes: Vec::new(),
                     fault,
@@ -1164,10 +1367,11 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         &'a self,
         request: CopyRequest<'a>,
     ) -> SpiFuture<'a, Result<CopyAttempt, SpiCopyFailure>> {
-        if request.source().as_str() == "/contract/async-copy-source"
-            && self.stage() == AsyncCopyCancellationStage::NativeAttempt
-        {
-            return Box::pin(future::pending());
+        if self.gate_controls(AsyncCopyCancellationStage::NativeAttempt) {
+            let gate = Arc::clone(&self.copy_gate);
+            return Box::pin(async move {
+                wait_copy_gate(gate, AsyncCopyCancellationStage::NativeAttempt).await
+            });
         }
         let options = request.options().options();
         let durable = options.durability() == DurabilityRequirement::Required;
@@ -1438,6 +1642,7 @@ impl AsyncInput for AsyncMemoryReader {
 #[cfg(feature = "async")]
 struct AsyncMemoryWriter {
     stage: AsyncCopyCancellationStage,
+    copy_gate: Arc<Mutex<CopyGate>>,
     state: Arc<Mutex<HashMap<String, Entry>>>,
     versions: Arc<Mutex<HashMap<String, u64>>>,
     path: Path,
@@ -1455,15 +1660,24 @@ impl AsyncOutput for AsyncMemoryWriter {
 
     unsafe fn poll_write_unchecked(
         self: Pin<&mut Self>,
-        _: &mut Context<'_>,
+        context: &mut Context<'_>,
         input: &[u8],
         index: usize,
         count: usize,
     ) -> Poll<IoResult<usize>> {
         let this = self.get_mut();
         if this.stage == AsyncCopyCancellationStage::Writer {
-            Poll::Pending
-        } else {
+            match this
+                .copy_gate
+                .lock()
+                .expect("async copy gate lock must succeed")
+                .poll_stage(AsyncCopyCancellationStage::Writer, context)
+            {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(()) => {}
+            }
+        }
+        {
             this.bytes.extend_from_slice(&input[index..index + count]);
             Poll::Ready(Ok(count))
         }
@@ -1481,7 +1695,10 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
         self: Pin<&'a mut Self>,
     ) -> SpiFuture<'a, Result<WriteOutcome, WriteFailure>> {
         if self.as_ref().get_ref().stage == AsyncCopyCancellationStage::Commit {
-            return Box::pin(future::pending());
+            let gate = Arc::clone(&self.as_ref().get_ref().copy_gate);
+            return Box::pin(async move {
+                wait_copy_gate(gate, AsyncCopyCancellationStage::Commit).await
+            });
         }
         let this = self.get_mut();
         let state = Arc::clone(&this.state);
