@@ -20,10 +20,7 @@ use qubit_fs_testkit::FileSystemFixture;
 use qubit_fs_testkit::FixtureSupport;
 
 fn assert_fixture_file(fixture: &MemoryFixture, path: &Path, expected: &[u8]) {
-    match fixture
-        .read_file(path)
-        .expect("fixture file observation must succeed")
-    {
+    match fixture.read_file(path).expect("fixture file observation must succeed") {
         FixtureSupport::Supported(actual) => assert_eq!(actual, expected),
         FixtureSupport::Unsupported => panic!("fixture must observe the published temporary file"),
     }
@@ -45,31 +42,19 @@ fn test_sync_temp_keep_transfers_identity_and_payload() {
     let outcome = temporary.keep().expect("keep should publish the source");
 
     assert_eq!(TempResourceState::Kept, temporary.state());
-    assert_ne!(
-        &source,
-        outcome.target(),
-        "keep must publish a distinct identity"
+    assert_ne!(&source, outcome.target(), "keep must publish a distinct identity");
+    assert!(!file_system.exists(&source).expect("source observation must succeed"));
+    assert!(
+        file_system
+            .exists(outcome.target())
+            .expect("kept target observation must succeed")
     );
-    assert!(!file_system
-        .exists(&source)
-        .expect("source observation must succeed"));
-    assert!(file_system
-        .exists(outcome.target())
-        .expect("kept target observation must succeed"));
     assert_fixture_file(&fixture, outcome.target(), b"kept-payload");
     assert_eq!(outcome.target(), temporary.path());
-    assert!(
-        temporary.cleanup().is_err(),
-        "kept handle must not reclaim the target"
-    );
-    assert!(
-        temporary.keep().is_err(),
-        "kept handle must reject a second keep"
-    );
+    assert!(temporary.cleanup().is_err(), "kept handle must not reclaim the target");
+    assert!(temporary.keep().is_err(), "kept handle must reject a second keep");
 
-    let teardown = fixture
-        .teardown()
-        .expect("fixture teardown must succeed");
+    let teardown = fixture.teardown().expect("fixture teardown must succeed");
     assert!(matches!(teardown, FixtureSupport::Supported(())));
     assert!(fixture.is_empty(), "teardown must release the kept target");
 }
@@ -93,14 +78,9 @@ fn test_sync_temp_failed_atomic_persist_remains_cleanup_recoverable() {
             PersistOptions::default().with_atomicity(AtomicityRequirement::Required),
         )
         .expect_err("non-atomic publication must fail a required persist");
-    assert_eq!(
-        PersistFailureState::PublishedSourceRetained,
-        failure.state()
-    );
+    assert_eq!(PersistFailureState::PublishedSourceRetained, failure.state());
     assert_eq!(TempResourceState::CleanupRequired, temporary.state());
-    assert!(file_system
-        .exists(&target)
-        .expect("target observation must succeed"));
+    assert!(file_system.exists(&target).expect("target observation must succeed"));
     assert_fixture_file(&fixture, &target, b"retry-payload");
 
     temporary
@@ -116,9 +96,7 @@ fn test_sync_temp_failed_atomic_persist_remains_cleanup_recoverable() {
             .kind()
     );
 
-    let teardown = fixture
-        .teardown()
-        .expect("fixture teardown must succeed");
+    let teardown = fixture.teardown().expect("fixture teardown must succeed");
     assert!(matches!(teardown, FixtureSupport::Supported(())));
     assert!(fixture.is_empty(), "teardown must release the published target");
 }
