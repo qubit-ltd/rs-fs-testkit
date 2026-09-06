@@ -45,7 +45,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .expect("stat contract: seeded file is not statable");
             assert!(
                 metadata.is_file_like(),
-                "stat contract: seeded resource is not file-like"
+                "stat/file-kind: seeded resource is not file-like"
             );
             assert_eq!(
                 metadata.len(),
@@ -133,7 +133,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             while let Some(entry) = stream
                 .next_entry_async()
                 .await
-                .expect("list contract: prefix stream error")
+                .expect("list/prefix: prefix stream error")
             {
                 assert!(
                     entry.metadata.is_some(),
