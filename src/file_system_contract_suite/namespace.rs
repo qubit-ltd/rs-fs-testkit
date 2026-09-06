@@ -43,7 +43,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 .expect("stat contract: seeded file is not statable");
             assert!(
                 metadata.is_file_like(),
-                "stat contract: seeded resource is not file-like"
+                "stat/file-kind: seeded resource is not file-like"
             );
             assert_eq!(
                 metadata.len(),
@@ -145,7 +145,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let mut prefixed = Vec::new();
         while let Some(entry) = stream
             .next_entry()
-            .expect("list contract: prefix stream error")
+                .expect("list/prefix: prefix stream error")
         {
             assert!(
                 entry.metadata.is_some(),

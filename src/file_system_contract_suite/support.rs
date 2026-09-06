@@ -92,7 +92,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .stat(&path)
-            .expect_err("error contract: missing path succeeded");
+            .expect_err("error/context: missing path succeeded");
         self.assert_error(
             &error,
             FsErrorKind::NotFound,
@@ -216,7 +216,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 assert_eq!(actual, expected, "{message}")
             }
             FixtureSupport::Unsupported => {
-                panic!("copy contract: Copy capability requires fixture.read_file support")
+                panic!("{message}: Copy capability requires fixture.read_file support")
             }
         }
     }

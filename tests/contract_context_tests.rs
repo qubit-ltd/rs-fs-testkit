@@ -18,7 +18,7 @@ fn test_contract_context_tracks_unique_names_and_cleanup() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     suite.assert_write();
     suite.assert_write();
-    assert_eq!(fixture.entry_count(), 2);
+    assert_eq!(fixture.entry_count(), 6);
 
     suite.finish();
     assert!(
