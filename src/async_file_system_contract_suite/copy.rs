@@ -7,6 +7,11 @@
 // =============================================================================
 //! Implements copy and cancellation contracts.
 
+use std::future::poll_fn;
+
+use crate::CopyCancellationProbe;
+use crate::FixtureError;
+
 use super::*;
 
 impl<'a> AsyncFileSystemContractSuite<'a> {
@@ -215,47 +220,100 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             AsyncCopyCancellationStage::Writer,
             AsyncCopyCancellationStage::Commit,
         ] {
-            let case = self
+            let relative = self
+                .context
+                .relative_name(&format!("async-copy-cancel-{stage:?}"));
+            let prepared = self
                 .fixture
-                .copy_cancellation_case(stage)
-                .expect("async copy cancellation contract: fixture setup failed");
-            let case = match case {
-                FixtureSupport::Supported(case) => case,
-                FixtureSupport::Unsupported => continue,
+                .prepare_copy_cancellation(stage, &relative)
+                .await
+                .expect("async copy cancellation contract: probe setup failed");
+            let probe = match prepared {
+                FixtureSupport::Supported(probe) => probe,
+                FixtureSupport::Unsupported => {
+                    self.record_legacy_cancellation_probe(stage);
+                    continue;
+                }
             };
+            self.run_cancellation_probe(stage, probe).await;
+        }
+    }
+
+    /// Runs one stage-aware cancellation probe with the caller's waker.
+    async fn run_cancellation_probe(
+        &mut self,
+        stage: AsyncCopyCancellationStage,
+        probe: Box<dyn CopyCancellationProbe>,
+    ) {
+        self.context.record_created(probe.case().source().clone());
+        self.context.record_created(probe.case().target().clone());
+        let case = probe.case().clone();
+        let mut operation = self
+            .fixture
+            .file_system()
+            .begin_copy(
+                case.source().clone(),
+                case.target().clone(),
+                case.options().clone(),
+            )
+            .expect("async copy cancellation contract: preflight failed");
+        let mut execution = Box::pin(operation.execute());
+        let _disarm_on_unwind = DisarmOnDrop::new(probe.as_ref());
+        let reached = poll_fn(|context| {
+            match execution.as_mut().poll(context) {
+                Poll::Ready(Ok(_)) => Poll::Ready(Err(FixtureError::new(format!(
+                    "async copy cancellation contract: stage {stage:?} completed before acknowledgement"
+                )))),
+                Poll::Ready(Err(error)) => Poll::Ready(Err(FixtureError::new(format!(
+                    "async copy cancellation contract: stage {stage:?} failed before acknowledgement: {error}"
+                )))),
+                Poll::Pending => probe.poll_reached(context),
+            }
+        })
+        .await;
+        let disarm = probe.disarm();
+        drop(execution);
+        disarm.expect("async copy cancellation contract: probe disarm failed");
+        reached.expect("async copy cancellation contract: stage acknowledgement failed");
+        assert_eq!(
+            operation.state(),
+            AsyncCopyOperationState::Failed(CopyFailureState::Indeterminate),
+            "async copy cancellation contract: cancellation did not become indeterminate"
+        );
+        if matches!(
+            stage,
+            AsyncCopyCancellationStage::Writer | AsyncCopyCancellationStage::Commit
+        ) {
+            assert!(
+                operation.take_recovery_writer().is_some(),
+                "async copy cancellation contract: recovery writer was lost"
+            );
+        }
+        self.context.record_check(
+            cancellation_check_id(stage),
+            Some(FileSystemCapability::Copy),
+            ContractCheckOutcome::Passed,
+        );
+    }
+
+    /// Records that an old request-only cancellation hook cannot acknowledge
+    /// a provider-owned stage.
+    fn record_legacy_cancellation_probe(&mut self, stage: AsyncCopyCancellationStage) {
+        let case = self
+            .fixture
+            .copy_cancellation_case(stage)
+            .expect("async copy cancellation contract: legacy probe setup failed");
+        if let FixtureSupport::Supported(case) = case {
             self.context.record_created(case.source().clone());
             self.context.record_created(case.target().clone());
-            let mut operation = self
-                .fixture
-                .file_system()
-                .begin_copy(
-                    case.source().clone(),
-                    case.target().clone(),
-                    case.options().clone(),
-                )
-                .expect("async copy cancellation contract: preflight failed");
-            let mut execution = Box::pin(operation.execute());
-            let waker = Waker::noop();
-            let mut task = Context::from_waker(waker);
-            assert!(
-                matches!(execution.as_mut().poll(&mut task), Poll::Pending),
-                "async copy cancellation contract: fixture stage {stage:?} did not pend"
+            self.context.record_check(
+                cancellation_check_id(stage),
+                Some(FileSystemCapability::Copy),
+                ContractCheckOutcome::SkippedOptional {
+                    reason: "stage acknowledgement unavailable from legacy copy_cancellation_case"
+                        .to_owned(),
+                },
             );
-            drop(execution);
-            assert_eq!(
-                operation.state(),
-                AsyncCopyOperationState::Failed(CopyFailureState::Indeterminate),
-                "async copy cancellation contract: cancellation did not become indeterminate"
-            );
-            if matches!(
-                stage,
-                AsyncCopyCancellationStage::Writer | AsyncCopyCancellationStage::Commit
-            ) {
-                assert!(
-                    operation.take_recovery_writer().is_some(),
-                    "async copy cancellation contract: recovery writer was lost"
-                );
-            }
         }
     }
 
@@ -387,5 +445,34 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             "durable-copy contract: target bytes mismatch",
         )
         .await;
+    }
+}
+
+/// Returns the stable report identifier for one cancellation stage.
+const fn cancellation_check_id(stage: AsyncCopyCancellationStage) -> &'static str {
+    match stage {
+        AsyncCopyCancellationStage::NativeAttempt => "async-copy/cancel-native-attempt",
+        AsyncCopyCancellationStage::Reader => "async-copy/cancel-reader",
+        AsyncCopyCancellationStage::Writer => "async-copy/cancel-writer",
+        AsyncCopyCancellationStage::Commit => "async-copy/cancel-commit",
+    }
+}
+
+/// Disarms a provider gate while an assertion is unwinding.
+struct DisarmOnDrop<'a> {
+    probe: &'a dyn CopyCancellationProbe,
+}
+
+impl<'a> DisarmOnDrop<'a> {
+    /// Creates a drop guard for one stage-aware cancellation probe.
+    fn new(probe: &'a dyn CopyCancellationProbe) -> Self {
+        Self { probe }
+    }
+}
+
+impl Drop for DisarmOnDrop<'_> {
+    /// Releases the provider gate without starting asynchronous cleanup.
+    fn drop(&mut self) {
+        let _ = self.probe.disarm();
     }
 }
