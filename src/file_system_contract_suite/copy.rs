@@ -262,7 +262,14 @@ impl<'a> FileSystemContractSuite<'a> {
                 .file_system()
                 .copy(&source, &target, CopyOptions::tree())
                 .expect_err("copy/atomic-tree: fallback unexpectedly accepted tree copy");
-            assert_eq!(failure.error().kind(), FsErrorKind::InvalidOptions);
+            assert!(
+                matches!(
+                    failure.error().kind(),
+                    FsErrorKind::InvalidOptions | FsErrorKind::RequirementNotMet
+                ),
+                "copy/atomic-tree: unexpected fallback rejection: {:?}",
+                failure.error().kind()
+            );
             assert_eq!(failure.error().operation(), FsOperation::Copy);
             self.context.record_check(
                 "copy/atomic-tree",

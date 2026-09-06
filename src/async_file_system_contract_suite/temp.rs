@@ -73,13 +73,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .expect("temp/file: keep setup failed");
             let kept_source = kept.path().clone();
             self.context.record_created(kept_source.clone());
-            if self.capable(FileSystemCapability::Write) {
-                self.fixture
-                    .file_system()
-                    .write_all(&kept_source, b"kept bytes", WriteOptions::default())
-                    .await
-                    .expect("temp/file: keep payload failed");
-            }
+            // Keep the provider-owned temporary entry intact. Writing via
+            // the facade may atomically replace its path and invalidate the
+            // lifecycle handle's native identity before `keep` is called.
             let kept_outcome = kept.keep().await.expect("temp/file: keep failed");
             self.context.record_created(kept_outcome.target().clone());
             assert_eq!(kept.state(), TempResourceState::Kept, "temp/file: keep state mismatch");
