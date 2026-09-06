@@ -7,6 +7,8 @@
 
 use super::*;
 
+use crate::FixtureCase;
+
 const COPY_SNAPSHOT_LIMIT: usize = 64 * 1024;
 
 impl<'a> FileSystemContractSuite<'a> {
@@ -56,8 +58,6 @@ impl<'a> FileSystemContractSuite<'a> {
         }
 
         if !self.capable(FileSystemCapability::Read) || !self.capable(FileSystemCapability::Write) {
-            let source = self.required_seed("copy-source", b"a", "copy");
-            let target = self.path("copy-target");
             let error = self
                 .fixture
                 .file_system()
@@ -166,6 +166,10 @@ impl<'a> FileSystemContractSuite<'a> {
 
     /// Checks destination conflict policies and copy statistics.
     pub fn assert_copy_conflicts(&mut self, source: &Path) {
+        let overwrite_case = self
+            .fixture
+            .case_support(FixtureCase::CopyOverwrite)
+            .expect("copy/fallback-overwrite-rejected: fixture case setup failed");
         let target = self.required_seed("copy-conflict-target", b"b", "copy-conflict");
         let failure = self
             .fixture
@@ -201,12 +205,26 @@ impl<'a> FileSystemContractSuite<'a> {
             "copy/fallback-overwrite-rejected: skip changed target",
         );
 
+        if matches!(overwrite_case, FixtureSupport::Unsupported)
+            && !self.fixture.copy_fallback_only()
+        {
+            self.context.record_check(
+                "copy/fallback-overwrite-rejected",
+                Some(FileSystemCapability::Copy),
+                ContractCheckOutcome::NotApplicable {
+                    reason: "fixture cannot prepare a native overwrite case".to_owned(),
+                },
+            );
+            return;
+        }
         let overwrite = self.fixture.file_system().copy(
             source,
             &target,
             CopyOptions::file().with_conflict(CopyConflictPolicy::Overwrite),
         );
-        if self.fixture.copy_fallback_only() {
+        if self.fixture.copy_fallback_only()
+            || matches!(overwrite_case, FixtureSupport::Unsupported)
+        {
             let failure = overwrite.expect_err(
                 "copy/fallback-overwrite-rejected: fallback unexpectedly accepted overwrite",
             );
@@ -239,16 +257,12 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     fn assert_copy_tree(&mut self) {
-        if !self.capable(FileSystemCapability::Copy)
-            || !self.capable(FileSystemCapability::CreateDirectory)
-        {
-            self.context.record_check(
-                "copy/atomic-tree",
-                Some(FileSystemCapability::AtomicTreeCopy),
-                ContractCheckOutcome::NotApplicable {
-                    reason: "tree fixture requires Copy and CreateDirectory".to_owned(),
-                },
-            );
+        let tree_case = self
+            .fixture
+            .case_support(FixtureCase::CopyTree)
+            .expect("copy/atomic-tree: fixture case setup failed");
+        if !self.capable(FileSystemCapability::Copy) {
+            self.assert_atomic_tree_rejection();
             return;
         }
         if self.fixture.copy_fallback_only() {
@@ -272,6 +286,20 @@ impl<'a> FileSystemContractSuite<'a> {
                 Some(FileSystemCapability::AtomicTreeCopy),
                 ContractCheckOutcome::RejectedAsExpected,
             );
+            return;
+        }
+        if !self.capable(FileSystemCapability::CreateDirectory) {
+            if self.capable(FileSystemCapability::AtomicTreeCopy) {
+                self.context.record_check(
+                    "copy/atomic-tree",
+                    Some(FileSystemCapability::AtomicTreeCopy),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture tree case requires directory setup".to_owned(),
+                    },
+                );
+            } else {
+                self.assert_atomic_tree_rejection();
+            }
             return;
         }
         let root = self.path("copy-tree-source");
@@ -313,7 +341,9 @@ impl<'a> FileSystemContractSuite<'a> {
                 .expect("copy/atomic-tree: child check failed")
         );
         assert!(outcome.stats().files + outcome.stats().objects >= 1);
-        if self.capable(FileSystemCapability::AtomicTreeCopy) {
+        if self.capable(FileSystemCapability::AtomicTreeCopy)
+            && matches!(tree_case, FixtureSupport::Supported(_))
+        {
             let atomic_target = self.path("copy-tree-atomic-target");
             self.context.record_created(atomic_target.clone());
             let atomic = self
@@ -336,11 +366,56 @@ impl<'a> FileSystemContractSuite<'a> {
                 b"b",
                 "copy/atomic-tree: atomic child mismatch",
             );
+            self.context.record_check(
+                "copy/atomic-tree",
+                Some(FileSystemCapability::AtomicTreeCopy),
+                ContractCheckOutcome::Passed,
+            );
+        } else if self.capable(FileSystemCapability::AtomicTreeCopy) {
+            self.context.record_check(
+                "copy/atomic-tree",
+                Some(FileSystemCapability::AtomicTreeCopy),
+                ContractCheckOutcome::Unverified {
+                    reason: "fixture cannot prepare an applicable tree case".to_owned(),
+                },
+            );
+        } else {
+            self.assert_atomic_tree_rejection();
         }
+    }
+
+    fn assert_atomic_tree_rejection(&mut self) {
+        if self.capable(FileSystemCapability::AtomicTreeCopy) {
+            self.context.record_check(
+                "copy/atomic-tree",
+                Some(FileSystemCapability::AtomicTreeCopy),
+                ContractCheckOutcome::Unverified {
+                    reason: "fixture cannot prepare an applicable tree case".to_owned(),
+                },
+            );
+            return;
+        }
+        let source = self.path("atomic-copy-tree-source");
+        let target = self.path("atomic-copy-tree-target");
+        let failure = self
+            .fixture
+            .file_system()
+            .copy(
+                &source,
+                &target,
+                CopyOptions::tree().with_atomicity(AtomicityRequirement::Required),
+            )
+            .expect_err("copy/atomic-tree: unadvertised atomic tree copy succeeded");
+        self.assert_requirement_error(
+            failure.error(),
+            FsOperation::Copy,
+            FileSystemCapability::AtomicTreeCopy,
+            "copy/atomic-tree",
+        );
         self.context.record_check(
             "copy/atomic-tree",
             Some(FileSystemCapability::AtomicTreeCopy),
-            ContractCheckOutcome::Passed,
+            ContractCheckOutcome::RejectedAsExpected,
         );
     }
 
@@ -518,11 +593,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 Some(FileSystemCapability::DurableFileCopy),
                 ContractCheckOutcome::RejectedAsExpected,
             );
-            self.context.record_check(
-                "copy/durable-tree",
-                Some(FileSystemCapability::DurableTreeCopy),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
+            self.assert_durable_tree_copy();
             return;
         }
         let source = self.required_seed("durable-copy-source", b"a", "copy/durable-file");
@@ -547,12 +618,95 @@ impl<'a> FileSystemContractSuite<'a> {
             Some(FileSystemCapability::DurableFileCopy),
             ContractCheckOutcome::Passed,
         );
+        self.assert_durable_tree_copy();
+    }
+
+    fn assert_durable_tree_copy(&mut self) {
+        let id = "copy/durable-tree";
+        if !self.capable(FileSystemCapability::DurableTreeCopy) {
+            let source = self.path("durable-tree-copy-source");
+            let target = self.path("durable-tree-copy-target");
+            let failure = self
+                .fixture
+                .file_system()
+                .copy(
+                    &source,
+                    &target,
+                    CopyOptions::tree().with_durability(DurabilityRequirement::Required),
+                )
+                .expect_err("copy/durable-tree: unadvertised durable tree copy succeeded");
+            self.assert_requirement_error(
+                failure.error(),
+                FsOperation::Copy,
+                FileSystemCapability::DurableTreeCopy,
+                id,
+            );
+            self.context.record_check(
+                id,
+                Some(FileSystemCapability::DurableTreeCopy),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+            return;
+        }
+        if !self.capable(FileSystemCapability::CreateDirectory) {
+            self.context.record_check(
+                id,
+                Some(FileSystemCapability::DurableTreeCopy),
+                ContractCheckOutcome::Unverified {
+                    reason: "fixture tree case requires directory setup".to_owned(),
+                },
+            );
+            return;
+        }
+        let case = self
+            .fixture
+            .case_support(FixtureCase::CopyTree)
+            .expect("copy/durable-tree: fixture case setup failed");
+        if matches!(case, FixtureSupport::Unsupported) {
+            self.context.record_check(
+                id,
+                Some(FileSystemCapability::DurableTreeCopy),
+                ContractCheckOutcome::Unverified {
+                    reason: "fixture cannot prepare an applicable tree case".to_owned(),
+                },
+            );
+            return;
+        }
+        let root = self.path("durable-tree-copy-source");
+        let sub = self.path("durable-tree-copy-source/sub");
+        let target = self.path("durable-tree-copy-target");
+        self.fixture
+            .file_system()
+            .create_directory(&root, CreateDirectoryOptions::default())
+            .expect("copy/durable-tree: source root setup failed");
+        self.context.record_created(root.clone());
+        self.fixture
+            .file_system()
+            .create_directory(&sub, CreateDirectoryOptions::default())
+            .expect("copy/durable-tree: source subdirectory setup failed");
+        self.context.record_created(sub);
+        let child = self.required_seed("durable-tree-copy-source/sub/child", b"a", id);
+        let outcome = self
+            .fixture
+            .file_system()
+            .copy(
+                &root,
+                &target,
+                CopyOptions::tree().with_durability(DurabilityRequirement::Required),
+            )
+            .expect("copy/durable-tree: required durable tree copy failed");
+        self.context.record_created(target.clone());
+        assert!(
+            outcome.durable(),
+            "copy/durable-tree: result was not durable"
+        );
+        let target_child = self.path("durable-tree-copy-target/sub/child");
+        self.assert_bytes(&target_child, b"a", "copy/durable-tree: child mismatch");
+        self.assert_bytes(&child, b"a", "copy/durable-tree: source changed");
         self.context.record_check(
-            "copy/durable-tree",
+            id,
             Some(FileSystemCapability::DurableTreeCopy),
-            ContractCheckOutcome::NotApplicable {
-                reason: "durable tree requires a dedicated tree fixture".to_owned(),
-            },
+            ContractCheckOutcome::Passed,
         );
     }
 }
