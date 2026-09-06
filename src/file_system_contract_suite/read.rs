@@ -43,10 +43,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let bytes = file_system
             .read_all(&path, Default::default(), 64)
             .expect("read contract: facade could not read seeded bytes");
-        assert_eq!(
-            bytes, b"read contract bytes",
-            "read contract: bytes mismatch"
-        );
+        assert_eq!(bytes, b"read contract bytes", "read contract: bytes mismatch");
         let error = file_system
             .read_all(&path, Default::default(), 4)
             .expect_err("read contract: caller byte limit was ignored");
@@ -62,9 +59,7 @@ impl<'a> FileSystemContractSuite<'a> {
 
     /// Checks range, conditional, and checksum read guarantees.
     pub fn assert_read_options(&self, path: &Path) {
-        let range = ReadOptions::default()
-            .with_offset(Some(5))
-            .with_length(Some(8));
+        let range = ReadOptions::default().with_offset(Some(5)).with_length(Some(8));
         if self.capable(FileSystemCapability::RangeRead) {
             let bytes = self
                 .fixture

@@ -92,6 +92,10 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 直接用原生文件系统 API 预置和检查隔离临时目录。若用同一个门面完成准备或观察，彼此匹配的读写缺陷可能
 仍会通过契约套件。
 
+`FileSystemContractSuite` 和 `AsyncFileSystemContractSuite` 的 `seed`、`required_seed` helper
+现在接收 `&mut self`，以便在套件账本中记录资源所有权。直接调用这些 helper 的 provider 需要将对应
+调用点改为可变套件；这会产生源码迁移成本。
+
 单独运行阶段时优先使用 `assert_contract(FileSystemContract)`，它会在重新抛出 panic 前清理。
 若直接调用底层阶段方法，结束后应调用 `finish()`。`assert_all()` 与两个注册宏均会自动清理，
 包括异步断言 panic 的情况。

@@ -56,10 +56,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .file_system()
             .begin_copy(source.clone(), target.clone(), Default::default())
             .expect("async copy contract: advertised copy preflight failed");
-        let outcome = operation
-            .execute()
-            .await
-            .expect("async copy contract: copy failed");
+        let outcome = operation.execute().await.expect("async copy contract: copy failed");
         match outcome.method() {
             CopyMethod::Streamed => assert!(
                 outcome.used_fallback(),
@@ -82,19 +79,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             1,
             "async copy contract: copied resource count mismatch"
         );
-        self.assert_bytes(
-            &source,
-            b"copy bytes",
-            "async copy contract: source was modified",
-        )
-        .await;
+        self.assert_bytes(&source, b"copy bytes", "async copy contract: source was modified")
+            .await;
         self.assert_copy_conflicts(&source).await;
-        self.assert_bytes(
-            &target,
-            b"copy bytes",
-            "async copy contract: target bytes mismatch",
-        )
-        .await;
+        self.assert_bytes(&target, b"copy bytes", "async copy contract: target bytes mismatch")
+            .await;
         if self.capable(FileSystemCapability::CreateDirectory) {
             let directory_source = self.path("async-copy-directory-source");
             self.fixture
@@ -104,11 +93,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .expect("async copy contract: directory source creation failed");
             self.context.record_created(directory_source.clone());
             let directory_child = self
-                .required_seed(
-                    "async-copy-directory-source/child",
-                    b"directory copy",
-                    "copy",
-                )
+                .required_seed("async-copy-directory-source/child", b"directory copy", "copy")
                 .await;
             let directory_target = self.path("async-copy-directory-target");
             self.context.record_created(directory_target.clone());
@@ -117,11 +102,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let mut operation = self
                 .fixture
                 .file_system()
-                .begin_copy(
-                    directory_source,
-                    directory_target.clone(),
-                    CopyOptions::tree(),
-                )
+                .begin_copy(directory_source, directory_target.clone(), CopyOptions::tree())
                 .expect("async copy contract: directory copy preflight failed");
             operation
                 .execute()
@@ -143,20 +124,16 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .expect("async copy contract: fast-path setup failed")
             {
                 FixtureSupport::Supported(case) => case,
-                FixtureSupport::Unsupported => panic!(
-                    "async copy contract: advertised server-side capability lacks an applicable fixture case"
-                ),
+                FixtureSupport::Unsupported => {
+                    panic!("async copy contract: advertised server-side capability lacks an applicable fixture case")
+                }
             };
             self.context.record_created(case.source().clone());
             self.context.record_created(case.target().clone());
             let mut operation = self
                 .fixture
                 .file_system()
-                .begin_copy(
-                    case.source().clone(),
-                    case.target().clone(),
-                    case.options().clone(),
-                )
+                .begin_copy(case.source().clone(), case.target().clone(), case.options().clone())
                 .expect("async copy contract: server-side preflight failed");
             let outcome = operation
                 .execute()
@@ -228,11 +205,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let mut operation = self
                 .fixture
                 .file_system()
-                .begin_copy(
-                    case.source().clone(),
-                    case.target().clone(),
-                    case.options().clone(),
-                )
+                .begin_copy(case.source().clone(), case.target().clone(), case.options().clone())
                 .expect("async copy cancellation contract: preflight failed");
             let mut execution = Box::pin(operation.execute());
             let waker = Waker::noop();
@@ -282,12 +255,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             Some(self.context.properties().info().provider_id()),
             None,
         );
-        self.assert_bytes(
-            &target,
-            b"existing",
-            "copy contract: failed conflict changed target",
-        )
-        .await;
+        self.assert_bytes(&target, b"existing", "copy contract: failed conflict changed target")
+            .await;
 
         let mut operation = self
             .fixture
@@ -300,17 +269,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .with_conflict(CopyConflictPolicy::Skip),
             )
             .expect("copy contract: skip preflight failed");
-        let skipped = operation
-            .execute()
-            .await
-            .expect("copy contract: skip conflict failed");
+        let skipped = operation.execute().await.expect("copy contract: skip conflict failed");
         assert_eq!(skipped.stats().skipped, 1);
-        self.assert_bytes(
-            &target,
-            b"existing",
-            "copy contract: skipped copy changed target",
-        )
-        .await;
+        self.assert_bytes(&target, b"existing", "copy contract: skipped copy changed target")
+            .await;
 
         let mut operation = self
             .fixture
@@ -328,12 +290,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("copy contract: overwrite conflict failed");
         assert_eq!(overwritten.stats().overwritten, 1);
-        self.assert_bytes(
-            &target,
-            b"copy bytes",
-            "copy contract: overwrite bytes mismatch",
-        )
-        .await;
+        self.assert_bytes(&target, b"copy bytes", "copy contract: overwrite bytes mismatch")
+            .await;
     }
 
     /// Checks asynchronous durable copy publication when advertised.
@@ -348,11 +306,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let target = self.path("async-durable-copy-target");
         let options = CopyOptions::default().with_durability(DurabilityRequirement::Required);
         if !self.capable(FileSystemCapability::DurableFileCopy) {
-            let error = match self
-                .fixture
-                .file_system()
-                .begin_copy(source, target, options)
-            {
+            let error = match self.fixture.file_system().begin_copy(source, target, options) {
                 Err(error) => error,
                 Ok(_) => panic!("durable-copy contract: unadvertised preflight succeeded"),
             };
@@ -373,19 +327,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .begin_copy(source.clone(), target.clone(), options)
             .expect("durable-copy contract: preflight failed");
         self.context.record_created(target.clone());
-        let outcome = operation
-            .execute()
-            .await
-            .expect("durable-copy contract: copy failed");
-        assert!(
-            outcome.durable(),
-            "durable-copy contract: non-durable outcome"
-        );
-        self.assert_bytes(
-            &target,
-            b"durable copy",
-            "durable-copy contract: target bytes mismatch",
-        )
-        .await;
+        let outcome = operation.execute().await.expect("durable-copy contract: copy failed");
+        assert!(outcome.durable(), "durable-copy contract: non-durable outcome");
+        self.assert_bytes(&target, b"durable copy", "durable-copy contract: target bytes mismatch")
+            .await;
     }
 }

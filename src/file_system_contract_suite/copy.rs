@@ -61,22 +61,14 @@ impl<'a> FileSystemContractSuite<'a> {
                 )
             }
         }
-        assert_eq!(
-            outcome.stats().bytes,
-            10,
-            "copy contract: copied byte count mismatch"
-        );
+        assert_eq!(outcome.stats().bytes, 10, "copy contract: copied byte count mismatch");
         assert_eq!(
             outcome.stats().files + outcome.stats().objects,
             1,
             "copy contract: copied resource count mismatch"
         );
         self.assert_bytes(&source, b"copy bytes", "copy contract: source was modified");
-        self.assert_bytes(
-            &target,
-            b"copy bytes",
-            "copy contract: target bytes mismatch",
-        );
+        self.assert_bytes(&target, b"copy bytes", "copy contract: target bytes mismatch");
         self.assert_copy_conflicts(&source);
         if self.capable(FileSystemCapability::CreateDirectory) {
             let directory_source = self.path("copy-directory-source");
@@ -85,8 +77,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 .create_directory(&directory_source, CreateDirectoryOptions::default())
                 .expect("copy contract: directory source creation failed");
             self.context.record_created(directory_source.clone());
-            let directory_child =
-                self.required_seed("copy-directory-source/child", b"directory copy", "copy");
+            let directory_child = self.required_seed("copy-directory-source/child", b"directory copy", "copy");
             let directory_target = self.path("copy-directory-target");
             self.context.record_created(directory_target.clone());
             let target_child = self.path("copy-directory-target/child");
@@ -126,9 +117,9 @@ impl<'a> FileSystemContractSuite<'a> {
                         "copy contract: native case unexpectedly fell back"
                     );
                 }
-                FixtureSupport::Unsupported => panic!(
-                    "copy contract: advertised native capability lacks an applicable fixture case"
-                ),
+                FixtureSupport::Unsupported => {
+                    panic!("copy contract: advertised native capability lacks an applicable fixture case")
+                }
             }
         } else {
             let source = self.path("copy-server-side-unavailable-source");
@@ -167,11 +158,7 @@ impl<'a> FileSystemContractSuite<'a> {
             source,
             Some(&target),
         );
-        self.assert_bytes(
-            &target,
-            b"existing",
-            "copy contract: failed conflict changed target",
-        );
+        self.assert_bytes(&target, b"existing", "copy contract: failed conflict changed target");
 
         let skipped = self
             .fixture
@@ -184,16 +171,8 @@ impl<'a> FileSystemContractSuite<'a> {
                     .with_conflict(CopyConflictPolicy::Skip),
             )
             .expect("copy contract: skip conflict failed");
-        assert_eq!(
-            skipped.stats().skipped,
-            1,
-            "copy contract: skipped count mismatch"
-        );
-        self.assert_bytes(
-            &target,
-            b"existing",
-            "copy contract: skipped copy changed target",
-        );
+        assert_eq!(skipped.stats().skipped, 1, "copy contract: skipped count mismatch");
+        self.assert_bytes(&target, b"existing", "copy contract: skipped copy changed target");
 
         let overwritten = self
             .fixture
@@ -211,11 +190,7 @@ impl<'a> FileSystemContractSuite<'a> {
             1,
             "copy contract: overwritten count mismatch"
         );
-        self.assert_bytes(
-            &target,
-            b"copy bytes",
-            "copy contract: overwrite bytes mismatch",
-        );
+        self.assert_bytes(&target, b"copy bytes", "copy contract: overwrite bytes mismatch");
     }
 
     /// Checks required-durable copy publication when the provider advertises
@@ -257,10 +232,6 @@ impl<'a> FileSystemContractSuite<'a> {
             outcome.durable(),
             "durable-copy contract: required operation reported non-durable publication"
         );
-        self.assert_bytes(
-            &target,
-            b"durable copy",
-            "durable-copy contract: target bytes mismatch",
-        );
+        self.assert_bytes(&target, b"durable copy", "durable-copy contract: target bytes mismatch");
     }
 }

@@ -23,13 +23,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let error = file_system
             .stat(&missing)
             .expect_err("stat contract: missing path succeeded");
-        self.assert_error(
-            &error,
-            FsErrorKind::NotFound,
-            FsOperation::Stat,
-            &missing,
-            None,
-        );
+        self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &missing, None);
 
         if let FixtureSupport::Supported(path) = self.seed("stat-file", b"stateful stat") {
             self.context.record_created(path.clone());
@@ -40,11 +34,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 metadata.is_file_like(),
                 "stat contract: seeded resource is not file-like"
             );
-            assert_eq!(
-                metadata.len(),
-                Some(13),
-                "stat contract: file length mismatch"
-            );
+            assert_eq!(metadata.len(), Some(13), "stat contract: file length mismatch");
         }
     }
 
@@ -97,8 +87,7 @@ impl<'a> FileSystemContractSuite<'a> {
 
         let nested = self.required_seed("list-root/prefixed/nested", b"nested", "list");
         self.context.record_created(nested.clone());
-        let nested_second =
-            self.required_seed("list-root/prefixed/second", b"second nested", "list");
+        let nested_second = self.required_seed("list-root/prefixed/second", b"second nested", "list");
         self.context.record_created(nested_second.clone());
         let prefix = self
             .fixture
@@ -116,10 +105,7 @@ impl<'a> FileSystemContractSuite<'a> {
             )
             .expect("list contract: prefix listing failed");
         let mut prefixed = Vec::new();
-        while let Some(entry) = stream
-            .next_entry()
-            .expect("list contract: prefix stream error")
-        {
+        while let Some(entry) = stream.next_entry().expect("list contract: prefix stream error") {
             assert!(
                 entry.metadata.is_some(),
                 "list contract: requested entry metadata is missing"
@@ -140,10 +126,7 @@ impl<'a> FileSystemContractSuite<'a> {
             expected.push(prefix_entry);
         }
         expected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-        assert_eq!(
-            prefixed, expected,
-            "list contract: paged prefix results mismatch"
-        );
+        assert_eq!(prefixed, expected, "list contract: paged prefix results mismatch");
     }
 
     /// Checks directory creation behavior.
@@ -193,10 +176,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let outcome = self
             .fixture
             .file_system()
-            .create_directory(
-                &path,
-                CreateDirectoryOptions::default().with_exists_ok(true),
-            )
+            .create_directory(&path, CreateDirectoryOptions::default().with_exists_ok(true))
             .expect("namespace contract: existing directory was not accepted");
         assert!(
             outcome.already_existed(),
@@ -209,10 +189,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let outcome = self
             .fixture
             .file_system()
-            .create_directory(
-                &child,
-                CreateDirectoryOptions::default().with_recursive(true),
-            )
+            .create_directory(&child, CreateDirectoryOptions::default().with_recursive(true))
             .expect("namespace contract: recursive directory creation failed");
         if let Some(created_ancestors) = outcome.created_ancestors() {
             assert!(
@@ -233,9 +210,9 @@ impl<'a> FileSystemContractSuite<'a> {
                 .expect("representation contract: empty-directory setup failed")
             {
                 FixtureSupport::Supported(path) => path,
-                FixtureSupport::Unsupported => panic!(
-                    "representation contract: EmptyDirectory requires fixture.seed_empty_directory support"
-                ),
+                FixtureSupport::Unsupported => {
+                    panic!("representation contract: EmptyDirectory requires fixture.seed_empty_directory support")
+                }
             };
             self.context.record_created(path.clone());
             let metadata = self
@@ -315,10 +292,7 @@ impl<'a> FileSystemContractSuite<'a> {
             "delete contract: existing file was reported missing"
         );
         if let Some(deleted_entries) = outcome.deleted_entries() {
-            assert!(
-                deleted_entries > 0,
-                "delete contract: deleted count is zero"
-            );
+            assert!(deleted_entries > 0, "delete contract: deleted count is zero");
         }
         assert!(
             !self
@@ -345,14 +319,9 @@ impl<'a> FileSystemContractSuite<'a> {
         );
 
         let path = self.path("delete-conditional");
-        let options =
-            DeleteOptions::default().with_if_match(Some(ResourceVersion::new("contract-version")));
+        let options = DeleteOptions::default().with_if_match(Some(ResourceVersion::new("contract-version")));
         if self.capable(FileSystemCapability::ConditionalDelete) {
-            let path = self.required_seed(
-                "delete-conditional",
-                b"conditional delete",
-                "conditional-delete",
-            );
+            let path = self.required_seed("delete-conditional", b"conditional delete", "conditional-delete");
             self.context.record_created(path.clone());
             let version = match self
                 .fixture
@@ -429,16 +398,8 @@ impl<'a> FileSystemContractSuite<'a> {
             .file_system()
             .rename(&source, &target, RenameOptions::default())
             .expect("rename contract: rename failed");
-        assert_eq!(
-            outcome.source(),
-            &source,
-            "rename contract: source context mismatch"
-        );
-        assert_eq!(
-            outcome.target(),
-            &target,
-            "rename contract: target context mismatch"
-        );
+        assert_eq!(outcome.source(), &source, "rename contract: source context mismatch");
+        assert_eq!(outcome.target(), &target, "rename contract: target context mismatch");
         assert!(
             !self
                 .fixture
@@ -459,16 +420,8 @@ impl<'a> FileSystemContractSuite<'a> {
 
     /// Checks rename destination conflicts and explicit overwrite.
     pub fn assert_rename_conflicts(&mut self) {
-        let source = self.required_seed(
-            "rename-conflict-source",
-            b"rename source",
-            "rename-conflict",
-        );
-        let target = self.required_seed(
-            "rename-conflict-target",
-            b"rename target",
-            "rename-conflict",
-        );
+        let source = self.required_seed("rename-conflict-source", b"rename source", "rename-conflict");
+        let target = self.required_seed("rename-conflict-target", b"rename target", "rename-conflict");
         self.context.record_created(source.clone());
         self.context.record_created(target.clone());
         let failure = self
@@ -488,24 +441,12 @@ impl<'a> FileSystemContractSuite<'a> {
             &source,
             Some(&target),
         );
-        self.assert_bytes(
-            &source,
-            b"rename source",
-            "rename contract: conflict removed source",
-        );
-        self.assert_bytes(
-            &target,
-            b"rename target",
-            "rename contract: conflict changed target",
-        );
+        self.assert_bytes(&source, b"rename source", "rename contract: conflict removed source");
+        self.assert_bytes(&target, b"rename target", "rename contract: conflict changed target");
 
         self.fixture
             .file_system()
-            .rename(
-                &source,
-                &target,
-                RenameOptions::default().with_overwrite(true),
-            )
+            .rename(&source, &target, RenameOptions::default().with_overwrite(true))
             .expect("rename contract: overwrite failed");
         assert!(
             !self
@@ -514,11 +455,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 .exists(&source)
                 .expect("rename contract: overwrite source observation failed")
         );
-        self.assert_bytes(
-            &target,
-            b"rename source",
-            "rename contract: overwrite target mismatch",
-        );
+        self.assert_bytes(&target, b"rename source", "rename contract: overwrite target mismatch");
     }
 
     /// Checks recursive directory removal when the provider advertises it.
@@ -637,8 +574,7 @@ impl<'a> FileSystemContractSuite<'a> {
             );
             return;
         }
-        let source =
-            self.required_seed("durable-rename-source", b"durable rename", "durable-rename");
+        let source = self.required_seed("durable-rename-source", b"durable rename", "durable-rename");
         self.context.record_created(source.clone());
         self.context.record_created(target.clone());
         let outcome = self

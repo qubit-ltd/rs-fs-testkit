@@ -65,10 +65,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .expect("write contract: fixture observation failed")
         {
             FixtureSupport::Supported(bytes) => {
-                assert_eq!(
-                    bytes, b"async written",
-                    "write contract: bytes were not published"
-                )
+                assert_eq!(bytes, b"async written", "write contract: bytes were not published")
             }
             FixtureSupport::Unsupported => {
                 panic!("write contract: Write capability requires fixture.read_file support")
@@ -80,12 +77,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Checks asynchronous write dispositions, abort, and conditions.
     pub async fn assert_write_options(&mut self, existing: &Path) {
         let create_new = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
-        let error = match self
-            .fixture
-            .file_system()
-            .open_writer(existing, create_new)
-            .await
-        {
+        let error = match self.fixture.file_system().open_writer(existing, create_new).await {
             Ok(mut writer) => {
                 writer
                     .write_fully_async(b"unexpected")
@@ -100,18 +92,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             Err(error) => error,
         };
         assert!(
-            matches!(
-                error.operation(),
-                FsOperation::OpenWriter | FsOperation::CommitWriter
-            ),
+            matches!(error.operation(), FsOperation::OpenWriter | FsOperation::CommitWriter),
             "writer contract: create-new failed at an unrelated operation"
         );
-        self.assert_error(
-            &error,
-            FsErrorKind::AlreadyExists,
-            error.operation(),
-            existing,
-        );
+        self.assert_error(&error, FsErrorKind::AlreadyExists, error.operation(), existing);
         self.assert_bytes(
             existing,
             b"async written",
@@ -133,12 +117,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .commit_async()
             .await
             .expect("writer contract: replacement commit failed");
-        self.assert_bytes(
-            existing,
-            b"replaced",
-            "writer contract: replacement bytes mismatch",
-        )
-        .await;
+        self.assert_bytes(existing, b"replaced", "writer contract: replacement bytes mismatch")
+            .await;
 
         let aborted_path = self.path("async-write-aborted");
         self.context.record_created(aborted_path.clone());
@@ -152,10 +132,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .write_fully_async(b"aborted")
             .await
             .expect("writer contract: abort writer rejected bytes");
-        let _ = writer
-            .abort_async()
-            .await
-            .expect("writer contract: abort failed");
+        let _ = writer.abort_async().await.expect("writer contract: abort failed");
         assert!(
             !self
                 .fixture
@@ -199,18 +176,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     retry
                         .commit_async()
                         .await
-                        .expect_err(
-                            "writer contract: failed conditional write unexpectedly succeeded",
-                        )
+                        .expect_err("writer contract: failed conditional write unexpectedly succeeded")
                         .into_error()
                 }
                 Err(error) => error,
             };
             assert!(
-                matches!(
-                    error.operation(),
-                    FsOperation::OpenWriter | FsOperation::CommitWriter
-                ),
+                matches!(error.operation(), FsOperation::OpenWriter | FsOperation::CommitWriter),
                 "writer contract: conditional write failed at an unrelated operation"
             );
             self.assert_error(
@@ -266,9 +238,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
             return;
         }
-        let path = self
-            .required_seed("async-append-target", b"before", "append")
-            .await;
+        let path = self.required_seed("async-append-target", b"before", "append").await;
         let mut writer = self
             .fixture
             .file_system()
@@ -279,10 +249,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .write_fully_async(b"-after")
             .await
             .expect("append contract: write failed");
-        writer
-            .commit_async()
-            .await
-            .expect("append contract: commit failed");
+        writer.commit_async().await.expect("append contract: commit failed");
         self.assert_bytes(
             &path,
             b"before-after",

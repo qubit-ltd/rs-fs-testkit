@@ -25,9 +25,9 @@ impl<'a> FileSystemContractSuite<'a> {
                 _ => Path::parse("/temp-invalid-parent"),
             }
             .expect("incompatible temporary parent should parse");
-            let error = match file_system.create_temp_file(
-                TempFileOptions::default().with_parent(Some(incompatible_parent.clone())),
-            ) {
+            let error = match file_system
+                .create_temp_file(TempFileOptions::default().with_parent(Some(incompatible_parent.clone())))
+            {
                 Ok(_) => panic!("temp-file contract: invalid parent succeeded"),
                 Err(error) => error,
             };
@@ -72,9 +72,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 source.as_str().ends_with(".tmp"),
                 "temp-file contract: requested suffix was ignored"
             );
-            temporary
-                .cleanup()
-                .expect("temp-file contract: cleanup failed");
+            temporary.cleanup().expect("temp-file contract: cleanup failed");
             assert!(
                 !file_system
                     .exists(&source)
@@ -83,10 +81,8 @@ impl<'a> FileSystemContractSuite<'a> {
             );
             let mut temporary = file_system
                 .create_temp_file(
-                    TempFileOptions::default().with_parent(
-                        self.capable(FileSystemCapability::CreateDirectory)
-                            .then_some(parent),
-                    ),
+                    TempFileOptions::default()
+                        .with_parent(self.capable(FileSystemCapability::CreateDirectory).then_some(parent)),
                 )
                 .expect("temp-file contract: persist setup failed");
             let target = self.path("temp-file-parent/persisted-file");
@@ -96,11 +92,7 @@ impl<'a> FileSystemContractSuite<'a> {
             let error = file_system
                 .create_temp_file(TempFileOptions::default())
                 .expect_err("temp-file contract: unadvertised creation succeeded");
-            self.assert_pathless_error(
-                &error,
-                FsErrorKind::UnsupportedCapability,
-                FsOperation::CreateTemp,
-            );
+            self.assert_pathless_error(&error, FsErrorKind::UnsupportedCapability, FsOperation::CreateTemp);
         }
         if self.capable(FileSystemCapability::TempDirectory) {
             let parent = self.path("temp-directory-parent");
@@ -129,9 +121,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 source.as_str().ends_with(".tmp"),
                 "temp-directory contract: requested suffix was ignored"
             );
-            temporary
-                .cleanup()
-                .expect("temp-directory contract: cleanup failed");
+            temporary.cleanup().expect("temp-directory contract: cleanup failed");
             assert!(
                 !file_system
                     .exists(&source)
@@ -140,10 +130,8 @@ impl<'a> FileSystemContractSuite<'a> {
             );
             let mut temporary = file_system
                 .create_temp_directory(
-                    TempDirectoryOptions::default().with_parent(
-                        self.capable(FileSystemCapability::CreateDirectory)
-                            .then_some(parent),
-                    ),
+                    TempDirectoryOptions::default()
+                        .with_parent(self.capable(FileSystemCapability::CreateDirectory).then_some(parent)),
                 )
                 .expect("temp-directory contract: persist setup failed");
             let target = self.path("temp-directory-parent/persisted-directory");
@@ -156,11 +144,7 @@ impl<'a> FileSystemContractSuite<'a> {
             let error = file_system
                 .create_temp_directory(TempDirectoryOptions::default())
                 .expect_err("temp-directory contract: unadvertised creation succeeded");
-            self.assert_pathless_error(
-                &error,
-                FsErrorKind::UnsupportedCapability,
-                FsOperation::CreateTemp,
-            );
+            self.assert_pathless_error(&error, FsErrorKind::UnsupportedCapability, FsOperation::CreateTemp);
         }
     }
 
@@ -186,10 +170,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 .expect("temp-file contract: atomic preflight setup failed");
             let source = retry.path().clone();
             let failure = retry
-                .persist(
-                    &self.path("temp-required-atomic-file"),
-                    PersistOptions::default(),
-                )
+                .persist(&self.path("temp-required-atomic-file"), PersistOptions::default())
                 .expect_err("temp-file contract: unadvertised required atomic persist succeeded");
             assert_eq!(
                 failure.state(),
@@ -246,21 +227,15 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when persistence, atomicity preflight, ownership retention, or
     /// cleanup violates the temporary-directory contract.
-    pub fn assert_temp_directory_persist(
-        &self,
-        temporary: &mut TempDirectory,
-        target: &Path,
-    ) {
+    pub fn assert_temp_directory_persist(&self, temporary: &mut TempDirectory, target: &Path) {
         let outcome = temporary
             .persist(
                 target,
-                PersistOptions::default().with_atomicity(
-                    if self.capable(FileSystemCapability::AtomicTempPersist) {
-                        AtomicityRequirement::Required
-                    } else {
-                        AtomicityRequirement::Preferred
-                    },
-                ),
+                PersistOptions::default().with_atomicity(if self.capable(FileSystemCapability::AtomicTempPersist) {
+                    AtomicityRequirement::Required
+                } else {
+                    AtomicityRequirement::Preferred
+                }),
             )
             .expect("temp-directory contract: persist failed");
         assert_eq!(
@@ -290,13 +265,8 @@ impl<'a> FileSystemContractSuite<'a> {
                 .expect("temp-directory contract: atomic preflight setup failed");
             let source = retry.path().clone();
             let failure = retry
-                .persist(
-                    &self.path("temp-required-atomic-directory"),
-                    PersistOptions::default(),
-                )
-                .expect_err(
-                    "temp-directory contract: unadvertised required atomic persist succeeded",
-                );
+                .persist(&self.path("temp-required-atomic-directory"), PersistOptions::default())
+                .expect_err("temp-directory contract: unadvertised required atomic persist succeeded");
             assert_eq!(
                 failure.state(),
                 PersistFailureState::NotPublished,
@@ -365,13 +335,13 @@ impl<'a> FileSystemContractSuite<'a> {
         let outcome = temporary
             .persist(
                 &target,
-                PersistOptions::default()
-                    .with_overwrite(true)
-                    .with_atomicity(if self.capable(FileSystemCapability::AtomicTempPersist) {
+                PersistOptions::default().with_overwrite(true).with_atomicity(
+                    if self.capable(FileSystemCapability::AtomicTempPersist) {
                         AtomicityRequirement::Required
                     } else {
                         AtomicityRequirement::Preferred
-                    }),
+                    },
+                ),
             )
             .expect("temp-directory overwrite contract: persist failed");
         assert_eq!(
@@ -399,29 +369,18 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when persistence fails, reports the wrong destination or
     /// atomicity, or does not publish the target.
-    pub fn assert_temp_file_persist_result(
-        &self,
-        temporary: &mut TempFile,
-        target: &Path,
-        label: &str,
-    ) {
+    pub fn assert_temp_file_persist_result(&self, temporary: &mut TempFile, target: &Path, label: &str) {
         let outcome = temporary
             .persist(
                 target,
-                PersistOptions::default().with_atomicity(
-                    if self.capable(FileSystemCapability::AtomicTempPersist) {
-                        AtomicityRequirement::Required
-                    } else {
-                        AtomicityRequirement::Preferred
-                    },
-                ),
+                PersistOptions::default().with_atomicity(if self.capable(FileSystemCapability::AtomicTempPersist) {
+                    AtomicityRequirement::Required
+                } else {
+                    AtomicityRequirement::Preferred
+                }),
             )
             .expect("temp-file contract: persist failed");
-        assert_eq!(
-            outcome.target(),
-            target,
-            "{label} contract: persist target mismatch"
-        );
+        assert_eq!(outcome.target(), target, "{label} contract: persist target mismatch");
         if self.capable(FileSystemCapability::AtomicTempPersist) {
             assert_eq!(
                 outcome.atomicity(),

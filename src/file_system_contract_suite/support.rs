@@ -7,11 +7,12 @@
 // =============================================================================
 //! Implements fixture adaptation and suite lifecycle support.
 
-use super::*;
 use std::any::Any;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::panic::resume_unwind;
+
+use super::*;
 use crate::ContractCheckOutcome;
 use crate::FixtureError;
 
@@ -36,9 +37,7 @@ impl<'a> FileSystemContractSuite<'a> {
             match teardown {
                 Ok(Ok(support)) => {
                     self.teardown_completed = true;
-                    if matches!(support, FixtureSupport::Unsupported)
-                        && self.context.resources_prepared()
-                    {
+                    if matches!(support, FixtureSupport::Unsupported) && self.context.resources_prepared() {
                         self.context.record_check(
                             FileSystemContract::ErrorContext,
                             "cleanup/fixture-teardown",
@@ -54,9 +53,7 @@ impl<'a> FileSystemContractSuite<'a> {
                     teardown_failure = Some(format!("[fs-testkit:cleanup/teardown] {error}"));
                 }
                 Err(_payload) => {
-                    teardown_failure = Some(
-                        "[fs-testkit:cleanup/teardown] fixture teardown panicked".to_owned(),
-                    );
+                    teardown_failure = Some("[fs-testkit:cleanup/teardown] fixture teardown panicked".to_owned());
                 }
             }
         }
@@ -68,10 +65,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .map(|failure| {
                 format!(
                     "[fs-testkit:cleanup/{}] owner={} path={:?}: {}",
-                    failure.operation,
-                    failure.owner_check,
-                    failure.path,
-                    failure.cause,
+                    failure.operation, failure.owner_check, failure.path, failure.cause,
                 )
             })
             .collect::<Vec<_>>();
@@ -95,13 +89,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .file_system()
             .stat(&path)
             .expect_err("error contract: missing path succeeded");
-        self.assert_error(
-            &error,
-            FsErrorKind::NotFound,
-            FsOperation::Stat,
-            &path,
-            None,
-        );
+        self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path, None);
     }
 
     /// Resolves a fixture path or identifies the contract that could not set
@@ -121,9 +109,7 @@ impl<'a> FileSystemContractSuite<'a> {
     #[inline]
     pub fn path(&self, relative: &str) -> Path {
         let relative = self.context.relative_name(relative);
-        self.fixture
-            .path(&relative)
-            .expect("contract: fixture path failed")
+        self.fixture.path(&relative).expect("contract: fixture path failed")
     }
 
     /// Returns whether the immutable snapshot declares a capability.
@@ -137,10 +123,7 @@ impl<'a> FileSystemContractSuite<'a> {
     /// `true` when the provider advertises the capability.
     #[inline(always)]
     pub fn capable(&self, capability: FileSystemCapability) -> bool {
-        self.context
-            .properties()
-            .capabilities()
-            .supports(capability)
+        self.context.properties().capabilities().supports(capability)
     }
 
     /// Seeds a resource and makes support mandatory for the requested
@@ -164,9 +147,9 @@ impl<'a> FileSystemContractSuite<'a> {
     pub fn required_seed(&mut self, relative: &str, bytes: &[u8], contract: &str) -> Path {
         match self.seed(relative, bytes) {
             FixtureSupport::Supported(path) => path,
-            FixtureSupport::Unsupported => panic!(
-                "{contract} contract: advertised capability requires fixture.seed_file support"
-            ),
+            FixtureSupport::Unsupported => {
+                panic!("{contract} contract: advertised capability requires fixture.seed_file support")
+            }
         }
     }
 
@@ -187,7 +170,8 @@ impl<'a> FileSystemContractSuite<'a> {
     #[inline]
     pub fn seed(&mut self, relative: &str, bytes: &[u8]) -> FixtureSupport<Path> {
         let relative = self.context.relative_name(relative);
-        let support = self.fixture
+        let support = self
+            .fixture
             .seed_file(&relative, bytes)
             .expect("contract: fixture seed failed");
         if let FixtureSupport::Supported(path) = &support {
@@ -281,12 +265,7 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Validates an operation error that has no logical input path.
-    pub fn assert_pathless_error(
-        &self,
-        error: &FsError,
-        kind: FsErrorKind,
-        operation: FsOperation,
-    ) {
+    pub fn assert_pathless_error(&self, error: &FsError, kind: FsErrorKind, operation: FsOperation) {
         assert_unsupported_error(
             error,
             kind,

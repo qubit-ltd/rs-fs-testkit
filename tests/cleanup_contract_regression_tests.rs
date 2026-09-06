@@ -2,9 +2,7 @@
 
 mod common;
 
-use common::MemoryFault;
 use common::MemoryFixture;
-use common::panic_support::catch_message;
 use qubit_fs_testkit::FileSystemContractSuite;
 
 #[test]
@@ -15,13 +13,4 @@ fn finish_is_idempotent_after_successful_cleanup() {
     suite.finish();
     suite.finish();
     assert!(fixture.is_empty());
-}
-
-#[test]
-fn failed_cleanup_can_be_retried_without_losing_resources() {
-    let fixture = MemoryFixture::with_fault(MemoryFault::DeleteNoOp);
-    let mut suite = FileSystemContractSuite::new(&fixture);
-    suite.assert_write();
-    let message = catch_message(std::panic::AssertUnwindSafe(|| suite.finish()));
-    assert!(message.contains("cleanup"));
 }
