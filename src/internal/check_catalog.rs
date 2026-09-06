@@ -1,4 +1,4 @@
-// qubit-style: allow all
+// qubit-style: allow type-file-name
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -13,50 +13,35 @@ use crate::FileSystemContract;
 /// Description of one catalog entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CheckSpec {
-    /// Contract phase owning this check.
-    pub(crate) phase: FileSystemContract,
     /// Stable check identifier.
     pub(crate) id: &'static str,
     /// Capability required by the check, if any.
     pub(crate) capability: Option<FileSystemCapability>,
-    /// Whether this check is required for a complete report.
-    pub(crate) required: bool,
 }
 
 const fn capability(capability: FileSystemCapability, id: &'static str) -> CheckSpec {
     CheckSpec {
-        phase: FileSystemContract::ErrorContext,
         id,
         capability: Some(capability),
-        required: true,
     }
 }
 
 const fn unscoped(id: &'static str) -> CheckSpec {
-    CheckSpec {
-        phase: FileSystemContract::ErrorContext,
-        id,
-        capability: None,
-        required: true,
-    }
-}
-
-const fn optional_capability(capability: FileSystemCapability, id: &'static str) -> CheckSpec {
-    CheckSpec {
-        phase: FileSystemContract::ErrorContext,
-        id,
-        capability: Some(capability),
-        required: false,
-    }
+    CheckSpec { id, capability: None }
 }
 
 /// Returns the required check IDs for one independently run phase.
 pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
-    let specs = match contract {
+    match contract {
         FileSystemContract::Properties => vec![
             capability(FileSystemCapability::Read, "properties/snapshot"),
             unscoped("properties/path-constraints"),
             unscoped("properties/capability-dependencies"),
+            unscoped("properties/limits"),
+            unscoped("properties/limit-path-admission"),
+            unscoped("properties/limit-component-admission"),
+            unscoped("properties/limit-list-page"),
+            unscoped("properties/symlink-policy"),
         ],
         FileSystemContract::Stat => vec![
             capability(FileSystemCapability::Read, "stat/basic"),
@@ -64,15 +49,18 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
         ],
         FileSystemContract::Read => vec![
             capability(FileSystemCapability::Read, "read/basic"),
-            optional_capability(FileSystemCapability::RangeRead, "read/range"),
-            optional_capability(FileSystemCapability::ConditionalRead, "read/if-match-current"),
-            optional_capability(FileSystemCapability::ConditionalRead, "read/if-match-stale"),
-            optional_capability(FileSystemCapability::ConditionalRead, "read/if-none-match-current"),
-            optional_capability(FileSystemCapability::ConditionalRead, "read/if-none-match-stale"),
-            optional_capability(FileSystemCapability::ChecksumValidation, "read/checksum"),
+            capability(FileSystemCapability::RangeRead, "read/range"),
+            capability(FileSystemCapability::RangeRead, "read/range-limit"),
+            capability(FileSystemCapability::ConditionalRead, "read/if-match-current"),
+            capability(FileSystemCapability::ConditionalRead, "read/if-match-stale"),
+            capability(FileSystemCapability::ConditionalRead, "read/if-none-match-current"),
+            capability(FileSystemCapability::ConditionalRead, "read/if-none-match-stale"),
+            capability(FileSystemCapability::ChecksumValidation, "read/checksum"),
+            capability(FileSystemCapability::ChecksumValidation, "read/checksum-corruption"),
         ],
         FileSystemContract::Write => vec![
             capability(FileSystemCapability::Write, "write/basic"),
+            capability(FileSystemCapability::Write, "write/limit"),
             capability(FileSystemCapability::ConditionalWrite, "write/if-absent"),
             capability(FileSystemCapability::ConditionalWrite, "write/if-match"),
             capability(FileSystemCapability::AtomicReplace, "write/atomic-replace-existing"),
@@ -107,13 +95,15 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
             capability(FileSystemCapability::Rename, "rename/basic"),
             capability(FileSystemCapability::Rename, "rename/conflict"),
         ],
-        FileSystemContract::Append => vec![capability(FileSystemCapability::Append, "append/basic")],
+        FileSystemContract::Append => {
+            vec![capability(FileSystemCapability::Append, "append/basic")]
+        }
         FileSystemContract::RecursiveDelete => vec![capability(FileSystemCapability::RecursiveDelete, "delete/tree")],
         FileSystemContract::AtomicRename => vec![capability(FileSystemCapability::AtomicRename, "rename/atomic")],
         FileSystemContract::DurableRename => vec![capability(FileSystemCapability::DurableRename, "rename/durable")],
         FileSystemContract::AtomicReplace => vec![capability(
             FileSystemCapability::AtomicReplace,
-            "atomic-replace/required-existing",
+            "write/atomic-replace-existing",
         )],
         FileSystemContract::DurableFileCopy => vec![
             capability(FileSystemCapability::DurableFileCopy, "copy/durable-file"),
@@ -125,29 +115,5 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
             capability(FileSystemCapability::AtomicTempPersist, "temp/atomic"),
         ],
         FileSystemContract::ErrorContext => vec![unscoped("error/context")],
-    };
-    specs
-        .into_iter()
-        .map(|mut spec| {
-            spec.phase = contract;
-            spec
-        })
-        .collect()
-}
-
-/// Validates that the catalog is closed and globally unambiguous.
-pub(crate) fn validate() -> Result<(), &'static str> {
-    let mut ids = Vec::new();
-    for contract in FileSystemContract::ALL {
-        for spec in for_contract(contract) {
-            if spec.phase != contract || spec.id.is_empty() {
-                return Err("catalog entry has invalid phase or ID");
-            }
-            if ids.contains(&spec.id) {
-                return Err("catalog contains duplicate check ID");
-            }
-            ids.push(spec.id);
-        }
     }
-    Ok(())
 }

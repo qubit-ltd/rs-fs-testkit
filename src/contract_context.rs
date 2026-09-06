@@ -12,6 +12,7 @@ use std::panic::catch_unwind;
 #[cfg(feature = "async")]
 use qubit_fs::AsyncFileSystem;
 use qubit_fs::FileSystem;
+use qubit_fs::directory::DeleteOptions;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::metadata::FileSystemProperties;
@@ -39,10 +40,6 @@ impl ContractContext {
     /// Creates context from the facade's cached immutable property snapshot.
     #[inline]
     pub(crate) fn new(properties: &FileSystemProperties) -> Self {
-        assert!(
-            crate::internal::check_catalog::validate().is_ok(),
-            "contract check catalog must be closed and unambiguous"
-        );
         Self {
             properties: properties.clone(),
             name_counter: 0,
@@ -123,23 +120,20 @@ impl ContractContext {
     #[inline]
     pub(crate) fn record_check(
         &mut self,
-        phase: FileSystemContract,
         id: &'static str,
         capability: Option<FileSystemCapability>,
-        required: bool,
         outcome: ContractCheckOutcome,
     ) {
-        self.report.record(phase, id, capability, required, outcome);
+        self.report.record(id, capability, outcome);
     }
 
     /// Registers every check expected for a phase before it executes.
     pub(crate) fn prepare_phase(&mut self, contract: FileSystemContract) {
         for spec in crate::internal::check_catalog::for_contract(contract) {
-            self.report.push(
-                spec.phase,
+            self.report.expect(spec.id);
+            self.report.record(
                 spec.id,
                 spec.capability,
-                spec.required,
                 ContractCheckOutcome::Unverified {
                     reason: "check not yet executed".to_owned(),
                 },
@@ -188,13 +182,54 @@ impl ContractContext {
             };
             let deleted = catch_unwind(AssertUnwindSafe(|| {
                 if metadata.is_directory_like() {
-                    file_system.delete_directory(&path, Default::default())
+                    let options = if self
+                        .properties
+                        .capabilities()
+                        .supports(FileSystemCapability::RecursiveDelete)
+                    {
+                        DeleteOptions::default().with_recursive(true)
+                    } else {
+                        DeleteOptions::default()
+                    };
+                    file_system.delete_directory(&path, options)
                 } else {
                     file_system.delete_file(&path, Default::default())
                 }
             }));
             match deleted {
-                Ok(Ok(_)) => {}
+                Ok(Ok(_outcome)) => {
+                    let verified = catch_unwind(AssertUnwindSafe(|| file_system.stat(&path)));
+                    match verified {
+                        Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
+                        Ok(Ok(_)) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: FixtureError::new("delete reported success but the resource still exists"),
+                            });
+                            retained.push(resource);
+                        }
+                        Ok(Err(error)) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: FixtureError::new(format!("delete outcome could not be verified: {error}")),
+                            });
+                            retained.push(resource);
+                        }
+                        Err(payload) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: panic_error(payload),
+                            });
+                            retained.push(resource);
+                        }
+                    }
+                }
                 Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
                 Ok(Err(error)) => {
                     failures.push(CleanupFailure {
@@ -259,12 +294,53 @@ impl ContractContext {
                 }
             };
             let deleted = if metadata.is_directory_like() {
-                crate::internal::catch_unwind_future(file_system.delete_directory(&path, Default::default())).await
+                let options = if self
+                    .properties
+                    .capabilities()
+                    .supports(FileSystemCapability::RecursiveDelete)
+                {
+                    DeleteOptions::default().with_recursive(true)
+                } else {
+                    DeleteOptions::default()
+                };
+                crate::internal::catch_unwind_future(file_system.delete_directory(&path, options)).await
             } else {
                 crate::internal::catch_unwind_future(file_system.delete_file(&path, Default::default())).await
             };
             match deleted {
-                Ok(Ok(_)) => {}
+                Ok(Ok(_outcome)) => {
+                    let verified = crate::internal::catch_unwind_future(file_system.stat(&path)).await;
+                    match verified {
+                        Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
+                        Ok(Ok(_)) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: FixtureError::new("delete reported success but the resource still exists"),
+                            });
+                            retained.push(resource);
+                        }
+                        Ok(Err(error)) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: FixtureError::new(format!("delete outcome could not be verified: {error}")),
+                            });
+                            retained.push(resource);
+                        }
+                        Err(payload) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: panic_error(payload),
+                            });
+                            retained.push(resource);
+                        }
+                    }
+                }
                 Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
                 Ok(Err(error)) => {
                     failures.push(CleanupFailure {

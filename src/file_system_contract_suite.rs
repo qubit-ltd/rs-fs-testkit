@@ -40,11 +40,13 @@ use qubit_fs::temp::TempDirectory;
 use qubit_fs::temp::TempFile;
 use qubit_fs::temp::TempOptions as TempDirectoryOptions;
 use qubit_fs::temp::TempOptions as TempFileOptions;
+use qubit_fs::temp::TempResourceState;
 use qubit_fs::write::WriteDisposition;
 use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WritePrecondition;
 use qubit_io::Output;
 
+use crate::ContractCheckOutcome;
 use crate::ContractReport;
 use crate::FileSystemContract;
 use crate::FileSystemFixture;
@@ -182,7 +184,5 @@ impl<'a> FileSystemContractSuite<'a> {
             FileSystemContract::TempResources => self.assert_temp_resources(),
             FileSystemContract::ErrorContext => self.assert_error_context(),
         }
-        let capabilities = self.context.properties().capabilities();
-        self.context.report_mut().complete_phase(contract, &capabilities);
     }
 }

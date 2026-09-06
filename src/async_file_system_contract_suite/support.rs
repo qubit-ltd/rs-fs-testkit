@@ -1,4 +1,4 @@
-// qubit-style: allow all
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -39,10 +39,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     self.teardown_completed = true;
                     if matches!(support, FixtureSupport::Unsupported) && self.context.resources_prepared() {
                         self.context.record_check(
-                            FileSystemContract::ErrorContext,
                             "cleanup/fixture-teardown",
                             None,
-                            true,
                             ContractCheckOutcome::Unverified {
                                 reason: "fixture teardown is unavailable".to_owned(),
                             },
@@ -89,8 +87,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .file_system()
             .stat(&path)
             .await
-            .expect_err("error contract: missing path succeeded");
+            .expect_err("error/context: missing path succeeded");
         self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+        self.context
+            .record_check("error/context", None, ContractCheckOutcome::Passed);
     }
 
     /// Resolves a fixture path or identifies setup failure at the contract
@@ -186,7 +186,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 assert_eq!(actual, expected, "{message}")
             }
             FixtureSupport::Unsupported => {
-                panic!("async copy contract: Copy capability requires fixture.read_file support")
+                panic!("{message}: Copy capability requires fixture.read_file support")
             }
         }
     }

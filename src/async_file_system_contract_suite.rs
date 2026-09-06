@@ -9,9 +9,7 @@
 
 use std::future::Future;
 use std::panic::resume_unwind;
-use std::task::Context;
 use std::task::Poll;
-use std::task::Waker;
 
 use qubit_fs::copy::AsyncCopyOperationState;
 use qubit_fs::copy::CopyConflictPolicy;
@@ -45,6 +43,7 @@ use qubit_fs::temp::PersistOptions;
 use qubit_fs::temp::PersistOutcome;
 use qubit_fs::temp::TempOptions as TempDirectoryOptions;
 use qubit_fs::temp::TempOptions as TempFileOptions;
+use qubit_fs::temp::TempResourceState;
 use qubit_fs::write::WriteDisposition;
 use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WritePrecondition;
@@ -52,8 +51,10 @@ use qubit_io::AsyncOutput;
 
 use crate::AsyncCopyCancellationStage;
 use crate::AsyncFileSystemFixture;
+use crate::ContractCheckOutcome;
 use crate::ContractReport;
 use crate::FileSystemContract;
+use crate::FixtureCase;
 use crate::FixtureSupport;
 use crate::contract_context::ContractContext;
 use crate::internal::assert_error_with_source_or_target;
@@ -191,7 +192,5 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             FileSystemContract::TempResources => self.assert_temp_resources().await,
             FileSystemContract::ErrorContext => self.assert_error_context().await,
         }
-        let capabilities = self.context.properties().capabilities();
-        self.context.report_mut().complete_phase(contract, &capabilities);
     }
 }

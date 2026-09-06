@@ -15,7 +15,6 @@
 //    See the License for the specific language governing permissions and
 //    limitations under the License.
 // =============================================================================
-#![allow(dead_code)]
 //! Shared in-memory provider data model used by sync and async fixtures.
 
 #[derive(Clone)]

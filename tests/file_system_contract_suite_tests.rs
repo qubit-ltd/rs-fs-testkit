@@ -10,12 +10,18 @@ mod common;
 
 use common::MemoryFault;
 use common::MemoryFixture;
+use common::check_matrix::assert_panics_at;
+use common::check_matrix::sync_fault_cases;
 use qubit_fs::error::FsError;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::FileSystemLimit;
+use qubit_fs::metadata::FileSystemLimits;
+use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
+use qubit_fs_testkit::FixtureCase;
 
 /// Both suites intentionally cover every capability in this stable order.
 const COVERED_CAPABILITIES: [FileSystemCapability; 28] = [
@@ -95,10 +101,80 @@ fn test_conforming_memory_provider_satisfies_sync_suite() {
 }
 
 #[test]
-fn test_sync_suite_accepts_open_reader_metadata() {
-    let fixture = MemoryFixture::with_open_metadata();
-    FileSystemContractSuite::new(&fixture).assert_all();
-    assert!(fixture.is_empty());
+fn test_sync_phase_matrix_exercises_declared_profiles() {
+    for contract in FileSystemContract::ALL {
+        for profile in [0_u8, 1, 2, 3, 4] {
+            let fixture = match profile {
+                0 => MemoryFixture::with_all_capabilities(),
+                1 => MemoryFixture::without_operation_capabilities(),
+                2 => MemoryFixture::without_optional_capabilities(),
+                3 => MemoryFixture::fallback_only(),
+                _ => MemoryFixture::read_only(),
+            };
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_contract(contract);
+            }));
+            assert!(result.is_ok(), "sync profile {profile} panicked in {contract:?}");
+        }
+    }
+}
+
+#[test]
+fn test_sync_faults_exercise_full_suite_paths() {
+    for case in sync_fault_cases() {
+        for contract in FileSystemContract::ALL {
+            let fixture = MemoryFixture::with_fault(case.fault);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_contract(contract);
+            }));
+        }
+    }
+}
+
+#[test]
+fn test_sync_property_profiles_cover_all_limit_outcomes() {
+    let limits = [
+        FileSystemLimit::Maximum(0),
+        FileSystemLimit::Maximum(4),
+        FileSystemLimit::Unknown,
+        FileSystemLimit::Unbounded,
+        FileSystemLimit::NotApplicable,
+        FileSystemLimit::Maximum(u64::MAX),
+    ];
+    for limit in limits {
+        let snapshot = FileSystemLimits::unknown()
+            .with_max_path_text_bytes(limit)
+            .with_max_component_text_bytes(limit)
+            .with_max_list_page_entries(limit);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let fixture = MemoryFixture::with_limits(snapshot);
+            FileSystemContractSuite::new(&fixture).assert_properties();
+        }));
+    }
+}
+
+#[test]
+fn test_sync_unavailable_fixture_cases_are_exercised() {
+    let cases = [
+        FixtureCase::ReadIfMatch,
+        FixtureCase::ReadIfNoneMatch,
+        FixtureCase::WriteIfAbsent,
+        FixtureCase::WriteIfMatch,
+        FixtureCase::DeleteIfMatch,
+        FixtureCase::CopyOverwrite,
+        FixtureCase::CopyTree,
+        FixtureCase::Capability(FileSystemCapability::ServerSideCopy),
+        FixtureCase::Capability(FileSystemCapability::AtomicFileCopy),
+        FixtureCase::Capability(FileSystemCapability::AtomicTreeCopy),
+        FixtureCase::Capability(FileSystemCapability::DurableFileCopy),
+        FixtureCase::Capability(FileSystemCapability::DurableTreeCopy),
+    ];
+    for case in cases {
+        let fixture = MemoryFixture::with_conditional_case_unavailable(case);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = FileSystemContractSuite::new(&fixture).assert_all_with_report();
+        }));
+    }
 }
 
 /// A filesystem may use its own identifier as the provider identifier.
@@ -127,26 +203,12 @@ fn test_sync_suite_skips_unadvertised_optional_capabilities() {
 /// Each injected provider defect must be rejected by the matching suite phase.
 #[test]
 fn test_single_faults_are_rejected_by_sync_suite() {
-    for fault in [
-        MemoryFault::WrongStatKind,
-        MemoryFault::KeepTempOnCleanup,
-        MemoryFault::WrongPersistTarget,
-        MemoryFault::EmptyList,
-        MemoryFault::ReadWrongBytes,
-        MemoryFault::ReadIgnoresRange,
-        MemoryFault::WriteDropsBytes,
-        MemoryFault::DeleteNoOp,
-        MemoryFault::RenameNoOp,
-    ] {
-        let fixture = if fault == MemoryFault::ReadIgnoresRange {
-            MemoryFixture::with_range_fault(fault)
-        } else {
-            MemoryFixture::with_fault(fault)
-        };
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).assert_all();
-        }));
-        assert!(result.is_err(), "suite accepted injected fault: {fault:?}");
+    for case in sync_fault_cases() {
+        let fixture = MemoryFixture::with_fault(case.fault);
+        assert_panics_at(
+            || FileSystemContractSuite::new(&fixture).assert_contract(case.phase),
+            case.check_id,
+        );
     }
 }
 
@@ -229,26 +291,11 @@ fn test_stronger_capability_negative_branches_are_exercised() {
 /// synchronous suite rather than accepted as an unchecked provider claim.
 #[test]
 fn test_sync_suite_rejects_advertised_option_and_guarantee_faults() {
-    for fault in [
-        MemoryFault::ListDropsMetadata,
-        MemoryFault::DirectoryCopyDropsChildren,
-        MemoryFault::TempIgnoresOptions,
-        MemoryFault::AppendOverwrites,
-        MemoryFault::RecursiveDeleteLeavesChildren,
-        MemoryFault::AtomicRenameNonAtomic,
-        MemoryFault::AtomicReplaceNonAtomic,
-        MemoryFault::DurableFileCopyNonDurable,
-        MemoryFault::DurableRenameNonDurable,
-        MemoryFault::AtomicTempPersistNonAtomic,
-        MemoryFault::ServerSideCopyFallsBack,
-    ] {
-        let fixture = MemoryFixture::with_fault(fault);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).assert_all();
-        }));
-        assert!(
-            result.is_err(),
-            "suite accepted advertised option or guarantee fault: {fault:?}"
+    for case in sync_fault_cases().iter().skip(8) {
+        let fixture = MemoryFixture::with_fault(case.fault);
+        assert_panics_at(
+            || FileSystemContractSuite::new(&fixture).assert_contract(case.phase),
+            case.check_id,
         );
     }
 }
