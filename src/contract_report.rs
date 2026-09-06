@@ -141,6 +141,23 @@ mod tests {
     }
 
     #[test]
+    fn unverified_catalog_entry_is_incomplete_until_recorded() {
+        let mut report = ContractReport::new();
+        report.expect("cataloged-check");
+        report.record(
+            "cataloged-check",
+            None,
+            ContractCheckOutcome::Unverified {
+                reason: "check not yet executed".to_owned(),
+            },
+        );
+
+        assert!(!report.is_complete());
+        let result = std::panic::catch_unwind(|| report.assert_complete());
+        assert!(result.is_err(), "an unexecuted check must fail strict mode");
+    }
+
+    #[test]
     fn skipped_optional_does_not_make_report_incomplete() {
         let mut report = ContractReport::new();
         report.expect("optional-check");
