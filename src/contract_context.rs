@@ -2,10 +2,12 @@
 //    Copyright (c) 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
-//
-//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Mutable state shared by one contract-suite run.
+
+use std::any::Any;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 
 #[cfg(feature = "async")]
 use qubit_fs::AsyncFileSystem;
@@ -15,53 +17,46 @@ use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::metadata::FileSystemProperties;
 use qubit_fs::path::Path;
 
-/// Holds the immutable snapshot and mutable namespace bookkeeping for a suite.
+use crate::ContractCheckOutcome;
+use crate::ContractReport;
+use crate::FixtureError;
+use crate::internal::cleanup_failure::CleanupFailure;
+use crate::internal::tracked_resource::TrackedResource;
+use crate::FileSystemContract;
+
+/// Holds the immutable snapshot, report, and cleanup ledger for one run.
 pub(crate) struct ContractContext {
-    /// Immutable property snapshot captured when the suite starts.
     properties: FileSystemProperties,
-    /// Counter used to make repeated contract phase names unique.
     name_counter: u64,
-    /// Paths retained for best-effort cleanup in reverse creation order.
-    created_paths: Vec<Path>,
-    /// Name of the contract phase currently producing diagnostics.
+    resources: Vec<TrackedResource>,
     current_contract: &'static str,
+    report: ContractReport,
+    resource_index: u64,
+    resources_prepared: bool,
 }
 
 impl ContractContext {
     /// Creates context from the facade's cached immutable property snapshot.
-    ///
-    /// # Parameters
-    ///
-    /// * `properties` - Property snapshot exposed by the tested facade.
-    ///
-    /// # Returns
-    ///
-    /// Fresh context in the initialization phase with no recorded paths.
     #[inline]
     pub(crate) fn new(properties: &FileSystemProperties) -> Self {
         Self {
             properties: properties.clone(),
             name_counter: 0,
-            created_paths: Vec::new(),
+            resources: Vec::new(),
             current_contract: "initialization",
+            report: ContractReport::new(),
+            resource_index: 0,
+            resources_prepared: false,
         }
     }
 
-    /// Returns the suite's single property snapshot.
-    ///
-    /// # Returns
-    ///
-    /// The immutable snapshot captured when the context was created.
+    /// Returns the suite's immutable property snapshot.
     #[inline(always)]
     pub(crate) const fn properties(&self) -> &FileSystemProperties {
         &self.properties
     }
 
     /// Starts a named contract assertion and advances the unique-name counter.
-    ///
-    /// # Parameters
-    ///
-    /// * `contract` - Static contract name used in paths and diagnostics.
     #[inline]
     pub(crate) fn begin(&mut self, contract: &'static str) {
         self.current_contract = contract;
@@ -69,14 +64,6 @@ impl ContractContext {
     }
 
     /// Returns a suite-unique relative name for the current contract phase.
-    ///
-    /// # Parameters
-    ///
-    /// * `relative` - Human-readable suffix describing the contract resource.
-    ///
-    /// # Returns
-    ///
-    /// A name containing the current contract, invocation counter, and suffix.
     #[inline]
     pub(crate) fn relative_name(&self, relative: &str) -> String {
         format!(
@@ -87,113 +74,249 @@ impl ContractContext {
         )
     }
 
-    /// Records a path created by the current contract assertion.
-    ///
-    /// # Parameters
-    ///
-    /// * `path` - Provider path that cleanup should remove later.
+    /// Records a path with its owning check, retaining only the first owner.
     #[inline]
     pub(crate) fn record_created(&mut self, path: Path) {
-        self.created_paths.push(path);
+        self.record_resource(path, self.current_contract);
     }
 
-    /// Returns the contract currently being evaluated for diagnostic context.
-    ///
-    /// # Returns
-    ///
-    /// The static name most recently supplied to [`Self::begin`].
+    /// Records a path with an explicit check owner.
+    #[inline]
+    pub(crate) fn record_resource(
+        &mut self,
+        path: Path,
+        owner_check: &'static str,
+    ) {
+        if self.resources.iter().any(|resource| resource.path == path) {
+            return;
+        }
+        self.resource_index = self.resource_index.saturating_add(1);
+        self.resources_prepared = true;
+        self.resources.push(TrackedResource {
+            path,
+            owner_check,
+            creation_index: self.resource_index,
+        });
+    }
+
+    /// Returns the contract currently producing diagnostics.
     #[inline(always)]
     pub(crate) const fn current_contract(&self) -> &'static str {
         self.current_contract
     }
 
-    /// Removes resources recorded by completed contract phases in reverse
-    /// order.
+    /// Returns the report accumulated by the suite.
+    #[inline]
+    pub(crate) const fn report(&self) -> &ContractReport {
+        &self.report
+    }
+
+    /// Returns mutable access for a suite phase to record a check outcome.
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn report_mut(&mut self) -> &mut ContractReport {
+        &mut self.report
+    }
+
+    /// Returns whether this run acquired any fixture-owned resource.
+    #[inline]
+    pub(crate) const fn resources_prepared(&self) -> bool {
+        self.resources_prepared
+    }
+
+    /// Records one stable check outcome after its phase has executed.
+    #[inline]
+    pub(crate) fn record_check(
+        &mut self,
+        id: &'static str,
+        capability: Option<FileSystemCapability>,
+        outcome: ContractCheckOutcome,
+    ) {
+        self.report.record(id, capability, outcome);
+    }
+
+    /// Registers every check expected for a phase before it executes.
+    pub(crate) fn prepare_phase(&mut self, contract: FileSystemContract) {
+        for spec in crate::internal::check_catalog::for_contract(contract) {
+            self.report.record(
+                spec.id,
+                spec.capability,
+                ContractCheckOutcome::Unverified {
+                    reason: "check not yet executed".to_owned(),
+                },
+            );
+        }
+    }
+
+    /// Attempts every recorded synchronous resource and collects failures.
     ///
-    /// Cleanup is best-effort: a resource that a phase already removed is not a
-    /// contract failure, while any other cleanup error is reported with the
-    /// phase that owned the resource. Providers without deletion capability
-    /// retain the fixture-owned resources because the suite cannot clean them.
-    ///
-    /// # Parameters
-    ///
-    /// * `file_system` - Synchronous facade used to inspect and delete paths.
-    ///
-    /// # Panics
-    ///
-    /// Panics when metadata inspection or deletion fails for a recorded path,
-    /// except when inspection reports that the path is already absent.
-    pub(crate) fn cleanup(&mut self, file_system: &FileSystem) {
+    /// Missing paths count as already cleaned. Failed resources remain in the
+    /// ledger so a later explicit `finish` can retry them.
+    pub(crate) fn cleanup(&mut self, file_system: &FileSystem) -> Vec<CleanupFailure> {
         if !self
             .properties
             .capabilities()
             .supports(FileSystemCapability::Delete)
         {
-            self.created_paths.clear();
-            return;
+            return Vec::new();
         }
-        while let Some(path) = self.created_paths.pop() {
-            let metadata = match file_system.stat(&path) {
-                Ok(metadata) => metadata,
-                Err(error) if error.kind() == FsErrorKind::NotFound => continue,
-                Err(error) => panic!(
-                    "{} contract: cleanup stat failed for {path}: {error}",
-                    self.current_contract
-                ),
+        let mut pending = std::mem::take(&mut self.resources);
+        let mut retained = Vec::with_capacity(pending.len());
+        let mut failures = Vec::new();
+        while let Some(resource) = pending.pop() {
+            let path = resource.path.clone();
+            let owner = resource.owner_check;
+            let inspected = catch_unwind(AssertUnwindSafe(|| file_system.stat(&path)));
+            let metadata = match inspected {
+                Ok(Ok(metadata)) => metadata,
+                Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => continue,
+                Ok(Err(error)) => {
+                    failures.push(CleanupFailure {
+                        owner_check: owner,
+                        operation: "stat",
+                        path: Some(path),
+                        cause: FixtureError::new(error.to_string()),
+                    });
+                    retained.push(resource);
+                    continue;
+                }
+                Err(payload) => {
+                    failures.push(CleanupFailure {
+                        owner_check: owner,
+                        operation: "stat",
+                        path: Some(path),
+                        cause: panic_error(payload),
+                    });
+                    retained.push(resource);
+                    continue;
+                }
             };
-            let result = if metadata.is_directory_like() {
-                file_system.delete_directory(&path, Default::default())
-            } else {
-                file_system.delete_file(&path, Default::default())
-            };
-            result.expect("contract cleanup failed");
+            let deleted = catch_unwind(AssertUnwindSafe(|| {
+                if metadata.is_directory_like() {
+                    file_system.delete_directory(&path, Default::default())
+                } else {
+                    file_system.delete_file(&path, Default::default())
+                }
+            }));
+            match deleted {
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
+                Ok(Err(error)) => {
+                    failures.push(CleanupFailure {
+                        owner_check: owner,
+                        operation: "delete",
+                        path: Some(path),
+                        cause: FixtureError::new(error.to_string()),
+                    });
+                    retained.push(resource);
+                }
+                Err(payload) => {
+                    failures.push(CleanupFailure {
+                        owner_check: owner,
+                        operation: "delete",
+                        path: Some(path),
+                        cause: panic_error(payload),
+                    });
+                    retained.push(resource);
+                }
+            }
         }
+        retained.sort_by_key(|resource| resource.creation_index);
+        self.resources = retained;
+        failures
     }
 
-    /// Asynchronously removes resources recorded by completed contract phases.
-    ///
-    /// Cleanup follows the synchronous suite semantics: missing resources are
-    /// already cleaned, while every other observation or deletion error fails
-    /// the current contract with its diagnostic context.
-    ///
-    /// # Parameters
-    ///
-    /// * `file_system` - Asynchronous facade used to inspect and delete paths.
-    ///
-    /// # Panics
-    ///
-    /// Panics when metadata inspection or deletion fails for a recorded path,
-    /// except when inspection reports that the path is already absent.
+    /// Attempts every recorded asynchronous resource and collects failures.
     #[cfg(feature = "async")]
     pub(crate) async fn cleanup_async(
         &mut self,
         file_system: &AsyncFileSystem,
-    ) {
+    ) -> Vec<CleanupFailure> {
         if !self
             .properties
             .capabilities()
             .supports(FileSystemCapability::Delete)
         {
-            self.created_paths.clear();
-            return;
+            return Vec::new();
         }
-        while let Some(path) = self.created_paths.pop() {
-            let metadata = match file_system.stat(&path).await {
-                Ok(metadata) => metadata,
-                Err(error) if error.kind() == FsErrorKind::NotFound => continue,
-                Err(error) => panic!(
-                    "{} contract: cleanup stat failed for {path}: {error}",
-                    self.current_contract
-                ),
+        let mut pending = std::mem::take(&mut self.resources);
+        let mut retained = Vec::with_capacity(pending.len());
+        let mut failures = Vec::new();
+        while let Some(resource) = pending.pop() {
+            let path = resource.path.clone();
+            let owner = resource.owner_check;
+            let inspected = crate::internal::catch_unwind_future(file_system.stat(&path)).await;
+            let metadata = match inspected {
+                Ok(Ok(metadata)) => metadata,
+                Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => continue,
+                Ok(Err(error)) => {
+                    failures.push(CleanupFailure {
+                        owner_check: owner,
+                        operation: "stat",
+                        path: Some(path),
+                        cause: FixtureError::new(error.to_string()),
+                    });
+                    retained.push(resource);
+                    continue;
+                }
+                Err(payload) => {
+                    failures.push(CleanupFailure {
+                        owner_check: owner,
+                        operation: "stat",
+                        path: Some(path),
+                        cause: panic_error(payload),
+                    });
+                    retained.push(resource);
+                    continue;
+                }
             };
-            let result = if metadata.is_directory_like() {
-                file_system
-                    .delete_directory(&path, Default::default())
-                    .await
+            let deleted = if metadata.is_directory_like() {
+                crate::internal::catch_unwind_future(
+                    file_system.delete_directory(&path, Default::default()),
+                )
+                .await
             } else {
-                file_system.delete_file(&path, Default::default()).await
+                crate::internal::catch_unwind_future(
+                    file_system.delete_file(&path, Default::default()),
+                )
+                .await
             };
-            result.expect("contract cleanup failed");
+            match deleted {
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
+                Ok(Err(error)) => {
+                    failures.push(CleanupFailure {
+                        owner_check: owner,
+                        operation: "delete",
+                        path: Some(path),
+                        cause: FixtureError::new(error.to_string()),
+                    });
+                    retained.push(resource);
+                }
+                Err(payload) => {
+                    failures.push(CleanupFailure {
+                        owner_check: owner,
+                        operation: "delete",
+                        path: Some(path),
+                        cause: panic_error(payload),
+                    });
+                    retained.push(resource);
+                }
+            }
         }
+        retained.sort_by_key(|resource| resource.creation_index);
+        self.resources = retained;
+        failures
+    }
+}
+
+/// Converts an arbitrary provider panic into a safe fixture error.
+fn panic_error(payload: Box<dyn Any + Send>) -> FixtureError {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        FixtureError::new(message.clone())
+    } else if let Some(message) = payload.downcast_ref::<&str>() {
+        FixtureError::new(*message)
+    } else {
+        FixtureError::new("non-string provider panic during cleanup")
     }
 }

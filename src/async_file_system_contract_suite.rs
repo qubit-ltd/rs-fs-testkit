@@ -52,6 +52,7 @@ use qubit_io::AsyncOutput;
 
 use crate::AsyncCopyCancellationStage;
 use crate::AsyncFileSystemFixture;
+use crate::ContractReport;
 use crate::FileSystemContract;
 use crate::FixtureSupport;
 use crate::contract_context::ContractContext;
@@ -85,6 +86,7 @@ pub struct AsyncFileSystemContractSuite<'a> {
     fixture: &'a dyn AsyncFileSystemFixture,
     /// Property snapshot and cleanup state for the current suite run.
     context: ContractContext,
+    teardown_completed: bool,
 }
 
 impl<'a> AsyncFileSystemContractSuite<'a> {
@@ -102,6 +104,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         Self {
             fixture,
             context: ContractContext::new(fixture.file_system().properties()),
+            teardown_completed: false,
         }
     }
 
@@ -111,17 +114,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when the provider violates any contract or fixture setup and
     /// observation fails. Cleanup runs before an assertion panic is resumed.
-    pub async fn assert_all(mut self) {
-        let result = catch_unwind_future(async {
-            for contract in FileSystemContract::ALL {
-                self.assert_contract_inner(contract).await;
-            }
-        })
-        .await;
-        self.finish().await;
-        if let Err(payload) = result {
-            resume_unwind(payload);
-        }
+    pub async fn assert_all(self) {
+        let _ = self.assert_all_with_report().await;
     }
 
     /// Runs one named asynchronous contract and always performs cleanup.
@@ -130,19 +124,56 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when the provider violates the selected contract or cleanup
     /// fails. Cleanup completes before an assertion panic is resumed.
-    pub async fn assert_contract(mut self, contract: FileSystemContract) {
+    pub async fn assert_contract(self, contract: FileSystemContract) {
+        let _ = self.assert_contract_with_report(contract).await;
+    }
+
+    /// Runs all phases, performs cleanup, and returns the execution report.
+    pub async fn assert_all_with_report(mut self) -> ContractReport {
+        let result = catch_unwind_future(async {
+            for contract in FileSystemContract::ALL {
+                self.assert_contract_inner(contract).await;
+            }
+        })
+        .await;
+        let cleanup = catch_unwind_future(self.finish()).await;
+        if let Err(payload) = result {
+            resume_unwind(payload);
+        }
+        if let Err(payload) = cleanup {
+            resume_unwind(payload);
+        }
+        self.context.report().clone()
+    }
+
+    /// Runs one phase, performs cleanup, and returns the execution report.
+    pub async fn assert_contract_with_report(
+        mut self,
+        contract: FileSystemContract,
+    ) -> ContractReport {
         let result = catch_unwind_future(async {
             self.assert_contract_inner(contract).await;
         })
         .await;
-        self.finish().await;
+        let cleanup = catch_unwind_future(self.finish()).await;
         if let Err(payload) = result {
             resume_unwind(payload);
         }
+        if let Err(payload) = cleanup {
+            resume_unwind(payload);
+        }
+        self.context.report().clone()
+    }
+
+    /// Returns the report currently accumulated by this suite.
+    #[inline]
+    pub fn report(&self) -> &ContractReport {
+        self.context.report()
     }
 
     /// Dispatches one named asynchronous phase without assuming a runtime.
     async fn assert_contract_inner(&mut self, contract: FileSystemContract) {
+        self.context.prepare_phase(contract);
         match contract {
             FileSystemContract::Properties => self.assert_properties().await,
             FileSystemContract::Stat => self.assert_stat().await,

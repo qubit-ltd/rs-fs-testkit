@@ -13,6 +13,7 @@ use qubit_fs::metadata::ResourceVersion;
 use qubit_fs::path::Path;
 
 use crate::CopyFixtureCase;
+use crate::FixtureCase;
 use crate::FixtureResult;
 use crate::FixtureSupport;
 
@@ -40,6 +41,26 @@ pub trait FileSystemFixture {
     /// Returns [`FixtureError`](crate::FixtureError) when the name cannot be
     /// represented by the provider's path model.
     fn path(&self, relative: &str) -> FixtureResult<Path>;
+
+    /// Declares whether this fixture can prepare and observe a scenario.
+    ///
+    /// Returning [`FixtureSupport::Unsupported`] records that the scenario is
+    /// conditional for this fixture. Setup errors must be returned as errors,
+    /// rather than being hidden as unsupported cases.
+    #[inline]
+    fn case_support(
+        &self,
+        case: FixtureCase,
+    ) -> FixtureResult<FixtureSupport<()>> {
+        let _ = case;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Reports whether copy is intentionally limited to the stream fallback.
+    #[inline]
+    fn copy_fallback_only(&self) -> bool {
+        false
+    }
 
     /// Maps a relative list prefix for the supplied root.
     ///
@@ -113,6 +134,27 @@ pub trait FileSystemFixture {
         Ok(FixtureSupport::Unsupported)
     }
 
+    /// Observes whether a resource exists without using the tested facade.
+    #[inline]
+    fn exists_out_of_band(
+        &self,
+        path: &Path,
+    ) -> FixtureResult<FixtureSupport<bool>> {
+        let _ = path;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Writes a complete resource through fixture-owned setup facilities.
+    #[inline]
+    fn write_file_out_of_band(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+    ) -> FixtureResult<FixtureSupport<()>> {
+        let _ = (path, bytes);
+        Ok(FixtureSupport::Unsupported)
+    }
+
     /// Observes the current provider version outside the operation under test.
     #[inline]
     fn resource_version(
@@ -120,6 +162,32 @@ pub trait FileSystemFixture {
         path: &Path,
     ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let _ = path;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Returns a valid version that does not match the current resource.
+    #[inline]
+    fn stale_resource_version(
+        &self,
+        path: &Path,
+    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+        let _ = path;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Supplies an independently prepared resource whose checksum is invalid.
+    #[inline]
+    fn checksum_failure_case(
+        &self,
+        relative: &str,
+    ) -> FixtureResult<FixtureSupport<Path>> {
+        let _ = relative;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Releases fixture-owned setup resources and staging state.
+    #[inline]
+    fn teardown(&self) -> FixtureResult<FixtureSupport<()>> {
         Ok(FixtureSupport::Unsupported)
     }
 

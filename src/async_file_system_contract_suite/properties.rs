@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! // Implements property snapshots and bounded limit checks.
+//! Implements property snapshots and bounded limit checks.
 
 use super::*;
 

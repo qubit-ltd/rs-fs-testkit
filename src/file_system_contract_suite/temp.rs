@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! // Implements temporary resource contracts.
+//! Implements temporary resource contracts.
 
 use super::*;
 
@@ -176,7 +176,7 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when persistence, atomicity preflight, ownership retention, or
     /// cleanup violates the temporary-file contract.
-    pub(super) fn assert_temp_persist(&self, temporary: &mut TempFile, target: &Path, label: &str) {
+    pub fn assert_temp_persist(&self, temporary: &mut TempFile, target: &Path, label: &str) {
         self.assert_temp_file_persist_result(temporary, target, label);
         if !self.capable(FileSystemCapability::AtomicTempPersist) {
             let mut retry = self
@@ -246,7 +246,7 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when persistence, atomicity preflight, ownership retention, or
     /// cleanup violates the temporary-directory contract.
-    pub(super) fn assert_temp_directory_persist(
+    pub fn assert_temp_directory_persist(
         &self,
         temporary: &mut TempDirectory,
         target: &Path,
@@ -347,7 +347,7 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when setup, overwrite publication, outcome reporting, or target
     /// observation violates the temporary-directory contract.
-    pub(super) fn assert_temp_directory_overwrite(&mut self) {
+    pub fn assert_temp_directory_overwrite(&mut self) {
         let file_system = self.fixture.file_system();
         let parent = self.path("temp-overwrite-parent");
         self.context.record_created(parent.clone());
@@ -399,7 +399,7 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when persistence fails, reports the wrong destination or
     /// atomicity, or does not publish the target.
-    pub(super) fn assert_temp_file_persist_result(
+    pub fn assert_temp_file_persist_result(
         &self,
         temporary: &mut TempFile,
         target: &Path,

@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! // Implements namespace and metadata contracts.
+//! Implements namespace and metadata contracts.
 
 use super::*;
 
@@ -332,7 +332,7 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Checks missing-ok and conditional deletion semantics.
-    pub(super) fn assert_delete_options(&mut self) {
+    pub fn assert_delete_options(&mut self) {
         let missing = self.path("delete-missing-ok");
         let outcome = self
             .fixture
@@ -458,7 +458,7 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Checks rename destination conflicts and explicit overwrite.
-    pub(super) fn assert_rename_conflicts(&mut self) {
+    pub fn assert_rename_conflicts(&mut self) {
         let source = self.required_seed(
             "rename-conflict-source",
             b"rename source",

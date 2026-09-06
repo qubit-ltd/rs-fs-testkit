@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! // Implements reader contracts.
+//! Implements reader contracts.
 
 use super::*;
 
@@ -79,7 +79,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous range, conditional, and checksum read guarantees.
-    pub(super) async fn assert_read_options(&self, path: &Path) {
+    pub async fn assert_read_options(&self, path: &Path) {
         let range = ReadOptions::default()
             .with_offset(Some(6))
             .with_length(Some(5));

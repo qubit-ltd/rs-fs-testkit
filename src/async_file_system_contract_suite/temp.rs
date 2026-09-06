@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! // Implements temporary resource contracts.
+//! Implements temporary resource contracts.
 
 use super::*;
 
@@ -146,7 +146,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Verifies asynchronous temporary-file persistence publication.
-    pub(super) async fn assert_temp_file_persist(
+    pub async fn assert_temp_file_persist(
         &self,
         temporary: &mut AsyncTempFile,
         target: &Path,
@@ -214,7 +214,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Verifies asynchronous temporary-directory persistence publication.
-    pub(super) async fn assert_temp_directory_persist(
+    pub async fn assert_temp_directory_persist(
         &self,
         temporary: &mut AsyncTempDirectory,
         target: &Path,
@@ -284,7 +284,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Verifies asynchronous overwrite publication for an empty directory.
-    pub(super) async fn assert_temp_directory_overwrite(&mut self) {
+    pub async fn assert_temp_directory_overwrite(&mut self) {
         let target = self.path("async-temp-overwritten-directory");
         self.context.record_created(target.clone());
         self.fixture
@@ -318,7 +318,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when a temporary file ignores the requested parent, prefix, or
     /// suffix, or when cleanup fails.
-    pub(super) async fn assert_temp_file_options(&mut self) {
+    pub async fn assert_temp_file_options(&mut self) {
         let parent = self
             .prepare_temp_options_parent("async-temp-file-options-parent")
             .await;
@@ -352,7 +352,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when a temporary directory ignores the requested parent, prefix,
     /// or suffix, or when cleanup fails.
-    pub(super) async fn assert_temp_directory_options(&mut self) {
+    pub async fn assert_temp_directory_options(&mut self) {
         let parent = self
             .prepare_temp_options_parent("async-temp-directory-options-parent")
             .await;
@@ -390,7 +390,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// # Panics
     ///
     /// Panics when an advertised directory creation operation fails.
-    pub(super) async fn prepare_temp_options_parent(&mut self, relative: &str) -> Option<Path> {
+    pub async fn prepare_temp_options_parent(&mut self, relative: &str) -> Option<Path> {
         if !self.capable(FileSystemCapability::CreateDirectory) {
             return None;
         }
@@ -418,7 +418,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when the path is not an immediate child of an explicitly
     /// requested `parent`, or does not honor the requested affixes.
-    pub(super) fn assert_temp_path(
+    pub fn assert_temp_path(
         &self,
         path: &Path,
         parent: Option<&Path>,
@@ -452,7 +452,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
     /// Builds persistence options matching the advertised atomic guarantee.
     #[inline]
-    pub(super) fn temp_persist_options(&self) -> PersistOptions {
+    pub fn temp_persist_options(&self) -> PersistOptions {
         PersistOptions::default().with_atomicity(
             if self.capable(FileSystemCapability::AtomicTempPersist) {
                 AtomicityRequirement::Required
@@ -463,7 +463,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks persistence reporting and destination publication.
-    pub(super) async fn assert_temp_persist_outcome(
+    pub async fn assert_temp_persist_outcome(
         &self,
         outcome: &PersistOutcome,
         target: &Path,

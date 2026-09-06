@@ -47,6 +47,7 @@ use qubit_io::Output;
 
 use crate::FileSystemContract;
 use crate::FileSystemFixture;
+use crate::ContractReport;
 use crate::FixtureSupport;
 use crate::contract_context::ContractContext;
 use crate::internal::assert_error_with_source_or_target;
@@ -78,6 +79,7 @@ pub struct FileSystemContractSuite<'a> {
     fixture: &'a dyn FileSystemFixture,
     /// Property snapshot and cleanup state for the current suite run.
     context: ContractContext,
+    teardown_completed: bool,
 }
 
 impl<'a> FileSystemContractSuite<'a> {
@@ -95,6 +97,7 @@ impl<'a> FileSystemContractSuite<'a> {
         Self {
             fixture,
             context: ContractContext::new(fixture.file_system().properties()),
+            teardown_completed: false,
         }
     }
 
@@ -104,16 +107,8 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when the provider violates any contract or fixture setup and
     /// observation fails. Cleanup still runs before the panic is resumed.
-    pub fn assert_all(mut self) {
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            for contract in FileSystemContract::ALL {
-                self.assert_contract_inner(contract);
-            }
-        }));
-        self.finish();
-        if let Err(payload) = result {
-            resume_unwind(payload);
-        }
+    pub fn assert_all(self) {
+        let _ = self.assert_all_with_report();
     }
 
     /// Runs one named synchronous contract and always performs cleanup.
@@ -122,18 +117,54 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when the provider violates the selected contract or cleanup
     /// fails. Cleanup runs before an assertion panic is resumed.
-    pub fn assert_contract(mut self, contract: FileSystemContract) {
+    pub fn assert_contract(self, contract: FileSystemContract) {
+        let _ = self.assert_contract_with_report(contract);
+    }
+
+    /// Runs all phases, performs cleanup, and returns the execution report.
+    pub fn assert_all_with_report(mut self) -> ContractReport {
         let result = catch_unwind(AssertUnwindSafe(|| {
-            self.assert_contract_inner(contract);
+            for contract in FileSystemContract::ALL {
+                self.assert_contract_inner(contract);
+            }
         }));
-        self.finish();
+        let cleanup = catch_unwind(AssertUnwindSafe(|| self.finish()));
         if let Err(payload) = result {
             resume_unwind(payload);
         }
+        if let Err(payload) = cleanup {
+            resume_unwind(payload);
+        }
+        self.context.report().clone()
+    }
+
+    /// Runs one phase, performs cleanup, and returns the execution report.
+    pub fn assert_contract_with_report(
+        mut self,
+        contract: FileSystemContract,
+    ) -> ContractReport {
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            self.assert_contract_inner(contract);
+        }));
+        let cleanup = catch_unwind(AssertUnwindSafe(|| self.finish()));
+        if let Err(payload) = result {
+            resume_unwind(payload);
+        }
+        if let Err(payload) = cleanup {
+            resume_unwind(payload);
+        }
+        self.context.report().clone()
+    }
+
+    /// Returns the report currently accumulated by this suite.
+    #[inline]
+    pub fn report(&self) -> &ContractReport {
+        self.context.report()
     }
 
     /// Dispatches one named phase without changing cleanup ownership.
     fn assert_contract_inner(&mut self, contract: FileSystemContract) {
+        self.context.prepare_phase(contract);
         match contract {
             FileSystemContract::Properties => self.assert_properties(),
             FileSystemContract::Stat => self.assert_stat(),

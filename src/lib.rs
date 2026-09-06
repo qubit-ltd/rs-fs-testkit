@@ -21,12 +21,18 @@ mod async_copy_fixture_case;
 mod async_file_system_contract_suite;
 #[cfg(feature = "async")]
 mod async_file_system_fixture;
+#[cfg(feature = "async")]
+mod copy_cancellation_probe;
+mod contract_check;
+mod contract_check_outcome;
+mod contract_report;
 mod contract_context;
 mod contract_registration;
 mod copy_fixture_case;
 mod file_system_contract;
 mod file_system_contract_suite;
 mod file_system_fixture;
+mod fixture_case;
 mod fixture_error;
 mod fixture_support;
 mod internal;
@@ -41,6 +47,11 @@ pub use async_file_system_contract_suite::AsyncFileSystemContractSuite;
 pub use async_file_system_fixture::AsyncFileSystemFixture;
 #[cfg(feature = "async")]
 pub use async_file_system_fixture::FixtureFuture;
+#[cfg(feature = "async")]
+pub use copy_cancellation_probe::CopyCancellationProbe;
+pub use contract_check::ContractCheck;
+pub use contract_check_outcome::ContractCheckOutcome;
+pub use contract_report::ContractReport;
 pub use copy_fixture_case::CopyFixtureCase;
 pub use file_system_contract::FileSystemContract;
 pub use file_system_contract_suite::FileSystemContractSuite;
@@ -48,3 +59,4 @@ pub use file_system_fixture::FileSystemFixture;
 pub use fixture_error::FixtureError;
 pub use fixture_error::FixtureResult;
 pub use fixture_support::FixtureSupport;
+pub use fixture_case::FixtureCase;
