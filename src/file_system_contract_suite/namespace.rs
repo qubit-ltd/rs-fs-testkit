@@ -550,10 +550,10 @@ impl<'a> FileSystemContractSuite<'a> {
                 .file_system()
                 .create_directory(&root, CreateDirectoryOptions::default())
                 .expect("recursive-delete contract: root creation failed");
+            self.context.record_created(root.clone());
         }
         let child = self.required_seed("recursive-delete-root/child", b"child", "recursive-delete");
         self.context.record_created(child.clone());
-        self.context.record_created(root.clone());
         self.fixture
             .file_system()
             .delete_directory(&root, options)
