@@ -264,7 +264,13 @@ impl AsyncMemoryFixture {
 
     /// Creates a fixture that can inject a range read violation.
     pub fn with_range_fault(fault: AsyncMemoryFault) -> Self {
-        Self::with_fault(fault)
+        Self::with_configuration(
+            fault,
+            true,
+            false,
+            AsyncCapabilityProfile::ALL,
+            "async-memory-contract-provider",
+        )
     }
 
     /// Creates a conforming fixture without optional cancellation probes.
