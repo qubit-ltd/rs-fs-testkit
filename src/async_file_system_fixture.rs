@@ -18,6 +18,8 @@ use qubit_fs::path::Path;
 use crate::AsyncCopyCancellationStage;
 use crate::AsyncCopyFixtureCase;
 use crate::CopyFixtureCase;
+use crate::CopyCancellationProbe;
+use crate::FixtureCase;
 use crate::FixtureResult;
 use crate::FixtureSupport;
 
@@ -54,6 +56,22 @@ pub trait AsyncFileSystemFixture: Sync {
     /// Returns [`FixtureError`](crate::FixtureError) when the name cannot be
     /// represented by the provider's path model.
     fn path(&self, relative: &str) -> FixtureResult<Path>;
+
+    /// Declares whether this fixture can prepare and observe a scenario.
+    #[inline]
+    fn case_support(
+        &self,
+        case: FixtureCase,
+    ) -> FixtureResult<FixtureSupport<()>> {
+        let _ = case;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Reports whether copy is intentionally limited to the stream fallback.
+    #[inline]
+    fn copy_fallback_only(&self) -> bool {
+        false
+    }
 
     /// Maps a relative list prefix for the supplied root.
     ///
@@ -131,6 +149,27 @@ pub trait AsyncFileSystemFixture: Sync {
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
+    /// Asynchronously observes whether a resource exists out of band.
+    #[inline]
+    fn exists_out_of_band<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> FixtureFuture<'a, FixtureSupport<bool>> {
+        let _ = path;
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
+    /// Asynchronously writes a complete resource through fixture setup.
+    #[inline]
+    fn write_file_out_of_band<'a>(
+        &'a self,
+        path: &'a Path,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, FixtureSupport<()>> {
+        let _ = (path, bytes);
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
     /// Asynchronously observes the current provider resource version.
     #[inline]
     fn resource_version<'a>(
@@ -138,6 +177,32 @@ pub trait AsyncFileSystemFixture: Sync {
         path: &'a Path,
     ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         let _ = path;
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
+    /// Asynchronously returns a valid version that cannot match the resource.
+    #[inline]
+    fn stale_resource_version<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+        let _ = path;
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
+    /// Asynchronously supplies a resource whose checksum is invalid.
+    #[inline]
+    fn checksum_failure_case<'a>(
+        &'a self,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+        let _ = relative;
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
+    /// Asynchronously releases fixture-owned setup resources and staging.
+    #[inline]
+    fn teardown(&self) -> FixtureFuture<'_, FixtureSupport<()>> {
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
@@ -194,5 +259,16 @@ pub trait AsyncFileSystemFixture: Sync {
     ) -> FixtureResult<FixtureSupport<AsyncCopyFixtureCase>> {
         let _ = stage;
         Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Asynchronously prepares a stage-aware cancellation probe.
+    #[inline]
+    fn prepare_copy_cancellation<'a>(
+        &'a self,
+        stage: AsyncCopyCancellationStage,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Box<dyn CopyCancellationProbe>>> {
+        let _ = (stage, relative);
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 }

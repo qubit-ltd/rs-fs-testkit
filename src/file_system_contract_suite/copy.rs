@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! // Implements copy contracts.
+//! Implements copy contracts.
 
 use super::*;
 
@@ -152,7 +152,7 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Checks destination conflict policies and copy statistics.
-    pub(super) fn assert_copy_conflicts(&mut self, source: &Path) {
+    pub fn assert_copy_conflicts(&mut self, source: &Path) {
         let target = self.required_seed("copy-conflict-target", b"existing", "copy-conflict");
         self.context.record_created(target.clone());
         let failure = self

@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! // Implements writer and publication contracts.
+//! Implements writer and publication contracts.
 
 use super::*;
 
@@ -65,7 +65,7 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Checks write dispositions, abort behavior, and conditional writes.
-    pub(super) fn assert_write_options(&mut self, existing: &Path) {
+    pub fn assert_write_options(&mut self, existing: &Path) {
         let create_new = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
         let failure = self
             .fixture

@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! // Implements copy and cancellation contracts.
+//! Implements copy and cancellation contracts.
 
 use super::*;
 
@@ -205,7 +205,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Runs the cancellation probes without changing the current phase name.
-    pub(super) async fn assert_copy_cancellation_inner(&mut self) {
+    pub async fn assert_copy_cancellation_inner(&mut self) {
         if !self.capable(FileSystemCapability::Copy) {
             return;
         }
@@ -260,7 +260,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous destination conflict policies and statistics.
-    pub(super) async fn assert_copy_conflicts(&mut self, source: &Path) {
+    pub async fn assert_copy_conflicts(&mut self, source: &Path) {
         let target = self
             .required_seed("async-copy-conflict-target", b"existing", "copy-conflict")
             .await;

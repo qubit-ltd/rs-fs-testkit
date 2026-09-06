@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! // Implements namespace and metadata contracts.
+//! Implements namespace and metadata contracts.
 
 use super::*;
 
@@ -339,7 +339,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous missing-ok and conditional deletion semantics.
-    pub(super) async fn assert_delete_options(&mut self) {
+    pub async fn assert_delete_options(&mut self) {
         let missing = self.path("async-delete-missing-ok");
         let outcome = self
             .fixture
@@ -470,7 +470,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous rename conflicts and explicit overwrite.
-    pub(super) async fn assert_rename_conflicts(&mut self) {
+    pub async fn assert_rename_conflicts(&mut self) {
         let source = self
             .required_seed(
                 "async-rename-conflict-source",

@@ -5,9 +5,15 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! // Implements fixture adaptation and suite lifecycle support.
+//! Implements fixture adaptation and suite lifecycle support.
 
 use super::*;
+use std::any::Any;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+use std::panic::resume_unwind;
+use crate::ContractCheckOutcome;
+use crate::FixtureError;
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Cleans resources created by individually executed contract phases.
@@ -16,7 +22,61 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when a recorded resource cannot be inspected or deleted.
     pub fn finish(&mut self) {
-        self.context.cleanup(self.fixture.file_system());
+        if let Err(payload) = self.finish_capture() {
+            resume_unwind(payload);
+        }
+    }
+
+    /// Runs facade cleanup and fixture teardown while preserving failures.
+    pub(super) fn finish_capture(&mut self) -> Result<(), Box<dyn Any + Send>> {
+        let failures = self.context.cleanup(self.fixture.file_system());
+        let mut teardown_failure = None;
+        if !self.teardown_completed {
+            let teardown = catch_unwind(AssertUnwindSafe(|| self.fixture.teardown()));
+            match teardown {
+                Ok(Ok(support)) => {
+                    self.teardown_completed = true;
+                    if matches!(support, FixtureSupport::Unsupported)
+                        && self.context.resources_prepared()
+                    {
+                        self.context.record_check(
+                            "cleanup/fixture-teardown",
+                            None,
+                            ContractCheckOutcome::Unverified {
+                                reason: "fixture teardown is unavailable".to_owned(),
+                            },
+                        );
+                    }
+                }
+                Ok(Err(error)) => {
+                    teardown_failure = Some(format!("[fs-testkit:cleanup/teardown] {error}"));
+                }
+                Err(_payload) => {
+                    teardown_failure = Some(
+                        "[fs-testkit:cleanup/teardown] fixture teardown panicked".to_owned(),
+                    );
+                }
+            }
+        }
+        if failures.is_empty() && teardown_failure.is_none() {
+            return Ok(());
+        }
+        let mut summary = failures
+            .iter()
+            .map(|failure| {
+                format!(
+                    "[fs-testkit:cleanup/{}] owner={} path={:?}: {}",
+                    failure.operation,
+                    failure.owner_check,
+                    failure.path,
+                    failure.cause,
+                )
+            })
+            .collect::<Vec<_>>();
+        if let Some(failure) = teardown_failure {
+            summary.push(failure);
+        }
+        Err(Box::new(FixtureError::new(summary.join("; "))))
     }
 
     /// Checks structured filesystem error context and redaction behavior.
@@ -57,7 +117,7 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when the fixture cannot map the generated relative name.
     #[inline]
-    pub(super) fn path(&self, relative: &str) -> Path {
+    pub fn path(&self, relative: &str) -> Path {
         let relative = self.context.relative_name(relative);
         self.fixture
             .path(&relative)
@@ -74,7 +134,7 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// `true` when the provider advertises the capability.
     #[inline(always)]
-    pub(super) fn capable(&self, capability: FileSystemCapability) -> bool {
+    pub fn capable(&self, capability: FileSystemCapability) -> bool {
         self.context
             .properties()
             .capabilities()
@@ -99,7 +159,7 @@ impl<'a> FileSystemContractSuite<'a> {
     /// Panics when fixture setup fails or the required seed hook is
     /// unsupported.
     #[inline]
-    pub(super) fn required_seed(&self, relative: &str, bytes: &[u8], contract: &str) -> Path {
+    pub fn required_seed(&mut self, relative: &str, bytes: &[u8], contract: &str) -> Path {
         match self.seed(relative, bytes) {
             FixtureSupport::Supported(path) => path,
             FixtureSupport::Unsupported => panic!(
@@ -123,11 +183,15 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when provider-specific fixture setup returns an error.
     #[inline]
-    pub(super) fn seed(&self, relative: &str, bytes: &[u8]) -> FixtureSupport<Path> {
+    pub fn seed(&mut self, relative: &str, bytes: &[u8]) -> FixtureSupport<Path> {
         let relative = self.context.relative_name(relative);
-        self.fixture
+        let support = self.fixture
             .seed_file(&relative, bytes)
-            .expect("contract: fixture seed failed")
+            .expect("contract: fixture seed failed");
+        if let FixtureSupport::Supported(path) = &support {
+            self.context.record_created(path.clone());
+        }
+        support
     }
 
     /// Reads a provider-owned probe through the fixture and checks exact bytes.
@@ -142,7 +206,7 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// Panics when observation fails, is unsupported, or returns different
     /// content.
-    pub(super) fn assert_bytes(&self, path: &Path, expected: &[u8], message: &str) {
+    pub fn assert_bytes(&self, path: &Path, expected: &[u8], message: &str) {
         match self
             .fixture
             .read_file(path)
@@ -171,7 +235,7 @@ impl<'a> FileSystemContractSuite<'a> {
     /// # Panics
     ///
     /// Panics when any expected structured field differs.
-    pub(super) fn assert_error(
+    pub fn assert_error(
         &self,
         error: &FsError,
         kind: FsErrorKind,
@@ -215,7 +279,7 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Validates an operation error that has no logical input path.
-    pub(super) fn assert_pathless_error(
+    pub fn assert_pathless_error(
         &self,
         error: &FsError,
         kind: FsErrorKind,
@@ -243,7 +307,7 @@ impl<'a> FileSystemContractSuite<'a> {
     /// # Panics
     ///
     /// Panics when the error kind, operation, or required capability differs.
-    pub(super) fn assert_requirement_error(
+    pub fn assert_requirement_error(
         &self,
         error: &FsError,
         operation: FsOperation,
