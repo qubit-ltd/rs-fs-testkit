@@ -52,14 +52,7 @@ fn test_conforming_async_memory_provider_satisfies_full_suite() {
             "conforming async fixture must exercise {capability:?}"
         );
     }
-    let mut assertion =
-        Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
+    run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     assert!(fixture.is_empty(), "suite must clean up created resources");
 }
 
@@ -240,8 +233,8 @@ fn test_async_suite_skips_unadvertised_optional_capabilities() {
 #[test]
 fn test_async_contract_entry_points_run_individually() {
     let fixture = AsyncMemoryFixture::new();
-    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-    let mut assertion = Box::pin(async {
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         suite.assert_properties().await;
         suite.assert_stat().await;
         suite.assert_read().await;
@@ -260,12 +253,6 @@ fn test_async_contract_entry_points_run_individually() {
         suite.assert_temp_resources().await;
         suite.assert_error_context().await;
     });
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
 }
 
 /// Each isolated asynchronous provider fault must fail the full suite.
