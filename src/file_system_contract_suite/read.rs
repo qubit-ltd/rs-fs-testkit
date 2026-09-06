@@ -61,7 +61,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .expect("read contract: facade could not read seeded bytes");
         assert_eq!(
             bytes, b"read contract bytes",
-            "read contract: bytes mismatch"
+            "read/basic: bytes mismatch"
         );
         let error = file_system
             .read_all(&path, Default::default(), 4)

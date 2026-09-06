@@ -91,7 +91,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .expect("read contract: facade could not read seeded bytes");
                 assert_eq!(
                     actual, b"async bytes",
-                    "read contract: seeded bytes mismatch"
+                    "read/basic: seeded bytes mismatch"
                 );
                 let error = self
                     .fixture
