@@ -7,7 +7,10 @@ use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::{FileSystemLimit, FileSystemLimits};
 use qubit_fs::path::Path;
 use qubit_fs::read::ReadOptions;
-use qubit_fs_testkit::{FileSystemContract, FileSystemContractSuite, FileSystemFixture};
+use qubit_fs_testkit::{
+    ContractCheckOutcome, FileSystemContract, FileSystemContractSuite, FileSystemFixture,
+    FixtureCase,
+};
 
 fn assert_panics_at<F>(run: F, check_id: &str)
 where
@@ -36,6 +39,15 @@ fn test_sync_rejects_read_ignoring_stale_version() {
     assert_panics_at(
         || FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Read),
         "read/if-match-stale",
+    );
+}
+
+#[test]
+fn test_sync_rejects_read_ignoring_if_none_match() {
+    let fixture = MemoryFixture::with_fault(MemoryFault::IgnoreReadIfNoneMatch);
+    assert_panics_at(
+        || FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Read),
+        "read/if-none-match-current",
     );
 }
 
@@ -99,4 +111,40 @@ fn test_sync_honors_bounded_write_and_range_limits() {
         .open_reader(&path, ReadOptions::default().with_length(Some(2)))
         .expect_err("two-byte range must exceed Maximum(1)");
     assert_eq!(read_failure.kind(), FsErrorKind::ResourceLimitExceeded);
+}
+
+#[test]
+fn test_sync_contracts_adapt_to_declared_limit_profiles() {
+    let profiles = [
+        FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1)),
+        FileSystemLimits::unknown().with_max_read_range_bytes(FileSystemLimit::Maximum(4)),
+        FileSystemLimits::unknown()
+            .with_max_write_bytes(FileSystemLimit::Unknown)
+            .with_max_read_range_bytes(FileSystemLimit::Unknown),
+        FileSystemLimits::unknown()
+            .with_max_write_bytes(FileSystemLimit::NotApplicable)
+            .with_max_read_range_bytes(FileSystemLimit::NotApplicable),
+        FileSystemLimits::unknown()
+            .with_max_write_bytes(FileSystemLimit::Unbounded)
+            .with_max_read_range_bytes(FileSystemLimit::Unbounded),
+        FileSystemLimits::unknown()
+            .with_max_write_bytes(FileSystemLimit::Maximum(u64::MAX))
+            .with_max_read_range_bytes(FileSystemLimit::Maximum(u64::MAX)),
+    ];
+    for limits in profiles {
+        let fixture = MemoryFixture::with_limits(limits);
+        FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write);
+        FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Read);
+    }
+}
+
+#[test]
+fn test_sync_conditional_case_unavailability_remains_unverified() {
+    let fixture = MemoryFixture::with_conditional_case_unavailable(FixtureCase::ReadIfMatch);
+    let report = FileSystemContractSuite::new(&fixture)
+        .assert_contract_with_report(FileSystemContract::Read);
+    assert!(report.checks().iter().any(|check| {
+        check.id() == "read/if-match-current"
+            && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
+    }));
 }

@@ -50,6 +50,21 @@ impl<'a> FileSystemContractSuite<'a> {
             self.fixture.file_system().properties().capabilities(),
             "properties contract: snapshot changed"
         );
+        assert_eq!(
+            properties.limits(),
+            self.fixture.file_system().properties().limits(),
+            "properties contract: limits snapshot changed"
+        );
+        assert_eq!(
+            properties.path_constraints(),
+            self.fixture.file_system().properties().path_constraints(),
+            "properties contract: path constraints snapshot changed"
+        );
+        assert_eq!(
+            properties.symlink_policy(),
+            self.fixture.file_system().properties().symlink_policy(),
+            "properties contract: symlink policy snapshot changed"
+        );
         self.context.record_check(
             "properties/snapshot",
             Some(FileSystemCapability::Read),
@@ -62,6 +77,11 @@ impl<'a> FileSystemContractSuite<'a> {
         );
         self.context.record_check(
             "properties/capability-dependencies",
+            None,
+            ContractCheckOutcome::Passed,
+        );
+        self.context.record_check(
+            "properties/limits",
             None,
             ContractCheckOutcome::Passed,
         );
