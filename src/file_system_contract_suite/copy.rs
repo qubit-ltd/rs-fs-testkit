@@ -456,7 +456,7 @@ impl<'a> FileSystemContractSuite<'a> {
                         .with_atomicity(AtomicityRequirement::Required),
                 )
                 .expect_err("copy/atomic: unadvertised required atomic copy succeeded");
-            self.assert_requirement_error(&failure.error(), FsOperation::Copy, capability, id);
+            self.assert_requirement_error(failure.error(), FsOperation::Copy, capability, id);
             self.context.record_check(
                 id,
                 Some(capability),

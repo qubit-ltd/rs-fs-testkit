@@ -9,9 +9,7 @@
 
 use std::future::Future;
 use std::panic::resume_unwind;
-use std::task::Context;
 use std::task::Poll;
-use std::task::Waker;
 
 use qubit_fs::copy::AsyncCopyOperationState;
 use qubit_fs::copy::CopyConflictPolicy;

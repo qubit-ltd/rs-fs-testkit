@@ -35,7 +35,6 @@ impl ContractCheck {
 
     /// Returns the recorded check outcome.
     #[inline]
-    #[must_use]
     pub const fn outcome(&self) -> &ContractCheckOutcome {
         &self.outcome
     }
