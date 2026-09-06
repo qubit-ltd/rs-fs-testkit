@@ -17,6 +17,8 @@ pub(crate) use async_memory_file_system::AsyncMemoryFault;
 #[allow(unused)]
 #[cfg(feature = "async")]
 pub(crate) use async_memory_file_system::AsyncMemoryFixture;
+#[cfg(feature = "async")]
+pub(crate) use async_memory_file_system::run_controlled;
 #[allow(unused)]
 pub use memory_file_system::MemoryFault;
 #[allow(unused)]
