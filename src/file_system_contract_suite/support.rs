@@ -40,8 +40,10 @@ impl<'a> FileSystemContractSuite<'a> {
                         && self.context.resources_prepared()
                     {
                         self.context.record_check(
+                            FileSystemContract::ErrorContext,
                             "cleanup/fixture-teardown",
                             None,
+                            true,
                             ContractCheckOutcome::Unverified {
                                 reason: "fixture teardown is unavailable".to_owned(),
                             },

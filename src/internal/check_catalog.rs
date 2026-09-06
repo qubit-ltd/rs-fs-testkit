@@ -12,29 +12,37 @@ use crate::FileSystemContract;
 /// Description of one catalog entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CheckSpec {
+    /// Contract phase owning this check.
+    pub(crate) phase: FileSystemContract,
     /// Stable check identifier.
     pub(crate) id: &'static str,
     /// Capability required by the check, if any.
     pub(crate) capability: Option<FileSystemCapability>,
+    /// Whether this check is required for a complete report.
+    pub(crate) required: bool,
 }
 
 const fn capability(capability: FileSystemCapability, id: &'static str) -> CheckSpec {
     CheckSpec {
+        phase: FileSystemContract::ErrorContext,
         id,
         capability: Some(capability),
+        required: true,
     }
 }
 
 const fn unscoped(id: &'static str) -> CheckSpec {
     CheckSpec {
+        phase: FileSystemContract::ErrorContext,
         id,
         capability: None,
+        required: true,
     }
 }
 
 /// Returns the required check IDs for one independently run phase.
 pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
-    match contract {
+    let specs = match contract {
         FileSystemContract::Properties => vec![
             capability(FileSystemCapability::Read, "properties/snapshot"),
             unscoped("properties/path-constraints"),
@@ -100,7 +108,7 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
             capability(FileSystemCapability::DurableRename, "rename/durable"),
         ],
         FileSystemContract::AtomicReplace => vec![
-            capability(FileSystemCapability::AtomicReplace, "write/atomic-replace-existing"),
+            capability(FileSystemCapability::AtomicReplace, "atomic-replace/required-existing"),
         ],
         FileSystemContract::DurableFileCopy => vec![
             capability(FileSystemCapability::DurableFileCopy, "copy/durable-file"),
@@ -112,5 +120,29 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
             capability(FileSystemCapability::AtomicTempPersist, "temp/atomic"),
         ],
         FileSystemContract::ErrorContext => vec![unscoped("error/context")],
+    };
+    specs
+        .into_iter()
+        .map(|mut spec| {
+            spec.phase = contract;
+            spec
+        })
+        .collect()
+}
+
+/// Validates that the catalog is closed and globally unambiguous.
+pub(crate) fn validate() -> Result<(), &'static str> {
+    let mut ids = Vec::new();
+    for contract in FileSystemContract::ALL {
+        for spec in for_contract(contract) {
+            if spec.phase != contract || spec.id.is_empty() {
+                return Err("catalog entry has invalid phase or ID");
+            }
+            if ids.contains(&spec.id) {
+                return Err("catalog contains duplicate check ID");
+            }
+            ids.push(spec.id);
+        }
     }
+    Ok(())
 }

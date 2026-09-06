@@ -39,6 +39,10 @@ impl ContractContext {
     /// Creates context from the facade's cached immutable property snapshot.
     #[inline]
     pub(crate) fn new(properties: &FileSystemProperties) -> Self {
+        assert!(
+            crate::internal::check_catalog::validate().is_ok(),
+            "contract check catalog must be closed and unambiguous"
+        );
         Self {
             properties: properties.clone(),
             name_counter: 0,
@@ -128,19 +132,23 @@ impl ContractContext {
     #[inline]
     pub(crate) fn record_check(
         &mut self,
+        phase: FileSystemContract,
         id: &'static str,
         capability: Option<FileSystemCapability>,
+        required: bool,
         outcome: ContractCheckOutcome,
     ) {
-        self.report.record(id, capability, outcome);
+        self.report.record(phase, id, capability, required, outcome);
     }
 
     /// Registers every check expected for a phase before it executes.
     pub(crate) fn prepare_phase(&mut self, contract: FileSystemContract) {
         for spec in crate::internal::check_catalog::for_contract(contract) {
-            self.report.record(
+            self.report.push(
+                spec.phase,
                 spec.id,
                 spec.capability,
+                spec.required,
                 ContractCheckOutcome::Unverified {
                     reason: "check not yet executed".to_owned(),
                 },

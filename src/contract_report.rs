@@ -7,6 +7,7 @@
 
 use crate::ContractCheck;
 use crate::ContractCheckOutcome;
+use crate::FileSystemContract;
 
 /// A report containing stable check identities and their outcomes.
 #[must_use]
@@ -29,7 +30,7 @@ impl ContractReport {
     #[inline]
     #[must_use]
     pub fn is_complete(&self) -> bool {
-        !self.checks.is_empty() && !self.checks.iter().any(|check| {
+        !self.checks.iter().any(|check| {
             matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
         })
     }
@@ -67,13 +68,17 @@ impl ContractReport {
     #[inline]
     pub(crate) fn push(
         &mut self,
+        phase: FileSystemContract,
         id: &'static str,
         capability: Option<qubit_fs::metadata::FileSystemCapability>,
+        required: bool,
         outcome: ContractCheckOutcome,
     ) {
         self.checks.push(ContractCheck {
+            phase,
             id,
             capability,
+            required,
             outcome,
         });
     }
@@ -81,21 +86,23 @@ impl ContractReport {
     /// Replaces the pending entry for a check, or appends a repeated run.
     pub(crate) fn record(
         &mut self,
+        phase: FileSystemContract,
         id: &'static str,
         capability: Option<qubit_fs::metadata::FileSystemCapability>,
+        required: bool,
         outcome: ContractCheckOutcome,
     ) {
         if let Some(check) = self
             .checks
             .iter_mut()
             .rev()
-            .find(|check| check.id == id
+            .find(|check| check.phase == phase && check.id == id
                 && matches!(check.outcome, ContractCheckOutcome::Unverified { .. }))
         {
             check.capability = capability;
             check.outcome = outcome;
             return;
         }
-        self.push(id, capability, outcome);
+        self.push(phase, id, capability, required, outcome);
     }
 }

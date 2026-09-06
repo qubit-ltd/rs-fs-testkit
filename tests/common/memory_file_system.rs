@@ -142,7 +142,7 @@ use qubit_io::AsyncInput;
 use qubit_io::AsyncOutput;
 use qubit_io::Output;
 
-fn provider_properties(properties: FileSystemProperties) -> ProviderProperties {
+pub(crate) fn provider_properties(properties: FileSystemProperties) -> ProviderProperties {
     ProviderProperties::new(
         properties.info().clone(),
         ProviderOperations::new()
@@ -416,7 +416,7 @@ impl MemoryFixture {
     }
 
     /// Builds one absolute logical path for the fixture namespace.
-    fn path_for(relative: &str) -> FixtureResult<Path> {
+    pub(crate) fn path_for(relative: &str) -> FixtureResult<Path> {
         Path::parse(&format!("/contract/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
     }
 
@@ -975,7 +975,7 @@ impl DirectoryStreamSpi for MemoryDirectoryStream {
     }
 }
 
-fn listed_entries(
+pub(crate) fn listed_entries(
     entries: &HashMap<String, Entry>,
     root: &Path,
     options: &ListOptions,
