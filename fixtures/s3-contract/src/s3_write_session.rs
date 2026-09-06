@@ -37,7 +37,7 @@ impl S3WriteSession {
             return Err(FsError::new(
                 FsErrorKind::RequirementNotMet,
                 FsOperation::OpenWriter,
-                "S3 contract writer only supports plain CreateNew",
+                "S3 contract writer does not support content type or checksum options",
             ));
         }
         Ok(Self {
@@ -94,11 +94,12 @@ impl AsyncFileWriteSession for S3WriteSession {
             }
             let this = self.get_mut();
             let count = this.data.len() as u64;
+            let payload = Bytes::copy_from_slice(&this.data);
             let result = this
                 .store
                 .put_opts(
                     &this.key,
-                    Bytes::from(std::mem::take(&mut this.data)).into(),
+                    payload.into(),
                     PutOptions {
                         mode: PutMode::Create,
                         ..Default::default()
@@ -107,6 +108,7 @@ impl AsyncFileWriteSession for S3WriteSession {
                 .await;
             match result {
                 Ok(_) => {
+                    this.data.clear();
                     this.state = State::Published;
                     Ok(
                         WriteOutcome::new(AchievedAtomicity::Atomic, PublicationMethod::Direct)
@@ -114,10 +116,18 @@ impl AsyncFileWriteSession for S3WriteSession {
                     )
                 }
                 Err(e) => {
-                    this.state = State::Indeterminate;
+                    this.state = if matches!(e, object_store::Error::AlreadyExists { .. }) {
+                        State::Open
+                    } else {
+                        State::Indeterminate
+                    };
                     Err(WriteFailure::new(
                         error_mapper::map(e, FsOperation::CommitWriter),
-                        qubit_fs::write::WriteFailureState::Indeterminate,
+                        if matches!(this.state, State::Open) {
+                            qubit_fs::write::WriteFailureState::NotPublished
+                        } else {
+                            qubit_fs::write::WriteFailureState::Indeterminate
+                        },
                     ))
                 }
             }
