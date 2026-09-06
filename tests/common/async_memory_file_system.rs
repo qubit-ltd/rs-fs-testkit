@@ -450,6 +450,13 @@ impl AsyncCapabilityProfile {
         extended: false,
         read_only: false,
     };
+    const FALLBACK: Self = Self {
+        core: true,
+        optional: false,
+        create_directory: true,
+        extended: false,
+        read_only: false,
+    };
     const PREFIX_DELETE: Self = Self {
         core: true,
         optional: true,
@@ -572,7 +579,7 @@ impl AsyncMemoryFixture {
             AsyncMemoryFault::None,
             false,
             false,
-            AsyncCapabilityProfile::STANDARD,
+            AsyncCapabilityProfile::FALLBACK,
             "async-memory-fallback-provider",
         )
     }
@@ -1347,11 +1354,13 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let durable = options.durability() == DurabilityRequirement::Required;
         let server_side = options.server_side() == ServerSidePreference::Require;
         let conflict = options.conflict();
+        let fallback_only = self.provider_id == "async-memory-fallback-provider";
         if self.native_copy
-            || durable
-            || server_side
-            || options.mode() == CopyMode::Tree
-            || conflict == CopyConflictPolicy::Overwrite
+            || (!fallback_only
+                && (durable
+                    || server_side
+                    || options.mode() == CopyMode::Tree
+                    || conflict == CopyConflictPolicy::Overwrite))
         {
             let source = request.source().clone();
             let target = request.target().clone();

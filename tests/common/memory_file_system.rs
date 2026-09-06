@@ -834,9 +834,7 @@ impl FileSystemSpi for MemorySpi {
             capabilities = capabilities
                 .with_guaranteed(FileSystemCapability::Read)
                 .with_guaranteed(FileSystemCapability::List);
-            if !state.fallback_only {
-                capabilities = capabilities.with_guaranteed(FileSystemCapability::Copy);
-            }
+            capabilities = capabilities.with_guaranteed(FileSystemCapability::Copy);
             if !state.read_only {
                 capabilities = capabilities.with_guaranteed(FileSystemCapability::Write);
             }
@@ -848,7 +846,6 @@ impl FileSystemSpi for MemorySpi {
             }
         }
         let limits = state.limits;
-        let fallback_only = state.fallback_only;
         drop(state);
         provider_properties_with_copy(
             FileSystemProperties::new(
@@ -863,7 +860,7 @@ impl FileSystemSpi for MemorySpi {
                 SymlinkPolicy::Reject,
             )
             .expect("memory properties must be valid"),
-            !fallback_only,
+            true,
         )
     }
 
@@ -1068,11 +1065,12 @@ impl FileSystemSpi for MemorySpi {
     fn try_copy(&self, request: CopyRequest<'_>) -> Result<CopyAttempt, SpiCopyFailure> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         let options = request.options().options();
-        if state.native_copy
-            || options.mode() == CopyMode::Tree
-            || options.server_side() == ServerSidePreference::Require
-            || options.durability() == DurabilityRequirement::Required
-            || options.conflict() == CopyConflictPolicy::Overwrite
+        if !state.fallback_only
+            && (state.native_copy
+                || options.mode() == CopyMode::Tree
+                || options.server_side() == ServerSidePreference::Require
+                || options.durability() == DurabilityRequirement::Required
+                || options.conflict() == CopyConflictPolicy::Overwrite)
         {
             let Some(entry) = state.entries.get(request.source().as_str()).cloned() else {
                 return Err(SpiCopyFailure::new(

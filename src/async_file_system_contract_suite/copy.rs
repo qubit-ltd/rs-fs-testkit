@@ -619,18 +619,34 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .with_conflict(CopyConflictPolicy::Overwrite),
             )
             .expect("copy contract: overwrite preflight failed");
-        let overwritten = operation
-            .execute()
-            .await
-            .expect("copy contract: overwrite conflict failed");
-        assert_eq!(overwritten.stats().overwritten, 1);
-        self.assert_bytes(&target, b"copy bytes", "copy contract: overwrite bytes mismatch")
-            .await;
-        self.context.record_check(
-            "copy/fallback-overwrite-rejected",
-            Some(FileSystemCapability::Copy),
-            ContractCheckOutcome::Passed,
-        );
+        if self.fixture.copy_fallback_only() {
+            let failure = operation
+                .execute()
+                .await
+                .expect_err("copy contract: fallback unexpectedly accepted overwrite");
+            assert_eq!(failure.error().kind(), FsErrorKind::RequirementNotMet);
+            assert_eq!(failure.error().operation(), FsOperation::Copy);
+            self.assert_bytes(&target, b"existing", "copy contract: fallback overwrite changed target")
+                .await;
+            self.context.record_check(
+                "copy/fallback-overwrite-rejected",
+                Some(FileSystemCapability::Copy),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+        } else {
+            let overwritten = operation
+                .execute()
+                .await
+                .expect("copy contract: overwrite conflict failed");
+            assert_eq!(overwritten.stats().overwritten, 1);
+            self.assert_bytes(&target, b"copy bytes", "copy contract: overwrite bytes mismatch")
+                .await;
+            self.context.record_check(
+                "copy/fallback-overwrite-rejected",
+                Some(FileSystemCapability::Copy),
+                ContractCheckOutcome::Passed,
+            );
+        }
     }
 
     /// Checks asynchronous durable copy publication when advertised.
