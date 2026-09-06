@@ -1,0 +1,7 @@
+{
+  "threshold_exempt_files": {
+    "qubit-fs-testkit": [
+      "src/async_write_fixture_case.rs"
+    ]
+  }
+}
