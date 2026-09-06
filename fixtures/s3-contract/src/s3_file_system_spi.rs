@@ -20,8 +20,10 @@ use qubit_fs::metadata::SymlinkPolicy;
 use qubit_fs::path::PathConstraints;
 use qubit_fs::path::PathSemantics;
 use qubit_fs::spi::AsyncFileSystemSpi;
+use qubit_fs::spi::ListRequest;
 use qubit_fs::spi::OpenReaderRequest;
 use qubit_fs::spi::OpenWriterRequest;
+use qubit_fs::spi::OpenedAsyncDirectoryStream;
 use qubit_fs::spi::OpenedAsyncReader;
 use qubit_fs::spi::OpenedAsyncWriter;
 use qubit_fs::spi::ProviderOperation;
@@ -34,6 +36,8 @@ use qubit_fs::spi::StatResponse;
 use crate::config::S3ContractConfig;
 use crate::error_mapper;
 use crate::path_mapper;
+use crate::s3_directory_stream::S3DirectoryStream;
+use crate::s3_directory_stream::filter as list_filter;
 use crate::s3_reader::S3Reader;
 use crate::s3_write_session::S3WriteSession;
 
@@ -82,7 +86,10 @@ pub fn open_in_memory(prefix: impl Into<String>) -> Result<AsyncFileSystem, FsEr
     build_filesystem(config, Arc::new(object_store::memory::InMemory::new()))
 }
 
-fn build_filesystem(config: S3ContractConfig, store: Arc<dyn ObjectStore>) -> Result<AsyncFileSystem, FsError> {
+fn build_filesystem(
+    config: S3ContractConfig,
+    store: Arc<dyn ObjectStore>,
+) -> Result<AsyncFileSystem, FsError> {
     let info = FileSystemInfo::new(
         FileSystemId::new("s3-contract")?,
         "s3-contract",
@@ -91,13 +98,17 @@ fn build_filesystem(config: S3ContractConfig, store: Arc<dyn ObjectStore>) -> Re
     .with_scheme("s3")?;
     let operations = ProviderOperations::new()
         .with(ProviderOperation::Stat)
+        .with(ProviderOperation::List)
         .with(ProviderOperation::OpenReader)
         .with(ProviderOperation::OpenWriter);
+
     let capabilities = FileSystemCapabilities::new()
+        .with_guaranteed(FileSystemCapability::List)
         .with_conditional(FileSystemCapability::Read)
         .with_conditional(FileSystemCapability::RangeRead)
         .with_conditional(FileSystemCapability::Write);
-    let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1_048_576));
+    let limits =
+        FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1_048_576));
     let properties = ProviderProperties::new(
         info,
         operations,
@@ -117,11 +128,50 @@ impl AsyncFileSystemSpi for S3FileSystemSpi {
     fn properties(&self) -> ProviderProperties {
         self.properties.clone()
     }
-    fn stat<'a>(&'a self, request: StatRequest<'a>) -> SpiFuture<'a, qubit_fs::FsResult<qubit_fs::spi::StatResponse>> {
+
+    fn list<'a>(
+        &'a self,
+        request: ListRequest<'a>,
+    ) -> SpiFuture<'a, qubit_fs::FsResult<OpenedAsyncDirectoryStream>> {
+        Box::pin(async move {
+            let prefix = path_mapper::map(&self.config, request.path())?;
+            let filter = list_filter(request.options())?;
+            let stream = self
+                .store
+                .list(Some(&object_store::path::Path::parse(prefix).map_err(
+                    |error| {
+                        FsError::with_source(
+                            FsErrorKind::InvalidPath,
+                            FsOperation::List,
+                            "invalid S3 list prefix",
+                            error,
+                        )
+                    },
+                )?));
+            Ok(OpenedAsyncDirectoryStream::new(Box::new(
+                S3DirectoryStream::new(
+                    self.config.clone(),
+                    request.path().clone(),
+                    stream,
+                    filter,
+                    request.options().options().include_metadata(),
+                ),
+            )))
+        })
+    }
+    fn stat<'a>(
+        &'a self,
+        request: StatRequest<'a>,
+    ) -> SpiFuture<'a, qubit_fs::FsResult<qubit_fs::spi::StatResponse>> {
         Box::pin(async move {
             let key = path_mapper::map(&self.config, request.path())?;
             let object_key = object_store::path::Path::parse(key).map_err(|e| {
-                FsError::with_source(FsErrorKind::InvalidPath, FsOperation::Stat, "invalid S3 object key", e)
+                FsError::with_source(
+                    FsErrorKind::InvalidPath,
+                    FsOperation::Stat,
+                    "invalid S3 object key",
+                    e,
+                )
             })?;
             let meta = self
                 .store
@@ -142,7 +192,8 @@ impl AsyncFileSystemSpi for S3FileSystemSpi {
         Box::pin(async move {
             let key = path_mapper::map(&self.config, request.path())?;
             let options = request.options().options();
-            let reader = S3Reader::open(self.store.clone(), key, request.path().clone(), options).await?;
+            let reader =
+                S3Reader::open(self.store.clone(), key, request.path().clone(), options).await?;
             let info = reader.info().clone();
             Ok(OpenedAsyncReader::new(info, Box::new(reader)))
         })
@@ -157,8 +208,10 @@ impl AsyncFileSystemSpi for S3FileSystemSpi {
                 path_mapper::map(&self.config, request.path())?,
                 request.options().options(),
             )?;
-            let info =
-                qubit_fs::metadata::OpenedFileInfo::new(self.properties.info().id().clone(), request.path().clone());
+            let info = qubit_fs::metadata::OpenedFileInfo::new(
+                self.properties.info().id().clone(),
+                request.path().clone(),
+            );
             Ok(OpenedAsyncWriter::new(info, Box::new(session)))
         })
     }

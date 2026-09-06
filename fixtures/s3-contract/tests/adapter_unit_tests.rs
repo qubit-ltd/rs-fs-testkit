@@ -95,14 +95,22 @@ async fn in_memory_adapter_runs_the_supported_contract_matrix() {
                 let path = self.path(relative)?;
                 let options = qubit_fs::write::WriteOptions::default()
                     .with_disposition(qubit_fs::write::WriteDisposition::CreateNew);
-                self.filesystem
-                    .write_all(&path, bytes, options)
-                    .await
-                    .map_err(|e| qubit_fs_testkit::FixtureError::new(format!("seed failed: {e}")))?;
+                let mut operation = self
+                    .filesystem
+                    .begin_write_all(path.clone(), bytes, options)
+                    .map_err(|e| {
+                        qubit_fs_testkit::FixtureError::new(format!("seed preflight failed: {e}"))
+                    })?;
+                operation.execute().await.map_err(|e| {
+                    qubit_fs_testkit::FixtureError::new(format!("seed failed: {e}"))
+                })?;
                 Ok(FixtureSupport::Supported(path))
             })
         }
-        fn read_file<'a>(&'a self, path: &'a Path) -> qubit_fs_testkit::FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
+        fn read_file<'a>(
+            &'a self,
+            path: &'a Path,
+        ) -> qubit_fs_testkit::FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
             Box::pin(async move {
                 self.filesystem
                     .read_all(path, Default::default(), 2 * 1024 * 1024)
@@ -116,11 +124,9 @@ async fn in_memory_adapter_runs_the_supported_contract_matrix() {
             path: &'a Path,
         ) -> qubit_fs_testkit::FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
             Box::pin(async move {
-                let metadata = self
-                    .filesystem
-                    .stat(path)
-                    .await
-                    .map_err(|e| qubit_fs_testkit::FixtureError::new(format!("stat failed: {e}")))?;
+                let metadata = self.filesystem.stat(path).await.map_err(|e| {
+                    qubit_fs_testkit::FixtureError::new(format!("stat failed: {e}"))
+                })?;
                 Ok(metadata
                     .etag()
                     .cloned()
@@ -152,7 +158,10 @@ async fn create_only_collision_is_not_published_and_keeps_payload() {
     let filesystem = open_in_memory("writer-recovery").unwrap();
     let path = Path::parse_literal("same-key").unwrap();
     let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
-    let mut first = filesystem.open_writer(&path, options.clone()).await.unwrap();
+    let mut first = filesystem
+        .open_writer(&path, options.clone())
+        .await
+        .unwrap();
     first.write_fully_async(b"existing").await.unwrap();
     first.commit_async().await.unwrap();
 
@@ -161,7 +170,10 @@ async fn create_only_collision_is_not_published_and_keeps_payload() {
     let failure = second.commit_async().await.unwrap_err();
     assert_eq!(failure.state(), WriteFailureState::NotPublished);
     assert_eq!(
-        filesystem.read_all(&path, Default::default(), 64).await.unwrap(),
+        filesystem
+            .read_all(&path, Default::default(), 64)
+            .await
+            .unwrap(),
         b"existing"
     );
     let retry = second.commit_async().await.unwrap_err();
@@ -179,6 +191,32 @@ async fn empty_object_reports_zero_length() {
     let mut writer = filesystem.open_writer(&path, options).await.unwrap();
     writer.commit_async().await.unwrap();
     assert_eq!(filesystem.stat(&path).await.unwrap().len(), Some(0));
+}
+
+#[tokio::test]
+async fn in_memory_listing_preserves_literal_object_prefixes() {
+    use qubit_fs::directory::ListOptions;
+    use qubit_fs::write::WriteDisposition;
+    use qubit_fs::write::WriteOptions;
+
+    let filesystem = open_in_memory("list-contract").unwrap();
+    for key in ["folder/a", "folder/ab", "other"] {
+        let path = Path::parse_literal(key).unwrap();
+        let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
+        let mut operation = filesystem.begin_write_all(path, b"x", options).unwrap();
+        operation.execute().await.unwrap();
+    }
+    let root = Path::parse_literal("folder").unwrap();
+    let mut stream = filesystem
+        .list(&root, ListOptions::object_keys())
+        .await
+        .unwrap();
+    let mut names = Vec::new();
+    while let Some(entry) = stream.next_entry_async().await.unwrap() {
+        names.push(entry.path.as_str().to_owned());
+    }
+    names.sort();
+    assert_eq!(names, ["folder/a", "folder/ab"]);
 }
 
 #[tokio::test]

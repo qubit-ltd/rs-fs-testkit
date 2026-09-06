@@ -10,6 +10,24 @@ use qubit_fs::metadata::FileSystemCapability;
 
 use crate::FileSystemContract;
 
+/// Returns whether a check must retain `Unverified` until real evidence is
+/// recorded.
+#[allow(dead_code)]
+pub(crate) fn requires_explicit_evidence(id: &str) -> bool {
+    matches!(
+        id,
+        "write/owning-operation"
+            | "write/cancel-open"
+            | "write/cancel-write"
+            | "write/cancel-flush"
+            | "write/cancel-commit"
+            | "write/repeated-execute"
+            | "temp/repeated-lifecycle"
+            | "copy/repeated-execute"
+            | "list/literal-prefix"
+    )
+}
+
 /// Description of one catalog entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CheckSpec {

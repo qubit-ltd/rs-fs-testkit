@@ -115,9 +115,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 let at_path = self.path("async-write-limit-at");
                 self.context.record_created(at_path.clone());
                 let at_payload = vec![b'a'; usize::try_from(maximum).expect("write/limit-at: boundary must fit usize")];
-                self.fixture
+                let mut operation = self
+                    .fixture
                     .file_system()
-                    .write_all(&at_path, &at_payload, WriteOptions::default())
+                    .begin_write_all(at_path.clone(), &at_payload, WriteOptions::default())
+                    .expect("write/limit-at: boundary request was rejected");
+                operation
+                    .execute()
                     .await
                     .expect("write/limit-at: boundary request was rejected");
 
@@ -125,12 +129,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 self.context.record_created(over_path.clone());
                 let over_payload =
                     vec![b'o'; usize::try_from(over).expect("write/limit-over: successor must fit usize")];
-                let failure = self
-                    .fixture
-                    .file_system()
-                    .write_all(&over_path, &over_payload, WriteOptions::default())
-                    .await
-                    .expect_err("write/limit-over: declared write limit was ignored");
+                let failure = match self.fixture.file_system().begin_write_all(
+                    over_path.clone(),
+                    &over_payload,
+                    WriteOptions::default(),
+                ) {
+                    Ok(mut operation) => operation
+                        .execute()
+                        .await
+                        .expect_err("write/limit-over: declared write limit was ignored"),
+                    Err(failure) => failure,
+                };
                 self.assert_error(
                     failure.error(),
                     FsErrorKind::ResourceLimitExceeded,
@@ -478,23 +487,20 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let durable_path = self.path("async-durable-write");
         if self.capable(FileSystemCapability::DurableWrite) {
             self.context.record_created(durable_path.clone());
-            let outcome = self
+            let durable_bytes = bounded_payload(limit, b"durable", b'd');
+            let mut operation = self
                 .fixture
                 .file_system()
-                .write_all(
-                    &durable_path,
-                    &bounded_payload(limit, b"durable", b'd'),
+                .begin_write_all(
+                    durable_path.clone(),
+                    &durable_bytes,
                     WriteOptions::default().with_durability(DurabilityRequirement::Required),
                 )
-                .await
-                .expect("write/durable: required write failed");
+                .expect("write/durable: preflight failed");
+            let outcome = operation.execute().await.expect("write/durable: required write failed");
             assert!(outcome.durable(), "write/durable: outcome was not durable");
-            self.assert_bytes(
-                &durable_path,
-                &bounded_payload(limit, b"durable", b'd'),
-                "write/durable: bytes mismatch",
-            )
-            .await;
+            self.assert_bytes(&durable_path, &durable_bytes, "write/durable: bytes mismatch")
+                .await;
             self.context.record_check(
                 "write/durable",
                 Some(FileSystemCapability::DurableWrite),

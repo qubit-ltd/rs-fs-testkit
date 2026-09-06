@@ -17,11 +17,14 @@ use qubit_fs::path::Path;
 
 use crate::AsyncCopyCancellationStage;
 use crate::AsyncCopyFixtureCase;
+use crate::AsyncWriteCancellationStage;
+use crate::AsyncWriteFixtureCase;
 use crate::CopyCancellationProbe;
 use crate::CopyFixtureCase;
 use crate::FixtureCase;
 use crate::FixtureResult;
 use crate::FixtureSupport;
+use crate::WriteCancellationProbe;
 
 /// Runtime-neutral future returned by asynchronous fixture observations.
 ///
@@ -228,6 +231,27 @@ pub trait AsyncFileSystemFixture: Sync {
         stage: AsyncCopyCancellationStage,
         relative: &'a str,
     ) -> FixtureFuture<'a, FixtureSupport<Box<dyn CopyCancellationProbe>>> {
+        let _ = (stage, relative);
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
+    /// Supplies an asynchronously prepared whole-file write cancellation case.
+    #[inline]
+    fn write_cancellation_case(
+        &self,
+        stage: AsyncWriteCancellationStage,
+    ) -> FixtureResult<FixtureSupport<AsyncWriteFixtureCase>> {
+        let _ = stage;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Prepares a stage-aware whole-file write cancellation probe.
+    #[inline]
+    fn prepare_write_cancellation<'a>(
+        &'a self,
+        stage: AsyncWriteCancellationStage,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Box<dyn WriteCancellationProbe>>> {
         let _ = (stage, relative);
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
