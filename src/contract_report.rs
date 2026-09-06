@@ -63,6 +63,9 @@ impl ContractReport {
                 _ => None,
             })
             .collect::<Vec<_>>();
+        if self.expected.is_empty() {
+            incomplete.push("report has no executed phase".to_owned());
+        }
         for id in &self.expected {
             if !self.checks.iter().any(|check| check.id() == *id) {
                 incomplete.push(format!("{id} (check was not recorded)"));
