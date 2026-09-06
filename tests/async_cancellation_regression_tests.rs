@@ -28,6 +28,7 @@ use common::AsyncMemoryFixture;
 use common::run_controlled;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
+use qubit_fs_testkit::FixtureSupport;
 
 /// Every stage is acknowledged after multiple real provider suspensions.
 #[test]
@@ -55,7 +56,10 @@ fn test_async_copy_cancellation_drop_leaves_explicit_teardown_responsibility() {
     ));
     drop(assertion);
 
-    run_controlled(fixture.teardown()).expect("explicit fixture teardown must succeed");
+    assert!(matches!(
+        run_controlled(fixture.teardown()).expect("explicit fixture teardown must succeed"),
+        FixtureSupport::Supported(())
+    ));
     assert!(
         fixture.is_empty(),
         "explicit fixture teardown must reclaim data"
