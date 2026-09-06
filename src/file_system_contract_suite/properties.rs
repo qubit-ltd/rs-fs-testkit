@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -74,36 +75,22 @@ impl<'a> FileSystemContractSuite<'a> {
             Some(FileSystemCapability::Read),
             ContractCheckOutcome::Passed,
         );
-        self.context.record_check(
-            "properties/path-constraints",
-            None,
-            ContractCheckOutcome::Passed,
-        );
-        self.context.record_check(
-            "properties/capability-dependencies",
-            None,
-            ContractCheckOutcome::Passed,
-        );
-        self.context.record_check(
-            "properties/limits",
-            None,
-            ContractCheckOutcome::Passed,
-        );
+        self.context
+            .record_check("properties/path-constraints", None, ContractCheckOutcome::Passed);
+        self.context
+            .record_check("properties/capability-dependencies", None, ContractCheckOutcome::Passed);
+        self.context
+            .record_check("properties/limits", None, ContractCheckOutcome::Passed);
         let path_outcome = match path_limit.maximum() {
             Some(maximum) if maximum <= MAX_PROBE_BYTES => {
-                let over = usize::try_from(maximum)
-                    .ok()
-                    .and_then(|maximum| {
-                        let component = "x".repeat(maximum.saturating_add(1));
-                        Path::parse(&format!("/{component}")).ok()
-                    });
+                let over = usize::try_from(maximum).ok().and_then(|maximum| {
+                    let component = "x".repeat(maximum.saturating_add(1));
+                    Path::parse(&format!("/{component}")).ok()
+                });
                 match over {
                     Some(path) => {
-                        limits.validate_path(
-                                &path,
-                                path_semantics,
-                                FsOperation::Stat,
-                            )
+                        limits
+                            .validate_path(&path, path_semantics, FsOperation::Stat)
                             .expect_err("properties contract: path limit admitted oversized path");
                         ContractCheckOutcome::Passed
                     }
@@ -119,15 +106,9 @@ impl<'a> FileSystemContractSuite<'a> {
                 reason: "path limit is unknown, inapplicable, or unbounded".to_owned(),
             },
         };
-        self.context.record_check(
-            "properties/limit-path-admission",
-            None,
-            path_outcome,
-        );
-        self.context.record_check(
-            "properties/symlink-policy",
-            None,
-            ContractCheckOutcome::Passed,
-        );
+        self.context
+            .record_check("properties/limit-path-admission", None, path_outcome);
+        self.context
+            .record_check("properties/symlink-policy", None, ContractCheckOutcome::Passed);
     }
 }

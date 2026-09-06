@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -7,7 +8,8 @@
 
 use super::*;
 use crate::FixtureCase;
-use crate::internal::limit_probe_plan::{finite_probe, MAX_PROBE_BYTES};
+use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
+use crate::internal::limit_probe_plan::finite_probe;
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Checks reader behavior.
@@ -26,10 +28,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 &path,
                 None,
             );
-            assert_eq!(
-                error.required_capability(),
-                Some(FileSystemCapability::Read)
-            );
+            assert_eq!(error.required_capability(), Some(FileSystemCapability::Read));
             self.context.record_check(
                 "read/basic",
                 Some(FileSystemCapability::Read),
@@ -59,10 +58,7 @@ impl<'a> FileSystemContractSuite<'a> {
         let bytes = file_system
             .read_all(&path, Default::default(), 64)
             .expect("read contract: facade could not read seeded bytes");
-        assert_eq!(
-            bytes, b"read contract bytes",
-            "read/basic: bytes mismatch"
-        );
+        assert_eq!(bytes, b"read contract bytes", "read/basic: bytes mismatch");
         let error = file_system
             .read_all(&path, Default::default(), 4)
             .expect_err("read contract: caller byte limit was ignored");
@@ -84,14 +80,8 @@ impl<'a> FileSystemContractSuite<'a> {
     /// Checks range, conditional, and checksum read guarantees.
     pub fn assert_read_options(&mut self, path: &Path) {
         const CONTENT: &[u8] = b"read contract bytes";
-        let range_limit = self
-            .context
-            .properties()
-            .limits()
-            .max_read_range_bytes();
-        let range_length = range_limit
-            .maximum()
-            .map_or(8, |maximum| maximum.min(8));
+        let range_limit = self.context.properties().limits().max_read_range_bytes();
+        let range_length = range_limit.maximum().map_or(8, |maximum| maximum.min(8));
         let range_offset = if range_length >= 8 { 5 } else { 0 };
         let range = ReadOptions::default()
             .with_offset(Some(range_offset))
@@ -117,16 +107,11 @@ impl<'a> FileSystemContractSuite<'a> {
             );
             let outcome = match finite_probe(range_limit, MAX_PROBE_BYTES) {
                 Some((maximum, over)) if maximum > 0 => {
-                    let maximum_bytes = usize::try_from(maximum)
-                        .expect("read contract: bounded range must fit usize");
+                    let maximum_bytes = usize::try_from(maximum).expect("read contract: bounded range must fit usize");
                     let bounded = self
                         .fixture
                         .file_system()
-                        .read_all(
-                            path,
-                            ReadOptions::default().with_length(Some(maximum)),
-                            maximum_bytes,
-                        )
+                        .read_all(path, ReadOptions::default().with_length(Some(maximum)), maximum_bytes)
                         .expect("read/range-limit: request at declared boundary failed");
                     assert!(
                         bounded.len() <= maximum_bytes,
@@ -156,11 +141,8 @@ impl<'a> FileSystemContractSuite<'a> {
                     reason: "range limit is unknown, inapplicable, or unbounded".to_owned(),
                 },
             };
-            self.context.record_check(
-                "read/range-limit",
-                Some(FileSystemCapability::RangeRead),
-                outcome,
-            );
+            self.context
+                .record_check("read/range-limit", Some(FileSystemCapability::RangeRead), outcome);
         } else {
             let error = self
                 .fixture
@@ -202,8 +184,8 @@ impl<'a> FileSystemContractSuite<'a> {
             FixtureSupport::Unsupported
         };
         if !self.capable(FileSystemCapability::ConditionalRead) {
-            let current = ReadOptions::default()
-                .with_if_match(Some(ResourceVersion::new("missing-capability-current")));
+            let current =
+                ReadOptions::default().with_if_match(Some(ResourceVersion::new("missing-capability-current")));
             let error = self
                 .fixture
                 .file_system()
@@ -220,8 +202,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 Some(FileSystemCapability::ConditionalRead),
                 ContractCheckOutcome::RejectedAsExpected,
             );
-            let stale = ReadOptions::default()
-                .with_if_match(Some(ResourceVersion::new("missing-capability-stale")));
+            let stale = ReadOptions::default().with_if_match(Some(ResourceVersion::new("missing-capability-stale")));
             let error = self
                 .fixture
                 .file_system()
@@ -261,11 +242,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 let bytes = self
                     .fixture
                     .file_system()
-                    .read_all(
-                        path,
-                        ReadOptions::default().with_if_match(Some(current.clone())),
-                        64,
-                    )
+                    .read_all(path, ReadOptions::default().with_if_match(Some(current.clone())), 64)
                     .expect("read contract: current if-match failed");
                 assert_eq!(bytes, CONTENT);
                 self.context.record_check(
@@ -288,11 +265,7 @@ impl<'a> FileSystemContractSuite<'a> {
                     let error = self
                         .fixture
                         .file_system()
-                        .read_all(
-                            path,
-                            ReadOptions::default().with_if_match(Some(stale)),
-                            64,
-                        )
+                        .read_all(path, ReadOptions::default().with_if_match(Some(stale)), 64)
                         .expect_err("read/if-match-stale: stale If-Match succeeded");
                     self.assert_error(
                         &error,
@@ -332,14 +305,12 @@ impl<'a> FileSystemContractSuite<'a> {
             for (id, options, message) in [
                 (
                     "read/if-none-match-current",
-                    ReadOptions::default()
-                        .with_if_none_match(Some(ResourceVersion::new("missing-capability-current"))),
+                    ReadOptions::default().with_if_none_match(Some(ResourceVersion::new("missing-capability-current"))),
                     "read contract: unadvertised current If-None-Match succeeded",
                 ),
                 (
                     "read/if-none-match-stale",
-                    ReadOptions::default()
-                        .with_if_none_match(Some(ResourceVersion::new("missing-capability-stale"))),
+                    ReadOptions::default().with_if_none_match(Some(ResourceVersion::new("missing-capability-stale"))),
                     "read contract: unadvertised stale If-None-Match succeeded",
                 ),
             ] {
@@ -384,11 +355,7 @@ impl<'a> FileSystemContractSuite<'a> {
                     let error = self
                         .fixture
                         .file_system()
-                        .read_all(
-                            path,
-                            ReadOptions::default().with_if_none_match(Some(current)),
-                            64,
-                        )
+                        .read_all(path, ReadOptions::default().with_if_none_match(Some(current)), 64)
                         .expect_err("read/if-none-match-current: current If-None-Match succeeded");
                     self.assert_error(
                         &error,
@@ -405,11 +372,7 @@ impl<'a> FileSystemContractSuite<'a> {
                     let bytes = self
                         .fixture
                         .file_system()
-                        .read_all(
-                            path,
-                            ReadOptions::default().with_if_none_match(Some(stale)),
-                            64,
-                        )
+                        .read_all(path, ReadOptions::default().with_if_none_match(Some(stale)), 64)
                         .expect("read/if-none-match-stale: stale If-None-Match failed");
                     assert_eq!(bytes, CONTENT);
                     self.context.record_check(
@@ -436,7 +399,6 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     fn assert_checksum(&mut self, path: &Path, content: &[u8]) {
-
         let checksummed = ReadOptions::default().with_checksum(ChecksumPolicy::Required);
         if self.capable(FileSystemCapability::ChecksumValidation) {
             let bytes = self

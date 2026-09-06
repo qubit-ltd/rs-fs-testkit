@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -6,6 +7,8 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Implements reader contracts.
+
+use qubit_fs::metadata::FileSystemLimit;
 
 use super::*;
 use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
@@ -46,24 +49,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             for (id, capability) in [
                 ("read/range", FileSystemCapability::RangeRead),
                 ("read/range-limit", FileSystemCapability::RangeRead),
-                (
-                    "read/if-match-current",
-                    FileSystemCapability::ConditionalRead,
-                ),
+                ("read/if-match-current", FileSystemCapability::ConditionalRead),
                 ("read/if-match-stale", FileSystemCapability::ConditionalRead),
-                (
-                    "read/if-none-match-current",
-                    FileSystemCapability::ConditionalRead,
-                ),
-                (
-                    "read/if-none-match-stale",
-                    FileSystemCapability::ConditionalRead,
-                ),
+                ("read/if-none-match-current", FileSystemCapability::ConditionalRead),
+                ("read/if-none-match-stale", FileSystemCapability::ConditionalRead),
                 ("read/checksum", FileSystemCapability::ChecksumValidation),
-                (
-                    "read/checksum-corruption",
-                    FileSystemCapability::ChecksumValidation,
-                ),
+                ("read/checksum-corruption", FileSystemCapability::ChecksumValidation),
             ] {
                 self.context.record_check(
                     id,
@@ -89,22 +80,14 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .read_all(&path, Default::default(), 64)
                     .await
                     .expect("read contract: facade could not read seeded bytes");
-                assert_eq!(
-                    actual, b"async bytes",
-                    "read/basic: seeded bytes mismatch"
-                );
+                assert_eq!(actual, b"async bytes", "read/basic: seeded bytes mismatch");
                 let error = self
                     .fixture
                     .file_system()
                     .read_all(&path, Default::default(), 4)
                     .await
                     .expect_err("read contract: caller byte limit was ignored");
-                self.assert_error(
-                    &error,
-                    FsErrorKind::ResourceLimitExceeded,
-                    FsOperation::Read,
-                    &path,
-                );
+                self.assert_error(&error, FsErrorKind::ResourceLimitExceeded, FsOperation::Read, &path);
                 self.context.record_check(
                     "read/basic",
                     Some(FileSystemCapability::Read),
@@ -144,9 +127,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 ContractCheckOutcome::Passed,
             );
             let limit_outcome = match range_limit {
-                qubit_fs::metadata::FileSystemLimit::Maximum(maximum)
-                    if maximum < MAX_PROBE_BYTES =>
-                {
+                FileSystemLimit::Maximum(maximum) if maximum < MAX_PROBE_BYTES => {
                     let over = maximum
                         .checked_add(1)
                         .expect("read/range-limit: range limit successor overflow");
@@ -169,24 +150,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     );
                     ContractCheckOutcome::Passed
                 }
-                qubit_fs::metadata::FileSystemLimit::Maximum(_) => {
-                    ContractCheckOutcome::SkippedOptional {
-                        reason: "range boundary exceeds the bounded probe budget".to_owned(),
-                    }
-                }
-                qubit_fs::metadata::FileSystemLimit::Unknown
-                | qubit_fs::metadata::FileSystemLimit::NotApplicable
-                | qubit_fs::metadata::FileSystemLimit::Unbounded => {
+                FileSystemLimit::Maximum(_) => ContractCheckOutcome::SkippedOptional {
+                    reason: "range boundary exceeds the bounded probe budget".to_owned(),
+                },
+                FileSystemLimit::Unknown | FileSystemLimit::NotApplicable | FileSystemLimit::Unbounded => {
                     ContractCheckOutcome::SkippedOptional {
                         reason: "range limit is unknown, inapplicable, or unbounded".to_owned(),
                     }
                 }
             };
-            self.context.record_check(
-                "read/range-limit",
-                Some(FileSystemCapability::RangeRead),
-                limit_outcome,
-            );
+            self.context
+                .record_check("read/range-limit", Some(FileSystemCapability::RangeRead), limit_outcome);
         } else {
             let error = self
                 .fixture
@@ -288,12 +262,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                             .open_reader(path, ReadOptions::default().with_if_match(Some(version)))
                             .await
                             .expect_err("read/if-match-stale: stale If-Match succeeded");
-                        self.assert_error(
-                            &error,
-                            FsErrorKind::PreconditionFailed,
-                            FsOperation::OpenReader,
-                            path,
-                        );
+                        self.assert_error(&error, FsErrorKind::PreconditionFailed, FsOperation::OpenReader, path);
                         self.context.record_check(
                             "read/if-match-stale",
                             Some(FileSystemCapability::ConditionalRead),
@@ -354,18 +323,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 let current = self
                     .fixture
                     .file_system()
-                    .open_reader(
-                        path,
-                        ReadOptions::default().with_if_none_match(Some(current.clone())),
-                    )
+                    .open_reader(path, ReadOptions::default().with_if_none_match(Some(current.clone())))
                     .await
-                            .expect_err("read/if-none-match-current: current If-None-Match succeeded");
-                self.assert_error(
-                    &current,
-                    FsErrorKind::PreconditionFailed,
-                    FsOperation::OpenReader,
-                    path,
-                );
+                    .expect_err("read/if-none-match-current: current If-None-Match succeeded");
+                self.assert_error(&current, FsErrorKind::PreconditionFailed, FsOperation::OpenReader, path);
                 self.context.record_check(
                     "read/if-none-match-current",
                     Some(FileSystemCapability::ConditionalRead),
@@ -381,11 +342,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                         let bytes = self
                             .fixture
                             .file_system()
-                            .read_all(
-                                path,
-                                ReadOptions::default().with_if_none_match(Some(stale)),
-                                64,
-                            )
+                            .read_all(path, ReadOptions::default().with_if_none_match(Some(stale)), 64)
                             .await
                             .expect("conditional-read contract: stale If-None-Match failed");
                         assert_eq!(bytes, b"async bytes");

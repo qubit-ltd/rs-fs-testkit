@@ -17,8 +17,9 @@ use std::task::Waker;
 
 use common::AsyncMemoryFault;
 use common::AsyncMemoryFixture;
-use common::check_matrix::{assert_panics_at, async_fault_cases};
-use common::run_controlled;
+use common::async_memory_file_system::run_controlled;
+use common::check_matrix::assert_panics_at;
+use common::check_matrix::async_fault_cases;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
@@ -29,10 +30,7 @@ fn assert_copy_contract(fixture: &AsyncMemoryFixture) {
     let mut assertion = Box::pin(suite.assert_copy());
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
+    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
 }
 
 /// A conforming asynchronous provider satisfies every suite phase.
@@ -73,10 +71,7 @@ fn test_all_capabilities_execute_async_contracts() {
     let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
+    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
     assert!(fixture.is_empty(), "all-capability suite must clean up");
 }
 
@@ -88,10 +83,7 @@ fn test_async_suite_allows_matching_filesystem_and_provider_ids() {
     let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
+    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
 }
 
 /// Copy cancellation cases are optional fixture probes, not provider
@@ -111,10 +103,7 @@ fn test_async_copy_cancellation_contract_is_independently_executable() {
         suite.assert_copy_cancellation().await;
         suite.finish().await;
     });
-    assert!(
-        fixture.is_empty(),
-        "cancellation contract must clean resources"
-    );
+    assert!(fixture.is_empty(), "cancellation contract must clean resources");
 }
 
 /// A successful provider-native copy is a valid advertised Copy implementation.
@@ -137,10 +126,7 @@ fn test_async_suite_accepts_object_and_prefix_kinds() {
     });
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
+    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
     assert!(fixture.is_empty(), "object resources must be cleaned");
 }
 
@@ -155,14 +141,8 @@ fn test_async_recursive_delete_does_not_require_create_directory() {
     });
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
-    assert!(
-        fixture.is_empty(),
-        "recursive deletion must remove the prefix"
-    );
+    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
+    assert!(fixture.is_empty(), "recursive deletion must remove the prefix");
 }
 
 /// An asynchronous assertion panic is resumed only after cleanup completes.
@@ -176,10 +156,7 @@ fn test_async_suite_cleans_resources_before_resuming_panic() {
         let _ = assertion.as_mut().poll(&mut context);
     }));
     assert!(result.is_err(), "injected write fault must fail the suite");
-    assert!(
-        fixture.is_empty(),
-        "failed suite must clean published paths"
-    );
+    assert!(fixture.is_empty(), "failed suite must clean published paths");
 }
 
 /// Unadvertised async core operations still exercise facade preflight errors.
@@ -198,10 +175,7 @@ fn test_async_core_capability_negative_branches_are_exercised() {
     });
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
+    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
     assert_eq!(
         fixture.path_call_count(),
         9,
@@ -217,10 +191,7 @@ fn test_async_suite_skips_unadvertised_optional_capabilities() {
     let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
+    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
 }
 
 /// Every public asynchronous contract phase remains independently pollable for
@@ -256,11 +227,7 @@ fn test_single_faults_are_rejected_by_async_suite() {
     for case in async_fault_cases() {
         let fixture = AsyncMemoryFixture::with_fault(case.fault);
         assert_panics_at(
-            || {
-                run_controlled(
-                    AsyncFileSystemContractSuite::new(&fixture).assert_contract(case.phase),
-                )
-            },
+            || run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract(case.phase)),
             case.check_id,
         );
     }

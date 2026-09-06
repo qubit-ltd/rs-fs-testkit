@@ -10,17 +10,13 @@ mod common;
 #[test]
 fn test_sync_accepts_fallback_only_copy() {
     let fixture = MemoryFixture::fallback_only();
-    let report = FileSystemContractSuite::new(&fixture)
-        .assert_contract_with_report(FileSystemContract::Copy);
+    let report = FileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Copy);
     report.assert_complete();
     assert!(report.checks().iter().any(|check| {
         check.id() == "copy/fallback-overwrite-rejected"
             && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
     }));
-    assert!(
-        fixture.is_empty(),
-        "fallback copy contract leaked resources"
-    );
+    assert!(fixture.is_empty(), "fallback copy contract leaked resources");
 }
 
 /// Copy reports the missing write capability for a read-only provider.

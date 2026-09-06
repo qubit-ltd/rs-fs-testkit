@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -6,7 +7,6 @@
 //! Implements copy contracts.
 
 use super::*;
-
 use crate::FixtureCase;
 
 const COPY_SNAPSHOT_LIMIT: usize = 64 * 1024;
@@ -183,11 +183,7 @@ impl<'a> FileSystemContractSuite<'a> {
             source,
             Some(&target),
         );
-        self.assert_bytes(
-            &target,
-            b"b",
-            "copy/fallback-overwrite-rejected: target changed",
-        );
+        self.assert_bytes(&target, b"b", "copy/fallback-overwrite-rejected: target changed");
 
         let skipped = self
             .fixture
@@ -199,15 +195,9 @@ impl<'a> FileSystemContractSuite<'a> {
             )
             .expect("copy/fallback-overwrite-rejected: skip conflict failed");
         assert_eq!(skipped.stats().skipped, 1);
-        self.assert_bytes(
-            &target,
-            b"b",
-            "copy/fallback-overwrite-rejected: skip changed target",
-        );
+        self.assert_bytes(&target, b"b", "copy/fallback-overwrite-rejected: skip changed target");
 
-        if matches!(overwrite_case, FixtureSupport::Unsupported)
-            && !self.fixture.copy_fallback_only()
-        {
+        if matches!(overwrite_case, FixtureSupport::Unsupported) && !self.fixture.copy_fallback_only() {
             self.context.record_check(
                 "copy/fallback-overwrite-rejected",
                 Some(FileSystemCapability::Copy),
@@ -222,12 +212,9 @@ impl<'a> FileSystemContractSuite<'a> {
             &target,
             CopyOptions::file().with_conflict(CopyConflictPolicy::Overwrite),
         );
-        if self.fixture.copy_fallback_only()
-            || matches!(overwrite_case, FixtureSupport::Unsupported)
-        {
-            let failure = overwrite.expect_err(
-                "copy/fallback-overwrite-rejected: fallback unexpectedly accepted overwrite",
-            );
+        if self.fixture.copy_fallback_only() || matches!(overwrite_case, FixtureSupport::Unsupported) {
+            let failure =
+                overwrite.expect_err("copy/fallback-overwrite-rejected: fallback unexpectedly accepted overwrite");
             assert_eq!(failure.error().kind(), FsErrorKind::RequirementNotMet);
             assert_eq!(failure.error().operation(), FsOperation::Copy);
             self.assert_bytes(
@@ -323,11 +310,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .expect("copy/atomic-tree: tree copy failed");
         self.context.record_created(target.clone());
         let target_child = self.path("copy-tree-target/sub/b");
-        self.assert_bytes(
-            &target_child,
-            b"b",
-            "copy/atomic-tree: child bytes mismatch",
-        );
+        self.assert_bytes(&target_child, b"b", "copy/atomic-tree: child bytes mismatch");
         assert!(
             self.fixture
                 .file_system()
@@ -341,9 +324,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 .expect("copy/atomic-tree: child check failed")
         );
         assert!(outcome.stats().files + outcome.stats().objects >= 1);
-        if self.capable(FileSystemCapability::AtomicTreeCopy)
-            && matches!(tree_case, FixtureSupport::Supported(_))
-        {
+        if self.capable(FileSystemCapability::AtomicTreeCopy) && matches!(tree_case, FixtureSupport::Supported(_)) {
             let atomic_target = self.path("copy-tree-atomic-target");
             self.context.record_created(atomic_target.clone());
             let atomic = self
@@ -361,11 +342,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 "copy/atomic-tree: non-atomic result"
             );
             let atomic_child = self.path("copy-tree-atomic-target/sub/b");
-            self.assert_bytes(
-                &atomic_child,
-                b"b",
-                "copy/atomic-tree: atomic child mismatch",
-            );
+            self.assert_bytes(&atomic_child, b"b", "copy/atomic-tree: atomic child mismatch");
             self.context.record_check(
                 "copy/atomic-tree",
                 Some(FileSystemCapability::AtomicTreeCopy),
@@ -465,10 +442,9 @@ impl<'a> FileSystemContractSuite<'a> {
             .expect("copy/server-side: source snapshot failed")
         {
             FixtureSupport::Supported(bytes) if bytes.len() <= COPY_SNAPSHOT_LIMIT => bytes,
-            FixtureSupport::Supported(bytes) => panic!(
-                "copy/server-side: fixture/copy-case-too-large ({})",
-                bytes.len()
-            ),
+            FixtureSupport::Supported(bytes) => {
+                panic!("copy/server-side: fixture/copy-case-too-large ({})", bytes.len())
+            }
             FixtureSupport::Unsupported => {
                 panic!("copy/server-side: fixture must independently observe the source")
             }
@@ -485,17 +461,10 @@ impl<'a> FileSystemContractSuite<'a> {
             CopyMethod::ServerSide,
             "copy/server-side: method mismatch"
         );
-        assert!(
-            !outcome.used_fallback(),
-            "copy/server-side: unexpectedly used fallback"
-        );
+        assert!(!outcome.used_fallback(), "copy/server-side: unexpectedly used fallback");
         assert_eq!(outcome.stats().bytes, snapshot.len() as u64);
         self.assert_bytes(case.source(), &snapshot, "copy/server-side: source changed");
-        self.assert_bytes(
-            case.target(),
-            &snapshot,
-            "copy/server-side: target mismatch",
-        );
+        self.assert_bytes(case.target(), &snapshot, "copy/server-side: target mismatch");
         self.context.record_check(
             "copy/server-side",
             Some(FileSystemCapability::ServerSideCopy),
@@ -532,11 +501,8 @@ impl<'a> FileSystemContractSuite<'a> {
                 )
                 .expect_err("copy/atomic: unadvertised required atomic copy succeeded");
             self.assert_requirement_error(failure.error(), FsOperation::Copy, capability, id);
-            self.context.record_check(
-                id,
-                Some(capability),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
+            self.context
+                .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
             return;
         }
         if mode == CopyMode::Tree {
@@ -608,10 +574,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 CopyOptions::file().with_durability(DurabilityRequirement::Required),
             )
             .expect("copy/durable-file: required durable copy failed");
-        assert!(
-            outcome.durable(),
-            "copy/durable-file: result was not durable"
-        );
+        assert!(outcome.durable(), "copy/durable-file: result was not durable");
         self.assert_bytes(&target, b"a", "copy/durable-file: target mismatch");
         self.context.record_check(
             "copy/durable-file",
@@ -696,10 +659,7 @@ impl<'a> FileSystemContractSuite<'a> {
             )
             .expect("copy/durable-tree: required durable tree copy failed");
         self.context.record_created(target.clone());
-        assert!(
-            outcome.durable(),
-            "copy/durable-tree: result was not durable"
-        );
+        assert!(outcome.durable(), "copy/durable-tree: result was not durable");
         let target_child = self.path("durable-tree-copy-target/sub/child");
         self.assert_bytes(&target_child, b"a", "copy/durable-tree: child mismatch");
         self.assert_bytes(&child, b"a", "copy/durable-tree: source changed");
