@@ -10,6 +10,9 @@
 
 use std::future::poll_fn;
 
+use qubit_fs::write::WriteAbortOutcome;
+use qubit_fs::write::WriterState;
+
 use super::*;
 use crate::CopyCancellationProbe;
 use crate::FixtureError;
@@ -486,10 +489,20 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let mut writer = operation
                 .take_recovery_writer()
                 .expect("async copy cancellation contract: recovery writer was lost");
-            let _ = writer
+            let outcome = writer
                 .abort_async()
                 .await
                 .expect("async copy cancellation contract: recovery writer abort failed");
+            let expected_state = match outcome {
+                WriteAbortOutcome::NotPublished => WriterState::Aborted,
+                WriteAbortOutcome::Published => WriterState::Published,
+                WriteAbortOutcome::Indeterminate => WriterState::Indeterminate,
+            };
+            assert_eq!(
+                writer.state(),
+                expected_state,
+                "async copy cancellation contract: recovery writer state disagrees with abort outcome"
+            );
         }
         self.context.record_check(
             cancellation_check_id(stage),
