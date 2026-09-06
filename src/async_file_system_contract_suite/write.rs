@@ -8,6 +8,7 @@
 //! Implements writer and publication contracts.
 
 use super::*;
+use crate::internal::limit_probe_plan::{finite_probe, MAX_PROBE_BYTES};
 
 impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Checks asynchronous writer behavior.
@@ -100,6 +101,38 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             Some(FileSystemCapability::Write),
             ContractCheckOutcome::Passed,
         );
+        if let Some((_, over)) = finite_probe(
+            self.context.properties().limits().max_write_bytes(),
+            MAX_PROBE_BYTES,
+        ) {
+            let limit_path = self.path("async-write-limit");
+            let payload = vec![0_u8; over as usize];
+            let failure = self
+                .fixture
+                .file_system()
+                .write_all(&limit_path, &payload, WriteOptions::default())
+                .await
+                .expect_err("write contract: declared write limit was ignored");
+            self.assert_error(
+                failure.error(),
+                FsErrorKind::ResourceLimitExceeded,
+                failure.error().operation(),
+                &limit_path,
+            );
+            self.context.record_check(
+                "write/limit",
+                Some(FileSystemCapability::Write),
+                ContractCheckOutcome::Passed,
+            );
+        } else {
+            self.context.record_check(
+                "write/limit",
+                Some(FileSystemCapability::Write),
+                ContractCheckOutcome::SkippedOptional {
+                    reason: "write limit is non-finite or outside probe budget".to_owned(),
+                },
+            );
+        }
         self.assert_write_options(&path, &basic_bytes).await;
     }
 
@@ -415,6 +448,29 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     ContractCheckOutcome::Passed,
                 );
             }
+        } else {
+            let error = self
+                .fixture
+                .file_system()
+                .open_writer(
+                    &if_match_path,
+                    WriteOptions::default().with_precondition(WritePrecondition::IfMatch(
+                        ResourceVersion::new("unsupported-version"),
+                    )),
+                )
+                .await
+                .expect_err("writer contract: unadvertised If-Match write succeeded");
+            self.assert_requirement_error(
+                &error,
+                error.operation(),
+                FileSystemCapability::ConditionalWrite,
+                "conditional-write contract",
+            );
+            self.context.record_check(
+                "write/if-match",
+                Some(FileSystemCapability::ConditionalWrite),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
         }
 
         let atomic_path = self
@@ -518,6 +574,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FileSystemCapability::Append,
                 "append contract",
             );
+            self.context.record_check(
+                "append/basic",
+                Some(FileSystemCapability::Append),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
         let path = self
@@ -559,6 +620,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             "append contract: existing bytes were not retained",
         )
         .await;
+        self.context.record_check(
+            "append/basic",
+            Some(FileSystemCapability::Append),
+            ContractCheckOutcome::Passed,
+        );
     }
 
     /// Checks asynchronous atomic replacement publication when advertised.
@@ -569,9 +635,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// atomicity violates the advertised capability.
     pub async fn assert_atomic_replace(&mut self) {
         self.context.begin("atomic_replace");
-        let path = self.path("async-atomic-replace-target");
         let options = WriteOptions::default().with_atomicity(AtomicityRequirement::Required);
         if !self.capable(FileSystemCapability::AtomicReplace) {
+            let path = self.path("async-atomic-replace-target");
             let error = self
                 .fixture
                 .file_system()
@@ -584,9 +650,22 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FileSystemCapability::AtomicReplace,
                 "atomic-replace contract",
             );
+            self.context.record_check(
+                "write/atomic-replace-existing",
+                Some(FileSystemCapability::AtomicReplace),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
-        self.context.record_created(path.clone());
+        let path = self
+            .required_seed("async-atomic-replace-target", b"a", "atomic-replace")
+            .await;
+        self.assert_bytes(
+            &path,
+            b"a",
+            "atomic-replace contract: seed bytes were not published",
+        )
+        .await;
         let mut writer = self
             .fixture
             .file_system()
@@ -594,7 +673,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("atomic-replace contract: writer open failed");
         writer
-            .write_fully_async(b"atomic replacement")
+            .write_fully_async(b"b")
             .await
             .expect("atomic-replace contract: write failed");
         let outcome = writer
@@ -605,6 +684,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             outcome.atomicity(),
             AchievedAtomicity::Atomic,
             "atomic-replace contract: non-atomic outcome"
+        );
+        self.assert_bytes(
+            &path,
+            b"b",
+            "atomic-replace contract: old bytes were retained",
+        )
+        .await;
+        self.context.record_check(
+            "write/atomic-replace-existing",
+            Some(FileSystemCapability::AtomicReplace),
+            ContractCheckOutcome::Passed,
         );
     }
 }

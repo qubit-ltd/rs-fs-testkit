@@ -22,6 +22,8 @@
 use std::collections::HashMap;
 #[cfg(feature = "async")]
 use std::future;
+#[cfg(feature = "async")]
+use std::future::Future;
 use std::io::Result as IoResult;
 #[cfg(feature = "async")]
 use std::pin::Pin;
@@ -33,6 +35,10 @@ use std::sync::atomic::Ordering;
 use std::task::Context;
 #[cfg(feature = "async")]
 use std::task::Poll;
+#[cfg(feature = "async")]
+use std::task::Wake;
+#[cfg(feature = "async")]
+use std::task::Waker;
 
 #[cfg(feature = "async")]
 use qubit_fs::AsyncFileSystem;
@@ -139,12 +145,47 @@ use super::MemoryFixture;
 use super::memory_file_system::{listed_entries, provider_properties};
 use super::shared_model::Entry;
 
+#[cfg(feature = "async")]
+struct WakeFlag(AtomicUsize);
+
+#[cfg(feature = "async")]
+impl Wake for WakeFlag {
+    fn wake(self: Arc<Self>) {
+        self.0.store(1, Ordering::Release);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.store(1, Ordering::Release);
+    }
+}
+
+/// Drives a runtime-neutral future using its actual wake notifications.
+#[cfg(feature = "async")]
+pub(crate) fn run_controlled<T>(future: impl Future<Output = T>) -> T {
+    let mut future = Box::pin(future);
+    let flag = Arc::new(WakeFlag(AtomicUsize::new(1)));
+    let waker = Waker::from(Arc::clone(&flag));
+    let mut context = Context::from_waker(&waker);
+    for _ in 0..1024 {
+        flag.0.store(0, Ordering::Release);
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(value) => return value,
+            Poll::Pending => assert!(
+                flag.0.load(Ordering::Acquire) != 0,
+                "controlled future returned Pending without scheduling a wake"
+            ),
+        }
+    }
+    panic!("controlled future exceeded the poll budget");
+}
+
 /// Async fixture whose copy pipeline exposes one real pending point per stage.
 #[cfg(feature = "async")]
 pub struct AsyncMemoryFixture {
     file_system: AsyncFileSystem,
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
+    versions: Arc<Mutex<HashMap<String, u64>>>,
     supports_cancellation_cases: bool,
     path_calls: Arc<AtomicUsize>,
     limits: FileSystemLimits,
@@ -458,10 +499,12 @@ impl AsyncMemoryFixture {
     ) -> Self {
         let stage = Arc::new(Mutex::new(AsyncCopyCancellationStage::NativeAttempt));
         let entries = Arc::new(Mutex::new(HashMap::new()));
+        let versions = Arc::new(Mutex::new(HashMap::new()));
         let path_calls = Arc::new(AtomicUsize::new(0));
         let file_system = AsyncFileSystem::from_spi(AsyncMemorySpi {
             stage: Arc::clone(&stage),
             entries: Arc::clone(&entries),
+            versions: Arc::clone(&versions),
             fault,
             native_copy,
             core_capabilities: capabilities.core,
@@ -477,6 +520,7 @@ impl AsyncMemoryFixture {
             file_system,
             stage,
             entries,
+            versions,
             supports_cancellation_cases,
             path_calls,
             limits,
@@ -527,6 +571,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 .lock()
                 .expect("async memory state lock must succeed")
                 .insert(path.as_str().to_owned(), Entry::File(bytes.to_vec()));
+            bump_version(&self.versions, &path);
             Ok(FixtureSupport::Supported(path))
         })
     }
@@ -567,6 +612,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 .lock()
                 .expect("async memory state lock must succeed")
                 .insert(path.as_str().to_owned(), Entry::File(bytes.to_vec()));
+            bump_version(&self.versions, path);
             Ok(FixtureSupport::Supported(()))
         })
     }
@@ -576,13 +622,13 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         path: &'a Path,
     ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         Box::pin(async move {
-            let exists = self
+            let version = self
                 .entries
                 .lock()
                 .expect("async memory state lock must succeed")
                 .contains_key(path.as_str());
-            Ok(if exists {
-                FixtureSupport::Supported(ResourceVersion::new("v1"))
+            Ok(if version {
+                FixtureSupport::Supported(current_version(&self.versions, path))
             } else {
                 FixtureSupport::Unsupported
             })
@@ -600,7 +646,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 .expect("async memory state lock must succeed")
                 .contains_key(path.as_str());
             Ok(if exists {
-                FixtureSupport::Supported(ResourceVersion::new("stale-v0"))
+                FixtureSupport::Supported(stale_version(&self.versions, path))
             } else {
                 FixtureSupport::Unsupported
             })
@@ -709,9 +755,51 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 }
 
 #[cfg(feature = "async")]
+fn bump_version(versions: &Arc<Mutex<HashMap<String, u64>>>, path: &Path) {
+    let mut versions = versions
+        .lock()
+        .expect("async memory version lock must succeed");
+    let version = versions.entry(path.as_str().to_owned()).or_insert(0);
+    *version = version.saturating_add(1);
+}
+
+#[cfg(feature = "async")]
+fn current_version(
+    versions: &Arc<Mutex<HashMap<String, u64>>>,
+    path: &Path,
+) -> ResourceVersion {
+    let version = versions
+        .lock()
+        .expect("async memory version lock must succeed")
+        .get(path.as_str())
+        .copied()
+        .unwrap_or(1);
+    ResourceVersion::new(format!("v{version}"))
+}
+
+#[cfg(feature = "async")]
+fn stale_version(
+    versions: &Arc<Mutex<HashMap<String, u64>>>,
+    path: &Path,
+) -> ResourceVersion {
+    let version = versions
+        .lock()
+        .expect("async memory version lock must succeed")
+        .get(path.as_str())
+        .copied()
+        .unwrap_or(1);
+    if version <= 1 {
+        ResourceVersion::new("stale-v0")
+    } else {
+        ResourceVersion::new(format!("v{}", version - 1))
+    }
+}
+
+#[cfg(feature = "async")]
 struct AsyncMemorySpi {
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
+    versions: Arc<Mutex<HashMap<String, u64>>>,
     fault: AsyncMemoryFault,
     native_copy: bool,
     core_capabilities: bool,
@@ -911,6 +999,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             .get(path.as_str())
             .cloned();
         let fault = self.fault;
+        let versions = Arc::clone(&self.versions);
         let options = request.options().options().clone();
         Box::pin(async move {
             let Some(Entry::File(mut bytes)) = bytes else {
@@ -920,16 +1009,17 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     "async memory entry absent",
                 ));
             };
+            let current = current_version(&versions, &path);
             if (options
                 .if_match()
                 .as_ref()
-                .is_some_and(|version| version.as_str() != "v1")
+                .is_some_and(|version| version.as_str() != current.as_str())
                 && fault != AsyncMemoryFault::IgnoreReadIfMatch)
-                || (options
-                    .if_none_match()
-                    .as_ref()
-                    .is_some_and(|version| version.as_str() == "v1")
-                    && fault != AsyncMemoryFault::IgnoreReadIfNoneMatch)
+            || (options
+                .if_none_match()
+                .as_ref()
+                .is_some_and(|version| version.as_str() == current.as_str())
+                && fault != AsyncMemoryFault::IgnoreReadIfNoneMatch)
             {
                 return Err(FsError::new(
                     FsErrorKind::PreconditionFailed,
@@ -978,6 +1068,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let path = request.path().clone();
         let info = Self::info(&path);
         let state = Arc::clone(&self.entries);
+        let versions = Arc::clone(&self.versions);
         let fault = self.fault;
         let disposition = request.options().options().disposition();
         let atomicity = request.options().options().atomicity();
@@ -989,6 +1080,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 Box::new(AsyncMemoryWriter {
                     stage,
                     state,
+                    versions,
                     path,
                     bytes: Vec::new(),
                     fault,
@@ -1346,6 +1438,7 @@ impl AsyncInput for AsyncMemoryReader {
 struct AsyncMemoryWriter {
     stage: AsyncCopyCancellationStage,
     state: Arc<Mutex<HashMap<String, Entry>>>,
+    versions: Arc<Mutex<HashMap<String, u64>>>,
     path: Path,
     bytes: Vec<u8>,
     fault: AsyncMemoryFault,
@@ -1391,6 +1484,7 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
         }
         let this = self.get_mut();
         let state = Arc::clone(&this.state);
+        let versions = Arc::clone(&this.versions);
         let path = this.path.clone();
         let bytes = this.bytes.clone();
         let fault = this.fault;
@@ -1424,8 +1518,9 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                     WriteFailureState::NotPublished,
                 ));
             }
+            let current_version = current_version(&versions, &path);
             if let WritePrecondition::IfMatch(version) = &precondition
-                && (version.as_str() != "v1" || !destination_exists)
+                && (version.as_str() != current_version.as_str() || !destination_exists)
                 && fault != AsyncMemoryFault::IgnoreWriteIfMatch
             {
                 return Err(WriteFailure::new(
@@ -1460,6 +1555,8 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                     bytes
                 };
                 state.insert(path.as_str().to_owned(), Entry::File(bytes));
+                drop(state);
+                bump_version(&versions, &path);
             }
             Ok(WriteOutcome::new(
                 if atomicity == AtomicityRequirement::Required

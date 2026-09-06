@@ -8,6 +8,7 @@
 //! Implements reader contracts.
 
 use super::*;
+use crate::internal::limit_probe_plan::{finite_probe, MAX_PROBE_BYTES};
 
 impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Checks asynchronous reader behavior.
@@ -117,9 +118,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Some(FileSystemCapability::RangeRead),
                 ContractCheckOutcome::Passed,
             );
-            if let Some(limit) = range_limit
-                && let Some(over) = limit.checked_add(1)
-            {
+            if let Some((_, over)) = finite_probe(
+                self.context.properties().limits().max_read_range_bytes(),
+                MAX_PROBE_BYTES,
+            ) {
                 let error = self
                     .fixture
                     .file_system()
@@ -131,6 +133,19 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     FsErrorKind::ResourceLimitExceeded,
                     FsOperation::OpenReader,
                     path,
+                );
+                self.context.record_check(
+                    "read/range-limit",
+                    Some(FileSystemCapability::RangeRead),
+                    ContractCheckOutcome::Passed,
+                );
+            } else {
+                self.context.record_check(
+                    "read/range-limit",
+                    Some(FileSystemCapability::RangeRead),
+                    ContractCheckOutcome::SkippedOptional {
+                        reason: "range limit is non-finite or outside probe budget".to_owned(),
+                    },
                 );
             }
         } else {
@@ -148,6 +163,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
             self.context.record_check(
                 "read/range",
+                Some(FileSystemCapability::RangeRead),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+            self.context.record_check(
+                "read/range-limit",
                 Some(FileSystemCapability::RangeRead),
                 ContractCheckOutcome::RejectedAsExpected,
             );

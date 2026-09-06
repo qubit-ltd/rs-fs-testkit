@@ -24,6 +24,22 @@ pub(crate) const fn bounded_successor(
     }
 }
 
+/// Plans a finite limit probe while keeping allocations within the testkit
+/// budget. Non-finite declarations are intentionally left unprobed.
+pub(crate) const fn finite_probe(
+    limit: qubit_fs::metadata::FileSystemLimit,
+    budget: u64,
+) -> Option<(u64, u64)> {
+    match limit {
+        qubit_fs::metadata::FileSystemLimit::Maximum(maximum) => {
+            bounded_successor(maximum, budget)
+        }
+        qubit_fs::metadata::FileSystemLimit::Unknown
+        | qubit_fs::metadata::FileSystemLimit::NotApplicable
+        | qubit_fs::metadata::FileSystemLimit::Unbounded => None,
+    }
+}
+
 /// Clamps a listing page hint to the testkit's bounded request budget.
 pub(crate) const fn clamp_page_hint(requested: u64) -> u64 {
     if requested > MAX_PROBE_ENTRIES {
