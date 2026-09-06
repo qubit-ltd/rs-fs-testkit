@@ -1,10 +1,9 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
 // =============================================================================
-
-// qubit-style: allow all
 
 mod common;
 

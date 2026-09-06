@@ -1,4 +1,4 @@
-// qubit-style: allow all
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -6,18 +6,23 @@
 // =============================================================================
 //! Public report of the checks performed by a contract suite.
 
-use qubit_fs::metadata::FileSystemCapabilities;
 use qubit_fs::metadata::FileSystemCapability;
 
 use crate::ContractCheck;
 use crate::ContractCheckOutcome;
-use crate::FileSystemContract;
 
 /// A report containing stable check identities and their outcomes.
 #[must_use]
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractReport {
     pub(crate) checks: Vec<ContractCheck>,
+    /// Check identities registered by the phase catalog.
+    ///
+    /// Keeping this set separately from `checks` lets completeness detect a
+    /// phase whose implementation forgot to record one of its cataloged
+    /// checks.  A report that only contains ad-hoc checks must not be able to
+    /// claim that a contract phase was fully exercised.
+    pub(crate) expected: Vec<&'static str>,
 }
 
 impl ContractReport {
@@ -33,10 +38,15 @@ impl ContractReport {
     #[inline]
     #[must_use]
     pub fn is_complete(&self) -> bool {
-        !self
-            .checks
-            .iter()
-            .any(|check| matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }))
+        !self.expected.is_empty()
+            && self
+                .expected
+                .iter()
+                .all(|id| self.checks.iter().any(|check| check.id() == *id))
+            && !self
+                .checks
+                .iter()
+                .any(|check| matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }))
     }
 
     /// Panics when the report contains an unverified check.
@@ -45,7 +55,7 @@ impl ContractReport {
     /// strict downstream registration cannot silently omit fixture evidence.
     #[track_caller]
     pub fn assert_complete(&self) {
-        let incomplete = self
+        let mut incomplete = self
             .checks
             .iter()
             .filter_map(|check| match check.outcome() {
@@ -53,6 +63,14 @@ impl ContractReport {
                 _ => None,
             })
             .collect::<Vec<_>>();
+        if self.expected.is_empty() {
+            incomplete.push("report has no executed phase".to_owned());
+        }
+        for id in &self.expected {
+            if !self.checks.iter().any(|check| check.id() == *id) {
+                incomplete.push(format!("{id} (check was not recorded)"));
+            }
+        }
         assert!(
             incomplete.is_empty(),
             "[fs-testkit:report/incomplete] unverified checks: {}",
@@ -63,24 +81,30 @@ impl ContractReport {
     /// Creates an empty report for a suite run.
     #[inline]
     pub(crate) const fn new() -> Self {
-        Self { checks: Vec::new() }
+        Self {
+            checks: Vec::new(),
+            expected: Vec::new(),
+        }
+    }
+
+    /// Registers a catalog entry before a phase starts running.
+    pub(crate) fn expect(&mut self, id: &'static str) {
+        if !self.expected.contains(&id) {
+            self.expected.push(id);
+        }
     }
 
     /// Appends one check produced by a suite phase.
     #[inline]
     pub(crate) fn push(
         &mut self,
-        phase: FileSystemContract,
         id: &'static str,
         capability: Option<FileSystemCapability>,
-        required: bool,
         outcome: ContractCheckOutcome,
     ) {
         self.checks.push(ContractCheck {
-            phase,
             id,
             capability,
-            required,
             outcome,
         });
     }
@@ -88,42 +112,64 @@ impl ContractReport {
     /// Replaces the pending entry for a check, or appends a repeated run.
     pub(crate) fn record(
         &mut self,
-        phase: FileSystemContract,
         id: &'static str,
         capability: Option<FileSystemCapability>,
-        required: bool,
         outcome: ContractCheckOutcome,
     ) {
-        if let Some(check) = self.checks.iter_mut().rev().find(|check| {
-            check.phase == phase && check.id == id && matches!(check.outcome, ContractCheckOutcome::Unverified { .. })
-        }) {
+        if let Some(check) = self
+            .checks
+            .iter_mut()
+            .rev()
+            .find(|check| check.id == id && matches!(check.outcome, ContractCheckOutcome::Unverified { .. }))
+        {
             check.capability = capability;
             check.outcome = outcome;
             return;
         }
-        self.push(phase, id, capability, required, outcome);
+        self.push(id, capability, outcome);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_catalog_entry_is_incomplete() {
+        let mut report = ContractReport::new();
+        report.expect("cataloged-check");
+        report.record("unrelated-check", None, ContractCheckOutcome::Passed);
+        assert!(!report.is_complete());
     }
 
-    pub(crate) fn complete_phase(&mut self, phase: FileSystemContract, capabilities: &FileSystemCapabilities) {
-        for check in &mut self.checks {
-            if check.phase != phase || !matches!(check.outcome, ContractCheckOutcome::Unverified { .. }) {
-                continue;
-            }
-            if let Some(capability) = check.capability
-                && !capabilities.supports(capability)
-            {
-                check.outcome = if check.required {
-                    ContractCheckOutcome::Unverified {
-                        reason: format!("provider does not advertise required {capability:?}"),
-                    }
-                } else {
-                    ContractCheckOutcome::SkippedOptional {
-                        reason: format!("provider does not advertise {capability:?}"),
-                    }
-                };
-            } else {
-                check.outcome = ContractCheckOutcome::Passed;
-            }
-        }
+    #[test]
+    fn unverified_catalog_entry_is_incomplete_until_recorded() {
+        let mut report = ContractReport::new();
+        report.expect("cataloged-check");
+        report.record(
+            "cataloged-check",
+            None,
+            ContractCheckOutcome::Unverified {
+                reason: "check not yet executed".to_owned(),
+            },
+        );
+
+        assert!(!report.is_complete());
+        let result = std::panic::catch_unwind(|| report.assert_complete());
+        assert!(result.is_err(), "an unexecuted check must fail strict mode");
+    }
+
+    #[test]
+    fn skipped_optional_does_not_make_report_incomplete() {
+        let mut report = ContractReport::new();
+        report.expect("optional-check");
+        report.record(
+            "optional-check",
+            None,
+            ContractCheckOutcome::SkippedOptional {
+                reason: "probe unavailable".to_owned(),
+            },
+        );
+        assert!(report.is_complete());
     }
 }

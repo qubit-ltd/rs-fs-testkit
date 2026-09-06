@@ -17,9 +17,17 @@ use std::task::Waker;
 
 use common::AsyncMemoryFault;
 use common::AsyncMemoryFixture;
+use common::async_memory_file_system::run_controlled;
+use common::check_matrix::assert_panics_at;
+use common::check_matrix::async_fault_cases;
 use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::FileSystemLimit;
+use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
+use qubit_fs_testkit::ContractCheckOutcome;
+use qubit_fs_testkit::FileSystemContract;
+use qubit_fs_testkit::FixtureCase;
 
 /// Polls one copy contract that is expected to complete without suspension.
 fn assert_copy_contract(fixture: &AsyncMemoryFixture) {
@@ -48,11 +56,116 @@ fn test_conforming_async_memory_provider_satisfies_full_suite() {
             "conforming async fixture must exercise {capability:?}"
         );
     }
-    let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
+    run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     assert!(fixture.is_empty(), "suite must clean up created resources");
+}
+
+#[test]
+fn test_async_phase_matrix_exercises_declared_profiles() {
+    for contract in FileSystemContract::ALL {
+        for profile in 0_u8..4 {
+            let fixture = match profile {
+                0 => AsyncMemoryFixture::with_all_capabilities(),
+                1 => AsyncMemoryFixture::without_operation_capabilities(),
+                2 => AsyncMemoryFixture::without_optional_capabilities(),
+                _ => AsyncMemoryFixture::fallback_only(),
+            };
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract(contract));
+            }));
+            assert!(result.is_ok(), "async profile {profile} panicked in {contract:?}");
+        }
+    }
+}
+
+/// A fallback-only provider rejects native-only conflict and tree requests.
+#[test]
+fn test_async_fallback_copy_rejects_native_conflicts() {
+    let fixture = AsyncMemoryFixture::fallback_only();
+    let report = run_controlled(
+        AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Copy),
+    );
+    report.assert_complete();
+    assert!(report.checks().iter().any(|check| {
+        check.id() == "copy/fallback-overwrite-rejected"
+            && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
+    }));
+    assert!(report.checks().iter().any(|check| {
+        check.id() == "copy/atomic-tree" && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
+    }));
+    assert!(fixture.is_empty(), "fallback copy contract leaked resources");
+}
+
+#[test]
+fn test_async_faults_exercise_full_suite_paths() {
+    for case in async_fault_cases() {
+        for contract in FileSystemContract::ALL {
+            let fixture = AsyncMemoryFixture::with_fault(case.fault);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract(contract));
+            }));
+        }
+    }
+}
+
+#[test]
+fn test_async_property_profiles_cover_all_limit_outcomes() {
+    let limits = [
+        FileSystemLimit::Maximum(0),
+        FileSystemLimit::Maximum(4),
+        FileSystemLimit::Unknown,
+        FileSystemLimit::Unbounded,
+        FileSystemLimit::NotApplicable,
+        FileSystemLimit::Maximum(u64::MAX),
+    ];
+    for limit in limits {
+        let snapshot = FileSystemLimits::unknown()
+            .with_max_path_text_bytes(limit)
+            .with_max_component_text_bytes(limit)
+            .with_max_list_page_entries(limit);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let fixture = AsyncMemoryFixture::with_limits(snapshot);
+            run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_properties());
+        }));
+    }
+}
+
+#[test]
+fn test_async_unavailable_fixture_cases_are_exercised() {
+    let cases = [
+        FixtureCase::ReadIfMatch,
+        FixtureCase::ReadIfNoneMatch,
+        FixtureCase::WriteIfAbsent,
+        FixtureCase::WriteIfMatch,
+        FixtureCase::DeleteIfMatch,
+        FixtureCase::CopyOverwrite,
+        FixtureCase::CopyTree,
+        FixtureCase::Capability(FileSystemCapability::ServerSideCopy),
+        FixtureCase::Capability(FileSystemCapability::AtomicFileCopy),
+        FixtureCase::Capability(FileSystemCapability::AtomicTreeCopy),
+        FixtureCase::Capability(FileSystemCapability::DurableFileCopy),
+        FixtureCase::Capability(FileSystemCapability::DurableTreeCopy),
+    ];
+    for case in cases {
+        let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(case);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all_with_report());
+        }));
+    }
+}
+
+#[test]
+fn test_async_cleanup_retains_resources_for_failures() {
+    for fault in [
+        AsyncMemoryFault::CleanupDeleteError,
+        AsyncMemoryFault::CleanupDeletePanic,
+    ] {
+        let fixture = AsyncMemoryFixture::with_fault(fault);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write));
+        }));
+        assert!(result.is_err(), "async cleanup fault must be reported: {fault:?}");
+    }
 }
 
 /// Every advertised capability executes its positive asynchronous contract.
@@ -98,14 +211,11 @@ fn test_async_copy_allows_fixture_without_cancellation_cases() {
 #[test]
 fn test_async_copy_cancellation_contract_is_independently_executable() {
     let fixture = AsyncMemoryFixture::new();
-    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-    let mut assertion = Box::pin(async {
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         suite.assert_copy_cancellation().await;
         suite.finish().await;
     });
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
     assert!(fixture.is_empty(), "cancellation contract must clean resources");
 }
 
@@ -202,8 +312,8 @@ fn test_async_suite_skips_unadvertised_optional_capabilities() {
 #[test]
 fn test_async_contract_entry_points_run_individually() {
     let fixture = AsyncMemoryFixture::new();
-    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-    let mut assertion = Box::pin(async {
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         suite.assert_properties().await;
         suite.assert_stat().await;
         suite.assert_read().await;
@@ -222,50 +332,16 @@ fn test_async_contract_entry_points_run_individually() {
         suite.assert_temp_resources().await;
         suite.assert_error_context().await;
     });
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
 }
 
 /// Each isolated asynchronous provider fault must fail the full suite.
 #[test]
 fn test_single_faults_are_rejected_by_async_suite() {
-    for fault in [
-        AsyncMemoryFault::MissingPathExists,
-        AsyncMemoryFault::WrongStatMetadata,
-        AsyncMemoryFault::ReadWrongBytes,
-        AsyncMemoryFault::ReadIgnoresRange,
-        AsyncMemoryFault::WriteDropsBytes,
-        AsyncMemoryFault::ListEscapesNamespace,
-        AsyncMemoryFault::EmptyList,
-        AsyncMemoryFault::ListDropsMetadata,
-        AsyncMemoryFault::DeleteNoOp,
-        AsyncMemoryFault::CopyDropsTarget,
-        AsyncMemoryFault::RenameNoOp,
-        AsyncMemoryFault::RenameWrongOutcome,
-        AsyncMemoryFault::DirectoryCopyDropsChildren,
-        AsyncMemoryFault::TempCleanupNoOp,
-        AsyncMemoryFault::AppendOverwrites,
-        AsyncMemoryFault::RecursiveDeleteLeavesChildren,
-        AsyncMemoryFault::AtomicRenameNonAtomic,
-        AsyncMemoryFault::AtomicReplaceNonAtomic,
-        AsyncMemoryFault::DurableFileCopyNonDurable,
-        AsyncMemoryFault::DurableRenameNonDurable,
-        AsyncMemoryFault::TempPersistWrongTarget,
-        AsyncMemoryFault::AtomicTempPersistNonAtomic,
-        AsyncMemoryFault::TempIgnoresOptions,
-    ] {
-        let fixture = if fault == AsyncMemoryFault::ReadIgnoresRange {
-            AsyncMemoryFixture::with_range_fault(fault)
-        } else {
-            AsyncMemoryFixture::with_fault(fault)
-        };
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
-            let waker = Waker::noop();
-            let mut context = Context::from_waker(waker);
-            assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
-        }));
-        assert!(result.is_err(), "suite accepted injected async fault: {fault:?}");
+    for case in async_fault_cases() {
+        let fixture = AsyncMemoryFixture::with_fault(case.fault);
+        assert_panics_at(
+            || run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract(case.phase)),
+            case.check_id,
+        );
     }
 }
