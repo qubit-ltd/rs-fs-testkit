@@ -52,10 +52,7 @@ impl FixtureError {
     ///
     /// A fixture error wrapping the supplied source.
     #[inline]
-    pub fn with_source(
-        message: impl Into<String>,
-        source: impl Error + Send + Sync + 'static,
-    ) -> Self {
+    pub fn with_source(message: impl Into<String>, source: impl Error + Send + Sync + 'static) -> Self {
         Self {
             message: message.into(),
             source: Some(Box::new(source)),
@@ -107,9 +104,7 @@ impl Error for FixtureError {
     /// created by [`Self::new`].
     #[inline]
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.source
-            .as_deref()
-            .map(|error| error as &(dyn Error + 'static))
+        self.source.as_deref().map(|error| error as &(dyn Error + 'static))
     }
 }
 

@@ -40,10 +40,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 ("write/limit", FileSystemCapability::Write),
                 ("write/if-absent", FileSystemCapability::ConditionalWrite),
                 ("write/if-match", FileSystemCapability::ConditionalWrite),
-                (
-                    "write/atomic-replace-existing",
-                    FileSystemCapability::AtomicReplace,
-                ),
+                ("write/atomic-replace-existing", FileSystemCapability::AtomicReplace),
                 ("write/durable", FileSystemCapability::DurableWrite),
             ] {
                 self.context.record_check(
@@ -68,11 +65,7 @@ impl<'a> FileSystemContractSuite<'a> {
         if let Some(bytes_written) = outcome.bytes_written() {
             assert_eq!(bytes_written, initial.len() as u64);
         }
-        self.assert_bytes(
-            &path,
-            &initial,
-            "write/basic: writer contract: write was not published",
-        );
+        self.assert_bytes(&path, &initial, "write/basic: writer contract: write was not published");
         self.context.record_check(
             "write/basic",
             Some(FileSystemCapability::Write),
@@ -86,8 +79,7 @@ impl<'a> FileSystemContractSuite<'a> {
     fn record_write_limit(&mut self, limit: FileSystemLimit) {
         let outcome = match finite_probe(limit, MAX_PROBE_BYTES) {
             Some((maximum, over)) if maximum > 0 => {
-                let maximum_bytes =
-                    usize::try_from(maximum).expect("write contract: bounded probe must fit usize");
+                let maximum_bytes = usize::try_from(maximum).expect("write contract: bounded probe must fit usize");
                 let at_limit = vec![b'x'; maximum_bytes];
                 let boundary_path = self.path("write-limit-boundary");
                 self.context.record_created(boundary_path.clone());
@@ -97,22 +89,15 @@ impl<'a> FileSystemContractSuite<'a> {
                     .write_all(&boundary_path, &at_limit, WriteOptions::default())
                     .expect("write/limit: request at declared boundary failed");
                 if let Some(bytes_written) = boundary.bytes_written() {
-                    assert_eq!(
-                        bytes_written, maximum,
-                        "write/limit: boundary byte count mismatch"
-                    );
+                    assert_eq!(bytes_written, maximum, "write/limit: boundary byte count mismatch");
                 }
                 self.assert_bytes(
                     &boundary_path,
                     &at_limit,
                     "write/limit: boundary request was not published",
                 );
-                let over_bytes = vec![
-                    b'x';
-                    usize::try_from(over).expect(
-                        "write contract: bounded successor must fit usize"
-                    )
-                ];
+                let over_bytes =
+                    vec![b'x'; usize::try_from(over).expect("write contract: bounded successor must fit usize")];
                 let path = self.path("write-limit");
                 self.context.record_created(path.clone());
                 let failure = self
@@ -155,22 +140,14 @@ impl<'a> FileSystemContractSuite<'a> {
             existing,
             None,
         );
-        self.assert_bytes(
-            existing,
-            initial,
-            "writer contract: failed create-new changed target",
-        );
+        self.assert_bytes(existing, initial, "writer contract: failed create-new changed target");
 
         let replacement = bounded_payload(limit, b"replaced", b'r');
         self.fixture
             .file_system()
             .write_all(existing, &replacement, WriteOptions::default())
             .expect("writer contract: replacement failed");
-        self.assert_bytes(
-            existing,
-            &replacement,
-            "writer contract: replacement bytes mismatch",
-        );
+        self.assert_bytes(existing, &replacement, "writer contract: replacement bytes mismatch");
 
         let aborted_path = self.path("write-aborted");
         self.context.record_created(aborted_path.clone());
@@ -180,8 +157,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .open_writer(&aborted_path, WriteOptions::default())
             .expect("writer contract: abort writer open failed");
         let aborted = bounded_payload(limit, b"aborted", b'a');
-        Output::write_fully(&mut writer, &aborted)
-            .expect("writer contract: abort writer rejected bytes");
+        Output::write_fully(&mut writer, &aborted).expect("writer contract: abort writer rejected bytes");
         let _ = writer.abort().expect("writer contract: abort failed");
         assert!(
             !self
@@ -271,9 +247,8 @@ impl<'a> FileSystemContractSuite<'a> {
                 .file_system()
                 .open_writer(
                     &if_match_path,
-                    WriteOptions::default().with_precondition(WritePrecondition::IfMatch(
-                        ResourceVersion::new("missing-capability"),
-                    )),
+                    WriteOptions::default()
+                        .with_precondition(WritePrecondition::IfMatch(ResourceVersion::new("missing-capability"))),
                 )
                 .expect_err("writer contract: unadvertised If-Match write succeeded");
             self.assert_requirement_error(
@@ -321,8 +296,7 @@ impl<'a> FileSystemContractSuite<'a> {
                     .write_all(
                         &if_match_path,
                         &current_bytes,
-                        WriteOptions::default()
-                            .with_precondition(WritePrecondition::IfMatch(current)),
+                        WriteOptions::default().with_precondition(WritePrecondition::IfMatch(current)),
                     )
                     .expect("writer contract: current If-Match write failed");
                 let stale = self
@@ -337,8 +311,7 @@ impl<'a> FileSystemContractSuite<'a> {
                         .write_all(
                             &if_match_path,
                             &stale_bytes,
-                            WriteOptions::default()
-                                .with_precondition(WritePrecondition::IfMatch(stale)),
+                            WriteOptions::default().with_precondition(WritePrecondition::IfMatch(stale)),
                         )
                         .expect_err("write/if-match: stale If-Match succeeded");
                     self.assert_error(
@@ -436,11 +409,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 outcome.durable(),
                 "write/durable: required durable write was not durable"
             );
-            self.assert_bytes(
-                &durable_path,
-                &durable,
-                "write/durable: durable bytes mismatch",
-            );
+            self.assert_bytes(&durable_path, &durable, "write/durable: durable bytes mismatch");
             self.context.record_check(
                 "write/durable",
                 Some(FileSystemCapability::DurableWrite),
@@ -495,22 +464,14 @@ impl<'a> FileSystemContractSuite<'a> {
             return;
         }
         let path = self.required_seed("append-target", b"before", "append");
-        let append_bytes = bounded_payload(
-            self.context.properties().limits().max_write_bytes(),
-            b"-after",
-            b'a',
-        );
+        let append_bytes = bounded_payload(self.context.properties().limits().max_write_bytes(), b"-after", b'a');
         self.fixture
             .file_system()
             .write_all(&path, &append_bytes, options)
             .expect("append contract: append failed");
         let mut expected = b"before".to_vec();
         expected.extend_from_slice(&append_bytes);
-        self.assert_bytes(
-            &path,
-            &expected,
-            "append/basic: existing bytes were not retained",
-        );
+        self.assert_bytes(&path, &expected, "append/basic: existing bytes were not retained");
         self.context.record_check(
             "append/basic",
             Some(FileSystemCapability::Append),
@@ -552,11 +513,7 @@ impl<'a> FileSystemContractSuite<'a> {
             );
             return;
         }
-        let replacement = bounded_payload(
-            self.context.properties().limits().max_write_bytes(),
-            b"b",
-            b'b',
-        );
+        let replacement = bounded_payload(self.context.properties().limits().max_write_bytes(), b"b", b'b');
         let outcome = self
             .fixture
             .file_system()
@@ -582,9 +539,9 @@ impl<'a> FileSystemContractSuite<'a> {
 /// A finite limit truncates the payload without ever allocating beyond the
 /// preferred test vector; zero permits an empty publication probe.
 fn bounded_payload(limit: FileSystemLimit, preferred: &[u8], fill: u8) -> Vec<u8> {
-    let length = limit.maximum().map_or(preferred.len() as u64, |maximum| {
-        maximum.min(preferred.len() as u64)
-    }) as usize;
+    let length = limit
+        .maximum()
+        .map_or(preferred.len() as u64, |maximum| maximum.min(preferred.len() as u64)) as usize;
     if length == preferred.len() {
         preferred.to_vec()
     } else {
