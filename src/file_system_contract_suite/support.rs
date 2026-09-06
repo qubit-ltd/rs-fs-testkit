@@ -100,6 +100,11 @@ impl<'a> FileSystemContractSuite<'a> {
             &path,
             None,
         );
+        self.context.record_check(
+            "error/context",
+            None,
+            ContractCheckOutcome::Passed,
+        );
     }
 
     /// Resolves a fixture path or identifies the contract that could not set
