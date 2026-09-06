@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::FixtureCase;
-use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
+use crate::internal::limit_probe_plan::{finite_probe, MAX_PROBE_BYTES};
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Checks reader behavior.
@@ -115,11 +115,23 @@ impl<'a> FileSystemContractSuite<'a> {
                 Some(FileSystemCapability::RangeRead),
                 ContractCheckOutcome::Passed,
             );
-            let outcome = match range_limit.maximum() {
-                Some(maximum) if maximum < MAX_PROBE_BYTES => {
-                    let over = maximum
-                        .checked_add(1)
-                        .expect("read contract: range limit successor overflow");
+            let outcome = match finite_probe(range_limit, MAX_PROBE_BYTES) {
+                Some((maximum, over)) if maximum > 0 => {
+                    let maximum_bytes = usize::try_from(maximum)
+                        .expect("read contract: bounded range must fit usize");
+                    let bounded = self
+                        .fixture
+                        .file_system()
+                        .read_all(
+                            path,
+                            ReadOptions::default().with_length(Some(maximum)),
+                            maximum_bytes,
+                        )
+                        .expect("read/range-limit: request at declared boundary failed");
+                    assert!(
+                        bounded.len() <= maximum_bytes,
+                        "read/range-limit: boundary request exceeded declared length"
+                    );
                     let error = self
                         .fixture
                         .file_system()
@@ -135,6 +147,9 @@ impl<'a> FileSystemContractSuite<'a> {
                     ContractCheckOutcome::Passed
                 }
                 Some(_) => ContractCheckOutcome::SkippedOptional {
+                    reason: "zero range boundary is not a valid provider limit".to_owned(),
+                },
+                None if range_limit.maximum().is_some() => ContractCheckOutcome::SkippedOptional {
                     reason: "range boundary exceeds the bounded probe budget".to_owned(),
                 },
                 None => ContractCheckOutcome::SkippedOptional {

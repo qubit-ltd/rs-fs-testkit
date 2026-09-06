@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::FixtureCase;
-use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
+use crate::internal::limit_probe_plan::{finite_probe, MAX_PROBE_BYTES};
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Checks writer behavior.
@@ -73,19 +73,37 @@ impl<'a> FileSystemContractSuite<'a> {
 
     /// Verifies the finite write boundary without exceeding the probe budget.
     fn record_write_limit(&mut self, limit: qubit_fs::metadata::FileSystemLimit) {
-        let outcome = match limit.maximum() {
-            Some(maximum) if maximum < MAX_PROBE_BYTES => {
-                let over = maximum
-                    .checked_add(1)
-                    .expect("write contract: write limit successor overflow");
-                let bytes = vec![b'x'; usize::try_from(over)
-                    .expect("write contract: bounded probe must fit usize")];
+        let outcome = match finite_probe(limit, MAX_PROBE_BYTES) {
+            Some((maximum, over)) if maximum > 0 => {
+                let maximum_bytes = usize::try_from(maximum)
+                    .expect("write contract: bounded probe must fit usize");
+                let at_limit = vec![b'x'; maximum_bytes];
+                let boundary_path = self.path("write-limit-boundary");
+                self.context.record_created(boundary_path.clone());
+                let boundary = self
+                    .fixture
+                    .file_system()
+                    .write_all(&boundary_path, &at_limit, WriteOptions::default())
+                    .expect("write/limit: request at declared boundary failed");
+                if let Some(bytes_written) = boundary.bytes_written() {
+                    assert_eq!(
+                        bytes_written, maximum,
+                        "write/limit: boundary byte count mismatch"
+                    );
+                }
+                self.assert_bytes(
+                    &boundary_path,
+                    &at_limit,
+                    "write/limit: boundary request was not published",
+                );
+                let over_bytes = vec![b'x'; usize::try_from(over)
+                    .expect("write contract: bounded successor must fit usize")];
                 let path = self.path("write-limit");
                 self.context.record_created(path.clone());
                 let failure = self
                     .fixture
                     .file_system()
-                    .write_all(&path, &bytes, WriteOptions::default())
+                    .write_all(&path, &over_bytes, WriteOptions::default())
                     .expect_err("write/limit: declared write limit was ignored");
                 assert_eq!(
                     failure.error().kind(),
