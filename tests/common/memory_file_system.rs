@@ -113,6 +113,7 @@ struct State {
     create_directory_capability: bool,
     extended_capabilities: bool,
     native_copy: bool,
+    delete_attempts: usize,
     limits: FileSystemLimits,
     unavailable_case: Option<FixtureCase>,
     read_only: bool,
@@ -460,6 +461,7 @@ impl MemoryFixture {
             create_directory_capability,
             extended_capabilities,
             native_copy: false,
+            delete_attempts: 0,
             limits,
             unavailable_case: None,
             read_only: provider_id == "memory-read-only-provider",
@@ -495,6 +497,22 @@ impl MemoryFixture {
             .expect("memory state lock must succeed")
             .entries
             .len()
+    }
+
+    /// Changes the injected provider fault for subsequent operations.
+    pub fn set_fault(&self, fault: MemoryFault) {
+        self.state
+            .lock()
+            .expect("memory state lock must succeed")
+            .fault = fault;
+    }
+
+    /// Returns how many facade deletion attempts the provider has received.
+    pub fn delete_attempt_count(&self) -> usize {
+        self.state
+            .lock()
+            .expect("memory state lock must succeed")
+            .delete_attempts
     }
 
     /// Returns how many contract paths the suite requested from this fixture.
@@ -941,6 +959,7 @@ impl FileSystemSpi for MemorySpi {
 
     fn delete_file(&self, request: DeleteFileRequest<'_>) -> FsResult<DeleteOutcome> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        state.delete_attempts = state.delete_attempts.saturating_add(1);
         let removed = if state.fault == MemoryFault::DeleteNoOp {
             None
         } else {
@@ -951,6 +970,7 @@ impl FileSystemSpi for MemorySpi {
 
     fn delete_directory(&self, request: DeleteDirectoryRequest<'_>) -> FsResult<DeleteOutcome> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        state.delete_attempts = state.delete_attempts.saturating_add(1);
         let already_missing = if state.fault == MemoryFault::DeleteNoOp {
             true
         } else {
