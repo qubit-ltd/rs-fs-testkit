@@ -128,7 +128,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.assert_bytes(
             &target,
             b"copy bytes",
-            "async copy contract: target bytes mismatch",
+            "copy/basic: target bytes mismatch",
         )
         .await;
         self.assert_atomic_copy(CopyMode::File).await;
@@ -405,7 +405,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.assert_bytes(
             &target_child,
             b"b",
-            "async copy contract: atomic tree child mismatch",
+            "copy/atomic-tree: atomic tree child mismatch",
         )
         .await;
         self.context
@@ -748,7 +748,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let outcome = operation
                 .execute()
                 .await
-                .expect("async copy contract: durable file copy failed");
+            .expect("copy/durable-file: durable file copy failed");
             assert!(
                 outcome.durable(),
                 "async copy contract: durable file result was not durable"

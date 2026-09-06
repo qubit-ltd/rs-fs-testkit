@@ -61,7 +61,11 @@ impl<'a> FileSystemContractSuite<'a> {
         if let Some(bytes_written) = outcome.bytes_written() {
             assert_eq!(bytes_written, initial.len() as u64);
         }
-        self.assert_bytes(&path, &initial, "write/basic: write was not published");
+        self.assert_bytes(
+            &path,
+            &initial,
+            "write/basic: writer contract: write was not published",
+        );
         self.context.record_check(
             "write/basic",
             Some(FileSystemCapability::Write),
@@ -549,7 +553,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .write_all(&path, &replacement, options)
-            .expect("atomic-replace contract: required-atomic write failed");
+            .expect("write/atomic-replace-existing: required-atomic write failed");
         assert_eq!(outcome.atomicity(), AchievedAtomicity::Atomic);
         self.assert_bytes(
             &path,

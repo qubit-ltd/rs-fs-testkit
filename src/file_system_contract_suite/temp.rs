@@ -91,7 +91,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 .expect("temp/file: persist setup failed");
             let target = self.path("temp-file-parent/persisted-file");
             self.context.record_created(target.clone());
-            self.assert_temp_persist(&mut temporary, &target, "temp-file");
+            self.assert_temp_persist(&mut temporary, &target, "temp/file");
         } else {
             let error = file_system
                 .create_temp_file(TempFileOptions::default())
@@ -416,7 +416,7 @@ impl<'a> FileSystemContractSuite<'a> {
                     },
                 ),
             )
-            .expect("temp/file: persist failed");
+            .unwrap_or_else(|error| panic!("{label}: persist failed [temp/atomic]: {error}"));
         assert_eq!(
             outcome.target(),
             target,

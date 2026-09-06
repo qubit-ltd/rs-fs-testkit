@@ -466,7 +466,7 @@ impl<'a> FileSystemContractSuite<'a> {
                             ReadOptions::default().with_checksum(ChecksumPolicy::Required),
                             64,
                         )
-                        .expect_err("checksum-read contract: corrupted bytes were accepted");
+                        .expect_err("read/checksum: corrupted bytes were accepted");
                     self.assert_error(
                         &error,
                         FsErrorKind::DataCorruption,
