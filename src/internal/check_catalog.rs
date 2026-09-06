@@ -39,6 +39,9 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
             capability(FileSystemCapability::Read, "properties/snapshot"),
             unscoped("properties/path-constraints"),
             unscoped("properties/capability-dependencies"),
+            unscoped("properties/limits"),
+            unscoped("properties/limit-path-admission"),
+            unscoped("properties/symlink-policy"),
         ],
         FileSystemContract::Stat => vec![
             capability(FileSystemCapability::Read, "stat/basic"),
@@ -47,14 +50,20 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
         FileSystemContract::Read => vec![
             capability(FileSystemCapability::Read, "read/basic"),
             capability(FileSystemCapability::RangeRead, "read/range"),
+            capability(FileSystemCapability::RangeRead, "read/range-limit"),
             capability(FileSystemCapability::ConditionalRead, "read/if-match-current"),
             capability(FileSystemCapability::ConditionalRead, "read/if-match-stale"),
             capability(FileSystemCapability::ConditionalRead, "read/if-none-match-current"),
             capability(FileSystemCapability::ConditionalRead, "read/if-none-match-stale"),
             capability(FileSystemCapability::ChecksumValidation, "read/checksum"),
+            capability(
+                FileSystemCapability::ChecksumValidation,
+                "read/checksum-corruption",
+            ),
         ],
         FileSystemContract::Write => vec![
             capability(FileSystemCapability::Write, "write/basic"),
+            capability(FileSystemCapability::Write, "write/limit"),
             capability(FileSystemCapability::ConditionalWrite, "write/if-absent"),
             capability(FileSystemCapability::ConditionalWrite, "write/if-match"),
             capability(FileSystemCapability::AtomicReplace, "write/atomic-replace-existing"),

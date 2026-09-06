@@ -48,6 +48,28 @@ fn async_limits_allow_single_byte_write() {
 }
 
 #[test]
+fn async_write_limit_zero_and_small_boundaries_are_reported() {
+    for limit in [
+        FileSystemLimit::Maximum(0),
+        FileSystemLimit::Maximum(1),
+        FileSystemLimit::Maximum(4),
+        FileSystemLimit::Unknown,
+        FileSystemLimit::NotApplicable,
+        FileSystemLimit::Unbounded,
+        FileSystemLimit::Maximum(u64::MAX),
+    ] {
+        let fixture = AsyncMemoryFixture::with_limits(
+            FileSystemLimits::unknown().with_max_write_bytes(limit),
+        );
+        let report = run_controlled(
+            AsyncFileSystemContractSuite::new(&fixture)
+                .assert_contract_with_report(FileSystemContract::Write),
+        );
+        report.assert_complete();
+    }
+}
+
+#[test]
 fn conditional_case_unavailability_is_reported_as_unverified() {
     let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(FixtureCase::ReadIfMatch);
     let report = run_controlled(

@@ -43,6 +43,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Some(FileSystemCapability::Read),
                 ContractCheckOutcome::RejectedAsExpected,
             );
+            self.context.record_check(
+                "read/range-limit",
+                Some(FileSystemCapability::RangeRead),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
         let path = match self
@@ -188,7 +193,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .case_support(FixtureCase::ReadIfMatch)
                     .expect("conditional-read contract: fixture case query failed"),
                 FixtureSupport::Unsupported
-            ) || !matches!(version_support, FixtureSupport::Supported(_))
+            ) || !matches!(&version_support, FixtureSupport::Supported(_))
             {
                 self.context.record_check(
                     "read/if-match-current",
@@ -276,17 +281,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
         }
 
-        let none_match_current =
-            ReadOptions::default().with_if_none_match(Some(ResourceVersion::new("v1")));
-        let none_match_stale =
-            ReadOptions::default().with_if_none_match(Some(ResourceVersion::new("stale-v0")));
         if self.capable(FileSystemCapability::ConditionalRead) {
             if matches!(
                 self.fixture
                     .case_support(FixtureCase::ReadIfNoneMatch)
                     .expect("conditional-read contract: fixture case query failed"),
                 FixtureSupport::Unsupported
-            ) {
+            ) || !matches!(&version_support, FixtureSupport::Supported(_)) {
                 for id in ["read/if-none-match-current", "read/if-none-match-stale"] {
                     self.context.record_check(
                         id,
@@ -297,10 +298,16 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     );
                 }
             } else {
+                let FixtureSupport::Supported(current) = &version_support else {
+                    unreachable!("current version support checked above")
+                };
                 let current = self
                     .fixture
                     .file_system()
-                    .open_reader(path, none_match_current)
+                    .open_reader(
+                        path,
+                        ReadOptions::default().with_if_none_match(Some(current.clone())),
+                    )
                     .await
                     .expect_err("conditional-read contract: current If-None-Match succeeded");
                 self.assert_error(
@@ -316,16 +323,36 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 );
                 let stale = self
                     .fixture
-                    .file_system()
-                    .read_all(path, none_match_stale, 64)
+                    .stale_resource_version(path)
                     .await
-                    .expect("conditional-read contract: stale If-None-Match failed");
-                assert_eq!(stale, b"async bytes");
-                self.context.record_check(
-                    "read/if-none-match-stale",
-                    Some(FileSystemCapability::ConditionalRead),
-                    ContractCheckOutcome::Passed,
-                );
+                    .expect("conditional-read contract: stale version observation failed");
+                match stale {
+                    FixtureSupport::Supported(stale) => {
+                        let bytes = self
+                            .fixture
+                            .file_system()
+                            .read_all(
+                                path,
+                                ReadOptions::default().with_if_none_match(Some(stale)),
+                                64,
+                            )
+                            .await
+                            .expect("conditional-read contract: stale If-None-Match failed");
+                        assert_eq!(bytes, b"async bytes");
+                        self.context.record_check(
+                            "read/if-none-match-stale",
+                            Some(FileSystemCapability::ConditionalRead),
+                            ContractCheckOutcome::Passed,
+                        );
+                    }
+                    FixtureSupport::Unsupported => self.context.record_check(
+                        "read/if-none-match-stale",
+                        Some(FileSystemCapability::ConditionalRead),
+                        ContractCheckOutcome::Unverified {
+                            reason: "fixture cannot prepare stale If-None-Match case".to_owned(),
+                        },
+                    ),
+                }
             }
         } else {
             for id in ["read/if-none-match-current", "read/if-none-match-stale"] {
