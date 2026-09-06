@@ -666,6 +666,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                     path.as_str().to_owned(),
                     Entry::File(b"checksum bytes".to_vec()),
                 );
+            bump_version(&self.versions, &path);
             Ok(FixtureSupport::Supported(path))
         })
     }

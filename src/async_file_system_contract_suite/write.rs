@@ -43,20 +43,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Some(FileSystemCapability::Write),
                 ContractCheckOutcome::RejectedAsExpected,
             );
+            self.context.record_check(
+                "write/limit",
+                Some(FileSystemCapability::Write),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
-        let basic_bytes: Vec<u8> = if self
-            .context
-            .properties()
-            .limits()
-            .max_write_bytes()
-            .maximum()
-            .is_some_and(|maximum| maximum < 13)
-        {
-            b"a".to_vec()
-        } else {
-            b"async written".to_vec()
-        };
+        let limit = self.context.properties().limits().max_write_bytes();
+        let basic_bytes = bounded_payload(limit, b"async written", b'a');
         let path = self.path("async-write");
         self.context.record_created(path.clone());
         let mut writer = self
@@ -138,18 +133,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
     /// Checks asynchronous write dispositions, abort, and conditions.
     pub async fn assert_write_options(&mut self, existing: &Path, existing_bytes: &[u8]) {
-        let small_payload = self
-            .context
-            .properties()
-            .limits()
-            .max_write_bytes()
-            .maximum()
-            .is_some_and(|maximum| maximum < 10);
-        let unexpected = if small_payload {
-            b"u".as_slice()
-        } else {
-            b"unexpected".as_slice()
-        };
+        let limit = self.context.properties().limits().max_write_bytes();
+        let unexpected = bounded_payload(limit, b"unexpected", b'u');
         let create_new = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
         let error = match self
             .fixture
@@ -159,7 +144,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         {
             Ok(mut writer) => {
                 writer
-                    .write_fully_async(unexpected)
+                    .write_fully_async(&unexpected)
                     .await
                     .expect("writer contract: create-new writer rejected bytes");
                 writer
@@ -196,20 +181,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .open_writer(existing, WriteOptions::default())
             .await
             .expect("writer contract: replacement writer open failed");
-        let replacement = if self
-            .context
-            .properties()
-            .limits()
-            .max_write_bytes()
-            .maximum()
-            .is_some_and(|maximum| maximum < 8)
-        {
-            b"b".as_slice()
-        } else {
-            b"replaced".as_slice()
-        };
+        let replacement = bounded_payload(limit, b"replaced", b'r');
         writer
-            .write_fully_async(replacement)
+            .write_fully_async(&replacement)
             .await
             .expect("writer contract: replacement writer rejected bytes");
         writer
@@ -218,7 +192,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .expect("writer contract: replacement commit failed");
         self.assert_bytes(
             existing,
-            replacement,
+            &replacement,
             "writer contract: replacement bytes mismatch",
         )
         .await;
@@ -232,7 +206,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("writer contract: abort writer open failed");
         writer
-            .write_fully_async(if small_payload { b"a" } else { b"aborted" })
+            .write_fully_async(&bounded_payload(limit, b"aborted", b'a'))
             .await
             .expect("writer contract: abort writer rejected bytes");
         let _ = writer
@@ -275,7 +249,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .await
                     .expect("writer contract: conditional writer open failed");
                 writer
-                    .write_fully_async(if small_payload { b"c" } else { b"conditional" })
+                    .write_fully_async(&bounded_payload(limit, b"conditional", b'c'))
                     .await
                     .expect("writer contract: conditional writer rejected bytes");
                 writer
@@ -291,7 +265,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 {
                     Ok(mut retry) => {
                         retry
-                            .write_fully_async(unexpected)
+                            .write_fully_async(&unexpected)
                             .await
                             .expect("writer contract: conditional retry rejected bytes");
                         retry
@@ -319,7 +293,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 );
                 self.assert_bytes(
                     &conditional_path,
-                    if small_payload { b"c" } else { b"conditional" },
+                    &bounded_payload(limit, b"conditional", b'c'),
                     "writer contract: failed condition changed target bytes",
                 )
                 .await;
@@ -386,11 +360,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .await
                     .expect("conditional-write contract: current writer open failed");
                 writer
-                    .write_fully_async(if small_payload {
-                        b"m"
-                    } else {
-                        b"if-match-updated"
-                    })
+                    .write_fully_async(&bounded_payload(limit, b"if-match-updated", b'm'))
                     .await
                     .expect("conditional-write contract: current write failed");
                 writer
@@ -415,7 +385,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 {
                     Ok(mut retry) => {
                         retry
-                            .write_fully_async(unexpected)
+                            .write_fully_async(&unexpected)
                             .await
                             .expect("conditional-write contract: stale writer rejected bytes");
                         retry
@@ -434,11 +404,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 );
                 self.assert_bytes(
                     &if_match_path,
-                    if small_payload {
-                        b"m"
-                    } else {
-                        b"if-match-updated"
-                    },
+                    &bounded_payload(limit, b"if-match-updated", b'm'),
                     "conditional-write contract: stale condition changed bytes",
                 )
                 .await;
@@ -487,7 +453,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .await
                 .expect("atomic-replace contract: writer open failed");
             writer
-                .write_fully_async(b"b")
+                .write_fully_async(&bounded_payload(limit, b"b", b'b'))
                 .await
                 .expect("atomic-replace contract: write failed");
             let outcome = writer
@@ -497,7 +463,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             assert_eq!(outcome.atomicity(), AchievedAtomicity::Atomic);
             self.assert_bytes(
                 &atomic_path,
-                b"b",
+                &bounded_payload(limit, b"b", b'b'),
                 "atomic-replace contract: old bytes retained",
             )
             .await;
@@ -522,7 +488,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .write_all(
                     &durable_path,
-                    if small_payload { b"d" } else { b"durable" },
+                    &bounded_payload(limit, b"durable", b'd'),
                     WriteOptions::default().with_durability(DurabilityRequirement::Required),
                 )
                 .await
@@ -533,7 +499,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
             self.assert_bytes(
                 &durable_path,
-                if small_payload { b"d" } else { b"durable" },
+                &bounded_payload(limit, b"durable", b'd'),
                 "durable-write contract: bytes mismatch",
             )
             .await;
@@ -584,18 +550,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let path = self
             .required_seed("async-append-target", b"before", "append")
             .await;
-        let append_bytes = if self
-            .context
-            .properties()
-            .limits()
-            .max_write_bytes()
-            .maximum()
-            .is_some_and(|maximum| maximum < 6)
-        {
-            b"a".as_slice()
-        } else {
-            b"-after".as_slice()
-        };
+        let limit = self.context.properties().limits().max_write_bytes();
+        let append_bytes = bounded_payload(limit, b"-after", b'a');
         let mut writer = self
             .fixture
             .file_system()
@@ -603,20 +559,18 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("append contract: writer open failed");
         writer
-            .write_fully_async(append_bytes)
+            .write_fully_async(&append_bytes)
             .await
             .expect("append contract: write failed");
         writer
             .commit_async()
             .await
             .expect("append contract: commit failed");
+        let mut expected = b"before".to_vec();
+        expected.extend_from_slice(&append_bytes);
         self.assert_bytes(
             &path,
-            if append_bytes == b"a" {
-                b"beforea".as_slice()
-            } else {
-                b"before-after".as_slice()
-            },
+            &expected,
             "append contract: existing bytes were not retained",
         )
         .await;
@@ -673,7 +627,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("atomic-replace contract: writer open failed");
         writer
-            .write_fully_async(b"b")
+            .write_fully_async(&bounded_payload(
+                self.context.properties().limits().max_write_bytes(),
+                b"b",
+                b'b',
+            ))
             .await
             .expect("atomic-replace contract: write failed");
         let outcome = writer
@@ -685,9 +643,14 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             AchievedAtomicity::Atomic,
             "atomic-replace contract: non-atomic outcome"
         );
+        let replacement = bounded_payload(
+            self.context.properties().limits().max_write_bytes(),
+            b"b",
+            b'b',
+        );
         self.assert_bytes(
             &path,
-            b"b",
+            &replacement,
             "atomic-replace contract: old bytes were retained",
         )
         .await;
@@ -696,5 +659,23 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             Some(FileSystemCapability::AtomicReplace),
             ContractCheckOutcome::Passed,
         );
+    }
+}
+
+/// Selects a write payload that fits the declared provider limit.
+fn bounded_payload(
+    limit: qubit_fs::metadata::FileSystemLimit,
+    preferred: &[u8],
+    fill: u8,
+) -> Vec<u8> {
+    let length = limit
+        .maximum()
+        .map_or(preferred.len() as u64, |maximum| {
+            maximum.min(preferred.len() as u64)
+        }) as usize;
+    if length == preferred.len() {
+        preferred.to_vec()
+    } else {
+        vec![fill; length]
     }
 }
