@@ -15,6 +15,7 @@ use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
 
+use common::async_memory_file_system::run_controlled;
 use common::AsyncMemoryFixture;
 use qubit_fs::AsyncFileSystem;
 use qubit_fs::copy::CopyMethod;
@@ -99,4 +100,39 @@ fn test_async_file_system_fixture_defaults_are_unsupported() {
         fixture.copy_cancellation_case(AsyncCopyCancellationStage::Reader),
         Ok(FixtureSupport::Unsupported)
     ));
+}
+
+#[test]
+fn async_memory_resource_versions_follow_out_of_band_publication() {
+    let fixture = AsyncMemoryFixture::new();
+    let path = match run_controlled(fixture.seed_file("versioned", b"old"))
+        .expect("seed versioned file")
+    {
+        FixtureSupport::Supported(path) => path,
+        FixtureSupport::Unsupported => panic!("memory fixture must support file seeding"),
+    };
+    let first = match run_controlled(fixture.resource_version(&path))
+        .expect("read initial resource version")
+    {
+        FixtureSupport::Supported(version) => version,
+        FixtureSupport::Unsupported => panic!("seeded file must have a resource version"),
+    };
+    let _ = run_controlled(fixture.write_file_out_of_band(&path, b"new"))
+        .expect("publish updated versioned file");
+    let second = match run_controlled(fixture.resource_version(&path))
+        .expect("read updated resource version")
+    {
+        FixtureSupport::Supported(version) => version,
+        FixtureSupport::Unsupported => panic!("updated file must have a resource version"),
+    };
+    assert_ne!(first, second);
+    assert_eq!(
+        match run_controlled(fixture.stale_resource_version(&path))
+            .expect("read stale resource version")
+        {
+            FixtureSupport::Supported(version) => version,
+            FixtureSupport::Unsupported => panic!("updated file must have stale version"),
+        },
+        first
+    );
 }

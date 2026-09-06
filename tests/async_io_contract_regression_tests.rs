@@ -2,44 +2,11 @@
 
 mod common;
 
-use std::future::Future;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::task::{Context, Poll, Wake, Waker};
-
+use common::async_memory_file_system::run_controlled;
 use common::{AsyncMemoryFault, AsyncMemoryFixture};
+use std::task::Poll;
 use qubit_fs::metadata::{FileSystemLimit, FileSystemLimits};
 use qubit_fs_testkit::{AsyncFileSystemContractSuite, FileSystemContract, FixtureCase};
-
-struct WakeFlag(AtomicBool);
-
-impl Wake for WakeFlag {
-    fn wake(self: Arc<Self>) {
-        self.0.store(true, Ordering::Release);
-    }
-
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.0.store(true, Ordering::Release);
-    }
-}
-
-fn run_controlled<T>(future: impl Future<Output = T>) -> T {
-    let mut future = Box::pin(future);
-    let flag = Arc::new(WakeFlag(AtomicBool::new(true)));
-    let waker = Waker::from(Arc::clone(&flag));
-    let mut context = Context::from_waker(&waker);
-    for _ in 0..1024 {
-        flag.0.store(false, Ordering::Release);
-        match future.as_mut().poll(&mut context) {
-            Poll::Ready(value) => return value,
-            Poll::Pending => assert!(
-                flag.0.load(Ordering::Acquire),
-                "controlled future returned Pending without scheduling a wake"
-            ),
-        }
-    }
-    panic!("controlled future exceeded the poll budget")
-}
 
 #[test]
 fn controlled_runner_accepts_real_pending_then_completion() {
@@ -54,6 +21,21 @@ fn controlled_runner_accepts_real_pending_then_completion() {
         }
     });
     assert_eq!(run_controlled(future), 7);
+}
+
+#[test]
+fn controlled_runner_does_not_treat_first_pending_as_completion() {
+    let mut remaining = 2_u8;
+    let future = std::future::poll_fn(move |context| {
+        if remaining != 0 {
+            remaining -= 1;
+            context.waker().wake_by_ref();
+            Poll::Pending
+        } else {
+            Poll::Ready(11_u8)
+        }
+    });
+    assert_eq!(run_controlled(future), 11);
 }
 
 #[test]
