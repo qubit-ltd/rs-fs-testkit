@@ -1375,6 +1375,8 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             });
         }
         let options = request.options().options();
+        let mode = options.mode();
+        let atomicity = options.atomicity();
         let durable = options.durability() == DurabilityRequirement::Required;
         let server_side = options.server_side() == ServerSidePreference::Require;
         let conflict = options.conflict();
@@ -1465,9 +1467,17 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                         } else {
                             CopyMethod::Native
                         },
-                        AchievedAtomicity::NonAtomic,
+                        if atomicity == AtomicityRequirement::Required {
+                            AchievedAtomicity::Atomic
+                        } else {
+                            AchievedAtomicity::NonAtomic
+                        },
                     )
-                    .with_durable(durable && fault != AsyncMemoryFault::DurableFileCopyNonDurable),
+                    .with_durable(
+                        durable
+                            && !(mode == CopyMode::File
+                                && fault == AsyncMemoryFault::DurableFileCopyNonDurable),
+                    ),
                 ))
             });
         }
