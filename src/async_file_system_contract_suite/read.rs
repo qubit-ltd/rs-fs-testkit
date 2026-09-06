@@ -8,7 +8,7 @@
 //! Implements reader contracts.
 
 use super::*;
-use crate::internal::limit_probe_plan::{finite_probe, MAX_PROBE_BYTES};
+use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
 
 impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Checks asynchronous reader behavior.
@@ -43,11 +43,36 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Some(FileSystemCapability::Read),
                 ContractCheckOutcome::RejectedAsExpected,
             );
-            self.context.record_check(
-                "read/range-limit",
-                Some(FileSystemCapability::RangeRead),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
+            for (id, capability) in [
+                ("read/range", FileSystemCapability::RangeRead),
+                ("read/range-limit", FileSystemCapability::RangeRead),
+                (
+                    "read/if-match-current",
+                    FileSystemCapability::ConditionalRead,
+                ),
+                ("read/if-match-stale", FileSystemCapability::ConditionalRead),
+                (
+                    "read/if-none-match-current",
+                    FileSystemCapability::ConditionalRead,
+                ),
+                (
+                    "read/if-none-match-stale",
+                    FileSystemCapability::ConditionalRead,
+                ),
+                ("read/checksum", FileSystemCapability::ChecksumValidation),
+                (
+                    "read/checksum-corruption",
+                    FileSystemCapability::ChecksumValidation,
+                ),
+            ] {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::NotApplicable {
+                        reason: "Read capability is unavailable".to_owned(),
+                    },
+                );
+            }
             return;
         }
         let path = match self
@@ -96,13 +121,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
     /// Checks asynchronous range, conditional, and checksum read guarantees.
     pub async fn assert_read_options(&mut self, path: &Path) {
-        let range_limit = self
-            .context
-            .properties()
-            .limits()
-            .max_read_range_bytes()
-            .maximum();
-        let range_length = range_limit.map_or(5, |limit| limit.min(5));
+        let range_limit = self.context.properties().limits().max_read_range_bytes();
+        let range_length = range_limit.maximum().map_or(5, |limit| limit.min(5));
         let range = ReadOptions::default()
             .with_offset(Some(0))
             .with_length(Some(range_length));
@@ -123,36 +143,50 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Some(FileSystemCapability::RangeRead),
                 ContractCheckOutcome::Passed,
             );
-            if let Some((_, over)) = finite_probe(
-                self.context.properties().limits().max_read_range_bytes(),
-                MAX_PROBE_BYTES,
-            ) {
-                let error = self
-                    .fixture
-                    .file_system()
-                    .open_reader(path, ReadOptions::default().with_length(Some(over)))
-                    .await
-                    .expect_err("read contract: declared range limit was ignored");
-                self.assert_error(
-                    &error,
-                    FsErrorKind::ResourceLimitExceeded,
-                    FsOperation::OpenReader,
-                    path,
-                );
-                self.context.record_check(
-                    "read/range-limit",
-                    Some(FileSystemCapability::RangeRead),
-                    ContractCheckOutcome::Passed,
-                );
-            } else {
-                self.context.record_check(
-                    "read/range-limit",
-                    Some(FileSystemCapability::RangeRead),
+            let limit_outcome = match range_limit {
+                qubit_fs::metadata::FileSystemLimit::Maximum(maximum)
+                    if maximum < MAX_PROBE_BYTES =>
+                {
+                    let over = maximum
+                        .checked_add(1)
+                        .expect("read/range-limit: range limit successor overflow");
+                    self.fixture
+                        .file_system()
+                        .open_reader(path, ReadOptions::default().with_length(Some(maximum)))
+                        .await
+                        .expect("read/range-limit: boundary request was rejected");
+                    let error = self
+                        .fixture
+                        .file_system()
+                        .open_reader(path, ReadOptions::default().with_length(Some(over)))
+                        .await
+                        .expect_err("read/range-limit: declared range limit was ignored");
+                    self.assert_error(
+                        &error,
+                        FsErrorKind::ResourceLimitExceeded,
+                        FsOperation::OpenReader,
+                        path,
+                    );
+                    ContractCheckOutcome::Passed
+                }
+                qubit_fs::metadata::FileSystemLimit::Maximum(_) => {
                     ContractCheckOutcome::SkippedOptional {
-                        reason: "range limit is non-finite or outside probe budget".to_owned(),
-                    },
-                );
-            }
+                        reason: "range boundary exceeds the bounded probe budget".to_owned(),
+                    }
+                }
+                qubit_fs::metadata::FileSystemLimit::Unknown
+                | qubit_fs::metadata::FileSystemLimit::NotApplicable
+                | qubit_fs::metadata::FileSystemLimit::Unbounded => {
+                    ContractCheckOutcome::SkippedOptional {
+                        reason: "range limit is unknown, inapplicable, or unbounded".to_owned(),
+                    }
+                }
+            };
+            self.context.record_check(
+                "read/range-limit",
+                Some(FileSystemCapability::RangeRead),
+                limit_outcome,
+            );
         } else {
             let error = self
                 .fixture
@@ -174,26 +208,45 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             self.context.record_check(
                 "read/range-limit",
                 Some(FileSystemCapability::RangeRead),
-                ContractCheckOutcome::RejectedAsExpected,
+                ContractCheckOutcome::NotApplicable {
+                    reason: "RangeRead capability is unavailable".to_owned(),
+                },
             );
         }
 
-        let version_support = self
-            .fixture
-            .resource_version(path)
-            .await
-            .expect("read contract: version observation failed");
+        let conditional_read = self.capable(FileSystemCapability::ConditionalRead);
+        let if_match_support = if conditional_read {
+            self.fixture
+                .case_support(FixtureCase::ReadIfMatch)
+                .expect("conditional-read contract: If-Match case query failed")
+        } else {
+            FixtureSupport::Unsupported
+        };
+        let if_none_match_support = if conditional_read {
+            self.fixture
+                .case_support(FixtureCase::ReadIfNoneMatch)
+                .expect("conditional-read contract: If-None-Match case query failed")
+        } else {
+            FixtureSupport::Unsupported
+        };
+        let version_support = if conditional_read
+            && (matches!(&if_match_support, FixtureSupport::Supported(_))
+                || matches!(&if_none_match_support, FixtureSupport::Supported(_)))
+        {
+            self.fixture
+                .resource_version(path)
+                .await
+                .expect("read contract: version observation failed")
+        } else {
+            FixtureSupport::Unsupported
+        };
         let conditional = ReadOptions::default().with_if_match(Some(match &version_support {
             FixtureSupport::Supported(version) => version.clone(),
             FixtureSupport::Unsupported => ResourceVersion::new("contract-version"),
         }));
-        if self.capable(FileSystemCapability::ConditionalRead) {
-            if matches!(
-                self.fixture
-                    .case_support(FixtureCase::ReadIfMatch)
-                    .expect("conditional-read contract: fixture case query failed"),
-                FixtureSupport::Unsupported
-            ) || !matches!(&version_support, FixtureSupport::Supported(_))
+        if conditional_read {
+            if matches!(&if_match_support, FixtureSupport::Unsupported)
+                || !matches!(&version_support, FixtureSupport::Supported(_))
             {
                 self.context.record_check(
                     "read/if-match-current",
@@ -281,13 +334,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
         }
 
-        if self.capable(FileSystemCapability::ConditionalRead) {
-            if matches!(
-                self.fixture
-                    .case_support(FixtureCase::ReadIfNoneMatch)
-                    .expect("conditional-read contract: fixture case query failed"),
-                FixtureSupport::Unsupported
-            ) || !matches!(&version_support, FixtureSupport::Supported(_)) {
+        if conditional_read {
+            if matches!(&if_none_match_support, FixtureSupport::Unsupported)
+                || !matches!(&version_support, FixtureSupport::Supported(_))
+            {
                 for id in ["read/if-none-match-current", "read/if-none-match-stale"] {
                     self.context.record_check(
                         id,
@@ -434,6 +484,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 "read/checksum",
                 Some(FileSystemCapability::ChecksumValidation),
                 ContractCheckOutcome::RejectedAsExpected,
+            );
+            self.context.record_check(
+                "read/checksum-corruption",
+                Some(FileSystemCapability::ChecksumValidation),
+                ContractCheckOutcome::NotApplicable {
+                    reason: "ChecksumValidation capability is unavailable".to_owned(),
+                },
             );
         }
     }

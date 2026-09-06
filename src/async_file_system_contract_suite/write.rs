@@ -8,7 +8,7 @@
 //! Implements writer and publication contracts.
 
 use super::*;
-use crate::internal::limit_probe_plan::{finite_probe, MAX_PROBE_BYTES};
+use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
 
 impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Checks asynchronous writer behavior.
@@ -43,11 +43,24 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Some(FileSystemCapability::Write),
                 ContractCheckOutcome::RejectedAsExpected,
             );
-            self.context.record_check(
-                "write/limit",
-                Some(FileSystemCapability::Write),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
+            for (id, capability) in [
+                ("write/limit", FileSystemCapability::Write),
+                ("write/if-absent", FileSystemCapability::ConditionalWrite),
+                ("write/if-match", FileSystemCapability::ConditionalWrite),
+                (
+                    "write/atomic-replace-existing",
+                    FileSystemCapability::AtomicReplace,
+                ),
+                ("write/durable", FileSystemCapability::DurableWrite),
+            ] {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::NotApplicable {
+                        reason: "Write capability is unavailable".to_owned(),
+                    },
+                );
+            }
             return;
         }
         let limit = self.context.properties().limits().max_write_bytes();
@@ -96,38 +109,64 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             Some(FileSystemCapability::Write),
             ContractCheckOutcome::Passed,
         );
-        if let Some((_, over)) = finite_probe(
-            self.context.properties().limits().max_write_bytes(),
-            MAX_PROBE_BYTES,
-        ) {
-            let limit_path = self.path("async-write-limit");
-            let payload = vec![0_u8; over as usize];
-            let failure = self
-                .fixture
-                .file_system()
-                .write_all(&limit_path, &payload, WriteOptions::default())
-                .await
-                .expect_err("write contract: declared write limit was ignored");
-            self.assert_error(
-                failure.error(),
-                FsErrorKind::ResourceLimitExceeded,
-                failure.error().operation(),
-                &limit_path,
-            );
-            self.context.record_check(
-                "write/limit",
-                Some(FileSystemCapability::Write),
-                ContractCheckOutcome::Passed,
-            );
-        } else {
-            self.context.record_check(
-                "write/limit",
-                Some(FileSystemCapability::Write),
+        let write_limit = self.context.properties().limits().max_write_bytes();
+        let limit_outcome = match write_limit {
+            qubit_fs::metadata::FileSystemLimit::Maximum(maximum) if maximum < MAX_PROBE_BYTES => {
+                let over = maximum
+                    .checked_add(1)
+                    .expect("write/limit: write limit successor overflow");
+                let at_path = self.path("async-write-limit-at");
+                self.context.record_created(at_path.clone());
+                let at_payload = vec![
+                    b'a';
+                    usize::try_from(maximum)
+                        .expect("write/limit-at: boundary must fit usize")
+                ];
+                self.fixture
+                    .file_system()
+                    .write_all(&at_path, &at_payload, WriteOptions::default())
+                    .await
+                    .expect("write/limit-at: boundary request was rejected");
+
+                let over_path = self.path("async-write-limit-over");
+                self.context.record_created(over_path.clone());
+                let over_payload = vec![
+                    b'o';
+                    usize::try_from(over)
+                        .expect("write/limit-over: successor must fit usize")
+                ];
+                let failure = self
+                    .fixture
+                    .file_system()
+                    .write_all(&over_path, &over_payload, WriteOptions::default())
+                    .await
+                    .expect_err("write/limit-over: declared write limit was ignored");
+                self.assert_error(
+                    failure.error(),
+                    FsErrorKind::ResourceLimitExceeded,
+                    failure.error().operation(),
+                    &over_path,
+                );
+                ContractCheckOutcome::Passed
+            }
+            qubit_fs::metadata::FileSystemLimit::Maximum(_) => {
                 ContractCheckOutcome::SkippedOptional {
-                    reason: "write limit is non-finite or outside probe budget".to_owned(),
-                },
-            );
-        }
+                    reason: "write boundary exceeds the bounded probe budget".to_owned(),
+                }
+            }
+            qubit_fs::metadata::FileSystemLimit::Unknown
+            | qubit_fs::metadata::FileSystemLimit::NotApplicable
+            | qubit_fs::metadata::FileSystemLimit::Unbounded => {
+                ContractCheckOutcome::SkippedOptional {
+                    reason: "write limit is unknown, inapplicable, or unbounded".to_owned(),
+                }
+            }
+        };
+        self.context.record_check(
+            "write/limit",
+            Some(FileSystemCapability::Write),
+            limit_outcome,
+        );
         self.assert_write_options(&path, &basic_bytes).await;
     }
 
@@ -323,9 +362,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
         }
 
-        let if_match_path = self
-            .required_seed("async-write-if-match", b"if-match", "conditional-write")
-            .await;
+        let if_match_path = self.path("async-write-if-match");
         if self.capable(FileSystemCapability::ConditionalWrite) {
             if matches!(
                 self.fixture
@@ -341,6 +378,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     },
                 );
             } else {
+                let if_match_path = self
+                    .required_seed("async-write-if-match", b"if-match", "conditional-write")
+                    .await;
                 let current = self
                     .fixture
                     .resource_version(&if_match_path)
@@ -439,10 +479,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
         }
 
-        let atomic_path = self
-            .required_seed("async-atomic-replace-existing", b"a", "atomic-replace")
-            .await;
         if self.capable(FileSystemCapability::AtomicReplace) {
+            let atomic_path = self
+                .required_seed("async-atomic-replace-existing", b"a", "atomic-replace")
+                .await;
             let mut writer = self
                 .fixture
                 .file_system()
@@ -668,11 +708,9 @@ fn bounded_payload(
     preferred: &[u8],
     fill: u8,
 ) -> Vec<u8> {
-    let length = limit
-        .maximum()
-        .map_or(preferred.len() as u64, |maximum| {
-            maximum.min(preferred.len() as u64)
-        }) as usize;
+    let length = limit.maximum().map_or(preferred.len() as u64, |maximum| {
+        maximum.min(preferred.len() as u64)
+    }) as usize;
     if length == preferred.len() {
         preferred.to_vec()
     } else {
