@@ -26,28 +26,37 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         if !self.capable(FileSystemCapability::Copy) {
             let source = self.path("async-copy-unavailable");
             let target = self.path("async-copy-unavailable-target");
-            let mut operation = self
-                .fixture
-                .file_system()
-                .begin_copy(source.clone(), target.clone(), Default::default())
-                .expect("async copy contract: fallback selection failed");
-            let error = operation
-                .execute()
-                .await
-                .expect_err("async copy contract: unavailable fallback succeeded");
-            assert_error_with_target(
+            let required = if !self.capable(FileSystemCapability::Read) {
+                FileSystemCapability::Read
+            } else if !self.capable(FileSystemCapability::Write) {
+                FileSystemCapability::Write
+            } else {
+                FileSystemCapability::Copy
+            };
+            let error = match self.fixture.file_system().begin_copy(
+                source.clone(),
+                target.clone(),
+                CopyOptions::file(),
+            ) {
+                Err(error) => error,
+                Ok(mut operation) => operation
+                    .execute()
+                    .await
+                    .expect_err("async copy contract: unavailable fallback succeeded"),
+            };
+            assert_error_with_source_or_target(
                 error.error(),
                 FsErrorKind::UnsupportedCapability,
                 FsOperation::Copy,
-                Some(&source),
-                Some(&target),
+                &source,
+                &target,
                 Some(self.context.properties().info().provider_id()),
-                Some(FileSystemCapability::Read),
+                Some(required),
             );
             assert_eq!(
                 error.error().required_capability(),
-                Some(FileSystemCapability::Read),
-                "async copy contract: fallback missing read-capability context"
+                Some(required),
+                "async copy contract: fallback missing capability context"
             );
             self.record_copy_rejection();
             return;
@@ -87,7 +96,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .file_system()
             .begin_copy(source.clone(), target.clone(), Default::default())
             .expect("async copy contract: advertised copy preflight failed");
-        let outcome = operation.execute().await.expect("async copy contract: copy failed");
+        let outcome = operation
+            .execute()
+            .await
+            .expect("async copy contract: copy failed");
         match outcome.method() {
             CopyMethod::Streamed => assert!(
                 outcome.used_fallback(),
@@ -110,8 +122,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             1,
             "async copy contract: copied resource count mismatch"
         );
-        self.assert_bytes(&source, b"copy bytes", "async copy contract: source was modified")
-            .await;
+        self.assert_bytes(
+            &source,
+            b"copy bytes",
+            "async copy contract: source was modified",
+        )
+        .await;
         self.context.record_check(
             "copy/basic",
             Some(FileSystemCapability::Copy),
@@ -134,8 +150,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     self.context.record_check(
                         "copy/server-side",
                         Some(FileSystemCapability::ServerSideCopy),
-                        ContractCheckOutcome::SkippedOptional {
-                            reason: "fixture cannot prepare a server-side copy case".to_owned(),
+                        ContractCheckOutcome::Unverified {
+                            reason: "fixture cannot prepare an applicable server-side copy case"
+                                .to_owned(),
                         },
                     );
                     self.assert_copy_cancellation_inner().await;
@@ -148,8 +165,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     self.context.record_check(
                         "copy/server-side",
                         Some(FileSystemCapability::ServerSideCopy),
-                        ContractCheckOutcome::SkippedOptional {
-                            reason: "fixture cannot independently observe the server-side source".to_owned(),
+                        ContractCheckOutcome::Unverified {
+                            reason: "fixture cannot independently observe the server-side source"
+                                .to_owned(),
                         },
                     );
                     self.assert_copy_cancellation_inner().await;
@@ -164,7 +182,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let mut operation = self
                 .fixture
                 .file_system()
-                .begin_copy(case.source().clone(), case.target().clone(), case.options().clone())
+                .begin_copy(
+                    case.source().clone(),
+                    case.target().clone(),
+                    case.options().clone(),
+                )
                 .expect("async copy contract: server-side preflight failed");
             let outcome = operation
                 .execute()
@@ -227,7 +249,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             ContractCheckOutcome::RejectedAsExpected,
         );
         for (id, capability) in [
-            ("copy/fallback-overwrite-rejected", FileSystemCapability::Copy),
+            (
+                "copy/fallback-overwrite-rejected",
+                FileSystemCapability::Copy,
+            ),
             ("copy/server-side", FileSystemCapability::ServerSideCopy),
             ("copy/atomic-file", FileSystemCapability::AtomicFileCopy),
             ("copy/atomic-tree", FileSystemCapability::AtomicTreeCopy),
@@ -253,7 +278,6 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         if !self.capable(FileSystemCapability::Read)
             || !self.capable(FileSystemCapability::Write)
             || !self.capable(FileSystemCapability::Copy)
-            || (mode == CopyMode::Tree && !self.capable(FileSystemCapability::CreateDirectory))
         {
             self.context.record_check(
                 id,
@@ -281,8 +305,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .expect_err("async copy contract: unsupported atomic copy succeeded"),
             };
             self.assert_requirement_error(failure.error(), FsOperation::Copy, capability, id);
-            self.context
-                .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
+            self.context.record_check(
+                id,
+                Some(capability),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
         if mode == CopyMode::File {
@@ -295,13 +322,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 self.context.record_check(
                     id,
                     Some(capability),
-                    ContractCheckOutcome::SkippedOptional {
-                        reason: "fixture cannot prepare an atomic file case".to_owned(),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture cannot prepare an applicable atomic file case".to_owned(),
                     },
                 );
                 return;
             }
-            let source = self.required_seed("async-atomic-copy-file-source", b"a", id).await;
+            let source = self
+                .required_seed("async-atomic-copy-file-source", b"a", id)
+                .await;
             let target = self.path("async-atomic-copy-file-target");
             self.context.record_created(target.clone());
             let mut operation = self
@@ -322,10 +351,18 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 AchievedAtomicity::Atomic,
                 "async copy contract: atomic file result was not atomic"
             );
-            self.assert_bytes(&source, b"a", "async copy contract: atomic file source changed")
-                .await;
-            self.assert_bytes(&target, b"a", "async copy contract: atomic file target mismatch")
-                .await;
+            self.assert_bytes(
+                &source,
+                b"a",
+                "async copy contract: atomic file source changed",
+            )
+            .await;
+            self.assert_bytes(
+                &target,
+                b"a",
+                "async copy contract: atomic file target mismatch",
+            )
+            .await;
             self.context
                 .record_check(id, Some(capability), ContractCheckOutcome::Passed);
             return;
@@ -339,8 +376,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             self.context.record_check(
                 id,
                 Some(capability),
-                ContractCheckOutcome::SkippedOptional {
-                    reason: "fixture cannot prepare an atomic tree case".to_owned(),
+                ContractCheckOutcome::Unverified {
+                    reason: "fixture cannot prepare an applicable atomic tree case".to_owned(),
                 },
             );
             return;
@@ -364,10 +401,18 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             AchievedAtomicity::Atomic,
             "async copy contract: atomic tree result was not atomic"
         );
-        self.assert_bytes(&child, b"b", "async copy contract: atomic tree source changed")
-            .await;
-        self.assert_bytes(&target_child, b"b", "copy/atomic-tree: atomic tree child mismatch")
-            .await;
+        self.assert_bytes(
+            &child,
+            b"b",
+            "async copy contract: atomic tree source changed",
+        )
+        .await;
+        self.assert_bytes(
+            &target_child,
+            b"b",
+            "copy/atomic-tree: atomic tree child mismatch",
+        )
+        .await;
         self.context
             .record_check(id, Some(capability), ContractCheckOutcome::Passed);
     }
@@ -381,7 +426,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .unwrap_or_else(|_| panic!("{id}: tree source creation failed"));
         self.context.record_created(source.clone());
-        let child = self.required_seed("async-copy-tree-source/child", b"b", id).await;
+        let child = self
+            .required_seed("async-copy-tree-source/child", b"b", id)
+            .await;
         let target = self.path("async-copy-tree-target");
         let target_child = self.path("async-copy-tree-target/child");
         self.context.record_created(target.clone());
@@ -407,6 +454,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Runs the cancellation probes without changing the current phase name.
     pub async fn assert_copy_cancellation_inner(&mut self) {
         if !self.capable(FileSystemCapability::Copy) {
+            self.record_cancellation_skips("basic copy capability is unavailable");
             return;
         }
         for stage in [
@@ -415,7 +463,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             AsyncCopyCancellationStage::Writer,
             AsyncCopyCancellationStage::Commit,
         ] {
-            let relative = self.context.relative_name(&format!("async-copy-cancel-{stage:?}"));
+            let relative = self
+                .context
+                .relative_name(&format!("async-copy-cancel-{stage:?}"));
             let prepared = self
                 .fixture
                 .prepare_copy_cancellation(stage, &relative)
@@ -444,7 +494,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let mut operation = self
             .fixture
             .file_system()
-            .begin_copy(case.source().clone(), case.target().clone(), case.options().clone())
+            .begin_copy(
+                case.source().clone(),
+                case.target().clone(),
+                case.options().clone(),
+            )
             .expect("async copy cancellation contract: preflight failed");
         let mut execution = Box::pin(operation.execute());
         let _disarm_on_unwind = DisarmOnDrop::new(probe.as_ref());
@@ -486,18 +540,37 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Records that an old request-only cancellation hook cannot acknowledge
     /// a provider-owned stage.
     fn record_legacy_cancellation_probe(&mut self, stage: AsyncCopyCancellationStage) {
-        let case = self
+        let support = self
             .fixture
             .copy_cancellation_case(stage)
             .expect("async copy cancellation contract: legacy probe setup failed");
-        if let FixtureSupport::Supported(case) = case {
+        if let FixtureSupport::Supported(case) = support {
             self.context.record_created(case.source().clone());
             self.context.record_created(case.target().clone());
+        }
+        self.context.record_check(
+            cancellation_check_id(stage),
+            Some(FileSystemCapability::Copy),
+            ContractCheckOutcome::SkippedOptional {
+                reason: "stage acknowledgement unavailable from legacy copy_cancellation_case"
+                    .to_owned(),
+            },
+        );
+    }
+
+    /// Records optional cancellation probes that cannot run for this fixture.
+    fn record_cancellation_skips(&mut self, reason: &str) {
+        for stage in [
+            AsyncCopyCancellationStage::NativeAttempt,
+            AsyncCopyCancellationStage::Reader,
+            AsyncCopyCancellationStage::Writer,
+            AsyncCopyCancellationStage::Commit,
+        ] {
             self.context.record_check(
                 cancellation_check_id(stage),
                 Some(FileSystemCapability::Copy),
                 ContractCheckOutcome::SkippedOptional {
-                    reason: "stage acknowledgement unavailable from legacy copy_cancellation_case".to_owned(),
+                    reason: reason.to_owned(),
                 },
             );
         }
@@ -515,8 +588,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 self.context.record_check(
                     "copy/fallback-overwrite-rejected",
                     Some(FileSystemCapability::Copy),
-                    ContractCheckOutcome::SkippedOptional {
-                        reason: "fixture cannot prepare an existing copy target".to_owned(),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture cannot prepare an applicable existing copy target"
+                            .to_owned(),
                     },
                 );
                 return;
@@ -543,8 +617,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             Some(self.context.properties().info().provider_id()),
             None,
         );
-        self.assert_bytes(&target, b"existing", "copy contract: failed conflict changed target")
-            .await;
+        self.assert_bytes(
+            &target,
+            b"existing",
+            "copy contract: failed conflict changed target",
+        )
+        .await;
 
         let mut operation = self
             .fixture
@@ -557,10 +635,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .with_conflict(CopyConflictPolicy::Skip),
             )
             .expect("copy contract: skip preflight failed");
-        let skipped = operation.execute().await.expect("copy contract: skip conflict failed");
+        let skipped = operation
+            .execute()
+            .await
+            .expect("copy contract: skip conflict failed");
         assert_eq!(skipped.stats().skipped, 1);
-        self.assert_bytes(&target, b"existing", "copy contract: skipped copy changed target")
-            .await;
+        self.assert_bytes(
+            &target,
+            b"existing",
+            "copy contract: skipped copy changed target",
+        )
+        .await;
 
         let mut operation = self
             .fixture
@@ -578,8 +663,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("copy contract: overwrite conflict failed");
         assert_eq!(overwritten.stats().overwritten, 1);
-        self.assert_bytes(&target, b"copy bytes", "copy contract: overwrite bytes mismatch")
-            .await;
+        self.assert_bytes(
+            &target,
+            b"copy bytes",
+            "copy contract: overwrite bytes mismatch",
+        )
+        .await;
         self.context.record_check(
             "copy/fallback-overwrite-rejected",
             Some(FileSystemCapability::Copy),
@@ -610,7 +699,6 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         if !self.capable(FileSystemCapability::Read)
             || !self.capable(FileSystemCapability::Write)
             || !self.capable(FileSystemCapability::Copy)
-            || (mode == CopyMode::Tree && !self.capable(FileSystemCapability::CreateDirectory))
         {
             self.context.record_check(
                 id,
@@ -630,7 +718,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 CopyOptions::tree()
             }
             .with_durability(DurabilityRequirement::Required);
-            let failure = match self.fixture.file_system().begin_copy(source, target, options) {
+            let failure = match self
+                .fixture
+                .file_system()
+                .begin_copy(source, target, options)
+            {
                 Err(error) => error,
                 Ok(mut operation) => operation
                     .execute()
@@ -638,8 +730,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .expect_err("async copy contract: unsupported durable copy succeeded"),
             };
             self.assert_requirement_error(failure.error(), FsOperation::Copy, capability, id);
-            self.context
-                .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
+            self.context.record_check(
+                id,
+                Some(capability),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
         if mode == CopyMode::File {
@@ -652,8 +747,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 self.context.record_check(
                     id,
                     Some(capability),
-                    ContractCheckOutcome::SkippedOptional {
-                        reason: "fixture cannot prepare a durable file case".to_owned(),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture cannot prepare an applicable durable file case".to_owned(),
                     },
                 );
                 return;
@@ -699,8 +794,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             self.context.record_check(
                 id,
                 Some(capability),
-                ContractCheckOutcome::SkippedOptional {
-                    reason: "fixture cannot prepare a durable tree case".to_owned(),
+                ContractCheckOutcome::Unverified {
+                    reason: "fixture cannot prepare an applicable durable tree case".to_owned(),
                 },
             );
             return;
@@ -723,10 +818,18 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             outcome.durable(),
             "async copy contract: durable tree result was not durable"
         );
-        self.assert_bytes(&child, b"b", "async copy contract: durable tree source changed")
-            .await;
-        self.assert_bytes(&target_child, b"b", "async copy contract: durable tree target mismatch")
-            .await;
+        self.assert_bytes(
+            &child,
+            b"b",
+            "async copy contract: durable tree source changed",
+        )
+        .await;
+        self.assert_bytes(
+            &target_child,
+            b"b",
+            "async copy contract: durable tree target mismatch",
+        )
+        .await;
         self.context
             .record_check(id, Some(capability), ContractCheckOutcome::Passed);
     }
