@@ -21,6 +21,8 @@ use common::async_memory_file_system::run_controlled;
 use common::check_matrix::assert_panics_at;
 use common::check_matrix::async_fault_cases;
 use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::FileSystemLimit;
+use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
 use qubit_fs_testkit::FileSystemContract;
@@ -83,6 +85,28 @@ fn test_async_faults_exercise_full_suite_paths() {
                 run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract(contract));
             }));
         }
+    }
+}
+
+#[test]
+fn test_async_property_profiles_cover_all_limit_outcomes() {
+    let limits = [
+        FileSystemLimit::Maximum(0),
+        FileSystemLimit::Maximum(4),
+        FileSystemLimit::Unknown,
+        FileSystemLimit::Unbounded,
+        FileSystemLimit::NotApplicable,
+        FileSystemLimit::Maximum(u64::MAX),
+    ];
+    for limit in limits {
+        let snapshot = FileSystemLimits::unknown()
+            .with_max_path_text_bytes(limit)
+            .with_max_component_text_bytes(limit)
+            .with_max_list_page_entries(limit);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let fixture = AsyncMemoryFixture::with_limits(snapshot);
+            run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_properties());
+        }));
     }
 }
 
