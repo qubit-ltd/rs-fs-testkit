@@ -65,6 +65,44 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .await
                 .expect_err("temp/file: cleanup retained source");
             self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+            let mut kept = self
+                .fixture
+                .file_system()
+                .create_temp_file(TempFileOptions::default())
+                .await
+                .expect("temp/file: keep setup failed");
+            let kept_source = kept.path().clone();
+            self.context.record_created(kept_source.clone());
+            if self.capable(FileSystemCapability::Write) {
+                self.fixture
+                    .file_system()
+                    .write_all(&kept_source, b"kept bytes", WriteOptions::default())
+                    .await
+                    .expect("temp/file: keep payload failed");
+            }
+            let kept_outcome = kept.keep().await.expect("temp/file: keep failed");
+            self.context.record_created(kept_outcome.target().clone());
+            assert_eq!(kept.state(), TempResourceState::Kept, "temp/file: keep state mismatch");
+            assert_ne!(
+                kept_outcome.target(),
+                &kept_source,
+                "temp/file: keep reused source identity"
+            );
+            assert!(
+                !self
+                    .fixture
+                    .file_system()
+                    .exists(&kept_source)
+                    .await
+                    .expect("temp/file: kept source exists failed")
+            );
+            assert!(
+                self.fixture
+                    .file_system()
+                    .exists(kept_outcome.target())
+                    .await
+                    .expect("temp/file: kept target exists failed")
+            );
             let mut temporary = self
                 .fixture
                 .file_system()

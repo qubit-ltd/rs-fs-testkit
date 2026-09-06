@@ -76,7 +76,7 @@ fn test_async_phase_matrix_exercises_declared_profiles() {
 
 #[test]
 fn test_async_faults_exercise_full_suite_paths() {
-    for case in common::check_matrix::async_fault_cases() {
+    for case in async_fault_cases() {
         let fixture = AsyncMemoryFixture::with_fault(case.fault);
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all_with_report());
