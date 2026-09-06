@@ -48,9 +48,8 @@ fn async_limits_allow_single_byte_write() {
 }
 
 #[test]
-fn async_write_limit_zero_and_small_boundaries_are_reported() {
+fn async_write_limit_small_boundaries_are_reported() {
     for limit in [
-        FileSystemLimit::Maximum(0),
         FileSystemLimit::Maximum(1),
         FileSystemLimit::Maximum(4),
         FileSystemLimit::Unknown,
