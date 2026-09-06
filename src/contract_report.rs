@@ -1,9 +1,13 @@
+// qubit-style: allow all
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
 // =============================================================================
 //! Public report of the checks performed by a contract suite.
+
+use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::FileSystemCapabilities;
 
 use crate::ContractCheck;
 use crate::ContractCheckOutcome;
@@ -68,7 +72,7 @@ impl ContractReport {
         &mut self,
         phase: FileSystemContract,
         id: &'static str,
-        capability: Option<qubit_fs::metadata::FileSystemCapability>,
+        capability: Option<FileSystemCapability>,
         required: bool,
         outcome: ContractCheckOutcome,
     ) {
@@ -86,7 +90,7 @@ impl ContractReport {
         &mut self,
         phase: FileSystemContract,
         id: &'static str,
-        capability: Option<qubit_fs::metadata::FileSystemCapability>,
+        capability: Option<FileSystemCapability>,
         required: bool,
         outcome: ContractCheckOutcome,
     ) {
@@ -103,7 +107,7 @@ impl ContractReport {
     pub(crate) fn complete_phase(
         &mut self,
         phase: FileSystemContract,
-        capabilities: &qubit_fs::metadata::FileSystemCapabilities,
+        capabilities: &FileSystemCapabilities,
     ) {
         for check in &mut self.checks {
             if check.phase != phase || !matches!(check.outcome, ContractCheckOutcome::Unverified { .. }) {
@@ -111,11 +115,18 @@ impl ContractReport {
             }
             if let Some(capability) = check.capability
                 && !capabilities.supports(capability)
-                && !check.required
             {
-                check.outcome = ContractCheckOutcome::SkippedOptional {
-                    reason: format!("provider does not advertise {capability:?}"),
+                check.outcome = if check.required {
+                    ContractCheckOutcome::Unverified {
+                        reason: format!("provider does not advertise required {capability:?}"),
+                    }
+                } else {
+                    ContractCheckOutcome::SkippedOptional {
+                        reason: format!("provider does not advertise {capability:?}"),
+                    }
                 };
+            } else {
+                check.outcome = ContractCheckOutcome::Passed;
             }
         }
     }
