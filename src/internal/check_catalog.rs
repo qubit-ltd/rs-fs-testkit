@@ -27,7 +27,10 @@ const fn capability(capability: FileSystemCapability, id: &'static str) -> Check
 }
 
 const fn unscoped(id: &'static str) -> CheckSpec {
-    CheckSpec { id, capability: None }
+    CheckSpec {
+        id,
+        capability: None,
+    }
 }
 
 /// Returns the required check IDs for one independently run phase.
@@ -49,19 +52,34 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
             capability(FileSystemCapability::Read, "read/basic"),
             capability(FileSystemCapability::RangeRead, "read/range"),
             capability(FileSystemCapability::RangeRead, "read/range-limit"),
-            capability(FileSystemCapability::ConditionalRead, "read/if-match-current"),
+            capability(
+                FileSystemCapability::ConditionalRead,
+                "read/if-match-current",
+            ),
             capability(FileSystemCapability::ConditionalRead, "read/if-match-stale"),
-            capability(FileSystemCapability::ConditionalRead, "read/if-none-match-current"),
-            capability(FileSystemCapability::ConditionalRead, "read/if-none-match-stale"),
+            capability(
+                FileSystemCapability::ConditionalRead,
+                "read/if-none-match-current",
+            ),
+            capability(
+                FileSystemCapability::ConditionalRead,
+                "read/if-none-match-stale",
+            ),
             capability(FileSystemCapability::ChecksumValidation, "read/checksum"),
-            capability(FileSystemCapability::ChecksumValidation, "read/checksum-corruption"),
+            capability(
+                FileSystemCapability::ChecksumValidation,
+                "read/checksum-corruption",
+            ),
         ],
         FileSystemContract::Write => vec![
             capability(FileSystemCapability::Write, "write/basic"),
             capability(FileSystemCapability::Write, "write/limit"),
             capability(FileSystemCapability::ConditionalWrite, "write/if-absent"),
             capability(FileSystemCapability::ConditionalWrite, "write/if-match"),
-            capability(FileSystemCapability::AtomicReplace, "write/atomic-replace-existing"),
+            capability(
+                FileSystemCapability::AtomicReplace,
+                "write/atomic-replace-existing",
+            ),
             capability(FileSystemCapability::DurableWrite, "write/durable"),
         ],
         FileSystemContract::List => vec![
@@ -84,7 +102,10 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
         ],
         FileSystemContract::Copy => vec![
             capability(FileSystemCapability::Copy, "copy/basic"),
-            capability(FileSystemCapability::Copy, "copy/fallback-overwrite-rejected"),
+            capability(
+                FileSystemCapability::Copy,
+                "copy/fallback-overwrite-rejected",
+            ),
             capability(FileSystemCapability::ServerSideCopy, "copy/server-side"),
             capability(FileSystemCapability::AtomicFileCopy, "copy/atomic-file"),
             capability(FileSystemCapability::AtomicTreeCopy, "copy/atomic-tree"),
@@ -93,10 +114,21 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
             capability(FileSystemCapability::Rename, "rename/basic"),
             capability(FileSystemCapability::Rename, "rename/conflict"),
         ],
-        FileSystemContract::Append => vec![capability(FileSystemCapability::Append, "append/basic")],
-        FileSystemContract::RecursiveDelete => vec![capability(FileSystemCapability::RecursiveDelete, "delete/tree")],
-        FileSystemContract::AtomicRename => vec![capability(FileSystemCapability::AtomicRename, "rename/atomic")],
-        FileSystemContract::DurableRename => vec![capability(FileSystemCapability::DurableRename, "rename/durable")],
+        FileSystemContract::Append => {
+            vec![capability(FileSystemCapability::Append, "append/basic")]
+        }
+        FileSystemContract::RecursiveDelete => vec![capability(
+            FileSystemCapability::RecursiveDelete,
+            "delete/tree",
+        )],
+        FileSystemContract::AtomicRename => vec![capability(
+            FileSystemCapability::AtomicRename,
+            "rename/atomic",
+        )],
+        FileSystemContract::DurableRename => vec![capability(
+            FileSystemCapability::DurableRename,
+            "rename/durable",
+        )],
         FileSystemContract::AtomicReplace => vec![capability(
             FileSystemCapability::AtomicReplace,
             "write/atomic-replace-existing",

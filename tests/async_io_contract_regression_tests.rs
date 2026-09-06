@@ -49,7 +49,9 @@ fn controlled_runner_does_not_treat_first_pending_as_completion() {
 fn async_limits_allow_single_byte_write() {
     let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1));
     let fixture = AsyncMemoryFixture::with_limits(limits);
-    run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write));
+    run_controlled(
+        AsyncFileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write),
+    );
 }
 
 #[test]
@@ -62,9 +64,12 @@ fn async_write_limit_small_boundaries_are_reported() {
         FileSystemLimit::Unbounded,
         FileSystemLimit::Maximum(u64::MAX),
     ] {
-        let fixture = AsyncMemoryFixture::with_limits(FileSystemLimits::unknown().with_max_write_bytes(limit));
+        let fixture = AsyncMemoryFixture::with_limits(
+            FileSystemLimits::unknown().with_max_write_bytes(limit),
+        );
         let report = run_controlled(
-            AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Write),
+            AsyncFileSystemContractSuite::new(&fixture)
+                .assert_contract_with_report(FileSystemContract::Write),
         );
         report.assert_complete();
     }
@@ -74,10 +79,12 @@ fn async_write_limit_small_boundaries_are_reported() {
 fn conditional_case_unavailability_is_reported_as_unverified() {
     let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(FixtureCase::ReadIfMatch);
     let report = run_controlled(
-        AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Read),
+        AsyncFileSystemContractSuite::new(&fixture)
+            .assert_contract_with_report(FileSystemContract::Read),
     );
     assert!(report.checks().iter().any(|check| {
-        check.id() == "read/if-match-current" && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
+        check.id() == "read/if-match-current"
+            && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
     }));
 }
 
@@ -85,10 +92,12 @@ fn conditional_case_unavailability_is_reported_as_unverified() {
 fn async_conditional_delete_case_unavailability_is_unverified() {
     let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(FixtureCase::DeleteIfMatch);
     let report = run_controlled(
-        AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Delete),
+        AsyncFileSystemContractSuite::new(&fixture)
+            .assert_contract_with_report(FileSystemContract::Delete),
     );
     assert!(report.checks().iter().any(|check| {
-        check.id() == "delete/if-match" && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
+        check.id() == "delete/if-match"
+            && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
     }));
 }
 
@@ -106,6 +115,9 @@ fn async_fault_profiles_are_exercised_by_the_real_suite() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all());
         }));
-        assert!(result.is_err(), "fault was not caught by async suite: {fault:?}");
+        assert!(
+            result.is_err(),
+            "fault was not caught by async suite: {fault:?}"
+        );
     }
 }
