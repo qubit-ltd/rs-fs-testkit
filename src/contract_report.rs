@@ -6,8 +6,8 @@
 // =============================================================================
 //! Public report of the checks performed by a contract suite.
 
-use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::metadata::FileSystemCapabilities;
+use qubit_fs::metadata::FileSystemCapability;
 
 use crate::ContractCheck;
 use crate::ContractCheckOutcome;
@@ -104,11 +104,7 @@ impl ContractReport {
         self.push(phase, id, capability, required, outcome);
     }
 
-    pub(crate) fn complete_phase(
-        &mut self,
-        phase: FileSystemContract,
-        capabilities: &FileSystemCapabilities,
-    ) {
+    pub(crate) fn complete_phase(&mut self, phase: FileSystemContract, capabilities: &FileSystemCapabilities) {
         for check in &mut self.checks {
             if check.phase != phase || !matches!(check.outcome, ContractCheckOutcome::Unverified { .. }) {
                 continue;
