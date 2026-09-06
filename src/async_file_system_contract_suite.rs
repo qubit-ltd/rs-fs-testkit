@@ -48,6 +48,7 @@ use qubit_fs::temp::TempOptions as TempFileOptions;
 use qubit_fs::write::WriteDisposition;
 use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WritePrecondition;
+use qubit_fs::write::WriteFailureState;
 use qubit_io::AsyncOutput;
 
 use crate::AsyncCopyCancellationStage;
@@ -348,7 +349,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let bytes = self
                 .fixture
                 .file_system()
-                .read_all(path, range, 64)
+                .read_all(path, range, 5)
                 .await
                 .expect("read contract: advertised range read failed");
             assert_eq!(bytes, b"bytes", "read contract: range mismatch");
@@ -508,6 +509,33 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 )
             }
         }
+        let duplicate_path = self.path("async-write-duplicate-commit");
+        self.context.record_created(duplicate_path.clone());
+        let mut duplicate = self
+            .fixture
+            .file_system()
+            .open_writer(&duplicate_path, WriteOptions::default())
+            .await
+            .expect("writer contract: duplicate writer open failed");
+        duplicate
+            .write_fully_async(b"duplicate")
+            .await
+            .expect("writer contract: duplicate writer rejected bytes");
+        duplicate
+            .commit_async()
+            .await
+            .expect("writer contract: duplicate writer commit failed");
+        let failure = duplicate.commit_async().await.expect_err(
+            "writer contract: committed writer accepted duplicate commit",
+        );
+        assert_eq!(failure.error().kind(), FsErrorKind::InvalidState);
+        assert_eq!(failure.state(), WriteFailureState::Published);
+        self.assert_bytes(
+            &duplicate_path,
+            b"duplicate",
+            "writer contract: duplicate commit changed target",
+        )
+        .await;
         self.assert_write_options(&path).await;
     }
 

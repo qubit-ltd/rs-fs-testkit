@@ -280,6 +280,7 @@ fn test_single_faults_are_rejected_by_async_suite() {
         AsyncMemoryFault::MissingPathExists,
         AsyncMemoryFault::WrongStatMetadata,
         AsyncMemoryFault::ReadWrongBytes,
+        AsyncMemoryFault::ReadIgnoresRange,
         AsyncMemoryFault::WriteDropsBytes,
         AsyncMemoryFault::ListEscapesNamespace,
         AsyncMemoryFault::EmptyList,
@@ -300,7 +301,11 @@ fn test_single_faults_are_rejected_by_async_suite() {
         AsyncMemoryFault::AtomicTempPersistNonAtomic,
         AsyncMemoryFault::TempIgnoresOptions,
     ] {
-        let fixture = AsyncMemoryFixture::with_fault(fault);
+        let fixture = if fault == AsyncMemoryFault::ReadIgnoresRange {
+            AsyncMemoryFixture::with_range_fault(fault)
+        } else {
+            AsyncMemoryFixture::with_fault(fault)
+        };
         let result =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut assertion = Box::pin(
