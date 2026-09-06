@@ -74,6 +74,29 @@ impl FileSystemFixture for TeardownProbe {
     }
 }
 
+/// A provider wrapper that fails observation after leaving the written target.
+struct BodyAndCleanupProbe {
+    inner: MemoryFixture,
+}
+
+impl FileSystemFixture for BodyAndCleanupProbe {
+    fn file_system(&self) -> &qubit_fs::FileSystem {
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+
+    fn read_file(&self, _path: &Path) -> FixtureResult<FixtureSupport<Vec<u8>>> {
+        Ok(FixtureSupport::Supported(b"unexpected body bytes".to_vec()))
+    }
+
+    fn teardown(&self) -> FixtureResult<FixtureSupport<()>> {
+        Ok(FixtureSupport::Supported(()))
+    }
+}
+
 /// A teardown failure does not replace the panic raised by the contract body.
 #[test]
 fn test_body_panic_is_preserved_when_teardown_also_fails() {
@@ -119,6 +142,29 @@ fn test_body_panic_is_preserved_when_teardown_panics() {
         .unwrap_or_default();
     assert!(message.contains("fixture.read_file"), "unexpected panic: {message}");
     assert_eq!(fixture.calls.load(Ordering::Relaxed), 1);
+}
+
+/// A body panic remains primary when cleanup also reports a failed delete.
+#[test]
+fn test_body_panic_is_preserved_when_cleanup_fails() {
+    let fixture = BodyAndCleanupProbe {
+        inner: MemoryFixture::with_fault(MemoryFault::DeleteNoOp),
+    };
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write);
+    }));
+    let payload = result.expect_err("the observation fault must fail the selected contract");
+    let message = payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| {
+            payload
+                .downcast_ref::<&str>()
+                .map(|value| (*value).to_owned())
+        })
+        .unwrap_or_default();
+    assert!(message.contains("fixture.read_file"), "unexpected panic: {message}");
+    assert!(fixture.inner.entry_count() > 0, "failed cleanup must retain resources");
 }
 
 /// A facade without Delete still invokes the fixture teardown hook.
