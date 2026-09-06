@@ -37,6 +37,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Some(FileSystemCapability::Read),
                 "read contract: missing required-capability context"
             );
+            self.context.record_check(
+                "read/basic",
+                Some(FileSystemCapability::Read),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
         let path = match self
@@ -69,6 +74,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     FsOperation::Read,
                     &path,
                 );
+                self.context.record_check(
+                    "read/basic",
+                    Some(FileSystemCapability::Read),
+                    ContractCheckOutcome::Passed,
+                );
                 path
             }
             FixtureSupport::Unsupported => {
@@ -79,10 +89,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Checks asynchronous range, conditional, and checksum read guarantees.
-    pub async fn assert_read_options(&self, path: &Path) {
+    pub async fn assert_read_options(&mut self, path: &Path) {
+        let range_limit = self
+            .context
+            .properties()
+            .limits()
+            .max_read_range_bytes()
+            .maximum();
+        let range_length = range_limit.map_or(5, |limit| limit.min(5));
         let range = ReadOptions::default()
-            .with_offset(Some(6))
-            .with_length(Some(5));
+            .with_offset(Some(0))
+            .with_length(Some(range_length));
         if self.capable(FileSystemCapability::RangeRead) {
             let bytes = self
                 .fixture
@@ -90,7 +107,32 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .read_all(path, range, 64)
                 .await
                 .expect("read contract: advertised range read failed");
-            assert_eq!(bytes, b"bytes", "read contract: range mismatch");
+            assert_eq!(
+                bytes,
+                &b"async bytes"[..range_length as usize],
+                "read contract: range mismatch"
+            );
+            self.context.record_check(
+                "read/range",
+                Some(FileSystemCapability::RangeRead),
+                ContractCheckOutcome::Passed,
+            );
+            if let Some(limit) = range_limit
+                && let Some(over) = limit.checked_add(1)
+            {
+                let error = self
+                    .fixture
+                    .file_system()
+                    .open_reader(path, ReadOptions::default().with_length(Some(over)))
+                    .await
+                    .expect_err("read contract: declared range limit was ignored");
+                self.assert_error(
+                    &error,
+                    FsErrorKind::ResourceLimitExceeded,
+                    FsOperation::OpenReader,
+                    path,
+                );
+            }
         } else {
             let error = self
                 .fixture
@@ -104,6 +146,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FileSystemCapability::RangeRead,
                 "range-read contract",
             );
+            self.context.record_check(
+                "read/range",
+                Some(FileSystemCapability::RangeRead),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
         }
 
         let version_support = self
@@ -116,17 +163,74 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             FixtureSupport::Unsupported => ResourceVersion::new("contract-version"),
         }));
         if self.capable(FileSystemCapability::ConditionalRead) {
-            assert!(
-                matches!(version_support, FixtureSupport::Supported(_)),
-                "conditional-read contract: advertised capability requires fixture.resource_version support"
-            );
-            let bytes = self
-                .fixture
-                .file_system()
-                .read_all(path, conditional, 64)
-                .await
-                .expect("read contract: advertised conditional read failed");
-            assert_eq!(bytes, b"async bytes");
+            if matches!(
+                self.fixture
+                    .case_support(FixtureCase::ReadIfMatch)
+                    .expect("conditional-read contract: fixture case query failed"),
+                FixtureSupport::Unsupported
+            ) || !matches!(version_support, FixtureSupport::Supported(_))
+            {
+                self.context.record_check(
+                    "read/if-match-current",
+                    Some(FileSystemCapability::ConditionalRead),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture cannot prepare current If-Match case".to_owned(),
+                    },
+                );
+                self.context.record_check(
+                    "read/if-match-stale",
+                    Some(FileSystemCapability::ConditionalRead),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture cannot prepare stale If-Match case".to_owned(),
+                    },
+                );
+            } else {
+                let bytes = self
+                    .fixture
+                    .file_system()
+                    .read_all(path, conditional, 64)
+                    .await
+                    .expect("read contract: advertised conditional read failed");
+                assert_eq!(bytes, b"async bytes");
+                self.context.record_check(
+                    "read/if-match-current",
+                    Some(FileSystemCapability::ConditionalRead),
+                    ContractCheckOutcome::Passed,
+                );
+                let stale = self
+                    .fixture
+                    .stale_resource_version(path)
+                    .await
+                    .expect("conditional-read contract: stale version observation failed");
+                match stale {
+                    FixtureSupport::Supported(version) => {
+                        let error = self
+                            .fixture
+                            .file_system()
+                            .open_reader(path, ReadOptions::default().with_if_match(Some(version)))
+                            .await
+                            .expect_err("conditional-read contract: stale If-Match succeeded");
+                        self.assert_error(
+                            &error,
+                            FsErrorKind::PreconditionFailed,
+                            FsOperation::OpenReader,
+                            path,
+                        );
+                        self.context.record_check(
+                            "read/if-match-stale",
+                            Some(FileSystemCapability::ConditionalRead),
+                            ContractCheckOutcome::RejectedAsExpected,
+                        );
+                    }
+                    FixtureSupport::Unsupported => self.context.record_check(
+                        "read/if-match-stale",
+                        Some(FileSystemCapability::ConditionalRead),
+                        ContractCheckOutcome::Unverified {
+                            reason: "fixture cannot prepare stale If-Match case".to_owned(),
+                        },
+                    ),
+                }
+            }
         } else {
             let error = self
                 .fixture
@@ -140,6 +244,77 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FileSystemCapability::ConditionalRead,
                 "conditional-read contract",
             );
+            self.context.record_check(
+                "read/if-match-current",
+                Some(FileSystemCapability::ConditionalRead),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+            self.context.record_check(
+                "read/if-match-stale",
+                Some(FileSystemCapability::ConditionalRead),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+        }
+
+        let none_match_current =
+            ReadOptions::default().with_if_none_match(Some(ResourceVersion::new("v1")));
+        let none_match_stale =
+            ReadOptions::default().with_if_none_match(Some(ResourceVersion::new("stale-v0")));
+        if self.capable(FileSystemCapability::ConditionalRead) {
+            if matches!(
+                self.fixture
+                    .case_support(FixtureCase::ReadIfNoneMatch)
+                    .expect("conditional-read contract: fixture case query failed"),
+                FixtureSupport::Unsupported
+            ) {
+                for id in ["read/if-none-match-current", "read/if-none-match-stale"] {
+                    self.context.record_check(
+                        id,
+                        Some(FileSystemCapability::ConditionalRead),
+                        ContractCheckOutcome::Unverified {
+                            reason: "fixture cannot prepare If-None-Match cases".to_owned(),
+                        },
+                    );
+                }
+            } else {
+                let current = self
+                    .fixture
+                    .file_system()
+                    .open_reader(path, none_match_current)
+                    .await
+                    .expect_err("conditional-read contract: current If-None-Match succeeded");
+                self.assert_error(
+                    &current,
+                    FsErrorKind::PreconditionFailed,
+                    FsOperation::OpenReader,
+                    path,
+                );
+                self.context.record_check(
+                    "read/if-none-match-current",
+                    Some(FileSystemCapability::ConditionalRead),
+                    ContractCheckOutcome::RejectedAsExpected,
+                );
+                let stale = self
+                    .fixture
+                    .file_system()
+                    .read_all(path, none_match_stale, 64)
+                    .await
+                    .expect("conditional-read contract: stale If-None-Match failed");
+                assert_eq!(stale, b"async bytes");
+                self.context.record_check(
+                    "read/if-none-match-stale",
+                    Some(FileSystemCapability::ConditionalRead),
+                    ContractCheckOutcome::Passed,
+                );
+            }
+        } else {
+            for id in ["read/if-none-match-current", "read/if-none-match-stale"] {
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::ConditionalRead),
+                    ContractCheckOutcome::RejectedAsExpected,
+                );
+            }
         }
 
         let checksummed = ReadOptions::default().with_checksum(ChecksumPolicy::Required);
@@ -151,6 +326,50 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .await
                 .expect("read contract: advertised checksum validation failed");
             assert_eq!(bytes, b"async bytes");
+            self.context.record_check(
+                "read/checksum",
+                Some(FileSystemCapability::ChecksumValidation),
+                ContractCheckOutcome::Passed,
+            );
+            let failure_relative = self.context.relative_name("async-checksum-failure");
+            match self
+                .fixture
+                .checksum_failure_case(&failure_relative)
+                .await
+                .expect("checksum-read contract: failure case setup failed")
+            {
+                FixtureSupport::Supported(failure_path) => {
+                    self.context.record_created(failure_path.clone());
+                    let error = self
+                        .fixture
+                        .file_system()
+                        .read_all(
+                            &failure_path,
+                            ReadOptions::default().with_checksum(ChecksumPolicy::Required),
+                            64,
+                        )
+                        .await
+                        .expect_err("checksum-read contract: corrupted bytes were accepted");
+                    self.assert_error(
+                        &error,
+                        FsErrorKind::DataCorruption,
+                        FsOperation::OpenReader,
+                        &failure_path,
+                    );
+                    self.context.record_check(
+                        "read/checksum-corruption",
+                        Some(FileSystemCapability::ChecksumValidation),
+                        ContractCheckOutcome::Passed,
+                    );
+                }
+                FixtureSupport::Unsupported => self.context.record_check(
+                    "read/checksum-corruption",
+                    Some(FileSystemCapability::ChecksumValidation),
+                    ContractCheckOutcome::SkippedOptional {
+                        reason: "fixture has no independent checksum corruption probe".to_owned(),
+                    },
+                ),
+            }
         } else {
             let error = self
                 .fixture
@@ -163,6 +382,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FsOperation::OpenReader,
                 FileSystemCapability::ChecksumValidation,
                 "checksum-read contract",
+            );
+            self.context.record_check(
+                "read/checksum",
+                Some(FileSystemCapability::ChecksumValidation),
+                ContractCheckOutcome::RejectedAsExpected,
             );
         }
     }

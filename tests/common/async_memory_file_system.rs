@@ -125,6 +125,7 @@ use qubit_fs_testkit::AsyncCopyFixtureCase;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::AsyncFileSystemFixture;
 use qubit_fs_testkit::CopyFixtureCase;
+use qubit_fs_testkit::FixtureCase;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::FixtureFuture;
 use qubit_fs_testkit::FixtureResult;
@@ -146,6 +147,8 @@ pub struct AsyncMemoryFixture {
     entries: Arc<Mutex<HashMap<String, Entry>>>,
     supports_cancellation_cases: bool,
     path_calls: Arc<AtomicUsize>,
+    limits: FileSystemLimits,
+    unavailable_case: Option<FixtureCase>,
 }
 
 /// A single injected asynchronous provider defect used by the self-test matrix.
@@ -200,6 +203,18 @@ pub enum AsyncMemoryFault {
     TempIgnoresOptions,
     /// Uses object and prefix metadata kinds for stored resources.
     ObjectKinds,
+    /// Ignores a stale or current If-Match read condition.
+    IgnoreReadIfMatch,
+    /// Ignores a stale or current If-None-Match read condition.
+    IgnoreReadIfNoneMatch,
+    /// Ignores an If-Match write condition.
+    IgnoreWriteIfMatch,
+    /// Reports atomic replacement but leaves the old destination bytes.
+    AtomicReplaceKeepsOldBytes,
+    /// Reports durable write success but drops the published bytes.
+    DurableWriteDropsBytes,
+    /// Returns corrupted bytes instead of rejecting the checksum probe.
+    ChecksumIgnoresCorruption,
 }
 
 /// Capability switches used by asynchronous memory fixture profiles.
@@ -210,6 +225,7 @@ struct AsyncCapabilityProfile {
     optional: bool,
     create_directory: bool,
     extended: bool,
+    read_only: bool,
 }
 
 #[cfg(feature = "async")]
@@ -219,30 +235,35 @@ impl AsyncCapabilityProfile {
         optional: false,
         create_directory: false,
         extended: false,
+        read_only: false,
     };
     const CORE: Self = Self {
         core: true,
         optional: false,
         create_directory: false,
         extended: false,
+        read_only: false,
     };
     const STANDARD: Self = Self {
         core: true,
         optional: true,
         create_directory: true,
         extended: false,
+        read_only: false,
     };
     const PREFIX_DELETE: Self = Self {
         core: true,
         optional: true,
         create_directory: false,
         extended: false,
+        read_only: false,
     };
     const ALL: Self = Self {
         core: true,
         optional: true,
         create_directory: true,
         extended: true,
+        read_only: false,
     };
 }
 
@@ -251,6 +272,48 @@ impl AsyncMemoryFixture {
     /// Creates an isolated asynchronous copy fixture.
     pub fn new() -> Self {
         Self::with_fault(AsyncMemoryFault::None)
+    }
+
+    /// Creates a fixture exposing only asynchronous read operations.
+    pub fn read_only() -> Self {
+        Self::with_configuration_options(
+            AsyncMemoryFault::None,
+            false,
+            false,
+            AsyncCapabilityProfile {
+                read_only: true,
+                ..AsyncCapabilityProfile::NONE
+            },
+            "async-memory-read-only-provider",
+            FileSystemLimits::unknown(),
+            None,
+        )
+    }
+
+    /// Creates a fixture with a provider-declared limits snapshot.
+    pub fn with_limits(limits: FileSystemLimits) -> Self {
+        Self::with_configuration_options(
+            AsyncMemoryFault::None,
+            false,
+            false,
+            AsyncCapabilityProfile::STANDARD,
+            "async-memory-limits-provider",
+            limits,
+            None,
+        )
+    }
+
+    /// Creates a fixture whose selected conditional case is unavailable.
+    pub fn with_conditional_case_unavailable(case: FixtureCase) -> Self {
+        let mut fixture = Self::with_configuration(
+            AsyncMemoryFault::None,
+            false,
+            false,
+            AsyncCapabilityProfile::ALL,
+            "async-memory-contract-provider",
+        );
+        fixture.unavailable_case = Some(case);
+        fixture
     }
 
     /// Creates an asynchronous fixture with exactly one provider fault.
@@ -359,7 +422,7 @@ impl AsyncMemoryFixture {
             fault,
             supports_cancellation_cases,
             native_copy,
-            AsyncCapabilityProfile::STANDARD,
+            AsyncCapabilityProfile::ALL,
             "async-memory-contract-provider",
         )
     }
@@ -371,6 +434,27 @@ impl AsyncMemoryFixture {
         native_copy: bool,
         capabilities: AsyncCapabilityProfile,
         provider_id: &'static str,
+    ) -> Self {
+        Self::with_configuration_options(
+            fault,
+            supports_cancellation_cases,
+            native_copy,
+            capabilities,
+            provider_id,
+            FileSystemLimits::unknown(),
+            None,
+        )
+    }
+
+    /// Creates a fixture with all provider configuration knobs explicit.
+    fn with_configuration_options(
+        fault: AsyncMemoryFault,
+        supports_cancellation_cases: bool,
+        native_copy: bool,
+        capabilities: AsyncCapabilityProfile,
+        provider_id: &'static str,
+        limits: FileSystemLimits,
+        unavailable_case: Option<FixtureCase>,
     ) -> Self {
         let stage = Arc::new(Mutex::new(AsyncCopyCancellationStage::NativeAttempt));
         let entries = Arc::new(Mutex::new(HashMap::new()));
@@ -385,6 +469,8 @@ impl AsyncMemoryFixture {
             create_directory_capability: capabilities.create_directory,
             extended_capabilities: capabilities.extended,
             provider_id,
+            limits,
+            read_only: capabilities.read_only,
         })
         .expect("async memory SPI properties must be valid");
         Self {
@@ -393,6 +479,8 @@ impl AsyncMemoryFixture {
             entries,
             supports_cancellation_cases,
             path_calls,
+            limits,
+            unavailable_case,
         }
     }
 
@@ -419,6 +507,13 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
     fn path(&self, relative: &str) -> FixtureResult<Path> {
         self.path_calls.fetch_add(1, Ordering::Relaxed);
         MemoryFixture::path_for(relative)
+    }
+
+    fn case_support(&self, case: FixtureCase) -> FixtureResult<FixtureSupport<()>> {
+        if self.unavailable_case == Some(case) {
+            return Ok(FixtureSupport::Unsupported);
+        }
+        Ok(FixtureSupport::Supported(()))
     }
 
     fn seed_file<'a>(
@@ -451,6 +546,31 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
+    fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
+        Box::pin(async move {
+            Ok(FixtureSupport::Supported(
+                self.entries
+                    .lock()
+                    .expect("async memory state lock must succeed")
+                    .contains_key(path.as_str()),
+            ))
+        })
+    }
+
+    fn write_file_out_of_band<'a>(
+        &'a self,
+        path: &'a Path,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, FixtureSupport<()>> {
+        Box::pin(async move {
+            self.entries
+                .lock()
+                .expect("async memory state lock must succeed")
+                .insert(path.as_str().to_owned(), Entry::File(bytes.to_vec()));
+            Ok(FixtureSupport::Supported(()))
+        })
+    }
+
     fn resource_version<'a>(
         &'a self,
         path: &'a Path,
@@ -466,6 +586,51 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             } else {
                 FixtureSupport::Unsupported
             })
+        })
+    }
+
+    fn stale_resource_version<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+        Box::pin(async move {
+            let exists = self
+                .entries
+                .lock()
+                .expect("async memory state lock must succeed")
+                .contains_key(path.as_str());
+            Ok(if exists {
+                FixtureSupport::Supported(ResourceVersion::new("stale-v0"))
+            } else {
+                FixtureSupport::Unsupported
+            })
+        })
+    }
+
+    fn checksum_failure_case<'a>(
+        &'a self,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+        Box::pin(async move {
+            let path = self.path(relative)?;
+            self.entries
+                .lock()
+                .expect("async memory state lock must succeed")
+                .insert(
+                    path.as_str().to_owned(),
+                    Entry::File(b"checksum bytes".to_vec()),
+                );
+            Ok(FixtureSupport::Supported(path))
+        })
+    }
+
+    fn teardown(&self) -> FixtureFuture<'_, FixtureSupport<()>> {
+        Box::pin(async move {
+            self.entries
+                .lock()
+                .expect("async memory state lock must succeed")
+                .clear();
+            Ok(FixtureSupport::Supported(()))
         })
     }
 
@@ -554,6 +719,8 @@ struct AsyncMemorySpi {
     create_directory_capability: bool,
     extended_capabilities: bool,
     provider_id: &'static str,
+    limits: FileSystemLimits,
+    read_only: bool,
 }
 
 #[cfg(feature = "async")]
@@ -627,6 +794,9 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 .with_guaranteed(FileSystemCapability::Write)
                 .with_guaranteed(FileSystemCapability::List);
         }
+        if self.read_only {
+            capabilities = capabilities.with_guaranteed(FileSystemCapability::Read);
+        }
         provider_properties(
             FileSystemProperties::new(
                 FileSystemInfo::new(
@@ -636,7 +806,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     PathSemantics::Hierarchical,
                 ),
                 capabilities,
-                FileSystemLimits::unknown(),
+                self.limits,
                 PathConstraints::absolute(),
                 SymlinkPolicy::Reject,
             )
@@ -750,14 +920,16 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     "async memory entry absent",
                 ));
             };
-            if options
+            if (options
                 .if_match()
                 .as_ref()
                 .is_some_and(|version| version.as_str() != "v1")
-                || options
+                && fault != AsyncMemoryFault::IgnoreReadIfMatch)
+                || (options
                     .if_none_match()
                     .as_ref()
                     .is_some_and(|version| version.as_str() == "v1")
+                    && fault != AsyncMemoryFault::IgnoreReadIfNoneMatch)
             {
                 return Err(FsError::new(
                     FsErrorKind::PreconditionFailed,
@@ -765,8 +937,22 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     "async memory read condition failed",
                 ));
             }
-            if fault == AsyncMemoryFault::ReadWrongBytes {
+            if fault == AsyncMemoryFault::ReadWrongBytes
+                || (fault == AsyncMemoryFault::ChecksumIgnoresCorruption
+                    && options.checksum() == qubit_fs::read::ChecksumPolicy::Required
+                    && path.as_str().contains("checksum-failure"))
+            {
                 bytes = b"wrong bytes".to_vec();
+            }
+            if options.checksum() == qubit_fs::read::ChecksumPolicy::Required
+                && path.as_str().contains("checksum-failure")
+                && fault != AsyncMemoryFault::ChecksumIgnoresCorruption
+            {
+                return Err(FsError::new(
+                    FsErrorKind::DataCorruption,
+                    FsOperation::Read,
+                    "async memory checksum mismatch",
+                ));
             }
             let start = options.offset().unwrap_or(0).min(bytes.len() as u64) as usize;
             let end = options.length().map_or(bytes.len(), |length| {
@@ -796,6 +982,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let disposition = request.options().options().disposition();
         let atomicity = request.options().options().atomicity();
         let precondition = request.options().options().precondition().clone();
+        let durability = request.options().options().durability();
         Box::pin(async move {
             Ok(OpenedAsyncWriter::new(
                 info,
@@ -807,6 +994,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     fault,
                     disposition,
                     atomicity,
+                    durability,
                     precondition,
                 }),
             ))
@@ -1163,6 +1351,7 @@ struct AsyncMemoryWriter {
     fault: AsyncMemoryFault,
     disposition: WriteDisposition,
     atomicity: AtomicityRequirement,
+    durability: DurabilityRequirement,
     precondition: WritePrecondition,
 }
 
@@ -1207,7 +1396,9 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
         let fault = this.fault;
         let disposition = this.disposition;
         let atomicity = this.atomicity;
+        let durability = this.durability;
         let precondition = this.precondition.clone();
+        let bytes_written = bytes.len() as u64;
         Box::pin(async move {
             let destination_exists = state
                 .lock()
@@ -1233,7 +1424,25 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                     WriteFailureState::NotPublished,
                 ));
             }
+            if let WritePrecondition::IfMatch(version) = &precondition
+                && (version.as_str() != "v1" || !destination_exists)
+                && fault != AsyncMemoryFault::IgnoreWriteIfMatch
+            {
+                return Err(WriteFailure::new(
+                    FsError::new(
+                        FsErrorKind::PreconditionFailed,
+                        FsOperation::CommitWriter,
+                        "async memory destination violates if-match",
+                    ),
+                    WriteFailureState::NotPublished,
+                ));
+            }
             if fault != AsyncMemoryFault::WriteDropsBytes
+                && !(fault == AsyncMemoryFault::DurableWriteDropsBytes
+                    && durability == DurabilityRequirement::Required)
+                && !(fault == AsyncMemoryFault::AtomicReplaceKeepsOldBytes
+                    && atomicity == AtomicityRequirement::Required
+                    && destination_exists)
                 && !(fault == AsyncMemoryFault::CopyDropsTarget
                     && path.as_str().contains("async-copy-positive-target"))
             {
@@ -1261,6 +1470,11 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                     AchievedAtomicity::NonAtomic
                 },
                 PublicationMethod::Direct,
+            )
+            .with_bytes_written(bytes_written)
+            .with_durable(
+                durability == DurabilityRequirement::Required
+                    && fault != AsyncMemoryFault::DurableWriteDropsBytes,
             ))
         })
     }

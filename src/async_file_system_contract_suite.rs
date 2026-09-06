@@ -52,8 +52,10 @@ use qubit_io::AsyncOutput;
 
 use crate::AsyncCopyCancellationStage;
 use crate::AsyncFileSystemFixture;
+use crate::ContractCheckOutcome;
 use crate::ContractReport;
 use crate::FileSystemContract;
+use crate::FixtureCase;
 use crate::FixtureSupport;
 use crate::contract_context::ContractContext;
 use crate::internal::assert_error_with_source_or_target;

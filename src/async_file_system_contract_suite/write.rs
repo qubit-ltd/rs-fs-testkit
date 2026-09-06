@@ -37,8 +37,25 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Some(FileSystemCapability::Write),
                 "write contract: missing required-capability context"
             );
+            self.context.record_check(
+                "write/basic",
+                Some(FileSystemCapability::Write),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
+        let basic_bytes: Vec<u8> = if self
+            .context
+            .properties()
+            .limits()
+            .max_write_bytes()
+            .maximum()
+            .is_some_and(|maximum| maximum < 13)
+        {
+            b"a".to_vec()
+        } else {
+            b"async written".to_vec()
+        };
         let path = self.path("async-write");
         self.context.record_created(path.clone());
         let mut writer = self
@@ -48,7 +65,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("write contract: writer open failed");
         writer
-            .write_fully_async(b"async written")
+            .write_fully_async(&basic_bytes)
             .await
             .expect("write contract: writer rejected bytes");
         let outcome = writer
@@ -56,7 +73,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("write contract: writer commit failed");
         if let Some(bytes_written) = outcome.bytes_written() {
-            assert_eq!(bytes_written, 13, "writer contract: byte count mismatch");
+            assert_eq!(
+                bytes_written,
+                basic_bytes.len() as u64,
+                "writer contract: byte count mismatch"
+            );
         }
         match self
             .fixture
@@ -66,7 +87,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         {
             FixtureSupport::Supported(bytes) => {
                 assert_eq!(
-                    bytes, b"async written",
+                    bytes, basic_bytes,
                     "write contract: bytes were not published"
                 )
             }
@@ -74,11 +95,28 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 panic!("write contract: Write capability requires fixture.read_file support")
             }
         }
-        self.assert_write_options(&path).await;
+        self.context.record_check(
+            "write/basic",
+            Some(FileSystemCapability::Write),
+            ContractCheckOutcome::Passed,
+        );
+        self.assert_write_options(&path, &basic_bytes).await;
     }
 
     /// Checks asynchronous write dispositions, abort, and conditions.
-    pub async fn assert_write_options(&mut self, existing: &Path) {
+    pub async fn assert_write_options(&mut self, existing: &Path, existing_bytes: &[u8]) {
+        let small_payload = self
+            .context
+            .properties()
+            .limits()
+            .max_write_bytes()
+            .maximum()
+            .is_some_and(|maximum| maximum < 10);
+        let unexpected = if small_payload {
+            b"u".as_slice()
+        } else {
+            b"unexpected".as_slice()
+        };
         let create_new = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
         let error = match self
             .fixture
@@ -88,7 +126,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         {
             Ok(mut writer) => {
                 writer
-                    .write_fully_async(b"unexpected")
+                    .write_fully_async(unexpected)
                     .await
                     .expect("writer contract: create-new writer rejected bytes");
                 writer
@@ -114,7 +152,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         );
         self.assert_bytes(
             existing,
-            b"async written",
+            existing_bytes,
             "writer contract: failed create-new changed the target",
         )
         .await;
@@ -125,8 +163,20 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .open_writer(existing, WriteOptions::default())
             .await
             .expect("writer contract: replacement writer open failed");
+        let replacement = if self
+            .context
+            .properties()
+            .limits()
+            .max_write_bytes()
+            .maximum()
+            .is_some_and(|maximum| maximum < 8)
+        {
+            b"b".as_slice()
+        } else {
+            b"replaced".as_slice()
+        };
         writer
-            .write_fully_async(b"replaced")
+            .write_fully_async(replacement)
             .await
             .expect("writer contract: replacement writer rejected bytes");
         writer
@@ -135,7 +185,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .expect("writer contract: replacement commit failed");
         self.assert_bytes(
             existing,
-            b"replaced",
+            replacement,
             "writer contract: replacement bytes mismatch",
         )
         .await;
@@ -149,7 +199,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("writer contract: abort writer open failed");
         writer
-            .write_fully_async(b"aborted")
+            .write_fully_async(if small_payload { b"a" } else { b"aborted" })
             .await
             .expect("writer contract: abort writer rejected bytes");
         let _ = writer
@@ -169,62 +219,83 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let conditional_path = self.path("async-write-conditional");
         let conditional = WriteOptions::default().with_precondition(WritePrecondition::IfAbsent);
         if self.capable(FileSystemCapability::ConditionalWrite) {
-            self.context.record_created(conditional_path.clone());
-            let mut writer = self
-                .fixture
-                .file_system()
-                .open_writer(&conditional_path, conditional.clone())
-                .await
-                .expect("writer contract: conditional writer open failed");
-            writer
-                .write_fully_async(b"conditional")
-                .await
-                .expect("writer contract: conditional writer rejected bytes");
-            writer
-                .commit_async()
-                .await
-                .expect("writer contract: conditional commit failed");
+            let if_absent_supported = matches!(
+                self.fixture
+                    .case_support(FixtureCase::WriteIfAbsent)
+                    .expect("conditional-write contract: fixture case query failed"),
+                FixtureSupport::Supported(())
+            );
+            if !if_absent_supported {
+                self.context.record_check(
+                    "write/if-absent",
+                    Some(FileSystemCapability::ConditionalWrite),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture cannot prepare If-Absent case".to_owned(),
+                    },
+                );
+            } else {
+                self.context.record_created(conditional_path.clone());
+                let mut writer = self
+                    .fixture
+                    .file_system()
+                    .open_writer(&conditional_path, conditional.clone())
+                    .await
+                    .expect("writer contract: conditional writer open failed");
+                writer
+                    .write_fully_async(if small_payload { b"c" } else { b"conditional" })
+                    .await
+                    .expect("writer contract: conditional writer rejected bytes");
+                writer
+                    .commit_async()
+                    .await
+                    .expect("writer contract: conditional commit failed");
 
-            let error = match self
-                .fixture
-                .file_system()
-                .open_writer(&conditional_path, conditional)
-                .await
-            {
-                Ok(mut retry) => {
-                    retry
-                        .write_fully_async(b"unexpected")
-                        .await
-                        .expect("writer contract: conditional retry rejected bytes");
-                    retry
-                        .commit_async()
-                        .await
-                        .expect_err(
-                            "writer contract: failed conditional write unexpectedly succeeded",
-                        )
-                        .into_error()
-                }
-                Err(error) => error,
-            };
-            assert!(
-                matches!(
+                let error = match self
+                    .fixture
+                    .file_system()
+                    .open_writer(&conditional_path, conditional)
+                    .await
+                {
+                    Ok(mut retry) => {
+                        retry
+                            .write_fully_async(unexpected)
+                            .await
+                            .expect("writer contract: conditional retry rejected bytes");
+                        retry
+                            .commit_async()
+                            .await
+                            .expect_err(
+                                "writer contract: failed conditional write unexpectedly succeeded",
+                            )
+                            .into_error()
+                    }
+                    Err(error) => error,
+                };
+                assert!(
+                    matches!(
+                        error.operation(),
+                        FsOperation::OpenWriter | FsOperation::CommitWriter
+                    ),
+                    "writer contract: conditional write failed at an unrelated operation"
+                );
+                self.assert_error(
+                    &error,
+                    FsErrorKind::PreconditionFailed,
                     error.operation(),
-                    FsOperation::OpenWriter | FsOperation::CommitWriter
-                ),
-                "writer contract: conditional write failed at an unrelated operation"
-            );
-            self.assert_error(
-                &error,
-                FsErrorKind::PreconditionFailed,
-                error.operation(),
-                &conditional_path,
-            );
-            self.assert_bytes(
-                &conditional_path,
-                b"conditional",
-                "writer contract: failed condition changed target bytes",
-            )
-            .await;
+                    &conditional_path,
+                );
+                self.assert_bytes(
+                    &conditional_path,
+                    if small_payload { b"c" } else { b"conditional" },
+                    "writer contract: failed condition changed target bytes",
+                )
+                .await;
+                self.context.record_check(
+                    "write/if-absent",
+                    Some(FileSystemCapability::ConditionalWrite),
+                    ContractCheckOutcome::Passed,
+                );
+            }
         } else {
             let error = self
                 .fixture
@@ -237,6 +308,189 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FsOperation::OpenWriter,
                 FileSystemCapability::ConditionalWrite,
                 "conditional-write contract",
+            );
+            self.context.record_check(
+                "write/if-absent",
+                Some(FileSystemCapability::ConditionalWrite),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+        }
+
+        let if_match_path = self
+            .required_seed("async-write-if-match", b"if-match", "conditional-write")
+            .await;
+        if self.capable(FileSystemCapability::ConditionalWrite) {
+            if matches!(
+                self.fixture
+                    .case_support(FixtureCase::WriteIfMatch)
+                    .expect("conditional-write contract: fixture case query failed"),
+                FixtureSupport::Unsupported
+            ) {
+                self.context.record_check(
+                    "write/if-match",
+                    Some(FileSystemCapability::ConditionalWrite),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture cannot prepare If-Match case".to_owned(),
+                    },
+                );
+            } else {
+                let current = self
+                    .fixture
+                    .resource_version(&if_match_path)
+                    .await
+                    .expect("conditional-write contract: version observation failed");
+                let FixtureSupport::Supported(current) = current else {
+                    panic!("conditional-write contract: fixture lacks current version")
+                };
+                let mut writer = self
+                    .fixture
+                    .file_system()
+                    .open_writer(
+                        &if_match_path,
+                        WriteOptions::default()
+                            .with_precondition(WritePrecondition::IfMatch(current)),
+                    )
+                    .await
+                    .expect("conditional-write contract: current writer open failed");
+                writer
+                    .write_fully_async(if small_payload {
+                        b"m"
+                    } else {
+                        b"if-match-updated"
+                    })
+                    .await
+                    .expect("conditional-write contract: current write failed");
+                writer
+                    .commit_async()
+                    .await
+                    .expect("conditional-write contract: current commit failed");
+                let stale = self
+                    .fixture
+                    .stale_resource_version(&if_match_path)
+                    .await
+                    .expect("conditional-write contract: stale version observation failed");
+                let FixtureSupport::Supported(stale) = stale else {
+                    panic!("conditional-write contract: fixture lacks stale version")
+                };
+                let stale_options =
+                    WriteOptions::default().with_precondition(WritePrecondition::IfMatch(stale));
+                let error = match self
+                    .fixture
+                    .file_system()
+                    .open_writer(&if_match_path, stale_options)
+                    .await
+                {
+                    Ok(mut retry) => {
+                        retry
+                            .write_fully_async(unexpected)
+                            .await
+                            .expect("conditional-write contract: stale writer rejected bytes");
+                        retry
+                            .commit_async()
+                            .await
+                            .expect_err("conditional-write contract: stale commit succeeded")
+                            .into_error()
+                    }
+                    Err(error) => error,
+                };
+                self.assert_error(
+                    &error,
+                    FsErrorKind::PreconditionFailed,
+                    error.operation(),
+                    &if_match_path,
+                );
+                self.assert_bytes(
+                    &if_match_path,
+                    if small_payload {
+                        b"m"
+                    } else {
+                        b"if-match-updated"
+                    },
+                    "conditional-write contract: stale condition changed bytes",
+                )
+                .await;
+                self.context.record_check(
+                    "write/if-match",
+                    Some(FileSystemCapability::ConditionalWrite),
+                    ContractCheckOutcome::Passed,
+                );
+            }
+        }
+
+        let atomic_path = self
+            .required_seed("async-atomic-replace-existing", b"a", "atomic-replace")
+            .await;
+        if self.capable(FileSystemCapability::AtomicReplace) {
+            let mut writer = self
+                .fixture
+                .file_system()
+                .open_writer(
+                    &atomic_path,
+                    WriteOptions::default().with_atomicity(AtomicityRequirement::Required),
+                )
+                .await
+                .expect("atomic-replace contract: writer open failed");
+            writer
+                .write_fully_async(b"b")
+                .await
+                .expect("atomic-replace contract: write failed");
+            let outcome = writer
+                .commit_async()
+                .await
+                .expect("atomic-replace contract: commit failed");
+            assert_eq!(outcome.atomicity(), AchievedAtomicity::Atomic);
+            self.assert_bytes(
+                &atomic_path,
+                b"b",
+                "atomic-replace contract: old bytes retained",
+            )
+            .await;
+            self.context.record_check(
+                "write/atomic-replace-existing",
+                Some(FileSystemCapability::AtomicReplace),
+                ContractCheckOutcome::Passed,
+            );
+        } else {
+            self.context.record_check(
+                "write/atomic-replace-existing",
+                Some(FileSystemCapability::AtomicReplace),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+        }
+
+        let durable_path = self.path("async-durable-write");
+        if self.capable(FileSystemCapability::DurableWrite) {
+            self.context.record_created(durable_path.clone());
+            let outcome = self
+                .fixture
+                .file_system()
+                .write_all(
+                    &durable_path,
+                    if small_payload { b"d" } else { b"durable" },
+                    WriteOptions::default().with_durability(DurabilityRequirement::Required),
+                )
+                .await
+                .expect("durable-write contract: required write failed");
+            assert!(
+                outcome.durable(),
+                "durable-write contract: outcome was not durable"
+            );
+            self.assert_bytes(
+                &durable_path,
+                if small_payload { b"d" } else { b"durable" },
+                "durable-write contract: bytes mismatch",
+            )
+            .await;
+            self.context.record_check(
+                "write/durable",
+                Some(FileSystemCapability::DurableWrite),
+                ContractCheckOutcome::Passed,
+            );
+        } else {
+            self.context.record_check(
+                "write/durable",
+                Some(FileSystemCapability::DurableWrite),
+                ContractCheckOutcome::RejectedAsExpected,
             );
         }
     }
@@ -269,6 +523,18 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let path = self
             .required_seed("async-append-target", b"before", "append")
             .await;
+        let append_bytes = if self
+            .context
+            .properties()
+            .limits()
+            .max_write_bytes()
+            .maximum()
+            .is_some_and(|maximum| maximum < 6)
+        {
+            b"a".as_slice()
+        } else {
+            b"-after".as_slice()
+        };
         let mut writer = self
             .fixture
             .file_system()
@@ -276,7 +542,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect("append contract: writer open failed");
         writer
-            .write_fully_async(b"-after")
+            .write_fully_async(append_bytes)
             .await
             .expect("append contract: write failed");
         writer
@@ -285,7 +551,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .expect("append contract: commit failed");
         self.assert_bytes(
             &path,
-            b"before-after",
+            if append_bytes == b"a" {
+                b"beforea".as_slice()
+            } else {
+                b"before-after".as_slice()
+            },
             "append contract: existing bytes were not retained",
         )
         .await;
