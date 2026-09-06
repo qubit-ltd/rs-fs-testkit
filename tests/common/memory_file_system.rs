@@ -297,7 +297,15 @@ impl MemoryFixture {
 
     /// Creates a fixture which cannot prepare one conditional case.
     pub fn with_conditional_case_unavailable(case: FixtureCase) -> Self {
-        let fixture = Self::new();
+        let fixture = Self::with_configuration(
+            MemoryFault::None,
+            true,
+            true,
+            true,
+            true,
+            true,
+            "memory-conditional-case-provider",
+        );
         fixture
             .state
             .lock()
@@ -542,19 +550,47 @@ impl FileSystemFixture for MemoryFixture {
             return Ok(FixtureSupport::Unsupported);
         }
         let supported = match case {
-            FixtureCase::Capability(capability) => {
-                state.core_capabilities
-                    || state.optional_capabilities
-                    || state.create_directory_capability
-                    || state.extended_capabilities
-                        && matches!(
-                            capability,
-                            FileSystemCapability::ConditionalRead
-                                | FileSystemCapability::ConditionalWrite
-                                | FileSystemCapability::ChecksumValidation
-                        )
+            FixtureCase::Capability(capability) => match capability {
+                FileSystemCapability::Read
+                | FileSystemCapability::List
+                | FileSystemCapability::Copy => state.core_capabilities,
+                FileSystemCapability::Write => state.core_capabilities && !state.read_only,
+                FileSystemCapability::Delete => state.delete_capability,
+                FileSystemCapability::RecursiveDelete => {
+                    state.delete_capability && state.optional_capabilities
+                }
+                FileSystemCapability::CreateDirectory => state.create_directory_capability,
+                FileSystemCapability::Rename
+                | FileSystemCapability::Append
+                | FileSystemCapability::AtomicRename
+                | FileSystemCapability::AtomicReplace
+                | FileSystemCapability::DurableRename
+                | FileSystemCapability::DurableWrite
+                | FileSystemCapability::TempFile
+                | FileSystemCapability::TempDirectory
+                | FileSystemCapability::AtomicTempPersist
+                | FileSystemCapability::ServerSideCopy
+                | FileSystemCapability::AtomicFileCopy
+                | FileSystemCapability::DurableFileCopy => state.optional_capabilities,
+                FileSystemCapability::RangeRead
+                | FileSystemCapability::ConditionalRead
+                | FileSystemCapability::ChecksumValidation
+                | FileSystemCapability::ConditionalWrite
+                | FileSystemCapability::EmptyDirectory
+                | FileSystemCapability::ConditionalDelete
+                | FileSystemCapability::Symlink
+                | FileSystemCapability::AtomicTreeCopy
+                | FileSystemCapability::DurableTreeCopy => state.extended_capabilities,
+                _ => false,
+            },
+            FixtureCase::ReadIfMatch | FixtureCase::ReadIfNoneMatch => {
+                state.extended_capabilities
             }
-            _ => true,
+            FixtureCase::WriteIfAbsent | FixtureCase::WriteIfMatch => {
+                state.extended_capabilities && !state.read_only
+            }
+            FixtureCase::DeleteIfMatch => state.extended_capabilities && state.delete_capability,
+            FixtureCase::CopyOverwrite | FixtureCase::CopyTree => state.native_copy,
         };
         Ok(if supported {
             FixtureSupport::Supported(())
@@ -911,6 +947,15 @@ impl FileSystemSpi for MemorySpi {
             ));
         }
         let options = request.options().options();
+        if options.checksum() == ChecksumPolicy::Required
+            && request.path().as_str().contains("checksum-failure")
+        {
+            return Err(FsError::new(
+                FsErrorKind::DataCorruption,
+                FsOperation::OpenReader,
+                "memory checksum probe detected corruption",
+            ));
+        }
         let mut bytes = if state.fault == MemoryFault::ReadWrongBytes
             || (state.fault == MemoryFault::ChecksumIgnoresCorruption
                 && options.checksum() == ChecksumPolicy::Required)
