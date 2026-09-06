@@ -16,6 +16,7 @@ use qubit_fs::error::FsError;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
 
@@ -100,6 +101,25 @@ fn test_conforming_memory_provider_satisfies_sync_suite() {
     }
     FileSystemContractSuite::new(&fixture).assert_all();
     assert!(fixture.is_empty(), "suite must clean up created resources");
+}
+
+#[test]
+fn test_sync_phase_matrix_exercises_declared_profiles() {
+    for contract in FileSystemContract::ALL {
+        for profile in [0_u8, 1, 2, 3, 4] {
+            let fixture = match profile {
+                0 => MemoryFixture::with_all_capabilities(),
+                1 => MemoryFixture::without_operation_capabilities(),
+                2 => MemoryFixture::without_optional_capabilities(),
+                3 => MemoryFixture::fallback_only(),
+                _ => MemoryFixture::read_only(),
+            };
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                FileSystemContractSuite::new(&fixture).assert_contract(contract);
+            }));
+            assert!(result.is_ok(), "sync profile {profile} panicked in {contract:?}");
+        }
+    }
 }
 
 /// A filesystem may use its own identifier as the provider identifier.

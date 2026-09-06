@@ -562,6 +562,18 @@ impl AsyncMemoryFixture {
         )
     }
 
+    /// Creates an asynchronous fixture whose copy uses only the facade
+    /// fallback while retaining the ordinary namespace capabilities.
+    pub fn fallback_only() -> Self {
+        Self::with_configuration(
+            AsyncMemoryFault::None,
+            false,
+            false,
+            AsyncCapabilityProfile::STANDARD,
+            "async-memory-fallback-provider",
+        )
+    }
+
     /// Creates a conforming fixture whose filesystem and provider identifiers
     /// are identical.
     pub fn with_matching_ids() -> Self {
@@ -704,6 +716,14 @@ impl AsyncMemoryFixture {
 impl AsyncFileSystemFixture for AsyncMemoryFixture {
     fn file_system(&self) -> &AsyncFileSystem {
         &self.file_system
+    }
+
+    fn copy_fallback_only(&self) -> bool {
+        self.file_system
+            .properties()
+            .info()
+            .provider_id()
+            == "async-memory-fallback-provider"
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {

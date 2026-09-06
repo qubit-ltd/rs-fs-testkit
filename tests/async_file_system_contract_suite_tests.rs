@@ -58,6 +58,26 @@ fn test_conforming_async_memory_provider_satisfies_full_suite() {
     assert!(fixture.is_empty(), "suite must clean up created resources");
 }
 
+#[test]
+fn test_async_phase_matrix_exercises_declared_profiles() {
+    for contract in qubit_fs_testkit::FileSystemContract::ALL {
+        for profile in 0_u8..4 {
+            let fixture = match profile {
+                0 => AsyncMemoryFixture::with_all_capabilities(),
+                1 => AsyncMemoryFixture::without_operation_capabilities(),
+                2 => AsyncMemoryFixture::without_optional_capabilities(),
+                _ => AsyncMemoryFixture::fallback_only(),
+            };
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_controlled(
+                    AsyncFileSystemContractSuite::new(&fixture).assert_contract(contract),
+                );
+            }));
+            assert!(result.is_ok(), "async profile {profile} panicked in {contract:?}");
+        }
+    }
+}
+
 /// Every advertised capability executes its positive asynchronous contract.
 #[test]
 fn test_all_capabilities_execute_async_contracts() {
