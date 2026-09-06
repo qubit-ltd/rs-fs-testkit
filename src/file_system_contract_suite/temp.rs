@@ -76,6 +76,34 @@ impl<'a> FileSystemContractSuite<'a> {
                 !file_system.exists(&source).expect("temp/file: source exists failed"),
                 "temp/file: cleanup retained source"
             );
+            let mut kept = file_system
+                .create_temp_file(TempFileOptions::default())
+                .expect("temp/file: keep setup failed");
+            let kept_source = kept.path().clone();
+            self.context.record_created(kept_source.clone());
+            if self.capable(FileSystemCapability::Write) {
+                file_system
+                    .write_all(&kept_source, b"kept bytes", WriteOptions::default())
+                    .expect("temp/file: keep payload failed");
+            }
+            let kept_outcome = kept.keep().expect("temp/file: keep failed");
+            self.context.record_created(kept_outcome.target().clone());
+            assert_eq!(kept.state(), TempResourceState::Kept, "temp/file: keep state mismatch");
+            assert_ne!(
+                kept_outcome.target(),
+                &kept_source,
+                "temp/file: keep reused source identity"
+            );
+            assert!(
+                !file_system
+                    .exists(&kept_source)
+                    .expect("temp/file: kept source exists failed")
+            );
+            assert!(
+                file_system
+                    .exists(kept_outcome.target())
+                    .expect("temp/file: kept target exists failed")
+            );
             let mut temporary = file_system
                 .create_temp_file(
                     TempFileOptions::default()

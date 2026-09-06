@@ -40,6 +40,7 @@ use qubit_fs::temp::TempDirectory;
 use qubit_fs::temp::TempFile;
 use qubit_fs::temp::TempOptions as TempDirectoryOptions;
 use qubit_fs::temp::TempOptions as TempFileOptions;
+use qubit_fs::temp::TempResourceState;
 use qubit_fs::write::WriteDisposition;
 use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WritePrecondition;
