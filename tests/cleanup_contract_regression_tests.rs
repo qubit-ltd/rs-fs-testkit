@@ -175,6 +175,7 @@ fn test_cleanup_failure_is_retained_for_retry() {
     let fixture = MemoryFixture::with_fault(MemoryFault::DeleteNoOp);
     let mut suite = FileSystemContractSuite::new(&fixture);
     suite.assert_write();
+    assert!(fixture.entry_count() > 0, "write phase must prepare resources");
     let first = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| suite.finish()));
     assert!(first.is_err(), "the injected delete failure must be reported");
     let first_message = first
@@ -217,4 +218,22 @@ fn test_cleanup_continues_after_an_intermediate_failure() {
         "cleanup must attempt every retained resource"
     );
     assert_eq!(fixture.entry_count(), before);
+}
+
+#[test]
+fn test_cleanup_retains_resources_for_stat_and_delete_failures() {
+    let fixture = MemoryFixture::new();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    suite.assert_write();
+    fixture.set_fault(MemoryFault::CleanupStatError);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| suite.finish()));
+    assert!(result.is_err(), "cleanup stat fault must be reported");
+
+    for fault in [MemoryFault::CleanupDeleteError, MemoryFault::CleanupDeletePanic] {
+        let fixture = MemoryFixture::with_fault(fault);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write);
+        }));
+        assert!(result.is_err(), "cleanup fault must be reported: {fault:?}");
+    }
 }

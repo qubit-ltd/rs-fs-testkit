@@ -135,6 +135,20 @@ fn test_async_unavailable_fixture_cases_are_exercised() {
     }
 }
 
+#[test]
+fn test_async_cleanup_retains_resources_for_failures() {
+    for fault in [
+        AsyncMemoryFault::CleanupDeleteError,
+        AsyncMemoryFault::CleanupDeletePanic,
+    ] {
+        let fixture = AsyncMemoryFixture::with_fault(fault);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write));
+        }));
+        assert!(result.is_err(), "async cleanup fault must be reported: {fault:?}");
+    }
+}
+
 /// Every advertised capability executes its positive asynchronous contract.
 #[test]
 fn test_all_capabilities_execute_async_contracts() {
