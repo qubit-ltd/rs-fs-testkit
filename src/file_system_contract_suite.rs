@@ -45,9 +45,10 @@ use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WritePrecondition;
 use qubit_io::Output;
 
+use crate::ContractCheckOutcome;
+use crate::ContractReport;
 use crate::FileSystemContract;
 use crate::FileSystemFixture;
-use crate::ContractReport;
 use crate::FixtureSupport;
 use crate::contract_context::ContractContext;
 use crate::internal::assert_error_with_source_or_target;
@@ -139,10 +140,7 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Runs one phase, performs cleanup, and returns the execution report.
-    pub fn assert_contract_with_report(
-        mut self,
-        contract: FileSystemContract,
-    ) -> ContractReport {
+    pub fn assert_contract_with_report(mut self, contract: FileSystemContract) -> ContractReport {
         let result = catch_unwind(AssertUnwindSafe(|| {
             self.assert_contract_inner(contract);
         }));

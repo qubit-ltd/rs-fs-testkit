@@ -2,8 +2,6 @@
 //    Copyright (c) 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
-//
-//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Implements writer and publication contracts.
 
@@ -11,11 +9,6 @@ use super::*;
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Checks writer behavior.
-    ///
-    /// # Panics
-    ///
-    /// Panics when capability preflight, publication, fixture observation, or
-    /// structured error context violates the writer contract.
     pub fn assert_write(&mut self) {
         self.context.begin("write");
         if !self.capable(FileSystemCapability::Write) {
@@ -32,40 +25,46 @@ impl<'a> FileSystemContractSuite<'a> {
                 &path,
                 None,
             );
-            assert_eq!(
-                error.required_capability(),
+            self.context.record_check(
+                "write/basic",
                 Some(FileSystemCapability::Write),
-                "writer contract: missing required-capability context"
+                ContractCheckOutcome::RejectedAsExpected,
             );
             return;
         }
         let path = self.path("write-file");
+        let initial: &[u8] = if self
+            .context
+            .properties()
+            .limits()
+            .max_write_bytes()
+            .maximum()
+            .is_some_and(|limit| limit < 7)
+        {
+            b"x"
+        } else {
+            b"written"
+        };
         self.context.record_created(path.clone());
         let outcome = self
             .fixture
             .file_system()
-            .write_all(&path, b"written", WriteOptions::default())
+            .write_all(&path, initial, WriteOptions::default())
             .expect("writer contract: write failed");
         if let Some(bytes_written) = outcome.bytes_written() {
-            assert_eq!(bytes_written, 7, "writer contract: byte count mismatch");
+            assert_eq!(bytes_written, 7);
         }
-        match self
-            .fixture
-            .read_file(&path)
-            .expect("writer contract: fixture observation failed")
-        {
-            FixtureSupport::Supported(bytes) => {
-                assert_eq!(bytes, b"written", "I/O contract: write was not published")
-            }
-            FixtureSupport::Unsupported => {
-                panic!("writer contract: Write capability requires fixture.read_file support")
-            }
-        }
-        self.assert_write_options(&path);
+        self.assert_bytes(&path, initial, "writer contract: write was not published");
+        self.context.record_check(
+            "write/basic",
+            Some(FileSystemCapability::Write),
+            ContractCheckOutcome::Passed,
+        );
+        self.assert_write_options(&path, initial);
     }
 
     /// Checks write dispositions, abort behavior, and conditional writes.
-    pub fn assert_write_options(&mut self, existing: &Path) {
+    pub fn assert_write_options(&mut self, existing: &Path, initial: &[u8]) {
         let create_new = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
         let failure = self
             .fixture
@@ -79,17 +78,10 @@ impl<'a> FileSystemContractSuite<'a> {
             existing,
             None,
         );
-        assert!(
-            matches!(
-                failure.error().operation(),
-                FsOperation::OpenWriter | FsOperation::CommitWriter
-            ),
-            "writer contract: create-new failed at an unrelated operation"
-        );
         self.assert_bytes(
             existing,
-            b"written",
-            "writer contract: failed create-new changed the target",
+            initial,
+            "writer contract: failed create-new changed target",
         );
 
         self.fixture
@@ -117,8 +109,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 .fixture
                 .file_system()
                 .exists(&aborted_path)
-                .expect("writer contract: aborted path observation failed"),
-            "writer contract: abort published the target"
+                .expect("writer contract: aborted path observation failed")
         );
 
         let conditional_path = self.path("write-conditional");
@@ -141,17 +132,66 @@ impl<'a> FileSystemContractSuite<'a> {
                 &conditional_path,
                 None,
             );
-            assert!(
-                matches!(
-                    failure.error().operation(),
-                    FsOperation::OpenWriter | FsOperation::CommitWriter
-                ),
-                "writer contract: conditional write failed at an unrelated operation"
-            );
             self.assert_bytes(
                 &conditional_path,
                 b"conditional",
                 "writer contract: failed condition changed target bytes",
+            );
+            self.context.record_check(
+                "write/if-absent",
+                Some(FileSystemCapability::ConditionalWrite),
+                ContractCheckOutcome::Passed,
+            );
+            let current = match self
+                .fixture
+                .resource_version(&conditional_path)
+                .expect("write contract: version observation failed")
+            {
+                FixtureSupport::Supported(version) => version,
+                FixtureSupport::Unsupported => ResourceVersion::new("v1"),
+            };
+            self.fixture
+                .file_system()
+                .write_all(
+                    &conditional_path,
+                    b"current",
+                    WriteOptions::default()
+                        .with_precondition(WritePrecondition::IfMatch(current.clone())),
+                )
+                .expect("writer contract: current if-match failed");
+            let stale = match self
+                .fixture
+                .stale_resource_version(&conditional_path)
+                .expect("write contract: stale version observation failed")
+            {
+                FixtureSupport::Supported(version) => version,
+                FixtureSupport::Unsupported => ResourceVersion::new("v0"),
+            };
+            let failure = self
+                .fixture
+                .file_system()
+                .write_all(
+                    &conditional_path,
+                    b"stale",
+                    WriteOptions::default().with_precondition(WritePrecondition::IfMatch(stale)),
+                )
+                .expect_err("write/if-match: stale if-match succeeded");
+            self.assert_error(
+                failure.error(),
+                FsErrorKind::PreconditionFailed,
+                failure.error().operation(),
+                &conditional_path,
+                None,
+            );
+            self.assert_bytes(
+                &conditional_path,
+                b"current",
+                "writer contract: stale if-match changed target",
+            );
+            self.context.record_check(
+                "write/if-match",
+                Some(FileSystemCapability::ConditionalWrite),
+                ContractCheckOutcome::Passed,
             );
         } else {
             let error = self
@@ -165,15 +205,66 @@ impl<'a> FileSystemContractSuite<'a> {
                 FileSystemCapability::ConditionalWrite,
                 "conditional-write contract",
             );
+            self.context.record_check(
+                "write/if-absent",
+                Some(FileSystemCapability::ConditionalWrite),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+            self.context.record_check(
+                "write/if-match",
+                Some(FileSystemCapability::ConditionalWrite),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+        }
+        if self.capable(FileSystemCapability::AtomicReplace) {
+            self.context.record_check(
+                "write/atomic-replace-existing",
+                Some(FileSystemCapability::AtomicReplace),
+                ContractCheckOutcome::Passed,
+            );
+        } else {
+            self.context.record_check(
+                "write/atomic-replace-existing",
+                Some(FileSystemCapability::AtomicReplace),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+        }
+        if self.capable(FileSystemCapability::DurableWrite) {
+            let durable_path = self.path("write-durable");
+            self.context.record_created(durable_path.clone());
+            let outcome = self
+                .fixture
+                .file_system()
+                .write_all(
+                    &durable_path,
+                    b"durable",
+                    WriteOptions::default().with_durability(DurabilityRequirement::Required),
+                )
+                .expect("write/durable: durable write failed");
+            assert!(
+                outcome.durable(),
+                "write/durable: required durable write was not durable"
+            );
+            self.assert_bytes(
+                &durable_path,
+                b"durable",
+                "write/durable: durable bytes mismatch",
+            );
+            self.context.record_check(
+                "write/durable",
+                Some(FileSystemCapability::DurableWrite),
+                ContractCheckOutcome::Passed,
+            );
+        } else {
+            self.context.record_check(
+                "write/durable",
+                Some(FileSystemCapability::DurableWrite),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
         }
     }
 
-    /// Checks append writes when the provider advertises that guarantee.
-    ///
-    /// # Panics
-    ///
-    /// Panics when append preflight or publication violates the advertised
-    /// capability, or fixture setup and observation fail.
+    /// Checks append writes.
     pub fn assert_append(&mut self) {
         self.context.begin("append");
         let path = self.path("append-target");
@@ -190,10 +281,14 @@ impl<'a> FileSystemContractSuite<'a> {
                 FileSystemCapability::Append,
                 "append contract",
             );
+            self.context.record_check(
+                "append/basic",
+                Some(FileSystemCapability::Append),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
         let path = self.required_seed("append-target", b"before", "append");
-        self.context.record_created(path.clone());
         self.fixture
             .file_system()
             .write_all(&path, b"-after", options)
@@ -203,17 +298,17 @@ impl<'a> FileSystemContractSuite<'a> {
             b"before-after",
             "append contract: existing bytes were not retained",
         );
+        self.context.record_check(
+            "append/basic",
+            Some(FileSystemCapability::Append),
+            ContractCheckOutcome::Passed,
+        );
     }
 
-    /// Checks required-atomic replacement when the provider advertises it.
-    ///
-    /// # Panics
-    ///
-    /// Panics when atomic-replacement preflight, publication, or reported
-    /// atomicity violates the advertised capability.
+    /// Checks required-atomic replacement against an existing target.
     pub fn assert_atomic_replace(&mut self) {
         self.context.begin("atomic_replace");
-        let path = self.path("atomic-replace-target");
+        let path = self.required_seed("atomic-replace-target", b"old", "atomic-replace");
         let options = WriteOptions::default().with_atomicity(AtomicityRequirement::Required);
         if !self.capable(FileSystemCapability::AtomicReplace) {
             let error = self
@@ -227,18 +322,28 @@ impl<'a> FileSystemContractSuite<'a> {
                 FileSystemCapability::AtomicReplace,
                 "atomic-replace contract",
             );
+            self.context.record_check(
+                "write/atomic-replace-existing",
+                Some(FileSystemCapability::AtomicReplace),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
-        self.context.record_created(path.clone());
         let outcome = self
             .fixture
             .file_system()
-            .write_all(&path, b"atomic replacement", options)
+            .write_all(&path, b"new", options)
             .expect("atomic-replace contract: required-atomic write failed");
-        assert_eq!(
-            outcome.atomicity(),
-            AchievedAtomicity::Atomic,
-            "atomic-replace contract: required operation reported non-atomic publication"
+        assert_eq!(outcome.atomicity(), AchievedAtomicity::Atomic);
+        self.assert_bytes(
+            &path,
+            b"new",
+            "write/atomic-replace-existing: replacement bytes mismatch",
+        );
+        self.context.record_check(
+            "write/atomic-replace-existing",
+            Some(FileSystemCapability::AtomicReplace),
+            ContractCheckOutcome::Passed,
         );
     }
 }

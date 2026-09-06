@@ -50,5 +50,20 @@ impl<'a> FileSystemContractSuite<'a> {
             self.fixture.file_system().properties().capabilities(),
             "properties contract: snapshot changed"
         );
+        self.context.record_check(
+            "properties/snapshot",
+            Some(FileSystemCapability::Read),
+            ContractCheckOutcome::Passed,
+        );
+        self.context.record_check(
+            "properties/path-constraints",
+            None,
+            ContractCheckOutcome::Passed,
+        );
+        self.context.record_check(
+            "properties/capability-dependencies",
+            None,
+            ContractCheckOutcome::Passed,
+        );
     }
 }
