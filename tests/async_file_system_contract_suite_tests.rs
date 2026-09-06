@@ -23,6 +23,7 @@ use common::check_matrix::async_fault_cases;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
+use qubit_fs_testkit::FileSystemContract;
 
 /// Polls one copy contract that is expected to complete without suspension.
 fn assert_copy_contract(fixture: &AsyncMemoryFixture) {
@@ -57,7 +58,7 @@ fn test_conforming_async_memory_provider_satisfies_full_suite() {
 
 #[test]
 fn test_async_phase_matrix_exercises_declared_profiles() {
-    for contract in qubit_fs_testkit::FileSystemContract::ALL {
+    for contract in FileSystemContract::ALL {
         for profile in 0_u8..4 {
             let fixture = match profile {
                 0 => AsyncMemoryFixture::with_all_capabilities(),
