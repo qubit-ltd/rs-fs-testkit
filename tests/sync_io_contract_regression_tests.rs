@@ -133,8 +133,12 @@ fn test_sync_contracts_adapt_to_declared_limit_profiles() {
     ];
     for limits in profiles {
         let fixture = MemoryFixture::with_limits(limits);
-        FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write);
-        FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Read);
+        let write_report = FileSystemContractSuite::new(&fixture)
+            .assert_contract_with_report(FileSystemContract::Write);
+        write_report.assert_complete();
+        let read_report = FileSystemContractSuite::new(&fixture)
+            .assert_contract_with_report(FileSystemContract::Read);
+        read_report.assert_complete();
     }
 }
 
