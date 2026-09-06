@@ -181,8 +181,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let outcome = temporary
             .persist(target, self.temp_persist_options())
             .await
-            .expect("temp/file: persist failed");
-        self.assert_temp_persist_outcome(&outcome, target, "temp-file contract")
+            .unwrap_or_else(|error| panic!("temp/file: persist failed [temp/atomic]: {error}"));
+        self.assert_temp_persist_outcome(&outcome, target, "temp/file")
             .await;
         if !self.capable(FileSystemCapability::AtomicTempPersist) {
             let mut retry = self
@@ -208,7 +208,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 failure.error(),
                 FsOperation::PersistTemp,
                 FileSystemCapability::AtomicTempPersist,
-                "temp-file contract",
+                "temp/file",
             );
             assert_eq!(
                 failure.error().path(),
@@ -365,7 +365,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             parent.as_ref(),
             "async-file-",
             ".tmp",
-            "temp-file contract",
+            "temp/file",
         );
         temporary
             .cleanup()

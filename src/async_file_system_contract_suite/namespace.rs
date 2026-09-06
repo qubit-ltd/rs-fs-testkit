@@ -385,15 +385,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .delete_file(&path, DeleteOptions::default())
                 .await
-                .expect("delete contract: advertised deletion failed");
+                .expect("delete/basic: advertised deletion failed");
             assert!(
                 !outcome.already_missing(),
-                "delete contract: existing file was reported missing"
+                "delete/basic: existing file was reported missing"
             );
             if let Some(deleted_entries) = outcome.deleted_entries() {
                 assert!(
                     deleted_entries > 0,
-                    "delete contract: deleted count is zero"
+                    "delete/basic: deleted count is zero"
                 );
             }
             let error = self
@@ -401,7 +401,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .stat(&path)
                 .await
-                .expect_err("delete contract: deleted file remained");
+                .expect_err("delete/basic: deleted file remained");
             self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
             self.assert_delete_options().await;
             self.context.record_check(
@@ -547,29 +547,29 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .rename(&source, &target, RenameOptions::default())
                 .await
-                .expect("rename contract: advertised rename failed");
+                .expect("rename/basic: advertised rename failed");
             assert_eq!(
                 outcome.source(),
                 &source,
-                "rename contract: outcome source mismatch"
+                "rename/basic: outcome source mismatch"
             );
             assert_eq!(
                 outcome.target(),
                 &target,
-                "rename contract: outcome target mismatch"
+                "rename/basic: outcome target mismatch"
             );
             let error = self
                 .fixture
                 .file_system()
                 .stat(&source)
                 .await
-                .expect_err("rename contract: source remained after success");
+                .expect_err("rename/basic: source remained after success");
             self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &source);
             self.fixture
                 .file_system()
                 .stat(&target)
                 .await
-                .expect("rename contract: target missing after success");
+                .expect("rename/basic: target missing after success");
             self.assert_rename_conflicts().await;
             self.context.record_check(
                 "rename/basic",
@@ -746,7 +746,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .exists(&child)
                 .await
-                .expect("recursive-delete contract: child existence check failed")
+                .expect("delete/tree: child existence check failed"),
+            "delete/tree: child remained after removal"
         );
         self.context.record_check(
             "delete/tree",
@@ -799,11 +800,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .file_system()
             .rename(&source, &target, options)
             .await
-            .expect("atomic-rename contract: required rename failed");
+            .expect("rename/atomic: required rename failed");
         assert_eq!(
             outcome.atomicity(),
             AchievedAtomicity::Atomic,
-            "atomic-rename contract: non-atomic outcome"
+            "rename/atomic: non-atomic outcome"
         );
         self.context.record_check(
             "rename/atomic",
@@ -851,15 +852,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .file_system()
             .rename(&source, &target, options)
             .await
-            .expect("durable-rename contract: required rename failed");
+            .expect("rename/durable: required rename failed");
         assert!(
             outcome.durable(),
-            "durable-rename contract: required operation reported non-durable publication"
+            "rename/durable: required operation reported non-durable publication"
         );
         self.assert_bytes(
             &target,
             b"durable rename",
-            "durable-rename contract: target bytes mismatch",
+            "rename/durable: target bytes mismatch",
         )
         .await;
         self.context.record_check(

@@ -5,6 +5,7 @@ use qubit_fs_testkit::FileSystemContract;
 use super::memory_file_system::MemoryFault;
 
 /// One synchronous provider fault and the contract check that must expose it.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct SyncFaultCase {
     /// The injected provider defect.
@@ -16,6 +17,7 @@ pub struct SyncFaultCase {
 }
 
 /// Returns the complete synchronous fault-to-check matrix.
+#[allow(dead_code)]
 pub const fn sync_fault_cases() -> &'static [SyncFaultCase] {
     &[
         SyncFaultCase {
@@ -156,6 +158,7 @@ use super::async_memory_file_system::AsyncMemoryFault;
 
 /// One asynchronous provider fault and the contract check that must expose it.
 #[cfg(feature = "async")]
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct AsyncFaultCase {
     /// The injected provider defect.
@@ -168,6 +171,7 @@ pub struct AsyncFaultCase {
 
 /// Returns the complete asynchronous fault-to-check matrix.
 #[cfg(feature = "async")]
+#[allow(dead_code)]
 pub const fn async_fault_cases() -> &'static [AsyncFaultCase] {
     &[
         AsyncFaultCase {
@@ -314,6 +318,7 @@ pub const fn async_fault_cases() -> &'static [AsyncFaultCase] {
 }
 
 /// Extracts a panic payload into a stable searchable message.
+#[allow(dead_code)]
 pub fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     payload
         .downcast_ref::<String>()
@@ -327,6 +332,7 @@ pub fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 }
 
 /// Runs a phase and requires a panic naming its owning check ID.
+#[allow(dead_code)]
 pub fn assert_panics_at<F>(run: F, check_id: &str)
 where
     F: FnOnce(),

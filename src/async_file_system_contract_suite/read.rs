@@ -287,7 +287,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                             .file_system()
                             .open_reader(path, ReadOptions::default().with_if_match(Some(version)))
                             .await
-                            .expect_err("conditional-read contract: stale If-Match succeeded");
+                            .expect_err("read/if-match-stale: stale If-Match succeeded");
                         self.assert_error(
                             &error,
                             FsErrorKind::PreconditionFailed,
@@ -359,7 +359,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                         ReadOptions::default().with_if_none_match(Some(current.clone())),
                     )
                     .await
-                    .expect_err("conditional-read contract: current If-None-Match succeeded");
+                            .expect_err("read/if-none-match-current: current If-None-Match succeeded");
                 self.assert_error(
                     &current,
                     FsErrorKind::PreconditionFailed,
@@ -446,7 +446,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                             64,
                         )
                         .await
-                        .expect_err("checksum-read contract: corrupted bytes were accepted");
+                        .expect_err("read/checksum: corrupted bytes were accepted");
                     self.assert_error(
                         &error,
                         FsErrorKind::DataCorruption,

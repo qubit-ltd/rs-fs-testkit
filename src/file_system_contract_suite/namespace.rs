@@ -407,15 +407,15 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .delete_file(&path, DeleteOptions::default())
-            .expect("delete contract: deletion failed");
+        .expect("delete/basic: deletion failed");
         assert!(
             !outcome.already_missing(),
-            "delete contract: existing file was reported missing"
+            "delete/basic: existing file was reported missing"
         );
         if let Some(deleted_entries) = outcome.deleted_entries() {
             assert!(
                 deleted_entries > 0,
-                "delete contract: deleted count is zero"
+                    "delete/basic: deleted count is zero"
             );
         }
         assert!(
@@ -424,7 +424,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 .file_system()
                 .exists(&path)
                 .expect("delete contract: exists failed"),
-            "delete contract: deleted file remained"
+            "delete/basic: deleted file remained"
         );
         self.context.record_check(
             "delete/basic",
@@ -593,31 +593,31 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .rename(&source, &target, RenameOptions::default())
-            .expect("rename contract: rename failed");
+            .expect("rename/basic: rename failed");
         assert_eq!(
             outcome.source(),
             &source,
-            "rename contract: source context mismatch"
+            "rename/basic: source context mismatch"
         );
         assert_eq!(
             outcome.target(),
             &target,
-            "rename contract: target context mismatch"
+            "rename/basic: target context mismatch"
         );
         assert!(
             !self
                 .fixture
                 .file_system()
                 .exists(&source)
-                .expect("rename contract: source exists failed"),
-            "rename contract: source remained after success"
+                .expect("rename/basic: source exists failed"),
+            "rename/basic: source remained after success"
         );
         assert!(
             self.fixture
                 .file_system()
                 .exists(&target)
-                .expect("rename contract: target exists failed"),
-            "rename contract: target missing after success"
+                .expect("rename/basic: target exists failed"),
+            "rename/basic: target missing after success"
         );
         self.assert_rename_conflicts();
         self.context.record_check(
@@ -799,11 +799,11 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .rename(&source, &target, options)
-            .expect("atomic-rename contract: required-atomic rename failed");
+            .expect("rename/atomic: required-atomic rename failed");
         assert_eq!(
             outcome.atomicity(),
             AchievedAtomicity::Atomic,
-            "atomic-rename contract: required operation reported non-atomic publication"
+            "rename/atomic: required operation reported non-atomic publication"
         );
         assert!(
             !self
@@ -857,22 +857,22 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .rename(&source, &target, options)
-            .expect("durable-rename contract: required rename failed");
+            .expect("rename/durable: required rename failed");
         assert!(
             outcome.durable(),
-            "durable-rename contract: required operation reported non-durable publication"
+            "rename/durable: required operation reported non-durable publication"
         );
         self.assert_bytes(
             &target,
             b"durable rename",
-            "durable-rename contract: target bytes mismatch",
+            "rename/durable: target bytes mismatch",
         );
         assert!(
             !self
                 .fixture
                 .file_system()
                 .exists(&source)
-                .expect("durable-rename contract: source observation failed")
+                .expect("rename/durable: source observation failed")
         );
         self.context.record_check(
             "rename/durable",

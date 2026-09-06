@@ -431,7 +431,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                         retry
                             .commit_async()
                             .await
-                            .expect_err("conditional-write contract: stale commit succeeded")
+                            .expect_err("write/if-match: stale commit succeeded")
                             .into_error()
                     }
                     Err(error) => error,
@@ -491,20 +491,20 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     WriteOptions::default().with_atomicity(AtomicityRequirement::Required),
                 )
                 .await
-                .expect("atomic-replace contract: writer open failed");
+                .expect("write/atomic-replace-existing: writer open failed");
             writer
                 .write_fully_async(&bounded_payload(limit, b"b", b'b'))
                 .await
-                .expect("atomic-replace contract: write failed");
+                .expect("write/atomic-replace-existing: write failed");
             let outcome = writer
                 .commit_async()
                 .await
-                .expect("atomic-replace contract: commit failed");
+                .expect("write/atomic-replace-existing: commit failed");
             assert_eq!(outcome.atomicity(), AchievedAtomicity::Atomic);
             self.assert_bytes(
                 &atomic_path,
                 &bounded_payload(limit, b"b", b'b'),
-                "atomic-replace contract: old bytes retained",
+                "write/atomic-replace-existing: old bytes retained",
             )
             .await;
             self.context.record_check(
@@ -532,15 +532,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     WriteOptions::default().with_durability(DurabilityRequirement::Required),
                 )
                 .await
-                .expect("durable-write contract: required write failed");
+                .expect("write/durable: required write failed");
             assert!(
                 outcome.durable(),
-                "durable-write contract: outcome was not durable"
+                "write/durable: outcome was not durable"
             );
             self.assert_bytes(
                 &durable_path,
                 &bounded_payload(limit, b"durable", b'd'),
-                "durable-write contract: bytes mismatch",
+                "write/durable: bytes mismatch",
             )
             .await;
             self.context.record_check(
@@ -657,7 +657,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.assert_bytes(
             &path,
             b"a",
-            "atomic-replace contract: seed bytes were not published",
+            "write/atomic-replace-existing: seed bytes were not published",
         )
         .await;
         let mut writer = self
@@ -665,7 +665,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .file_system()
             .open_writer(&path, options)
             .await
-            .expect("atomic-replace contract: writer open failed");
+            .expect("write/atomic-replace-existing: writer open failed");
         writer
             .write_fully_async(&bounded_payload(
                 self.context.properties().limits().max_write_bytes(),
@@ -673,15 +673,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 b'b',
             ))
             .await
-            .expect("atomic-replace contract: write failed");
+            .expect("write/atomic-replace-existing: write failed");
         let outcome = writer
             .commit_async()
             .await
-            .expect("atomic-replace contract: commit failed");
+            .expect("write/atomic-replace-existing: commit failed");
         assert_eq!(
             outcome.atomicity(),
             AchievedAtomicity::Atomic,
-            "atomic-replace contract: non-atomic outcome"
+            "write/atomic-replace-existing: non-atomic outcome"
         );
         let replacement = bounded_payload(
             self.context.properties().limits().max_write_bytes(),
@@ -691,7 +691,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.assert_bytes(
             &path,
             &replacement,
-            "atomic-replace contract: old bytes were retained",
+            "write/atomic-replace-existing: old bytes were retained",
         )
         .await;
         self.context.record_check(
