@@ -8,6 +8,8 @@
 
 /// Maximum payload allocated by one contract limit probe.
 pub(crate) const MAX_PROBE_BYTES: u64 = 64 * 1024;
+/// Maximum page-entry hint used by bounded list probes.
+pub(crate) const MAX_PROBE_ENTRIES: u64 = 64;
 /// Returns the boundary value and its checked successor when within budget.
 pub(crate) const fn bounded_successor(maximum: u64, budget: u64) -> Option<(u64, u64)> {
     if maximum >= budget {

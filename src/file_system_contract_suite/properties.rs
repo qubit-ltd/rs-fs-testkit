@@ -9,7 +9,7 @@
 //! Implements property snapshots and bounded limit checks.
 
 use super::*;
-use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
+use crate::internal::limit_probe_plan::{MAX_PROBE_BYTES, MAX_PROBE_ENTRIES};
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Checks immutable facade properties and fixture path compatibility.
@@ -114,6 +114,74 @@ impl<'a> FileSystemContractSuite<'a> {
         };
         self.context
             .record_check("properties/limit-path-admission", None, path_outcome);
+        let component_outcome = if path_semantics != PathSemantics::Hierarchical {
+            ContractCheckOutcome::NotApplicable {
+                reason: "component limits do not apply to literal paths".to_owned(),
+            }
+        } else {
+            match limits.max_component_text_bytes().maximum() {
+                Some(maximum) if maximum <= MAX_PROBE_BYTES => {
+                    let over = usize::try_from(maximum)
+                        .ok()
+                        .and_then(|maximum| maximum.checked_add(1))
+                        .map(|length| Path::parse(&format!("/{0}", "x".repeat(length))))
+                        .transpose()
+                        .expect("properties contract: component boundary path failed to parse");
+                    match over {
+                        Some(path) => {
+                            limits
+                                .validate_path(&path, path_semantics, FsOperation::Stat)
+                                .expect_err("properties contract: component limit admitted oversized component");
+                            ContractCheckOutcome::Passed
+                        }
+                        None => ContractCheckOutcome::SkippedOptional {
+                            reason: "component boundary could not be represented".to_owned(),
+                        },
+                    }
+                }
+                Some(_) => ContractCheckOutcome::SkippedOptional {
+                    reason: "component boundary exceeds the bounded probe budget".to_owned(),
+                },
+                None => ContractCheckOutcome::SkippedOptional {
+                    reason: "component limit is unknown, inapplicable, or unbounded".to_owned(),
+                },
+            }
+        };
+        self.context.record_check(
+            "properties/limit-component-admission",
+            None,
+            component_outcome,
+        );
+        let page_outcome = match limits.max_list_page_entries().maximum() {
+            Some(maximum) if maximum <= MAX_PROBE_ENTRIES => {
+                let requested = usize::try_from(maximum)
+                    .ok()
+                    .and_then(|maximum| maximum.checked_add(1));
+                match requested {
+                    Some(requested) => {
+                        let effective = limits.clamp_list_page_size(Some(requested));
+                        assert!(
+                            effective.is_none_or(
+                                |effective| effective <= usize::try_from(maximum).unwrap()
+                            ),
+                            "properties contract: list page clamp exceeded declared maximum"
+                        );
+                        ContractCheckOutcome::Passed
+                    }
+                    None => ContractCheckOutcome::SkippedOptional {
+                        reason: "list page boundary could not be represented".to_owned(),
+                    },
+                }
+            }
+            Some(_) => ContractCheckOutcome::SkippedOptional {
+                reason: "list page boundary exceeds the bounded probe budget".to_owned(),
+            },
+            None => ContractCheckOutcome::SkippedOptional {
+                reason: "list page limit is unknown, inapplicable, or unbounded".to_owned(),
+            },
+        };
+        self.context
+            .record_check("properties/limit-list-page", None, page_outcome);
         self.context.record_check(
             "properties/symlink-policy",
             None,

@@ -42,6 +42,8 @@ pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
             unscoped("properties/capability-dependencies"),
             unscoped("properties/limits"),
             unscoped("properties/limit-path-admission"),
+            unscoped("properties/limit-component-admission"),
+            unscoped("properties/limit-list-page"),
             unscoped("properties/symlink-policy"),
         ],
         FileSystemContract::Stat => vec![
