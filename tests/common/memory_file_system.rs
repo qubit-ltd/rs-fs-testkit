@@ -686,7 +686,13 @@ impl FileSystemFixture for MemoryFixture {
         // cleanup retryable. The suite's ledger must remain the source of
         // truth for a subsequent finish call; clearing the whole namespace
         // here would turn a failed delete into a false success.
-        if state.fault != MemoryFault::DeleteNoOp {
+        if !matches!(
+            state.fault,
+            MemoryFault::DeleteNoOp
+                | MemoryFault::CleanupStatError
+                | MemoryFault::CleanupDeleteError
+                | MemoryFault::CleanupDeletePanic
+        ) {
             state.entries.clear();
             state.versions.clear();
         }
@@ -991,10 +997,16 @@ impl FileSystemSpi for MemorySpi {
     }
 
     fn delete_file(&self, request: DeleteFileRequest<'_>) -> FsResult<DeleteOutcome> {
-        let mut state = self.state.lock().expect("memory state lock must succeed");
-        if state.fault == MemoryFault::CleanupDeletePanic {
+        let cleanup_panics = self
+            .state
+            .lock()
+            .expect("memory state lock must succeed")
+            .fault
+            == MemoryFault::CleanupDeletePanic;
+        if cleanup_panics {
             panic!("cleanup delete panic");
         }
+        let mut state = self.state.lock().expect("memory state lock must succeed");
         if state.fault == MemoryFault::CleanupDeleteError {
             return Err(FsError::new(
                 FsErrorKind::PermissionDenied,
@@ -1024,10 +1036,16 @@ impl FileSystemSpi for MemorySpi {
     }
 
     fn delete_directory(&self, request: DeleteDirectoryRequest<'_>) -> FsResult<DeleteOutcome> {
-        let mut state = self.state.lock().expect("memory state lock must succeed");
-        if state.fault == MemoryFault::CleanupDeletePanic {
+        let cleanup_panics = self
+            .state
+            .lock()
+            .expect("memory state lock must succeed")
+            .fault
+            == MemoryFault::CleanupDeletePanic;
+        if cleanup_panics {
             panic!("cleanup delete panic");
         }
+        let mut state = self.state.lock().expect("memory state lock must succeed");
         if state.fault == MemoryFault::CleanupDeleteError {
             return Err(FsError::new(
                 FsErrorKind::PermissionDenied,

@@ -222,18 +222,30 @@ fn test_cleanup_continues_after_an_intermediate_failure() {
 
 #[test]
 fn test_cleanup_retains_resources_for_stat_and_delete_failures() {
-    let fixture = MemoryFixture::new();
-    let mut suite = FileSystemContractSuite::new(&fixture);
-    suite.assert_write();
-    fixture.set_fault(MemoryFault::CleanupStatError);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| suite.finish()));
-    assert!(result.is_err(), "cleanup stat fault must be reported");
+    let mut faults = vec![MemoryFault::CleanupStatError];
+    faults.extend([MemoryFault::CleanupDeleteError, MemoryFault::CleanupDeletePanic]);
 
-    for fault in [MemoryFault::CleanupDeleteError, MemoryFault::CleanupDeletePanic] {
-        let fixture = MemoryFixture::with_fault(fault);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write);
-        }));
+    for fault in faults {
+        let fixture = MemoryFixture::with_fault(MemoryFault::None);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        suite.assert_write();
+        let initial = fixture.entry_count();
+        assert!(initial > 0, "write phase must prepare resources");
+        fixture.set_fault(fault);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| suite.finish()));
         assert!(result.is_err(), "cleanup fault must be reported: {fault:?}");
+        assert_eq!(
+            fixture.entry_count(),
+            initial,
+            "cleanup fault must retain every resource: {fault:?}"
+        );
+
+        fixture.set_fault(MemoryFault::None);
+        suite.finish();
+        assert!(
+            fixture.is_empty(),
+            "retry after recovering cleanup fault must drain resources: {fault:?}"
+        );
     }
 }
