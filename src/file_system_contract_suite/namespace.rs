@@ -109,7 +109,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .list(&root, Default::default())
             .expect("list contract: cannot open namespace");
         let mut actual = Vec::new();
-        while let Some(entry) = stream.next_entry().expect("list contract: stream error") {
+        while let Some(entry) = stream.next_entry().expect("list/basic: stream error") {
             actual.push(entry.path);
         }
         actual.sort_by(|left, right| left.as_str().cmp(right.as_str()));
@@ -752,7 +752,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 .file_system()
                 .exists(&child)
                 .expect("recursive-delete contract: child existence check failed"),
-            "recursive-delete contract: child remained after removal"
+            "delete/tree: child remained after removal"
         );
         self.context.record_check(
             "delete/tree",

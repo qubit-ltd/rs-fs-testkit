@@ -61,7 +61,7 @@ impl<'a> FileSystemContractSuite<'a> {
         if let Some(bytes_written) = outcome.bytes_written() {
             assert_eq!(bytes_written, initial.len() as u64);
         }
-        self.assert_bytes(&path, &initial, "writer contract: write was not published");
+        self.assert_bytes(&path, &initial, "write/basic: write was not published");
         self.context.record_check(
             "write/basic",
             Some(FileSystemCapability::Write),
