@@ -997,12 +997,8 @@ impl FileSystemSpi for MemorySpi {
     }
 
     fn delete_file(&self, request: DeleteFileRequest<'_>) -> FsResult<DeleteOutcome> {
-        let cleanup_panics = self
-            .state
-            .lock()
-            .expect("memory state lock must succeed")
-            .fault
-            == MemoryFault::CleanupDeletePanic;
+        let cleanup_panics =
+            self.state.lock().expect("memory state lock must succeed").fault == MemoryFault::CleanupDeletePanic;
         if cleanup_panics {
             panic!("cleanup delete panic");
         }
@@ -1036,12 +1032,8 @@ impl FileSystemSpi for MemorySpi {
     }
 
     fn delete_directory(&self, request: DeleteDirectoryRequest<'_>) -> FsResult<DeleteOutcome> {
-        let cleanup_panics = self
-            .state
-            .lock()
-            .expect("memory state lock must succeed")
-            .fault
-            == MemoryFault::CleanupDeletePanic;
+        let cleanup_panics =
+            self.state.lock().expect("memory state lock must succeed").fault == MemoryFault::CleanupDeletePanic;
         if cleanup_panics {
             panic!("cleanup delete panic");
         }
