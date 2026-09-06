@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -8,10 +9,7 @@
 /// Maximum payload allocated by one contract limit probe.
 pub(crate) const MAX_PROBE_BYTES: u64 = 64 * 1024;
 /// Returns the boundary value and its checked successor when within budget.
-pub(crate) const fn bounded_successor(
-    maximum: u64,
-    budget: u64,
-) -> Option<(u64, u64)> {
+pub(crate) const fn bounded_successor(maximum: u64, budget: u64) -> Option<(u64, u64)> {
     if maximum >= budget {
         return None;
     }
@@ -23,16 +21,10 @@ pub(crate) const fn bounded_successor(
 
 /// Plans a finite limit probe while keeping allocations within the testkit
 /// budget. Non-finite declarations are intentionally left unprobed.
-pub(crate) const fn finite_probe(
-    limit: qubit_fs::metadata::FileSystemLimit,
-    budget: u64,
-) -> Option<(u64, u64)> {
+pub(crate) const fn finite_probe(limit: FileSystemLimit, budget: u64) -> Option<(u64, u64)> {
     match limit {
-        qubit_fs::metadata::FileSystemLimit::Maximum(maximum) => {
-            bounded_successor(maximum, budget)
-        }
-        qubit_fs::metadata::FileSystemLimit::Unknown
-        | qubit_fs::metadata::FileSystemLimit::NotApplicable
-        | qubit_fs::metadata::FileSystemLimit::Unbounded => None,
+        FileSystemLimit::Maximum(maximum) => bounded_successor(maximum, budget),
+        FileSystemLimit::Unknown | FileSystemLimit::NotApplicable | FileSystemLimit::Unbounded => None,
     }
 }
+use qubit_fs::metadata::FileSystemLimit;

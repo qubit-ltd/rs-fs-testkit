@@ -29,9 +29,7 @@ macro_rules! register_file_system_contract_tests {
                     fn $name() {
                         let fixture = ($fixture)();
                         let report = $crate::FileSystemContractSuite::new(&fixture)
-                            .assert_contract_with_report(
-                                $crate::FileSystemContract::$contract,
-                            );
+                            .assert_contract_with_report($crate::FileSystemContract::$contract);
                         if $require_complete {
                             report.assert_complete();
                         }
@@ -94,9 +92,7 @@ macro_rules! register_async_file_system_contract_tests {
                         let fixture = ($fixture)();
                         ($runner)(async move {
                             let report = $crate::AsyncFileSystemContractSuite::new(&fixture)
-                                .assert_contract_with_report(
-                                    $crate::FileSystemContract::$contract,
-                                )
+                                .assert_contract_with_report($crate::FileSystemContract::$contract)
                                 .await;
                             if $require_complete {
                                 report.assert_complete();

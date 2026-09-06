@@ -48,10 +48,7 @@ pub trait FileSystemFixture {
     /// conditional for this fixture. Setup errors must be returned as errors,
     /// rather than being hidden as unsupported cases.
     #[inline]
-    fn case_support(
-        &self,
-        case: FixtureCase,
-    ) -> FixtureResult<FixtureSupport<()>> {
+    fn case_support(&self, case: FixtureCase) -> FixtureResult<FixtureSupport<()>> {
         let _ = case;
         Ok(FixtureSupport::Unsupported)
     }
@@ -78,11 +75,7 @@ pub trait FileSystemFixture {
     /// Returns [`FixtureError`](crate::FixtureError) when the prefix cannot be
     /// represented for the supplied root.
     #[inline]
-    fn list_prefix(
-        &self,
-        root: &Path,
-        relative: &str,
-    ) -> FixtureResult<String> {
+    fn list_prefix(&self, root: &Path, relative: &str) -> FixtureResult<String> {
         let _ = root;
         Ok(relative.to_owned())
     }
@@ -104,11 +97,7 @@ pub trait FileSystemFixture {
     /// Returns [`FixtureError`](crate::FixtureError) when provider-specific
     /// setup fails.
     #[inline]
-    fn seed_file(
-        &self,
-        relative: &str,
-        bytes: &[u8],
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
         let _ = (relative, bytes);
         Ok(FixtureSupport::Unsupported)
     }
@@ -136,51 +125,35 @@ pub trait FileSystemFixture {
 
     /// Observes whether a resource exists without using the tested facade.
     #[inline]
-    fn exists_out_of_band(
-        &self,
-        path: &Path,
-    ) -> FixtureResult<FixtureSupport<bool>> {
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
         let _ = path;
         Ok(FixtureSupport::Unsupported)
     }
 
     /// Writes a complete resource through fixture-owned setup facilities.
     #[inline]
-    fn write_file_out_of_band(
-        &self,
-        path: &Path,
-        bytes: &[u8],
-    ) -> FixtureResult<FixtureSupport<()>> {
+    fn write_file_out_of_band(&self, path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
         let _ = (path, bytes);
         Ok(FixtureSupport::Unsupported)
     }
 
     /// Observes the current provider version outside the operation under test.
     #[inline]
-    fn resource_version(
-        &self,
-        path: &Path,
-    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+    fn resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let _ = path;
         Ok(FixtureSupport::Unsupported)
     }
 
     /// Returns a valid version that does not match the current resource.
     #[inline]
-    fn stale_resource_version(
-        &self,
-        path: &Path,
-    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let _ = path;
         Ok(FixtureSupport::Unsupported)
     }
 
     /// Supplies an independently prepared resource whose checksum is invalid.
     #[inline]
-    fn checksum_failure_case(
-        &self,
-        relative: &str,
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn checksum_failure_case(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let _ = relative;
         Ok(FixtureSupport::Unsupported)
     }
@@ -193,20 +166,14 @@ pub trait FileSystemFixture {
 
     /// Seeds an empty directory or prefix outside the operation under test.
     #[inline]
-    fn seed_empty_directory(
-        &self,
-        relative: &str,
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_empty_directory(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let _ = relative;
         Ok(FixtureSupport::Unsupported)
     }
 
     /// Seeds a symbolic link outside the operation under test.
     #[inline]
-    fn seed_symlink(
-        &self,
-        relative: &str,
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_symlink(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let _ = relative;
         Ok(FixtureSupport::Unsupported)
     }
@@ -227,10 +194,7 @@ pub trait FileSystemFixture {
     /// Returns [`FixtureError`](crate::FixtureError) when provider-specific
     /// case preparation fails.
     #[inline]
-    fn copy_fast_path_case(
-        &self,
-        method: CopyMethod,
-    ) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
+    fn copy_fast_path_case(&self, method: CopyMethod) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
         let _ = method;
         Ok(FixtureSupport::Unsupported)
     }

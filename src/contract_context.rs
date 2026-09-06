@@ -11,8 +11,8 @@ use std::panic::catch_unwind;
 
 #[cfg(feature = "async")]
 use qubit_fs::AsyncFileSystem;
-use qubit_fs::directory::DeleteOptions;
 use qubit_fs::FileSystem;
+use qubit_fs::directory::DeleteOptions;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::metadata::FileSystemProperties;
@@ -20,10 +20,10 @@ use qubit_fs::path::Path;
 
 use crate::ContractCheckOutcome;
 use crate::ContractReport;
+use crate::FileSystemContract;
 use crate::FixtureError;
 use crate::internal::cleanup_failure::CleanupFailure;
 use crate::internal::tracked_resource::TrackedResource;
-use crate::FileSystemContract;
 
 /// Holds the immutable snapshot, report, and cleanup ledger for one run.
 pub(crate) struct ContractContext {
@@ -67,12 +67,7 @@ impl ContractContext {
     /// Returns a suite-unique relative name for the current contract phase.
     #[inline]
     pub(crate) fn relative_name(&self, relative: &str) -> String {
-        format!(
-            "{}-{}-{}",
-            self.current_contract(),
-            self.name_counter,
-            relative
-        )
+        format!("{}-{}-{}", self.current_contract(), self.name_counter, relative)
     }
 
     /// Records a path with its owning check, retaining only the first owner.
@@ -83,11 +78,7 @@ impl ContractContext {
 
     /// Records a path with an explicit check owner.
     #[inline]
-    pub(crate) fn record_resource(
-        &mut self,
-        path: Path,
-        owner_check: &'static str,
-    ) {
+    pub(crate) fn record_resource(&mut self, path: Path, owner_check: &'static str) {
         if self.resources.iter().any(|resource| resource.path == path) {
             return;
         }
@@ -155,11 +146,7 @@ impl ContractContext {
     /// Missing paths count as already cleaned. Failed resources remain in the
     /// ledger so a later explicit `finish` can retry them.
     pub(crate) fn cleanup(&mut self, file_system: &FileSystem) -> Vec<CleanupFailure> {
-        if !self
-            .properties
-            .capabilities()
-            .supports(FileSystemCapability::Delete)
-        {
+        if !self.properties.capabilities().supports(FileSystemCapability::Delete) {
             return Vec::new();
         }
         let mut pending = std::mem::take(&mut self.resources);
@@ -219,9 +206,7 @@ impl ContractContext {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
-                                cause: FixtureError::new(
-                                    "delete reported success but the resource still exists",
-                                ),
+                                cause: FixtureError::new("delete reported success but the resource still exists"),
                             });
                             retained.push(resource);
                         }
@@ -230,9 +215,7 @@ impl ContractContext {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
-                                cause: FixtureError::new(format!(
-                                    "delete outcome could not be verified: {error}"
-                                )),
+                                cause: FixtureError::new(format!("delete outcome could not be verified: {error}")),
                             });
                             retained.push(resource);
                         }
@@ -275,15 +258,8 @@ impl ContractContext {
 
     /// Attempts every recorded asynchronous resource and collects failures.
     #[cfg(feature = "async")]
-    pub(crate) async fn cleanup_async(
-        &mut self,
-        file_system: &AsyncFileSystem,
-    ) -> Vec<CleanupFailure> {
-        if !self
-            .properties
-            .capabilities()
-            .supports(FileSystemCapability::Delete)
-        {
+    pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) -> Vec<CleanupFailure> {
+        if !self.properties.capabilities().supports(FileSystemCapability::Delete) {
             return Vec::new();
         }
         let mut pending = std::mem::take(&mut self.resources);
@@ -327,20 +303,13 @@ impl ContractContext {
                 } else {
                     DeleteOptions::default()
                 };
-                crate::internal::catch_unwind_future(
-                    file_system.delete_directory(&path, options),
-                )
-                .await
+                crate::internal::catch_unwind_future(file_system.delete_directory(&path, options)).await
             } else {
-                crate::internal::catch_unwind_future(
-                    file_system.delete_file(&path, Default::default()),
-                )
-                .await
+                crate::internal::catch_unwind_future(file_system.delete_file(&path, Default::default())).await
             };
             match deleted {
                 Ok(Ok(_outcome)) => {
-                    let verified =
-                        crate::internal::catch_unwind_future(file_system.stat(&path)).await;
+                    let verified = crate::internal::catch_unwind_future(file_system.stat(&path)).await;
                     match verified {
                         Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
                         Ok(Ok(_)) => {
@@ -348,9 +317,7 @@ impl ContractContext {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
-                                cause: FixtureError::new(
-                                    "delete reported success but the resource still exists",
-                                ),
+                                cause: FixtureError::new("delete reported success but the resource still exists"),
                             });
                             retained.push(resource);
                         }
@@ -359,9 +326,7 @@ impl ContractContext {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
-                                cause: FixtureError::new(format!(
-                                    "delete outcome could not be verified: {error}"
-                                )),
+                                cause: FixtureError::new(format!("delete outcome could not be verified: {error}")),
                             });
                             retained.push(resource);
                         }

@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -12,6 +13,7 @@ use std::sync::atomic::Ordering;
 
 use common::MemoryFault;
 use common::MemoryFixture;
+use qubit_fs::FileSystem;
 use qubit_fs::path::Path;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
@@ -56,7 +58,7 @@ impl TeardownProbe {
 }
 
 impl FileSystemFixture for TeardownProbe {
-    fn file_system(&self) -> &qubit_fs::FileSystem {
+    fn file_system(&self) -> &FileSystem {
         self.inner.file_system()
     }
 
@@ -80,7 +82,7 @@ struct BodyAndCleanupProbe {
 }
 
 impl FileSystemFixture for BodyAndCleanupProbe {
-    fn file_system(&self) -> &qubit_fs::FileSystem {
+    fn file_system(&self) -> &FileSystem {
         self.inner.file_system()
     }
 
@@ -111,11 +113,7 @@ fn test_body_panic_is_preserved_when_teardown_also_fails() {
     let message = payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
         .unwrap_or_default();
     assert!(message.contains("fixture.read_file"), "unexpected panic: {message}");
     assert_eq!(fixture.calls.load(Ordering::Relaxed), 1);
@@ -124,9 +122,7 @@ fn test_body_panic_is_preserved_when_teardown_also_fails() {
 /// The body panic payload remains primary when teardown itself panics.
 #[test]
 fn test_body_panic_is_preserved_when_teardown_panics() {
-    let fixture = TeardownProbe::panicking(MemoryFixture::with_fault(
-        MemoryFault::WriteDropsBytes,
-    ));
+    let fixture = TeardownProbe::panicking(MemoryFixture::with_fault(MemoryFault::WriteDropsBytes));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write);
     }));
@@ -134,11 +130,7 @@ fn test_body_panic_is_preserved_when_teardown_panics() {
     let message = payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
         .unwrap_or_default();
     assert!(message.contains("fixture.read_file"), "unexpected panic: {message}");
     assert_eq!(fixture.calls.load(Ordering::Relaxed), 1);
@@ -157,11 +149,7 @@ fn test_body_panic_is_preserved_when_cleanup_fails() {
     let message = payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
         .unwrap_or_default();
     assert!(
         message.contains("writer contract: write was not published"),
@@ -173,27 +161,22 @@ fn test_body_panic_is_preserved_when_cleanup_fails() {
 /// A facade without Delete still invokes the fixture teardown hook.
 #[test]
 fn test_missing_delete_does_not_skip_fixture_teardown() {
-    let fixture = TeardownProbe::new(
-        MemoryFixture::without_delete(),
-        Ok(FixtureSupport::Supported(())),
-    );
+    let fixture = TeardownProbe::new(MemoryFixture::without_delete(), Ok(FixtureSupport::Supported(())));
     let mut suite = FileSystemContractSuite::new(&fixture);
     suite.assert_error_context();
     suite.finish();
     assert_eq!(fixture.calls.load(Ordering::Relaxed), 1);
 }
 
-/// Cleanup keeps failed resources in the ledger so a later finish can retry them.
+/// Cleanup keeps failed resources in the ledger so a later finish can retry
+/// them.
 #[test]
 fn test_cleanup_failure_is_retained_for_retry() {
     let fixture = MemoryFixture::with_fault(MemoryFault::DeleteNoOp);
     let mut suite = FileSystemContractSuite::new(&fixture);
     suite.assert_write();
     let first = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| suite.finish()));
-    assert!(
-        first.is_err(),
-        "the injected delete failure must be reported"
-    );
+    assert!(first.is_err(), "the injected delete failure must be reported");
     let first_message = first
         .as_ref()
         .err()
@@ -228,10 +211,7 @@ fn test_cleanup_continues_after_an_intermediate_failure() {
     let before = fixture.entry_count();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| suite.finish()));
     assert!(result.is_err());
-    assert!(
-        before >= 2,
-        "the write phase must prepare multiple resources"
-    );
+    assert!(before >= 2, "the write phase must prepare multiple resources");
     assert!(
         fixture.delete_attempt_count() >= before,
         "cleanup must attempt every retained resource"

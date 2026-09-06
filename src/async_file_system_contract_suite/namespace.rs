@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -47,16 +48,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 metadata.is_file_like(),
                 "stat/file-kind: seeded resource is not file-like"
             );
-            assert_eq!(
-                metadata.len(),
-                Some(13),
-                "stat contract: file length mismatch"
-            );
-            self.context.record_check(
-                "stat/file-kind",
-                None,
-                ContractCheckOutcome::Passed,
-            );
+            assert_eq!(metadata.len(), Some(13), "stat contract: file length mismatch");
+            self.context
+                .record_check("stat/file-kind", None, ContractCheckOutcome::Passed);
         } else {
             self.context.record_check(
                 "stat/file-kind",
@@ -78,12 +72,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.context.begin("list");
         let path = self.path("async-list");
         if self.capable(FileSystemCapability::List) {
-            let first = self
-                .required_seed("async-list/first", b"first", "list")
-                .await;
-            let second = self
-                .required_seed("async-list/second", b"second", "list")
-                .await;
+            let first = self.required_seed("async-list/first", b"first", "list").await;
+            let second = self.required_seed("async-list/second", b"second", "list").await;
             let mut stream = self
                 .fixture
                 .file_system()
@@ -91,11 +81,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .await
                 .expect("list contract: advertised listing failed");
             let mut actual = Vec::new();
-            while let Some(entry) = stream
-                .next_entry_async()
-                .await
-                .expect("list/basic: stream error")
-            {
+            while let Some(entry) = stream.next_entry_async().await.expect("list/basic: stream error") {
                 actual.push(entry.path);
             }
             actual.sort_by(|left, right| left.as_str().cmp(right.as_str()));
@@ -155,10 +141,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 expected.push(prefix_entry);
             }
             expected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-            assert_eq!(
-                prefixed, expected,
-                "list contract: paged prefix results mismatch"
-            );
+            assert_eq!(prefixed, expected, "list contract: paged prefix results mismatch");
             self.context.record_check(
                 "list/prefix",
                 Some(FileSystemCapability::List),
@@ -176,12 +159,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .list(&path, Default::default())
                 .await
                 .expect_err("list contract: unadvertised listing succeeded");
-            self.assert_error(
-                &error,
-                FsErrorKind::UnsupportedCapability,
-                FsOperation::List,
-                &path,
-            );
+            self.assert_error(&error, FsErrorKind::UnsupportedCapability, FsOperation::List, &path);
             assert_eq!(
                 error.required_capability(),
                 Some(FileSystemCapability::List),
@@ -226,10 +204,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let outcome = self
                 .fixture
                 .file_system()
-                .create_directory(
-                    &path,
-                    CreateDirectoryOptions::default().with_exists_ok(true),
-                )
+                .create_directory(&path, CreateDirectoryOptions::default().with_exists_ok(true))
                 .await
                 .expect("create-directory contract: existing directory was not accepted");
             assert!(
@@ -243,10 +218,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let outcome = self
                 .fixture
                 .file_system()
-                .create_directory(
-                    &child,
-                    CreateDirectoryOptions::default().with_recursive(true),
-                )
+                .create_directory(&child, CreateDirectoryOptions::default().with_recursive(true))
                 .await
                 .expect("create-directory contract: recursive creation failed");
             if let Some(created_ancestors) = outcome.created_ancestors() {
@@ -301,9 +273,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .expect("representation contract: empty-directory setup failed")
             {
                 FixtureSupport::Supported(path) => path,
-                FixtureSupport::Unsupported => panic!(
-                    "representation contract: EmptyDirectory requires fixture.seed_empty_directory support"
-                ),
+                FixtureSupport::Unsupported => {
+                    panic!("representation contract: EmptyDirectory requires fixture.seed_empty_directory support")
+                }
             };
             self.context.record_created(path.clone());
             let metadata = self
@@ -377,9 +349,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.context.begin("delete");
         let path = self.path("async-delete");
         if self.capable(FileSystemCapability::Delete) {
-            let path = self
-                .required_seed("async-delete", b"delete", "delete")
-                .await;
+            let path = self.required_seed("async-delete", b"delete", "delete").await;
             let outcome = self
                 .fixture
                 .file_system()
@@ -391,10 +361,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 "delete/basic: existing file was reported missing"
             );
             if let Some(deleted_entries) = outcome.deleted_entries() {
-                assert!(
-                    deleted_entries > 0,
-                    "delete/basic: deleted count is zero"
-                );
+                assert!(deleted_entries > 0, "delete/basic: deleted count is zero");
             }
             let error = self
                 .fixture
@@ -416,12 +383,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .delete_file(&path, DeleteOptions::default())
                 .await
                 .expect_err("delete contract: unadvertised delete succeeded");
-            self.assert_error(
-                &error,
-                FsErrorKind::UnsupportedCapability,
-                FsOperation::Delete,
-                &path,
-            );
+            self.assert_error(&error, FsErrorKind::UnsupportedCapability, FsOperation::Delete, &path);
             self.context.record_check(
                 "delete/basic",
                 Some(FileSystemCapability::Delete),
@@ -480,11 +442,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 return;
             }
             let path = self
-                .required_seed(
-                    "async-delete-conditional",
-                    b"conditional delete",
-                    "conditional-delete",
-                )
+                .required_seed("async-delete-conditional", b"conditional delete", "conditional-delete")
                 .await;
             let version = match self
                 .fixture
@@ -521,8 +479,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .delete_file(
                     &path,
-                    DeleteOptions::default()
-                        .with_if_match(Some(ResourceVersion::new("contract-version"))),
+                    DeleteOptions::default().with_if_match(Some(ResourceVersion::new("contract-version"))),
                 )
                 .await
                 .expect_err("delete contract: unadvertised conditional delete succeeded");
@@ -551,9 +508,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let source = self.path("async-rename-source");
         let target = self.path("async-rename-target");
         if self.capable(FileSystemCapability::Rename) {
-            let source = self
-                .required_seed("async-rename-source", b"rename", "rename")
-                .await;
+            let source = self.required_seed("async-rename-source", b"rename", "rename").await;
             let target = self.path("async-rename-target");
             self.context.record_created(target.clone());
             let outcome = self
@@ -562,16 +517,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .rename(&source, &target, RenameOptions::default())
                 .await
                 .expect("rename/basic: advertised rename failed");
-            assert_eq!(
-                outcome.source(),
-                &source,
-                "rename/basic: outcome source mismatch"
-            );
-            assert_eq!(
-                outcome.target(),
-                &target,
-                "rename/basic: outcome target mismatch"
-            );
+            assert_eq!(outcome.source(), &source, "rename/basic: outcome source mismatch");
+            assert_eq!(outcome.target(), &target, "rename/basic: outcome target mismatch");
             let error = self
                 .fixture
                 .file_system()
@@ -624,18 +571,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Checks asynchronous rename conflicts and explicit overwrite.
     pub async fn assert_rename_conflicts(&mut self) {
         let source = self
-            .required_seed(
-                "async-rename-conflict-source",
-                b"rename source",
-                "rename-conflict",
-            )
+            .required_seed("async-rename-conflict-source", b"rename source", "rename-conflict")
             .await;
         let target = self
-            .required_seed(
-                "async-rename-conflict-target",
-                b"rename target",
-                "rename-conflict",
-            )
+            .required_seed("async-rename-conflict-target", b"rename target", "rename-conflict")
             .await;
         let failure = self
             .fixture
@@ -653,26 +592,14 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             Some(self.context.properties().info().provider_id()),
             None,
         );
-        self.assert_bytes(
-            &source,
-            b"rename source",
-            "rename contract: conflict removed source",
-        )
-        .await;
-        self.assert_bytes(
-            &target,
-            b"rename target",
-            "rename contract: conflict changed target",
-        )
-        .await;
+        self.assert_bytes(&source, b"rename source", "rename contract: conflict removed source")
+            .await;
+        self.assert_bytes(&target, b"rename target", "rename contract: conflict changed target")
+            .await;
 
         self.fixture
             .file_system()
-            .rename(
-                &source,
-                &target,
-                RenameOptions::default().with_overwrite(true),
-            )
+            .rename(&source, &target, RenameOptions::default().with_overwrite(true))
             .await
             .expect("rename contract: overwrite failed");
         assert!(
@@ -683,12 +610,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .await
                 .expect("rename contract: overwrite source observation failed")
         );
-        self.assert_bytes(
-            &target,
-            b"rename source",
-            "rename contract: overwrite target mismatch",
-        )
-        .await;
+        self.assert_bytes(&target, b"rename source", "rename contract: overwrite target mismatch")
+            .await;
         self.context.record_check(
             "rename/conflict",
             Some(FileSystemCapability::Rename),
@@ -735,11 +658,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             self.context.record_created(root.clone());
         }
         let child = self
-            .required_seed(
-                "async-recursive-delete-root/child",
-                b"child",
-                "recursive-delete",
-            )
+            .required_seed("async-recursive-delete-root/child", b"child", "recursive-delete")
             .await;
         self.fixture
             .file_system()
@@ -802,11 +721,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             return;
         }
         let source = self
-            .required_seed(
-                "async-atomic-rename-source",
-                b"atomic rename",
-                "atomic-rename",
-            )
+            .required_seed("async-atomic-rename-source", b"atomic rename", "atomic-rename")
             .await;
         self.context.record_created(target.clone());
         let outcome = self
@@ -854,11 +769,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             return;
         }
         let source = self
-            .required_seed(
-                "async-durable-rename-source",
-                b"durable rename",
-                "durable-rename",
-            )
+            .required_seed("async-durable-rename-source", b"durable rename", "durable-rename")
             .await;
         self.context.record_created(target.clone());
         let outcome = self
@@ -871,12 +782,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             outcome.durable(),
             "rename/durable: required operation reported non-durable publication"
         );
-        self.assert_bytes(
-            &target,
-            b"durable rename",
-            "rename/durable: target bytes mismatch",
-        )
-        .await;
+        self.assert_bytes(&target, b"durable rename", "rename/durable: target bytes mismatch")
+            .await;
         self.context.record_check(
             "rename/durable",
             Some(FileSystemCapability::DurableRename),

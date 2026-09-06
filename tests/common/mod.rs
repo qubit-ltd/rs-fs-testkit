@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -18,9 +19,6 @@ pub(crate) use async_memory_file_system::AsyncMemoryFault;
 #[allow(unused)]
 #[cfg(feature = "async")]
 pub(crate) use async_memory_file_system::AsyncMemoryFixture;
-#[cfg(feature = "async")]
-#[allow(unused_imports)]
-pub(crate) use async_memory_file_system::run_controlled;
 #[allow(unused)]
 pub use memory_file_system::MemoryFault;
 #[allow(unused)]
