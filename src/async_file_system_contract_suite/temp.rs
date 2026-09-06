@@ -28,9 +28,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let error = match self
                 .fixture
                 .file_system()
-                .create_temp_file(
-                    TempFileOptions::default().with_parent(Some(incompatible_parent.clone())),
-                )
+                .create_temp_file(TempFileOptions::default().with_parent(Some(incompatible_parent.clone())))
                 .await
             {
                 Ok(_) => panic!("temp/file: invalid parent succeeded"),
@@ -59,10 +57,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .await
                 .expect("temp/file: advertised creation failed");
             let path = temporary.path().clone();
-            temporary
-                .cleanup()
-                .await
-                .expect("temp/file: cleanup failed");
+            temporary.cleanup().await.expect("temp/file: cleanup failed");
             let error = self
                 .fixture
                 .file_system()
@@ -89,11 +84,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Ok(_) => panic!("temp/file: unadvertised creation succeeded"),
                 Err(error) => error,
             };
-            self.assert_pathless_error(
-                &error,
-                FsErrorKind::UnsupportedCapability,
-                FsOperation::CreateTemp,
-            );
+            self.assert_pathless_error(&error, FsErrorKind::UnsupportedCapability, FsOperation::CreateTemp);
         }
         if self.capable(FileSystemCapability::TempDirectory) {
             self.assert_temp_directory_options().await;
@@ -104,10 +95,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .await
                 .expect("temp/directory: advertised creation failed");
             let path = temporary.path().clone();
-            temporary
-                .cleanup()
-                .await
-                .expect("temp/directory: cleanup failed");
+            temporary.cleanup().await.expect("temp/directory: cleanup failed");
             let error = self
                 .fixture
                 .file_system()
@@ -123,8 +111,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .expect("temp/directory: persist setup failed");
             let target = self.path("async-temp-persisted-directory");
             self.context.record_created(target.clone());
-            self.assert_temp_directory_persist(&mut temporary, &target)
-                .await;
+            self.assert_temp_directory_persist(&mut temporary, &target).await;
             if self.capable(FileSystemCapability::CreateDirectory) {
                 self.assert_temp_directory_overwrite().await;
             }
@@ -138,11 +125,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Ok(_) => panic!("temp/directory: unadvertised creation succeeded"),
                 Err(error) => error,
             };
-            self.assert_pathless_error(
-                &error,
-                FsErrorKind::UnsupportedCapability,
-                FsOperation::CreateTemp,
-            );
+            self.assert_pathless_error(&error, FsErrorKind::UnsupportedCapability, FsOperation::CreateTemp);
         }
         self.context.record_check(
             "temp/file",
@@ -179,8 +162,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .persist(target, self.temp_persist_options())
             .await
             .unwrap_or_else(|error| panic!("temp/file: persist failed [temp/atomic]: {error}"));
-        self.assert_temp_persist_outcome(&outcome, target, "temp/file")
-            .await;
+        self.assert_temp_persist_outcome(&outcome, target, "temp/file").await;
         if !self.capable(FileSystemCapability::AtomicTempPersist) {
             let mut retry = self
                 .fixture
@@ -190,10 +172,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .expect("temp/file: atomic preflight setup failed");
             let source = retry.path().clone();
             let failure = retry
-                .persist(
-                    &self.path("async-temp-required-atomic-file"),
-                    PersistOptions::default(),
-                )
+                .persist(&self.path("async-temp-required-atomic-file"), PersistOptions::default())
                 .await
                 .expect_err("temp/file: unadvertised required atomic persist succeeded");
             assert_eq!(
@@ -238,11 +217,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Verifies asynchronous temporary-directory persistence publication.
-    pub async fn assert_temp_directory_persist(
-        &self,
-        temporary: &mut AsyncTempDirectory,
-        target: &Path,
-    ) {
+    pub async fn assert_temp_directory_persist(&self, temporary: &mut AsyncTempDirectory, target: &Path) {
         let outcome = temporary
             .persist(target, self.temp_persist_options())
             .await
@@ -341,9 +316,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Panics when a temporary file ignores the requested parent, prefix, or
     /// suffix, or when cleanup fails.
     pub async fn assert_temp_file_options(&mut self) {
-        let parent = self
-            .prepare_temp_options_parent("async-temp-file-options-parent")
-            .await;
+        let parent = self.prepare_temp_options_parent("async-temp-file-options-parent").await;
         let mut temporary = self
             .fixture
             .file_system()
@@ -355,13 +328,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             )
             .await
             .expect("temp/file: option-aware creation failed");
-        self.assert_temp_path(
-            temporary.path(),
-            parent.as_ref(),
-            "async-file-",
-            ".tmp",
-            "temp/file",
-        );
+        self.assert_temp_path(temporary.path(), parent.as_ref(), "async-file-", ".tmp", "temp/file");
         temporary
             .cleanup()
             .await
@@ -440,14 +407,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when the path is not an immediate child of an explicitly
     /// requested `parent`, or does not honor the requested affixes.
-    pub fn assert_temp_path(
-        &self,
-        path: &Path,
-        parent: Option<&Path>,
-        prefix: &str,
-        suffix: &str,
-        contract: &str,
-    ) {
+    pub fn assert_temp_path(&self, path: &Path, parent: Option<&Path>, prefix: &str, suffix: &str, contract: &str) {
         let name = path
             .as_str()
             .rsplit('/')
@@ -466,31 +426,21 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             name.starts_with(prefix),
             "{contract}: temporary resource prefix mismatch"
         );
-        assert!(
-            name.ends_with(suffix),
-            "{contract}: temporary resource suffix mismatch"
-        );
+        assert!(name.ends_with(suffix), "{contract}: temporary resource suffix mismatch");
     }
 
     /// Builds persistence options matching the advertised atomic guarantee.
     #[inline]
     pub fn temp_persist_options(&self) -> PersistOptions {
-        PersistOptions::default().with_atomicity(
-            if self.capable(FileSystemCapability::AtomicTempPersist) {
-                AtomicityRequirement::Required
-            } else {
-                AtomicityRequirement::Preferred
-            },
-        )
+        PersistOptions::default().with_atomicity(if self.capable(FileSystemCapability::AtomicTempPersist) {
+            AtomicityRequirement::Required
+        } else {
+            AtomicityRequirement::Preferred
+        })
     }
 
     /// Checks persistence reporting and destination publication.
-    pub async fn assert_temp_persist_outcome(
-        &self,
-        outcome: &PersistOutcome,
-        target: &Path,
-        label: &str,
-    ) {
+    pub async fn assert_temp_persist_outcome(&self, outcome: &PersistOutcome, target: &Path, label: &str) {
         assert_eq!(outcome.target(), target, "{label}: persist target mismatch");
         if self.capable(FileSystemCapability::AtomicTempPersist) {
             assert_eq!(

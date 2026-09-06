@@ -24,11 +24,7 @@ where
     let message = payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
         .unwrap_or_default();
     assert!(
         message.contains(check_id),
@@ -67,10 +63,7 @@ fn test_sync_rejects_write_ignoring_stale_version() {
 fn test_sync_rejects_atomic_replace_preserving_old_bytes() {
     let fixture = MemoryFixture::with_fault(MemoryFault::AtomicReplaceKeepsOldBytes);
     assert_panics_at(
-        || {
-            FileSystemContractSuite::new(&fixture)
-                .assert_contract(FileSystemContract::AtomicReplace)
-        },
+        || FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::AtomicReplace),
         "write/atomic-replace-existing",
     );
 }
@@ -136,11 +129,10 @@ fn test_sync_contracts_adapt_to_declared_limit_profiles() {
     ];
     for limits in profiles {
         let fixture = MemoryFixture::with_limits(limits);
-        let write_report = FileSystemContractSuite::new(&fixture)
-            .assert_contract_with_report(FileSystemContract::Write);
+        let write_report =
+            FileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Write);
         write_report.assert_complete();
-        let read_report = FileSystemContractSuite::new(&fixture)
-            .assert_contract_with_report(FileSystemContract::Read);
+        let read_report = FileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Read);
         read_report.assert_complete();
     }
 }
@@ -151,30 +143,25 @@ fn test_sync_property_limit_boundaries_are_reported() {
         .with_max_component_text_bytes(FileSystemLimit::Maximum(4))
         .with_max_list_page_entries(FileSystemLimit::Maximum(2));
     let fixture = MemoryFixture::with_limits(limits);
-    let report = FileSystemContractSuite::new(&fixture)
-        .assert_contract_with_report(FileSystemContract::Properties);
+    let report = FileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Properties);
     report.assert_complete();
 }
 
 #[test]
 fn test_sync_conditional_case_unavailability_remains_unverified() {
     let fixture = MemoryFixture::with_conditional_case_unavailable(FixtureCase::ReadIfMatch);
-    let report = FileSystemContractSuite::new(&fixture)
-        .assert_contract_with_report(FileSystemContract::Read);
+    let report = FileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Read);
     assert!(report.checks().iter().any(|check| {
-        check.id() == "read/if-match-current"
-            && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
+        check.id() == "read/if-match-current" && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
     }));
 }
 
 #[test]
 fn test_sync_conditional_delete_case_unavailability_is_unverified() {
     let fixture = MemoryFixture::with_conditional_case_unavailable(FixtureCase::DeleteIfMatch);
-    let report = FileSystemContractSuite::new(&fixture)
-        .assert_contract_with_report(FileSystemContract::Delete);
+    let report = FileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Delete);
     assert!(report.checks().iter().any(|check| {
-        check.id() == "delete/if-match"
-            && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
+        check.id() == "delete/if-match" && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
     }));
 }
 

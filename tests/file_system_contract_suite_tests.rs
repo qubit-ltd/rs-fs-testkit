@@ -91,13 +91,7 @@ fn test_conforming_memory_provider_satisfies_sync_suite() {
         FileSystemCapability::TempFile,
         FileSystemCapability::TempDirectory,
     ] {
-        assert!(
-            fixture
-                .file_system()
-                .properties()
-                .capabilities()
-                .supports(capability)
-        );
+        assert!(fixture.file_system().properties().capabilities().supports(capability));
     }
     FileSystemContractSuite::new(&fixture).assert_all();
     assert!(fixture.is_empty(), "suite must clean up created resources");
@@ -142,10 +136,7 @@ fn test_sync_suite_skips_cleanup_without_delete_capability() {
 fn test_sync_suite_skips_unadvertised_optional_capabilities() {
     let fixture = MemoryFixture::without_optional_capabilities();
     FileSystemContractSuite::new(&fixture).assert_all();
-    assert!(
-        fixture.is_empty(),
-        "core contract resources must be cleaned"
-    );
+    assert!(fixture.is_empty(), "core contract resources must be cleaned");
 }
 
 /// Each injected provider defect must be rejected by the matching suite phase.
@@ -187,10 +178,7 @@ fn test_sync_recursive_delete_does_not_require_create_directory() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     suite.assert_recursive_delete();
     suite.finish();
-    assert!(
-        fixture.is_empty(),
-        "recursive deletion must remove the prefix"
-    );
+    assert!(fixture.is_empty(), "recursive deletion must remove the prefix");
 }
 
 /// A failed assertion still cleans paths that may have been published.
@@ -201,10 +189,7 @@ fn test_sync_suite_cleans_resources_before_resuming_panic() {
         FileSystemContractSuite::new(&fixture).assert_all();
     }));
     assert!(result.is_err(), "injected write fault must fail the suite");
-    assert!(
-        fixture.is_empty(),
-        "failed suite must clean published paths"
-    );
+    assert!(fixture.is_empty(), "failed suite must clean published paths");
 }
 
 /// Unadvertised core operations still exercise the facade's structured

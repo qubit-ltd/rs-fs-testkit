@@ -59,9 +59,7 @@ impl ContractReport {
             .checks
             .iter()
             .filter_map(|check| match check.outcome() {
-                ContractCheckOutcome::Unverified { reason } => {
-                    Some(format!("{} ({reason})", check.id()))
-                }
+                ContractCheckOutcome::Unverified { reason } => Some(format!("{} ({reason})", check.id())),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -118,9 +116,12 @@ impl ContractReport {
         capability: Option<FileSystemCapability>,
         outcome: ContractCheckOutcome,
     ) {
-        if let Some(check) = self.checks.iter_mut().rev().find(|check| {
-            check.id == id && matches!(check.outcome, ContractCheckOutcome::Unverified { .. })
-        }) {
+        if let Some(check) = self
+            .checks
+            .iter_mut()
+            .rev()
+            .find(|check| check.id == id && matches!(check.outcome, ContractCheckOutcome::Unverified { .. }))
+        {
             check.capability = capability;
             check.outcome = outcome;
             return;
