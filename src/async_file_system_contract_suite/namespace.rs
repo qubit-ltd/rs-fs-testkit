@@ -25,6 +25,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect_err("stat contract: missing path succeeded");
         self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+        self.context.record_check(
+            "stat/basic",
+            Some(FileSystemCapability::Read),
+            ContractCheckOutcome::Passed,
+        );
         if let FixtureSupport::Supported(path) = self
             .fixture
             .seed_file("async-stat-file", b"stateful stat")
@@ -46,6 +51,19 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 metadata.len(),
                 Some(13),
                 "stat contract: file length mismatch"
+            );
+            self.context.record_check(
+                "stat/file-kind",
+                None,
+                ContractCheckOutcome::Passed,
+            );
+        } else {
+            self.context.record_check(
+                "stat/file-kind",
+                None,
+                ContractCheckOutcome::Unverified {
+                    reason: "fixture cannot seed a stat resource".to_owned(),
+                },
             );
         }
     }
@@ -84,6 +102,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             let mut expected = vec![first, second];
             expected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             assert_eq!(actual, expected, "list contract: direct children mismatch");
+            self.context.record_check(
+                "list/basic",
+                Some(FileSystemCapability::List),
+                ContractCheckOutcome::Passed,
+            );
             let nested = self
                 .required_seed("async-list/prefixed/nested", b"nested", "list")
                 .await;
@@ -136,6 +159,16 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 prefixed, expected,
                 "list contract: paged prefix results mismatch"
             );
+            self.context.record_check(
+                "list/prefix",
+                Some(FileSystemCapability::List),
+                ContractCheckOutcome::Passed,
+            );
+            self.context.record_check(
+                "list/pagination",
+                Some(FileSystemCapability::List),
+                ContractCheckOutcome::Passed,
+            );
         } else {
             let error = self
                 .fixture
@@ -154,6 +187,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Some(FileSystemCapability::List),
                 "list contract: missing required-capability context"
             );
+            for id in ["list/basic", "list/prefix", "list/pagination"] {
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::List),
+                    ContractCheckOutcome::RejectedAsExpected,
+                );
+            }
         }
     }
 
@@ -212,6 +252,16 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             if let Some(created_ancestors) = outcome.created_ancestors() {
                 assert!(created_ancestors > 0);
             }
+            self.context.record_check(
+                "directory/create",
+                Some(FileSystemCapability::CreateDirectory),
+                ContractCheckOutcome::Passed,
+            );
+            self.context.record_check(
+                "directory/recursive",
+                Some(FileSystemCapability::CreateDirectory),
+                ContractCheckOutcome::Passed,
+            );
         } else {
             let error = self
                 .fixture
@@ -224,6 +274,16 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FsErrorKind::UnsupportedCapability,
                 FsOperation::CreateDir,
                 &path,
+            );
+            self.context.record_check(
+                "directory/create",
+                Some(FileSystemCapability::CreateDirectory),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+            self.context.record_check(
+                "directory/recursive",
+                Some(FileSystemCapability::CreateDirectory),
+                ContractCheckOutcome::RejectedAsExpected,
             );
         }
     }
@@ -256,6 +316,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 metadata.is_directory_like(),
                 "representation contract: empty directory is not directory-like"
             );
+            self.context.record_check(
+                "representation/empty",
+                Some(FileSystemCapability::EmptyDirectory),
+                ContractCheckOutcome::Passed,
+            );
+        } else {
+            self.context.record_check(
+                "representation/empty",
+                Some(FileSystemCapability::EmptyDirectory),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
         }
         if self.capable(FileSystemCapability::Symlink) {
             let relative = self.context.relative_name("symlink");
@@ -281,6 +352,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 metadata.kind(),
                 &FileKind::Symlink,
                 "representation contract: seeded link kind mismatch"
+            );
+            self.context.record_check(
+                "representation/symlink",
+                Some(FileSystemCapability::Symlink),
+                ContractCheckOutcome::Passed,
+            );
+        } else {
+            self.context.record_check(
+                "representation/symlink",
+                Some(FileSystemCapability::Symlink),
+                ContractCheckOutcome::RejectedAsExpected,
             );
         }
     }
@@ -322,6 +404,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .expect_err("delete contract: deleted file remained");
             self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
             self.assert_delete_options().await;
+            self.context.record_check(
+                "delete/basic",
+                Some(FileSystemCapability::Delete),
+                ContractCheckOutcome::Passed,
+            );
         } else {
             let error = self
                 .fixture
@@ -334,6 +421,25 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FsErrorKind::UnsupportedCapability,
                 FsOperation::Delete,
                 &path,
+            );
+            self.context.record_check(
+                "delete/basic",
+                Some(FileSystemCapability::Delete),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+            self.context.record_check(
+                "delete/missing-ok",
+                Some(FileSystemCapability::Delete),
+                ContractCheckOutcome::NotApplicable {
+                    reason: "delete is unavailable".to_owned(),
+                },
+            );
+            self.context.record_check(
+                "delete/if-match",
+                Some(FileSystemCapability::ConditionalDelete),
+                ContractCheckOutcome::NotApplicable {
+                    reason: "delete is unavailable".to_owned(),
+                },
             );
         }
     }
@@ -350,6 +456,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         assert!(
             outcome.already_missing(),
             "delete contract: missing-ok outcome did not report absence"
+        );
+        self.context.record_check(
+            "delete/missing-ok",
+            Some(FileSystemCapability::Delete),
+            ContractCheckOutcome::Passed,
         );
 
         let path = self.path("async-delete-conditional");
@@ -385,6 +496,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .await
                     .expect("delete contract: conditional target observation failed")
             );
+            self.context.record_check(
+                "delete/if-match",
+                Some(FileSystemCapability::ConditionalDelete),
+                ContractCheckOutcome::Passed,
+            );
         } else {
             let error = self
                 .fixture
@@ -401,6 +517,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FsOperation::Delete,
                 FileSystemCapability::ConditionalDelete,
                 "conditional-delete contract",
+            );
+            self.context.record_check(
+                "delete/if-match",
+                Some(FileSystemCapability::ConditionalDelete),
+                ContractCheckOutcome::RejectedAsExpected,
             );
         }
     }
@@ -450,6 +571,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .await
                 .expect("rename contract: target missing after success");
             self.assert_rename_conflicts().await;
+            self.context.record_check(
+                "rename/basic",
+                Some(FileSystemCapability::Rename),
+                ContractCheckOutcome::Passed,
+            );
         } else {
             let failure = self
                 .fixture
@@ -465,6 +591,18 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 Some(&target),
                 Some(self.context.properties().info().provider_id()),
                 Some(FileSystemCapability::Rename),
+            );
+            self.context.record_check(
+                "rename/basic",
+                Some(FileSystemCapability::Rename),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
+            self.context.record_check(
+                "rename/conflict",
+                Some(FileSystemCapability::Rename),
+                ContractCheckOutcome::NotApplicable {
+                    reason: "rename is unavailable".to_owned(),
+                },
             );
         }
     }
@@ -537,6 +675,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             "rename contract: overwrite target mismatch",
         )
         .await;
+        self.context.record_check(
+            "rename/conflict",
+            Some(FileSystemCapability::Rename),
+            ContractCheckOutcome::Passed,
+        );
     }
 
     /// Checks asynchronous recursive deletion when the provider advertises it.
@@ -561,6 +704,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FsOperation::Delete,
                 FileSystemCapability::RecursiveDelete,
                 "recursive-delete contract",
+            );
+            self.context.record_check(
+                "delete/tree",
+                Some(FileSystemCapability::RecursiveDelete),
+                ContractCheckOutcome::RejectedAsExpected,
             );
             return;
         }
@@ -600,6 +748,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .await
                 .expect("recursive-delete contract: child existence check failed")
         );
+        self.context.record_check(
+            "delete/tree",
+            Some(FileSystemCapability::RecursiveDelete),
+            ContractCheckOutcome::Passed,
+        );
     }
 
     /// Checks asynchronous atomic rename publication when advertised.
@@ -626,6 +779,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FileSystemCapability::AtomicRename,
                 "atomic-rename contract",
             );
+            self.context.record_check(
+                "rename/atomic",
+                Some(FileSystemCapability::AtomicRename),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return;
         }
         let source = self
@@ -647,6 +805,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             AchievedAtomicity::Atomic,
             "atomic-rename contract: non-atomic outcome"
         );
+        self.context.record_check(
+            "rename/atomic",
+            Some(FileSystemCapability::AtomicRename),
+            ContractCheckOutcome::Passed,
+        );
     }
 
     /// Checks required-durable rename publication when advertised.
@@ -667,6 +830,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 FsOperation::Rename,
                 FileSystemCapability::DurableRename,
                 "durable-rename contract",
+            );
+            self.context.record_check(
+                "rename/durable",
+                Some(FileSystemCapability::DurableRename),
+                ContractCheckOutcome::RejectedAsExpected,
             );
             return;
         }
@@ -694,5 +862,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             "durable-rename contract: target bytes mismatch",
         )
         .await;
+        self.context.record_check(
+            "rename/durable",
+            Some(FileSystemCapability::DurableRename),
+            ContractCheckOutcome::Passed,
+        );
     }
 }

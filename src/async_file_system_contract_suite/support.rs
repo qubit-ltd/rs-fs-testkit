@@ -93,6 +93,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .await
             .expect_err("error contract: missing path succeeded");
         self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+        self.context.record_check(
+            "error/context",
+            None,
+            ContractCheckOutcome::Passed,
+        );
     }
 
     /// Resolves a fixture path or identifies setup failure at the contract
