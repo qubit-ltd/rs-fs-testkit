@@ -36,15 +36,12 @@ impl AsyncFileSystemFixture for DefaultAsyncFixture<'_> {
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/defaults/{relative}"))
-            .map_err(|error| FixtureError::new(error.to_string()))
+        Path::parse(&format!("/defaults/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
     }
 }
 
 /// Polls a fixture future that completes without suspension.
-fn poll_fixture_future<T>(
-    future: impl Future<Output = FixtureResult<T>>,
-) -> FixtureResult<T> {
+fn poll_fixture_future<T>(future: impl Future<Output = FixtureResult<T>>) -> FixtureResult<T> {
     let mut future = Box::pin(future);
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);

@@ -16,10 +16,7 @@ fn test_fixture_error_preserves_message_and_source() {
     assert_eq!(plain.to_string(), "plain failure");
     assert!(std::error::Error::source(&plain).is_none());
 
-    let sourced = FixtureError::with_source(
-        "outer failure",
-        std::io::Error::other("inner"),
-    );
+    let sourced = FixtureError::with_source("outer failure", std::io::Error::other("inner"));
     assert_eq!(sourced.to_string(), "outer failure");
     assert_eq!(
         std::error::Error::source(&sourced)

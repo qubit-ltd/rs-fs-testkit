@@ -28,10 +28,7 @@ fn run_ready(future: impl Future<Output = ()>) {
     let mut future = Box::pin(future);
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        future.as_mut().poll(&mut context),
-        Poll::Ready(())
-    ));
+    assert!(matches!(future.as_mut().poll(&mut context), Poll::Ready(())));
 }
 
 register_file_system_contract_tests! {
