@@ -94,7 +94,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             while let Some(entry) = stream
                 .next_entry_async()
                 .await
-                .expect("list contract: stream error")
+                .expect("list/basic: stream error")
             {
                 actual.push(entry.path);
             }
