@@ -482,6 +482,7 @@ impl<'a> FileSystemContractSuite<'a> {
     /// Checks required-atomic replacement against an existing target.
     pub fn assert_atomic_replace(&mut self) {
         self.context.begin("atomic_replace");
+        let atomic_replace_supported = self.capable(FileSystemCapability::AtomicReplace);
         if !self.capable(FileSystemCapability::Write) {
             self.context.record_check(
                 "write/atomic-replace-existing",
@@ -492,9 +493,9 @@ impl<'a> FileSystemContractSuite<'a> {
             );
             return;
         }
-        let path = self.required_seed("atomic-replace-target", b"a", "atomic-replace");
         let options = WriteOptions::default().with_atomicity(AtomicityRequirement::Required);
-        if !self.capable(FileSystemCapability::AtomicReplace) {
+        if !atomic_replace_supported {
+            let path = self.path("atomic-replace-unavailable");
             let error = self
                 .fixture
                 .file_system()
@@ -513,6 +514,7 @@ impl<'a> FileSystemContractSuite<'a> {
             );
             return;
         }
+        let path = self.required_seed("atomic-replace-target", b"a", "atomic-replace");
         let replacement = bounded_payload(self.context.properties().limits().max_write_bytes(), b"b", b'b');
         let outcome = self
             .fixture
