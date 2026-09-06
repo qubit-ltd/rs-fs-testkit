@@ -9,8 +9,8 @@
 #[cfg(feature = "async")]
 pub(crate) mod async_memory_file_system;
 mod memory_file_system;
-mod shared_model;
 pub(crate) mod panic_support;
+mod shared_model;
 
 #[allow(unused)]
 #[cfg(feature = "async")]

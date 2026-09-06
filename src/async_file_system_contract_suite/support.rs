@@ -7,9 +7,10 @@
 // =============================================================================
 //! Implements fixture adaptation and suite lifecycle support.
 
-use super::*;
 use std::any::Any;
 use std::panic::resume_unwind;
+
+use super::*;
 use crate::ContractCheckOutcome;
 use crate::FixtureError;
 
@@ -25,7 +26,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         }
     }
 
-    /// Runs asynchronous cleanup and fixture teardown while preserving failures.
+    /// Runs asynchronous cleanup and fixture teardown while preserving
+    /// failures.
     pub(super) async fn finish_capture(&mut self) -> Result<(), Box<dyn Any + Send>> {
         let failures = self.context.cleanup_async(self.fixture.file_system()).await;
         let mut teardown_failure = None;
@@ -34,9 +36,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             match teardown {
                 Ok(Ok(support)) => {
                     self.teardown_completed = true;
-                    if matches!(support, FixtureSupport::Unsupported)
-                        && self.context.resources_prepared()
-                    {
+                    if matches!(support, FixtureSupport::Unsupported) && self.context.resources_prepared() {
                         self.context.record_check(
                             FileSystemContract::ErrorContext,
                             "cleanup/fixture-teardown",
@@ -52,9 +52,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     teardown_failure = Some(format!("[fs-testkit:cleanup/teardown] {error}"));
                 }
                 Err(_payload) => {
-                    teardown_failure = Some(
-                        "[fs-testkit:cleanup/teardown] fixture teardown panicked".to_owned(),
-                    );
+                    teardown_failure = Some("[fs-testkit:cleanup/teardown] fixture teardown panicked".to_owned());
                 }
             }
         }
@@ -66,10 +64,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .map(|failure| {
                 format!(
                     "[fs-testkit:cleanup/{}] owner={} path={:?}: {}",
-                    failure.operation,
-                    failure.owner_check,
-                    failure.path,
-                    failure.cause,
+                    failure.operation, failure.owner_check, failure.path, failure.cause,
                 )
             })
             .collect::<Vec<_>>();
@@ -130,10 +125,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// `true` when the provider advertises the capability.
     #[inline(always)]
     pub fn capable(&self, capability: FileSystemCapability) -> bool {
-        self.context
-            .properties()
-            .capabilities()
-            .supports(capability)
+        self.context.properties().capabilities().supports(capability)
     }
 
     /// Seeds a resource and makes fixture support mandatory for the contract.
@@ -152,12 +144,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when fixture setup fails or the required seed hook is
     /// unsupported.
-    pub async fn required_seed(
-        &mut self,
-        relative: &str,
-        bytes: &[u8],
-        contract: &str,
-    ) -> Path {
+    pub async fn required_seed(&mut self, relative: &str, bytes: &[u8], contract: &str) -> Path {
         let relative = self.context.relative_name(relative);
         match self
             .fixture
@@ -170,9 +157,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 path
             }
             FixtureSupport::Unsupported => {
-                panic!(
-                    "{contract} contract: advertised capability requires fixture.seed_file support"
-                )
+                panic!("{contract} contract: advertised capability requires fixture.seed_file support")
             }
         }
     }
@@ -217,13 +202,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// # Panics
     ///
     /// Panics when any expected structured field differs.
-    pub fn assert_error(
-        &self,
-        error: &FsError,
-        kind: FsErrorKind,
-        operation: FsOperation,
-        path: &Path,
-    ) {
+    pub fn assert_error(&self, error: &FsError, kind: FsErrorKind, operation: FsOperation, path: &Path) {
         let provider = Some(self.context.properties().info().provider_id());
         if kind == FsErrorKind::UnsupportedCapability {
             assert_unsupported_error(
@@ -248,12 +227,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Validates an asynchronous operation error with no logical input path.
-    pub fn assert_pathless_error(
-        &self,
-        error: &FsError,
-        kind: FsErrorKind,
-        operation: FsOperation,
-    ) {
+    pub fn assert_pathless_error(&self, error: &FsError, kind: FsErrorKind, operation: FsOperation) {
         assert_unsupported_error(
             error,
             kind,

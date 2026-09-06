@@ -17,8 +17,8 @@ use qubit_fs::path::Path;
 
 use crate::AsyncCopyCancellationStage;
 use crate::AsyncCopyFixtureCase;
-use crate::CopyFixtureCase;
 use crate::CopyCancellationProbe;
+use crate::CopyFixtureCase;
 use crate::FixtureCase;
 use crate::FixtureResult;
 use crate::FixtureSupport;
@@ -58,10 +58,7 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Declares whether this fixture can prepare and observe a scenario.
     #[inline]
-    fn case_support(
-        &self,
-        case: FixtureCase,
-    ) -> FixtureResult<FixtureSupport<()>> {
+    fn case_support(&self, case: FixtureCase) -> FixtureResult<FixtureSupport<()>> {
         let _ = case;
         Ok(FixtureSupport::Unsupported)
     }
@@ -139,21 +136,14 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Asynchronously observes whether a resource exists out of band.
     #[inline]
-    fn exists_out_of_band<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> FixtureFuture<'a, FixtureSupport<bool>> {
+    fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
         let _ = path;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
     /// Asynchronously writes a complete resource through fixture setup.
     #[inline]
-    fn write_file_out_of_band<'a>(
-        &'a self,
-        path: &'a Path,
-        bytes: &'a [u8],
-    ) -> FixtureFuture<'a, FixtureSupport<()>> {
+    fn write_file_out_of_band<'a>(&'a self, path: &'a Path, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<()>> {
         let _ = (path, bytes);
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
@@ -167,20 +157,14 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Asynchronously returns a valid version that cannot match the resource.
     #[inline]
-    fn stale_resource_version<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         let _ = path;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
     /// Asynchronously supplies a resource whose checksum is invalid.
     #[inline]
-    fn checksum_failure_case<'a>(
-        &'a self,
-        relative: &'a str,
-    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn checksum_failure_case<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = relative;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }

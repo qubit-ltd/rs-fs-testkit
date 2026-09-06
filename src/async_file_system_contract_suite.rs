@@ -147,10 +147,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Runs one phase, performs cleanup, and returns the execution report.
-    pub async fn assert_contract_with_report(
-        mut self,
-        contract: FileSystemContract,
-    ) -> ContractReport {
+    pub async fn assert_contract_with_report(mut self, contract: FileSystemContract) -> ContractReport {
         let result = catch_unwind_future(async {
             self.assert_contract_inner(contract).await;
         })
@@ -194,5 +191,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             FileSystemContract::TempResources => self.assert_temp_resources().await,
             FileSystemContract::ErrorContext => self.assert_error_context().await,
         }
+        let capabilities = self.context.properties().capabilities();
+        self.context.report_mut().complete_phase(contract, &capabilities);
     }
 }

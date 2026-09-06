@@ -19,7 +19,6 @@ pub struct ContractReport {
 impl ContractReport {
     /// Returns checks in execution order.
     #[inline]
-    #[must_use]
     pub fn checks(&self) -> &[ContractCheck] {
         &self.checks
     }
@@ -30,9 +29,10 @@ impl ContractReport {
     #[inline]
     #[must_use]
     pub fn is_complete(&self) -> bool {
-        !self.checks.iter().any(|check| {
-            matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
-        })
+        !self
+            .checks
+            .iter()
+            .any(|check| matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }))
     }
 
     /// Panics when the report contains an unverified check.
@@ -45,9 +45,7 @@ impl ContractReport {
             .checks
             .iter()
             .filter_map(|check| match check.outcome() {
-                ContractCheckOutcome::Unverified { reason } => {
-                    Some(format!("{} ({reason})", check.id()))
-                }
+                ContractCheckOutcome::Unverified { reason } => Some(format!("{} ({reason})", check.id())),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -92,17 +90,33 @@ impl ContractReport {
         required: bool,
         outcome: ContractCheckOutcome,
     ) {
-        if let Some(check) = self
-            .checks
-            .iter_mut()
-            .rev()
-            .find(|check| check.phase == phase && check.id == id
-                && matches!(check.outcome, ContractCheckOutcome::Unverified { .. }))
-        {
+        if let Some(check) = self.checks.iter_mut().rev().find(|check| {
+            check.phase == phase && check.id == id && matches!(check.outcome, ContractCheckOutcome::Unverified { .. })
+        }) {
             check.capability = capability;
             check.outcome = outcome;
             return;
         }
         self.push(phase, id, capability, required, outcome);
+    }
+
+    pub(crate) fn complete_phase(
+        &mut self,
+        phase: FileSystemContract,
+        capabilities: &qubit_fs::metadata::FileSystemCapabilities,
+    ) {
+        for check in &mut self.checks {
+            if check.phase != phase || !matches!(check.outcome, ContractCheckOutcome::Unverified { .. }) {
+                continue;
+            }
+            if let Some(capability) = check.capability
+                && !capabilities.supports(capability)
+                && !check.required
+            {
+                check.outcome = ContractCheckOutcome::SkippedOptional {
+                    reason: format!("provider does not advertise {capability:?}"),
+                };
+            }
+        }
     }
 }

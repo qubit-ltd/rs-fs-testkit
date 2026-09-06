@@ -115,6 +115,12 @@ its isolated temporary directory through native filesystem APIs. Reusing the
 same facade for setup or observation can make a matching read/write defect pass
 the contract suite.
 
+The `seed` and `required_seed` helpers on `FileSystemContractSuite` and
+`AsyncFileSystemContractSuite` take `&mut self` so resource ownership is tracked
+in the suite ledger. Providers calling these helpers directly must make the
+corresponding call sites mutable; this is a source-compatible migration only
+for code that already owns a mutable suite.
+
 Prefer `assert_contract(FileSystemContract)` for one phase because it cleans up
 before resuming a panic. When low-level phase methods are called directly, call
 `finish()` afterward. `assert_all()` and both registration macros clean up

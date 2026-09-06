@@ -28,8 +28,7 @@ impl FileSystemFixture for DefaultSyncFixture<'_> {
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/defaults/{relative}"))
-            .map_err(|error| FixtureError::new(error.to_string()))
+        Path::parse(&format!("/defaults/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
     }
 }
 
@@ -83,10 +82,7 @@ fn synchronous_fixture_defaults_report_optional_probes_as_unsupported() {
         fixture.checksum_failure_case("corrupt"),
         Ok(FixtureSupport::Unsupported)
     ));
-    assert!(matches!(
-        fixture.teardown(),
-        Ok(FixtureSupport::Unsupported)
-    ));
+    assert!(matches!(fixture.teardown(), Ok(FixtureSupport::Unsupported)));
     assert!(matches!(
         fixture.copy_fast_path_case(CopyMethod::Native),
         Ok(FixtureSupport::Unsupported)
@@ -95,7 +91,6 @@ fn synchronous_fixture_defaults_report_optional_probes_as_unsupported() {
 
 #[cfg(feature = "async")]
 mod asynchronous_defaults {
-    use super::*;
     use std::future::Future;
     use std::task::Context;
     use std::task::Poll;
@@ -105,6 +100,8 @@ mod asynchronous_defaults {
     use qubit_fs::AsyncFileSystem;
     use qubit_fs_testkit::AsyncFileSystemFixture;
     use qubit_fs_testkit::FixtureFuture;
+
+    use super::*;
 
     struct DefaultAsyncFixture<'a> {
         file_system: &'a AsyncFileSystem,
@@ -116,8 +113,7 @@ mod asynchronous_defaults {
         }
 
         fn path(&self, relative: &str) -> FixtureResult<Path> {
-            Path::parse(&format!("/defaults/{relative}"))
-                .map_err(|error| FixtureError::new(error.to_string()))
+            Path::parse(&format!("/defaults/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
         }
     }
 

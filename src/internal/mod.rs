@@ -7,12 +7,12 @@
 // =============================================================================
 //! Private helpers shared by filesystem contract assertions.
 
+pub(crate) mod applicability;
 mod assertions;
 #[cfg(feature = "async")]
 mod catch_unwind_future;
-pub(crate) mod cleanup_failure;
-pub(crate) mod applicability;
 pub(crate) mod check_catalog;
+pub(crate) mod cleanup_failure;
 pub(crate) mod limit_probe_plan;
 pub(crate) mod tracked_resource;
 

@@ -48,10 +48,7 @@ pub trait FileSystemFixture {
     /// conditional for this fixture. Setup errors must be returned as errors,
     /// rather than being hidden as unsupported cases.
     #[inline]
-    fn case_support(
-        &self,
-        case: FixtureCase,
-    ) -> FixtureResult<FixtureSupport<()>> {
+    fn case_support(&self, case: FixtureCase) -> FixtureResult<FixtureSupport<()>> {
         let _ = case;
         Ok(FixtureSupport::Unsupported)
     }
@@ -128,21 +125,14 @@ pub trait FileSystemFixture {
 
     /// Observes whether a resource exists without using the tested facade.
     #[inline]
-    fn exists_out_of_band(
-        &self,
-        path: &Path,
-    ) -> FixtureResult<FixtureSupport<bool>> {
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
         let _ = path;
         Ok(FixtureSupport::Unsupported)
     }
 
     /// Writes a complete resource through fixture-owned setup facilities.
     #[inline]
-    fn write_file_out_of_band(
-        &self,
-        path: &Path,
-        bytes: &[u8],
-    ) -> FixtureResult<FixtureSupport<()>> {
+    fn write_file_out_of_band(&self, path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
         let _ = (path, bytes);
         Ok(FixtureSupport::Unsupported)
     }
@@ -156,20 +146,14 @@ pub trait FileSystemFixture {
 
     /// Returns a valid version that does not match the current resource.
     #[inline]
-    fn stale_resource_version(
-        &self,
-        path: &Path,
-    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let _ = path;
         Ok(FixtureSupport::Unsupported)
     }
 
     /// Supplies an independently prepared resource whose checksum is invalid.
     #[inline]
-    fn checksum_failure_case(
-        &self,
-        relative: &str,
-    ) -> FixtureResult<FixtureSupport<Path>> {
+    fn checksum_failure_case(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let _ = relative;
         Ok(FixtureSupport::Unsupported)
     }

@@ -53,22 +53,14 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .read_all(&path, Default::default(), 64)
                     .await
                     .expect("read contract: facade could not read seeded bytes");
-                assert_eq!(
-                    actual, b"async bytes",
-                    "read contract: seeded bytes mismatch"
-                );
+                assert_eq!(actual, b"async bytes", "read contract: seeded bytes mismatch");
                 let error = self
                     .fixture
                     .file_system()
                     .read_all(&path, Default::default(), 4)
                     .await
                     .expect_err("read contract: caller byte limit was ignored");
-                self.assert_error(
-                    &error,
-                    FsErrorKind::ResourceLimitExceeded,
-                    FsOperation::Read,
-                    &path,
-                );
+                self.assert_error(&error, FsErrorKind::ResourceLimitExceeded, FsOperation::Read, &path);
                 path
             }
             FixtureSupport::Unsupported => {
@@ -80,9 +72,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
     /// Checks asynchronous range, conditional, and checksum read guarantees.
     pub async fn assert_read_options(&self, path: &Path) {
-        let range = ReadOptions::default()
-            .with_offset(Some(6))
-            .with_length(Some(5));
+        let range = ReadOptions::default().with_offset(Some(6)).with_length(Some(5));
         if self.capable(FileSystemCapability::RangeRead) {
             let bytes = self
                 .fixture

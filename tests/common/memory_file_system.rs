@@ -222,7 +222,7 @@ pub enum MemoryFault {
 }
 
 #[derive(Clone)]
-enum Entry {
+pub(crate) enum Entry {
     File(Vec<u8>),
     Directory,
     Symlink,

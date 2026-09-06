@@ -96,11 +96,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .file_system()
             .write_all(existing, b"replaced", WriteOptions::default())
             .expect("writer contract: replacement failed");
-        self.assert_bytes(
-            existing,
-            b"replaced",
-            "writer contract: replacement bytes mismatch",
-        );
+        self.assert_bytes(existing, b"replaced", "writer contract: replacement bytes mismatch");
 
         let aborted_path = self.path("write-aborted");
         self.context.record_created(aborted_path.clone());
@@ -109,8 +105,7 @@ impl<'a> FileSystemContractSuite<'a> {
             .file_system()
             .open_writer(&aborted_path, WriteOptions::default())
             .expect("writer contract: abort writer open failed");
-        Output::write_fully(&mut writer, b"aborted")
-            .expect("writer contract: abort writer rejected bytes");
+        Output::write_fully(&mut writer, b"aborted").expect("writer contract: abort writer rejected bytes");
         let _ = writer.abort().expect("writer contract: abort failed");
         assert!(
             !self

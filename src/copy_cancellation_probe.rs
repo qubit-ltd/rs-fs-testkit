@@ -17,12 +17,8 @@ pub trait CopyCancellationProbe: Send + Sync {
     fn case(&self) -> &AsyncCopyFixtureCase;
 
     /// Polls until the requested stage has been reached and gated.
-    fn poll_reached(
-        &self,
-        context: &mut Context<'_>,
-    ) -> Poll<FixtureResult<()>>;
+    fn poll_reached(&self, context: &mut Context<'_>) -> Poll<FixtureResult<()>>;
 
     /// Releases the provider-owned gate without performing I/O.
     fn disarm(&self) -> FixtureResult<()>;
-
 }

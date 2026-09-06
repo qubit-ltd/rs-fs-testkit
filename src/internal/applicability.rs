@@ -5,6 +5,8 @@
 // =============================================================================
 //! Pure applicability decisions shared by contract phase implementations.
 
+#![allow(dead_code)]
+
 use qubit_fs::metadata::FileSystemCapability;
 
 use crate::FixtureCase;
@@ -22,10 +24,7 @@ pub(crate) enum Applicability {
 }
 
 /// Converts a capability and fixture declaration into a three-state decision.
-pub(crate) const fn classify(
-    capability_supported: bool,
-    case_support: bool,
-) -> Applicability {
+pub(crate) const fn classify(capability_supported: bool, case_support: bool) -> Applicability {
     match (capability_supported, case_support) {
         (false, _) => Applicability::Unsupported,
         (true, true) => Applicability::Supported,
