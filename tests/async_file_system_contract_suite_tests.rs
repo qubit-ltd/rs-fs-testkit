@@ -26,6 +26,7 @@ use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
 use qubit_fs_testkit::FileSystemContract;
+use qubit_fs_testkit::FixtureCase;
 
 /// Polls one copy contract that is expected to complete without suspension.
 fn assert_copy_contract(fixture: &AsyncMemoryFixture) {
@@ -106,6 +107,30 @@ fn test_async_property_profiles_cover_all_limit_outcomes() {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let fixture = AsyncMemoryFixture::with_limits(snapshot);
             run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_properties());
+        }));
+    }
+}
+
+#[test]
+fn test_async_unavailable_fixture_cases_are_exercised() {
+    let cases = [
+        FixtureCase::ReadIfMatch,
+        FixtureCase::ReadIfNoneMatch,
+        FixtureCase::WriteIfAbsent,
+        FixtureCase::WriteIfMatch,
+        FixtureCase::DeleteIfMatch,
+        FixtureCase::CopyOverwrite,
+        FixtureCase::CopyTree,
+        FixtureCase::Capability(FileSystemCapability::ServerSideCopy),
+        FixtureCase::Capability(FileSystemCapability::AtomicFileCopy),
+        FixtureCase::Capability(FileSystemCapability::AtomicTreeCopy),
+        FixtureCase::Capability(FileSystemCapability::DurableFileCopy),
+        FixtureCase::Capability(FileSystemCapability::DurableTreeCopy),
+    ];
+    for case in cases {
+        let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(case);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all_with_report());
         }));
     }
 }
