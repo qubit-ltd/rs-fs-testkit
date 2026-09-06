@@ -32,23 +32,23 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 )
                 .await
             {
-                Ok(_) => panic!("temp-file contract: invalid parent succeeded"),
+                Ok(_) => panic!("temp/file: invalid parent succeeded"),
                 Err(error) => error,
             };
             assert_eq!(
                 error.kind(),
                 FsErrorKind::InvalidPath,
-                "temp-file contract: parent validation kind mismatch"
+                "temp/file: parent validation kind mismatch"
             );
             assert_eq!(
                 error.operation(),
                 FsOperation::CreateTemp,
-                "temp-file contract: parent validation operation mismatch"
+                "temp/file: parent validation operation mismatch"
             );
             assert_eq!(
                 error.path(),
                 Some(&incompatible_parent),
-                "temp-file contract: parent validation path mismatch"
+                "temp/file: parent validation path mismatch"
             );
             self.assert_temp_file_options().await;
             let mut temporary = self
@@ -56,25 +56,25 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .create_temp_file(TempFileOptions::default())
                 .await
-                .expect("temp-file contract: advertised creation failed");
+                .expect("temp/file: advertised creation failed");
             let path = temporary.path().clone();
             temporary
                 .cleanup()
                 .await
-                .expect("temp-file contract: cleanup failed");
+                .expect("temp/file: cleanup failed");
             let error = self
                 .fixture
                 .file_system()
                 .stat(&path)
                 .await
-                .expect_err("temp-file contract: cleanup retained source");
+                .expect_err("temp/file: cleanup retained source");
             self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
             let mut temporary = self
                 .fixture
                 .file_system()
                 .create_temp_file(TempFileOptions::default())
                 .await
-                .expect("temp-file contract: persist setup failed");
+                .expect("temp/file: persist setup failed");
             let target = self.path("async-temp-persisted-file");
             self.context.record_created(target.clone());
             self.assert_temp_file_persist(&mut temporary, &target).await;
@@ -85,7 +85,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .create_temp_file(TempFileOptions::default())
                 .await
             {
-                Ok(_) => panic!("temp-file contract: unadvertised creation succeeded"),
+                Ok(_) => panic!("temp/file: unadvertised creation succeeded"),
                 Err(error) => error,
             };
             self.assert_pathless_error(
@@ -101,25 +101,25 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .create_temp_directory(TempDirectoryOptions::default())
                 .await
-                .expect("temp-directory contract: advertised creation failed");
+                .expect("temp/directory: advertised creation failed");
             let path = temporary.path().clone();
             temporary
                 .cleanup()
                 .await
-                .expect("temp-directory contract: cleanup failed");
+                .expect("temp/directory: cleanup failed");
             let error = self
                 .fixture
                 .file_system()
                 .stat(&path)
                 .await
-                .expect_err("temp-directory contract: cleanup retained source");
+                .expect_err("temp/directory: cleanup retained source");
             self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
             let mut temporary = self
                 .fixture
                 .file_system()
                 .create_temp_directory(TempDirectoryOptions::default())
                 .await
-                .expect("temp-directory contract: persist setup failed");
+                .expect("temp/directory: persist setup failed");
             let target = self.path("async-temp-persisted-directory");
             self.context.record_created(target.clone());
             self.assert_temp_directory_persist(&mut temporary, &target)
@@ -134,7 +134,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .create_temp_directory(TempDirectoryOptions::default())
                 .await
             {
-                Ok(_) => panic!("temp-directory contract: unadvertised creation succeeded"),
+                Ok(_) => panic!("temp/directory: unadvertised creation succeeded"),
                 Err(error) => error,
             };
             self.assert_pathless_error(
@@ -181,7 +181,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let outcome = temporary
             .persist(target, self.temp_persist_options())
             .await
-            .expect("temp-file contract: persist failed");
+            .expect("temp/file: persist failed");
         self.assert_temp_persist_outcome(&outcome, target, "temp-file contract")
             .await;
         if !self.capable(FileSystemCapability::AtomicTempPersist) {
@@ -190,7 +190,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .create_temp_file(TempFileOptions::default())
                 .await
-                .expect("temp-file contract: atomic preflight setup failed");
+                .expect("temp/file: atomic preflight setup failed");
             let source = retry.path().clone();
             let failure = retry
                 .persist(
@@ -198,11 +198,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     PersistOptions::default(),
                 )
                 .await
-                .expect_err("temp-file contract: unadvertised required atomic persist succeeded");
+                .expect_err("temp/file: unadvertised required atomic persist succeeded");
             assert_eq!(
                 failure.state(),
                 PersistFailureState::NotPublished,
-                "temp-file contract: failed preflight changed publication responsibility"
+                "temp/file: failed preflight changed publication responsibility"
             );
             self.assert_requirement_error(
                 failure.error(),
@@ -213,30 +213,30 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             assert_eq!(
                 failure.error().path(),
                 Some(&source),
-                "temp-file contract: failed preflight source mismatch"
+                "temp/file: failed preflight source mismatch"
             );
             assert_eq!(
                 failure.error().target(),
                 Some(&self.path("async-temp-required-atomic-file")),
-                "temp-file contract: failed preflight target mismatch"
+                "temp/file: failed preflight target mismatch"
             );
             assert_eq!(
                 failure.error().provider(),
                 Some(self.context.properties().info().provider_id()),
-                "temp-file contract: failed preflight provider mismatch"
+                "temp/file: failed preflight provider mismatch"
             );
             assert!(
                 self.fixture
                     .file_system()
                     .exists(&source)
                     .await
-                    .expect("temp-file contract: source exists failed"),
-                "temp-file contract: required atomic preflight removed source"
+                    .expect("temp/file: source exists failed"),
+                "temp/file: required atomic preflight removed source"
             );
             retry
                 .cleanup()
                 .await
-                .expect("temp-file contract: retained source cleanup failed");
+                .expect("temp/file: retained source cleanup failed");
         }
     }
 
@@ -249,7 +249,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let outcome = temporary
             .persist(target, self.temp_persist_options())
             .await
-            .expect("temp-directory contract: persist failed");
+            .expect("temp/directory: persist failed");
         self.assert_temp_persist_outcome(&outcome, target, "temp-directory contract")
             .await;
         if !self.capable(FileSystemCapability::AtomicTempPersist) {
@@ -258,7 +258,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .create_temp_directory(TempDirectoryOptions::default())
                 .await
-                .expect("temp-directory contract: atomic preflight setup failed");
+                .expect("temp/directory: atomic preflight setup failed");
             let source = retry.path().clone();
             let failure = retry
                 .persist(
@@ -267,12 +267,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 )
                 .await
                 .expect_err(
-                    "temp-directory contract: unadvertised required atomic persist succeeded",
+                    "temp/directory: unadvertised required atomic persist succeeded",
                 );
             assert_eq!(
                 failure.state(),
                 PersistFailureState::NotPublished,
-                "temp-directory contract: failed preflight changed publication responsibility"
+                "temp/directory: failed preflight changed publication responsibility"
             );
             self.assert_requirement_error(
                 failure.error(),
@@ -283,30 +283,30 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             assert_eq!(
                 failure.error().path(),
                 Some(&source),
-                "temp-directory contract: failed preflight source mismatch"
+                "temp/directory: failed preflight source mismatch"
             );
             assert_eq!(
                 failure.error().target(),
                 Some(&self.path("async-temp-required-atomic-directory")),
-                "temp-directory contract: failed preflight target mismatch"
+                "temp/directory: failed preflight target mismatch"
             );
             assert_eq!(
                 failure.error().provider(),
                 Some(self.context.properties().info().provider_id()),
-                "temp-directory contract: failed preflight provider mismatch"
+                "temp/directory: failed preflight provider mismatch"
             );
             assert!(
                 self.fixture
                     .file_system()
                     .exists(&source)
                     .await
-                    .expect("temp-directory contract: source exists failed"),
-                "temp-directory contract: required atomic preflight removed source"
+                    .expect("temp/directory: source exists failed"),
+                "temp/directory: required atomic preflight removed source"
             );
             retry
                 .cleanup()
                 .await
-                .expect("temp-directory contract: retained source cleanup failed");
+                .expect("temp/directory: retained source cleanup failed");
         }
     }
 
@@ -318,24 +318,24 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .file_system()
             .create_directory(&target, CreateDirectoryOptions::default())
             .await
-            .expect("temp-directory overwrite contract: destination setup failed");
+            .expect("temp/directory: destination setup failed");
         let mut temporary = self
             .fixture
             .file_system()
             .create_temp_directory(TempDirectoryOptions::default())
             .await
-            .expect("temp-directory overwrite contract: temporary creation failed");
+            .expect("temp/directory: temporary creation failed");
         let outcome = temporary
             .persist(&target, self.temp_persist_options().with_overwrite(true))
             .await
-            .expect("temp-directory overwrite contract: persist failed");
+            .expect("temp/directory: persist failed");
         assert_eq!(outcome.target(), &target);
         assert!(
             self.fixture
                 .file_system()
                 .exists(&target)
                 .await
-                .expect("temp-directory overwrite contract: target observation failed")
+                .expect("temp/directory: target observation failed")
         );
     }
 
@@ -359,7 +359,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .with_suffix(".tmp".to_owned()),
             )
             .await
-            .expect("temp-file contract: option-aware creation failed");
+            .expect("temp/file: option-aware creation failed");
         self.assert_temp_path(
             temporary.path(),
             parent.as_ref(),
@@ -370,7 +370,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         temporary
             .cleanup()
             .await
-            .expect("temp-file contract: option-aware cleanup failed");
+            .expect("temp/file: option-aware cleanup failed");
     }
 
     /// Checks asynchronous temporary-directory parent and affix options.
@@ -393,7 +393,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .with_suffix(".tmpdir".to_owned()),
             )
             .await
-            .expect("temp-directory contract: option-aware creation failed");
+            .expect("temp/directory: option-aware creation failed");
         self.assert_temp_path(
             temporary.path(),
             parent.as_ref(),
@@ -404,7 +404,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         temporary
             .cleanup()
             .await
-            .expect("temp-directory contract: option-aware cleanup failed");
+            .expect("temp/directory: option-aware cleanup failed");
     }
 
     /// Prepares the parent directory used by temporary option assertions.
