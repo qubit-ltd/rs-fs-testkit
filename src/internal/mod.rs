@@ -10,6 +10,11 @@
 mod assertions;
 #[cfg(feature = "async")]
 mod catch_unwind_future;
+pub(crate) mod cleanup_failure;
+pub(crate) mod applicability;
+pub(crate) mod check_catalog;
+pub(crate) mod limit_probe_plan;
+pub(crate) mod tracked_resource;
 
 pub(crate) use assertions::assert_error_with_source_or_target;
 pub(crate) use assertions::assert_error_with_target;

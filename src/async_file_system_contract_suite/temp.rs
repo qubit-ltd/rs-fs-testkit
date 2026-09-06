@@ -1,0 +1,489 @@
+// =============================================================================
+//    Copyright (c) 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+//! Implements temporary resource contracts.
+
+use super::*;
+
+impl<'a> AsyncFileSystemContractSuite<'a> {
+    /// Checks asynchronous temporary-resource lifecycle behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics when temporary resource options, cleanup, or publication violates
+    /// an advertised capability.
+    pub async fn assert_temp_resources(&mut self) {
+        self.context.begin("temp_resources");
+        if self.capable(FileSystemCapability::TempFile) {
+            let incompatible_parent = match self.context.properties().info().path_semantics() {
+                PathSemantics::Hierarchical => Path::parse_literal("/async-temp-invalid-parent"),
+                _ => Path::parse("/async-temp-invalid-parent"),
+            }
+            .expect("incompatible temporary parent should parse");
+            let error = match self
+                .fixture
+                .file_system()
+                .create_temp_file(
+                    TempFileOptions::default().with_parent(Some(incompatible_parent.clone())),
+                )
+                .await
+            {
+                Ok(_) => panic!("temp-file contract: invalid parent succeeded"),
+                Err(error) => error,
+            };
+            assert_eq!(
+                error.kind(),
+                FsErrorKind::InvalidPath,
+                "temp-file contract: parent validation kind mismatch"
+            );
+            assert_eq!(
+                error.operation(),
+                FsOperation::CreateTemp,
+                "temp-file contract: parent validation operation mismatch"
+            );
+            assert_eq!(
+                error.path(),
+                Some(&incompatible_parent),
+                "temp-file contract: parent validation path mismatch"
+            );
+            self.assert_temp_file_options().await;
+            let mut temporary = self
+                .fixture
+                .file_system()
+                .create_temp_file(TempFileOptions::default())
+                .await
+                .expect("temp-file contract: advertised creation failed");
+            let path = temporary.path().clone();
+            temporary
+                .cleanup()
+                .await
+                .expect("temp-file contract: cleanup failed");
+            let error = self
+                .fixture
+                .file_system()
+                .stat(&path)
+                .await
+                .expect_err("temp-file contract: cleanup retained source");
+            self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+            let mut temporary = self
+                .fixture
+                .file_system()
+                .create_temp_file(TempFileOptions::default())
+                .await
+                .expect("temp-file contract: persist setup failed");
+            let target = self.path("async-temp-persisted-file");
+            self.context.record_created(target.clone());
+            self.assert_temp_file_persist(&mut temporary, &target).await;
+        } else {
+            let error = match self
+                .fixture
+                .file_system()
+                .create_temp_file(TempFileOptions::default())
+                .await
+            {
+                Ok(_) => panic!("temp-file contract: unadvertised creation succeeded"),
+                Err(error) => error,
+            };
+            self.assert_pathless_error(
+                &error,
+                FsErrorKind::UnsupportedCapability,
+                FsOperation::CreateTemp,
+            );
+        }
+        if self.capable(FileSystemCapability::TempDirectory) {
+            self.assert_temp_directory_options().await;
+            let mut temporary = self
+                .fixture
+                .file_system()
+                .create_temp_directory(TempDirectoryOptions::default())
+                .await
+                .expect("temp-directory contract: advertised creation failed");
+            let path = temporary.path().clone();
+            temporary
+                .cleanup()
+                .await
+                .expect("temp-directory contract: cleanup failed");
+            let error = self
+                .fixture
+                .file_system()
+                .stat(&path)
+                .await
+                .expect_err("temp-directory contract: cleanup retained source");
+            self.assert_error(&error, FsErrorKind::NotFound, FsOperation::Stat, &path);
+            let mut temporary = self
+                .fixture
+                .file_system()
+                .create_temp_directory(TempDirectoryOptions::default())
+                .await
+                .expect("temp-directory contract: persist setup failed");
+            let target = self.path("async-temp-persisted-directory");
+            self.context.record_created(target.clone());
+            self.assert_temp_directory_persist(&mut temporary, &target)
+                .await;
+            if self.capable(FileSystemCapability::CreateDirectory) {
+                self.assert_temp_directory_overwrite().await;
+            }
+        } else {
+            let error = match self
+                .fixture
+                .file_system()
+                .create_temp_directory(TempDirectoryOptions::default())
+                .await
+            {
+                Ok(_) => panic!("temp-directory contract: unadvertised creation succeeded"),
+                Err(error) => error,
+            };
+            self.assert_pathless_error(
+                &error,
+                FsErrorKind::UnsupportedCapability,
+                FsOperation::CreateTemp,
+            );
+        }
+    }
+
+    /// Verifies asynchronous temporary-file persistence publication.
+    pub async fn assert_temp_file_persist(
+        &self,
+        temporary: &mut AsyncTempFile,
+        target: &Path,
+    ) {
+        let outcome = temporary
+            .persist(target, self.temp_persist_options())
+            .await
+            .expect("temp-file contract: persist failed");
+        self.assert_temp_persist_outcome(&outcome, target, "temp-file contract")
+            .await;
+        if !self.capable(FileSystemCapability::AtomicTempPersist) {
+            let mut retry = self
+                .fixture
+                .file_system()
+                .create_temp_file(TempFileOptions::default())
+                .await
+                .expect("temp-file contract: atomic preflight setup failed");
+            let source = retry.path().clone();
+            let failure = retry
+                .persist(
+                    &self.path("async-temp-required-atomic-file"),
+                    PersistOptions::default(),
+                )
+                .await
+                .expect_err("temp-file contract: unadvertised required atomic persist succeeded");
+            assert_eq!(
+                failure.state(),
+                PersistFailureState::NotPublished,
+                "temp-file contract: failed preflight changed publication responsibility"
+            );
+            self.assert_requirement_error(
+                failure.error(),
+                FsOperation::PersistTemp,
+                FileSystemCapability::AtomicTempPersist,
+                "temp-file contract",
+            );
+            assert_eq!(
+                failure.error().path(),
+                Some(&source),
+                "temp-file contract: failed preflight source mismatch"
+            );
+            assert_eq!(
+                failure.error().target(),
+                Some(&self.path("async-temp-required-atomic-file")),
+                "temp-file contract: failed preflight target mismatch"
+            );
+            assert_eq!(
+                failure.error().provider(),
+                Some(self.context.properties().info().provider_id()),
+                "temp-file contract: failed preflight provider mismatch"
+            );
+            assert!(
+                self.fixture
+                    .file_system()
+                    .exists(&source)
+                    .await
+                    .expect("temp-file contract: source exists failed"),
+                "temp-file contract: required atomic preflight removed source"
+            );
+            retry
+                .cleanup()
+                .await
+                .expect("temp-file contract: retained source cleanup failed");
+        }
+    }
+
+    /// Verifies asynchronous temporary-directory persistence publication.
+    pub async fn assert_temp_directory_persist(
+        &self,
+        temporary: &mut AsyncTempDirectory,
+        target: &Path,
+    ) {
+        let outcome = temporary
+            .persist(target, self.temp_persist_options())
+            .await
+            .expect("temp-directory contract: persist failed");
+        self.assert_temp_persist_outcome(&outcome, target, "temp-directory contract")
+            .await;
+        if !self.capable(FileSystemCapability::AtomicTempPersist) {
+            let mut retry = self
+                .fixture
+                .file_system()
+                .create_temp_directory(TempDirectoryOptions::default())
+                .await
+                .expect("temp-directory contract: atomic preflight setup failed");
+            let source = retry.path().clone();
+            let failure = retry
+                .persist(
+                    &self.path("async-temp-required-atomic-directory"),
+                    PersistOptions::default(),
+                )
+                .await
+                .expect_err(
+                    "temp-directory contract: unadvertised required atomic persist succeeded",
+                );
+            assert_eq!(
+                failure.state(),
+                PersistFailureState::NotPublished,
+                "temp-directory contract: failed preflight changed publication responsibility"
+            );
+            self.assert_requirement_error(
+                failure.error(),
+                FsOperation::PersistTemp,
+                FileSystemCapability::AtomicTempPersist,
+                "temp-directory contract",
+            );
+            assert_eq!(
+                failure.error().path(),
+                Some(&source),
+                "temp-directory contract: failed preflight source mismatch"
+            );
+            assert_eq!(
+                failure.error().target(),
+                Some(&self.path("async-temp-required-atomic-directory")),
+                "temp-directory contract: failed preflight target mismatch"
+            );
+            assert_eq!(
+                failure.error().provider(),
+                Some(self.context.properties().info().provider_id()),
+                "temp-directory contract: failed preflight provider mismatch"
+            );
+            assert!(
+                self.fixture
+                    .file_system()
+                    .exists(&source)
+                    .await
+                    .expect("temp-directory contract: source exists failed"),
+                "temp-directory contract: required atomic preflight removed source"
+            );
+            retry
+                .cleanup()
+                .await
+                .expect("temp-directory contract: retained source cleanup failed");
+        }
+    }
+
+    /// Verifies asynchronous overwrite publication for an empty directory.
+    pub async fn assert_temp_directory_overwrite(&mut self) {
+        let target = self.path("async-temp-overwritten-directory");
+        self.context.record_created(target.clone());
+        self.fixture
+            .file_system()
+            .create_directory(&target, CreateDirectoryOptions::default())
+            .await
+            .expect("temp-directory overwrite contract: destination setup failed");
+        let mut temporary = self
+            .fixture
+            .file_system()
+            .create_temp_directory(TempDirectoryOptions::default())
+            .await
+            .expect("temp-directory overwrite contract: temporary creation failed");
+        let outcome = temporary
+            .persist(&target, self.temp_persist_options().with_overwrite(true))
+            .await
+            .expect("temp-directory overwrite contract: persist failed");
+        assert_eq!(outcome.target(), &target);
+        assert!(
+            self.fixture
+                .file_system()
+                .exists(&target)
+                .await
+                .expect("temp-directory overwrite contract: target observation failed")
+        );
+    }
+
+    /// Checks asynchronous temporary-file parent and affix options.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a temporary file ignores the requested parent, prefix, or
+    /// suffix, or when cleanup fails.
+    pub async fn assert_temp_file_options(&mut self) {
+        let parent = self
+            .prepare_temp_options_parent("async-temp-file-options-parent")
+            .await;
+        let mut temporary = self
+            .fixture
+            .file_system()
+            .create_temp_file(
+                TempFileOptions::default()
+                    .with_parent(parent.clone())
+                    .with_prefix("async-file-".to_owned())
+                    .with_suffix(".tmp".to_owned()),
+            )
+            .await
+            .expect("temp-file contract: option-aware creation failed");
+        self.assert_temp_path(
+            temporary.path(),
+            parent.as_ref(),
+            "async-file-",
+            ".tmp",
+            "temp-file contract",
+        );
+        temporary
+            .cleanup()
+            .await
+            .expect("temp-file contract: option-aware cleanup failed");
+    }
+
+    /// Checks asynchronous temporary-directory parent and affix options.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a temporary directory ignores the requested parent, prefix,
+    /// or suffix, or when cleanup fails.
+    pub async fn assert_temp_directory_options(&mut self) {
+        let parent = self
+            .prepare_temp_options_parent("async-temp-directory-options-parent")
+            .await;
+        let mut temporary = self
+            .fixture
+            .file_system()
+            .create_temp_directory(
+                TempDirectoryOptions::default()
+                    .with_parent(parent.clone())
+                    .with_prefix("async-directory-".to_owned())
+                    .with_suffix(".tmpdir".to_owned()),
+            )
+            .await
+            .expect("temp-directory contract: option-aware creation failed");
+        self.assert_temp_path(
+            temporary.path(),
+            parent.as_ref(),
+            "async-directory-",
+            ".tmpdir",
+            "temp-directory contract",
+        );
+        temporary
+            .cleanup()
+            .await
+            .expect("temp-directory contract: option-aware cleanup failed");
+    }
+
+    /// Prepares the parent directory used by temporary option assertions.
+    ///
+    /// # Returns
+    ///
+    /// The created parent path when directory creation is advertised, or `None`
+    /// otherwise.
+    ///
+    /// # Panics
+    ///
+    /// Panics when an advertised directory creation operation fails.
+    pub async fn prepare_temp_options_parent(&mut self, relative: &str) -> Option<Path> {
+        if !self.capable(FileSystemCapability::CreateDirectory) {
+            return None;
+        }
+        let parent = self.path(relative);
+        self.fixture
+            .file_system()
+            .create_directory(&parent, CreateDirectoryOptions::default())
+            .await
+            .expect("temporary resource contract: option parent creation failed");
+        self.context.record_created(parent.clone());
+        Some(parent)
+    }
+
+    /// Checks that a temporary resource honors its requested location and name.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Provider-created temporary resource path.
+    /// * `parent` - Requested parent path, when one was requested.
+    /// * `prefix` - Requested filename prefix.
+    /// * `suffix` - Requested filename suffix.
+    /// * `contract` - Contract label used in diagnostics.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the path is not an immediate child of an explicitly
+    /// requested `parent`, or does not honor the requested affixes.
+    pub fn assert_temp_path(
+        &self,
+        path: &Path,
+        parent: Option<&Path>,
+        prefix: &str,
+        suffix: &str,
+        contract: &str,
+    ) {
+        let name = path
+            .as_str()
+            .rsplit('/')
+            .next()
+            .expect("temporary resource path must have a final component");
+        if let Some(parent) = parent {
+            let parent_prefix = format!("{}/", parent.as_str().trim_end_matches('/'));
+            assert!(
+                path.as_str()
+                    .strip_prefix(&parent_prefix)
+                    .is_some_and(|relative| !relative.contains('/'),),
+                "{contract}: temporary resource was not an immediate child of the requested parent"
+            );
+        }
+        assert!(
+            name.starts_with(prefix),
+            "{contract}: temporary resource prefix mismatch"
+        );
+        assert!(
+            name.ends_with(suffix),
+            "{contract}: temporary resource suffix mismatch"
+        );
+    }
+
+    /// Builds persistence options matching the advertised atomic guarantee.
+    #[inline]
+    pub fn temp_persist_options(&self) -> PersistOptions {
+        PersistOptions::default().with_atomicity(
+            if self.capable(FileSystemCapability::AtomicTempPersist) {
+                AtomicityRequirement::Required
+            } else {
+                AtomicityRequirement::Preferred
+            },
+        )
+    }
+
+    /// Checks persistence reporting and destination publication.
+    pub async fn assert_temp_persist_outcome(
+        &self,
+        outcome: &PersistOutcome,
+        target: &Path,
+        label: &str,
+    ) {
+        assert_eq!(outcome.target(), target, "{label}: persist target mismatch");
+        if self.capable(FileSystemCapability::AtomicTempPersist) {
+            assert_eq!(
+                outcome.atomicity(),
+                AchievedAtomicity::Atomic,
+                "{label}: required operation reported non-atomic publication"
+            );
+        }
+        assert!(
+            self.fixture
+                .file_system()
+                .exists(target)
+                .await
+                .expect("temporary resource contract: target exists failed"),
+            "{label}: persist did not publish target"
+        );
+    }
+}
