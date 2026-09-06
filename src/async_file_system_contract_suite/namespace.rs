@@ -570,6 +570,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .create_directory(&root, CreateDirectoryOptions::default())
                 .await
                 .expect("recursive-delete contract: root creation failed");
+            self.context.record_created(root.clone());
         }
         let child = self
             .required_seed(

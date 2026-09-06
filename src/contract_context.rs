@@ -138,6 +138,7 @@ impl ContractContext {
     /// Registers every check expected for a phase before it executes.
     pub(crate) fn prepare_phase(&mut self, contract: FileSystemContract) {
         for spec in crate::internal::check_catalog::for_contract(contract) {
+            self.report.expect(spec.id);
             self.report.record(
                 spec.id,
                 spec.capability,
