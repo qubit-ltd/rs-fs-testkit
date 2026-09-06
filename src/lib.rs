@@ -21,6 +21,10 @@ mod async_copy_fixture_case;
 mod async_file_system_contract_suite;
 #[cfg(feature = "async")]
 mod async_file_system_fixture;
+#[cfg(feature = "async")]
+mod async_write_cancellation_stage;
+#[cfg(feature = "async")]
+mod async_write_fixture_case;
 mod contract_check;
 mod contract_check_outcome;
 mod contract_context;
@@ -36,6 +40,8 @@ mod fixture_case;
 mod fixture_error;
 mod fixture_support;
 mod internal;
+#[cfg(feature = "async")]
+mod write_cancellation_probe;
 
 #[cfg(feature = "async")]
 pub use async_copy_cancellation_stage::AsyncCopyCancellationStage;
@@ -47,6 +53,10 @@ pub use async_file_system_contract_suite::AsyncFileSystemContractSuite;
 pub use async_file_system_fixture::AsyncFileSystemFixture;
 #[cfg(feature = "async")]
 pub use async_file_system_fixture::FixtureFuture;
+#[cfg(feature = "async")]
+pub use async_write_cancellation_stage::AsyncWriteCancellationStage;
+#[cfg(feature = "async")]
+pub use async_write_fixture_case::AsyncWriteFixtureCase;
 pub use contract_check::ContractCheck;
 pub use contract_check_outcome::ContractCheckOutcome;
 pub use contract_report::ContractReport;
@@ -60,3 +70,5 @@ pub use fixture_case::FixtureCase;
 pub use fixture_error::FixtureError;
 pub use fixture_error::FixtureResult;
 pub use fixture_support::FixtureSupport;
+#[cfg(feature = "async")]
+pub use write_cancellation_probe::WriteCancellationProbe;

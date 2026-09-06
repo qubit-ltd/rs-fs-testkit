@@ -131,11 +131,16 @@ impl ContractContext {
     pub(crate) fn prepare_phase(&mut self, contract: FileSystemContract) {
         for spec in crate::internal::check_catalog::for_contract(contract) {
             self.report.expect(spec.id);
+            let reason = if crate::internal::check_catalog::requires_explicit_evidence(spec.id) {
+                "check requires an explicit provider probe"
+            } else {
+                "check not yet executed"
+            };
             self.report.record(
                 spec.id,
                 spec.capability,
                 ContractCheckOutcome::Unverified {
-                    reason: "check not yet executed".to_owned(),
+                    reason: reason.to_owned(),
                 },
             );
         }

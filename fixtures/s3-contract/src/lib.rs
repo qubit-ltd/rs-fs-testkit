@@ -1,6 +1,7 @@
 mod config;
 mod error_mapper;
 mod path_mapper;
+mod s3_directory_stream;
 mod s3_file_system_spi;
 mod s3_reader;
 mod s3_write_session;

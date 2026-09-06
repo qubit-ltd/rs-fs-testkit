@@ -96,7 +96,9 @@ impl AsyncOutput for S3WriteSession {
     }
 }
 impl AsyncFileWriteSession for S3WriteSession {
-    fn commit_async<'a>(self: Pin<&'a mut Self>) -> qubit_fs::spi::SpiFuture<'a, Result<WriteOutcome, WriteFailure>> {
+    fn commit_async<'a>(
+        self: Pin<&'a mut Self>,
+    ) -> qubit_fs::spi::SpiFuture<'a, Result<WriteOutcome, WriteFailure>> {
         Box::pin(async move {
             if !matches!(self.state, State::Open) {
                 return Err(WriteFailure::new(
@@ -126,8 +128,10 @@ impl AsyncFileWriteSession for S3WriteSession {
                 Ok(_) => {
                     this.data.clear();
                     this.state = State::Published;
-                    Ok(WriteOutcome::new(AchievedAtomicity::Atomic, PublicationMethod::Direct)
-                        .with_bytes_written(count))
+                    Ok(
+                        WriteOutcome::new(AchievedAtomicity::Atomic, PublicationMethod::Direct)
+                            .with_bytes_written(count),
+                    )
                 }
                 Err(e) => {
                     this.state = if matches!(e, object_store::Error::AlreadyExists { .. }) {
@@ -147,7 +151,9 @@ impl AsyncFileWriteSession for S3WriteSession {
             }
         })
     }
-    fn abort_async<'a>(self: Pin<&'a mut Self>) -> qubit_fs::spi::SpiFuture<'a, FsResult<WriteAbortOutcome>> {
+    fn abort_async<'a>(
+        self: Pin<&'a mut Self>,
+    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<WriteAbortOutcome>> {
         Box::pin(async move {
             let this = self.get_mut();
             Ok(match this.state {
