@@ -55,7 +55,7 @@ fn test_async_copy_cancellation_drop_leaves_explicit_teardown_responsibility() {
     ));
     drop(assertion);
 
-    run_controlled(fixture.teardown());
+    run_controlled(fixture.teardown()).expect("explicit fixture teardown must succeed");
     assert!(
         fixture.is_empty(),
         "explicit fixture teardown must reclaim data"
