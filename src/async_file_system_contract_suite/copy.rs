@@ -525,10 +525,13 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             stage,
             AsyncCopyCancellationStage::Writer | AsyncCopyCancellationStage::Commit
         ) {
-            assert!(
-                operation.take_recovery_writer().is_some(),
-                "async copy cancellation contract: recovery writer was lost"
-            );
+            let mut writer = operation
+                .take_recovery_writer()
+                .expect("async copy cancellation contract: recovery writer was lost");
+            let _ = writer
+                .abort_async()
+                .await
+                .expect("async copy cancellation contract: recovery writer abort failed");
         }
         self.context.record_check(
             cancellation_check_id(stage),

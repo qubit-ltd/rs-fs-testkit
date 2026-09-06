@@ -640,6 +640,7 @@ impl FileSystemFixture for MemoryFixture {
             }
             FixtureCase::DeleteIfMatch => state.extended_capabilities && state.delete_capability,
             FixtureCase::CopyOverwrite | FixtureCase::CopyTree => state.native_copy,
+            _ => false,
         };
         Ok(if supported {
             FixtureSupport::Supported(())

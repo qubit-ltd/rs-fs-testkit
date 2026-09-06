@@ -9,6 +9,7 @@ use qubit_fs::metadata::FileSystemCapability;
 
 /// Identifies a provider scenario that a fixture can prepare and observe.
 #[must_use]
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FixtureCase {
     /// A basic capability or guarantee probe.
