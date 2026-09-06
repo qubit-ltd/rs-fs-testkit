@@ -21,6 +21,7 @@ use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
+use qubit_fs_testkit::FixtureCase;
 
 /// Both suites intentionally cover every capability in this stable order.
 const COVERED_CAPABILITIES: [FileSystemCapability; 28] = [
@@ -148,6 +149,30 @@ fn test_sync_property_profiles_cover_all_limit_outcomes() {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let fixture = MemoryFixture::with_limits(snapshot);
             FileSystemContractSuite::new(&fixture).assert_properties();
+        }));
+    }
+}
+
+#[test]
+fn test_sync_unavailable_fixture_cases_are_exercised() {
+    let cases = [
+        FixtureCase::ReadIfMatch,
+        FixtureCase::ReadIfNoneMatch,
+        FixtureCase::WriteIfAbsent,
+        FixtureCase::WriteIfMatch,
+        FixtureCase::DeleteIfMatch,
+        FixtureCase::CopyOverwrite,
+        FixtureCase::CopyTree,
+        FixtureCase::Capability(FileSystemCapability::ServerSideCopy),
+        FixtureCase::Capability(FileSystemCapability::AtomicFileCopy),
+        FixtureCase::Capability(FileSystemCapability::AtomicTreeCopy),
+        FixtureCase::Capability(FileSystemCapability::DurableFileCopy),
+        FixtureCase::Capability(FileSystemCapability::DurableTreeCopy),
+    ];
+    for case in cases {
+        let fixture = MemoryFixture::with_conditional_case_unavailable(case);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = FileSystemContractSuite::new(&fixture).assert_all_with_report();
         }));
     }
 }
