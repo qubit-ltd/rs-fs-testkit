@@ -148,3 +148,16 @@ fn test_sync_conditional_case_unavailability_remains_unverified() {
             && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
     }));
 }
+
+#[test]
+fn test_sync_io_reports_are_complete_when_probes_run() {
+    for contract in [
+        FileSystemContract::Properties,
+        FileSystemContract::Read,
+        FileSystemContract::Write,
+    ] {
+        let fixture = MemoryFixture::with_all_capabilities();
+        let report = FileSystemContractSuite::new(&fixture).assert_contract_with_report(contract);
+        report.assert_complete();
+    }
+}

@@ -659,6 +659,15 @@ impl FileSystemFixture for MemoryFixture {
     }
 
     fn checksum_failure_case(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
+        if self
+            .state
+            .lock()
+            .expect("memory state lock must succeed")
+            .fault
+            == MemoryFault::ChecksumIgnoresCorruption
+        {
+            return Ok(FixtureSupport::Unsupported);
+        }
         let path = Self::path_for(relative)?;
         self.publish(&path, Entry::File(b"checksum-source".to_vec()));
         Ok(FixtureSupport::Supported(path))
