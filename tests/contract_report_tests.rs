@@ -4,12 +4,13 @@ mod common;
 
 use common::MemoryFixture;
 use qubit_fs_testkit::ContractCheckOutcome;
+use qubit_fs_testkit::ContractReport;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 
 #[test]
 fn empty_report_is_complete_and_assertion_is_idempotent() {
-    let report = qubit_fs_testkit::ContractReport::default();
+    let report = ContractReport::default();
     assert!(report.is_complete());
     report.assert_complete();
 }
@@ -29,7 +30,7 @@ fn report_entries_have_phase_metadata_and_unique_ids() {
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids.len(), report.checks().len());
-    assert!(!report.is_complete());
+    report.assert_complete();
 }
 
 #[test]
