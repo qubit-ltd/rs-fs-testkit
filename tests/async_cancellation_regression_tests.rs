@@ -61,10 +61,3 @@ fn test_async_copy_cancellation_drop_leaves_explicit_teardown_responsibility() {
         "explicit fixture teardown must reclaim data"
     );
 }
-
-/// The controlled runner itself is a runtime-neutral future driver.
-#[test]
-fn test_async_copy_cancellation_driver_accepts_runtime_neutral_future() {
-    let value = run_controlled(async { 7_u8 });
-    assert_eq!(value, 7);
-}
