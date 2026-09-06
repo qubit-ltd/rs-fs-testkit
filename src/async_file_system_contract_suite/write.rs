@@ -50,7 +50,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 ("write/limit", FileSystemCapability::Write),
                 ("write/if-absent", FileSystemCapability::ConditionalWrite),
                 ("write/if-match", FileSystemCapability::ConditionalWrite),
-                ("write/atomic-replace-existing", FileSystemCapability::AtomicReplace),
+                (
+                    "write/atomic-replace-existing",
+                    FileSystemCapability::AtomicReplace,
+                ),
                 ("write/durable", FileSystemCapability::DurableWrite),
             ] {
                 self.context.record_check(
@@ -95,7 +98,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .expect("write contract: fixture observation failed")
         {
             FixtureSupport::Supported(bytes) => {
-                assert_eq!(bytes, basic_bytes, "write contract: bytes were not published")
+                assert_eq!(
+                    bytes, basic_bytes,
+                    "write contract: bytes were not published"
+                )
             }
             FixtureSupport::Unsupported => {
                 panic!("write/basic: Write capability requires fixture.read_file support")
@@ -114,7 +120,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .expect("write/limit: write limit successor overflow");
                 let at_path = self.path("async-write-limit-at");
                 self.context.record_created(at_path.clone());
-                let at_payload = vec![b'a'; usize::try_from(maximum).expect("write/limit-at: boundary must fit usize")];
+                let at_payload = vec![
+                    b'a';
+                    usize::try_from(maximum)
+                        .expect("write/limit-at: boundary must fit usize")
+                ];
                 self.fixture
                     .file_system()
                     .write_all(&at_path, &at_payload, WriteOptions::default())
@@ -123,8 +133,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
                 let over_path = self.path("async-write-limit-over");
                 self.context.record_created(over_path.clone());
-                let over_payload =
-                    vec![b'o'; usize::try_from(over).expect("write/limit-over: successor must fit usize")];
+                let over_payload = vec![
+                    b'o';
+                    usize::try_from(over)
+                        .expect("write/limit-over: successor must fit usize")
+                ];
                 let failure = self
                     .fixture
                     .file_system()
@@ -142,14 +155,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             FileSystemLimit::Maximum(_) => ContractCheckOutcome::SkippedOptional {
                 reason: "write boundary exceeds the bounded probe budget".to_owned(),
             },
-            FileSystemLimit::Unknown | FileSystemLimit::NotApplicable | FileSystemLimit::Unbounded => {
-                ContractCheckOutcome::SkippedOptional {
-                    reason: "write limit is unknown, inapplicable, or unbounded".to_owned(),
-                }
-            }
+            FileSystemLimit::Unknown
+            | FileSystemLimit::NotApplicable
+            | FileSystemLimit::Unbounded => ContractCheckOutcome::SkippedOptional {
+                reason: "write limit is unknown, inapplicable, or unbounded".to_owned(),
+            },
         };
-        self.context
-            .record_check("write/limit", Some(FileSystemCapability::Write), limit_outcome);
+        self.context.record_check(
+            "write/limit",
+            Some(FileSystemCapability::Write),
+            limit_outcome,
+        );
         self.assert_write_options(&path, &basic_bytes).await;
     }
 
@@ -158,7 +174,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         let limit = self.context.properties().limits().max_write_bytes();
         let unexpected = bounded_payload(limit, b"unexpected", b'u');
         let create_new = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
-        let error = match self.fixture.file_system().open_writer(existing, create_new).await {
+        let error = match self
+            .fixture
+            .file_system()
+            .open_writer(existing, create_new)
+            .await
+        {
             Ok(mut writer) => {
                 writer
                     .write_fully_async(&unexpected)
@@ -173,10 +194,18 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             Err(error) => error,
         };
         assert!(
-            matches!(error.operation(), FsOperation::OpenWriter | FsOperation::CommitWriter),
+            matches!(
+                error.operation(),
+                FsOperation::OpenWriter | FsOperation::CommitWriter
+            ),
             "writer contract: create-new failed at an unrelated operation"
         );
-        self.assert_error(&error, FsErrorKind::AlreadyExists, error.operation(), existing);
+        self.assert_error(
+            &error,
+            FsErrorKind::AlreadyExists,
+            error.operation(),
+            existing,
+        );
         self.assert_bytes(
             existing,
             existing_bytes,
@@ -199,8 +228,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .commit_async()
             .await
             .expect("writer contract: replacement commit failed");
-        self.assert_bytes(existing, &replacement, "writer contract: replacement bytes mismatch")
-            .await;
+        self.assert_bytes(
+            existing,
+            &replacement,
+            "writer contract: replacement bytes mismatch",
+        )
+        .await;
 
         let aborted_path = self.path("async-write-aborted");
         self.context.record_created(aborted_path.clone());
@@ -214,7 +247,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .write_fully_async(&bounded_payload(limit, b"aborted", b'a'))
             .await
             .expect("writer contract: abort writer rejected bytes");
-        let _ = writer.abort_async().await.expect("writer contract: abort failed");
+        let _ = writer
+            .abort_async()
+            .await
+            .expect("writer contract: abort failed");
         assert!(
             !self
                 .fixture
@@ -273,13 +309,18 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                         retry
                             .commit_async()
                             .await
-                            .expect_err("writer contract: failed conditional write unexpectedly succeeded")
+                            .expect_err(
+                                "writer contract: failed conditional write unexpectedly succeeded",
+                            )
                             .into_error()
                     }
                     Err(error) => error,
                 };
                 assert!(
-                    matches!(error.operation(), FsOperation::OpenWriter | FsOperation::CommitWriter),
+                    matches!(
+                        error.operation(),
+                        FsOperation::OpenWriter | FsOperation::CommitWriter
+                    ),
                     "writer contract: conditional write failed at an unrelated operation"
                 );
                 self.assert_error(
@@ -352,7 +393,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     .file_system()
                     .open_writer(
                         &if_match_path,
-                        WriteOptions::default().with_precondition(WritePrecondition::IfMatch(current)),
+                        WriteOptions::default()
+                            .with_precondition(WritePrecondition::IfMatch(current)),
                     )
                     .await
                     .expect("conditional-write contract: current writer open failed");
@@ -372,7 +414,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 let FixtureSupport::Supported(stale) = stale else {
                     panic!("conditional-write contract: fixture lacks stale version")
                 };
-                let stale_options = WriteOptions::default().with_precondition(WritePrecondition::IfMatch(stale));
+                let stale_options =
+                    WriteOptions::default().with_precondition(WritePrecondition::IfMatch(stale));
                 let error = match self
                     .fixture
                     .file_system()
@@ -416,8 +459,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .open_writer(
                     &if_match_path,
-                    WriteOptions::default()
-                        .with_precondition(WritePrecondition::IfMatch(ResourceVersion::new("unsupported-version"))),
+                    WriteOptions::default().with_precondition(WritePrecondition::IfMatch(
+                        ResourceVersion::new("unsupported-version"),
+                    )),
                 )
                 .await
                 .expect_err("writer contract: unadvertised If-Match write succeeded");
@@ -539,7 +583,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             );
             return;
         }
-        let path = self.required_seed("async-append-target", b"before", "append").await;
+        let path = self
+            .required_seed("async-append-target", b"before", "append")
+            .await;
         let limit = self.context.properties().limits().max_write_bytes();
         let append_bytes = bounded_payload(limit, b"-after", b'a');
         let mut writer = self
@@ -552,11 +598,18 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .write_fully_async(&append_bytes)
             .await
             .expect("append contract: write failed");
-        writer.commit_async().await.expect("append contract: commit failed");
+        writer
+            .commit_async()
+            .await
+            .expect("append contract: commit failed");
         let mut expected = b"before".to_vec();
         expected.extend_from_slice(&append_bytes);
-        self.assert_bytes(&path, &expected, "append/basic: existing bytes were not retained")
-            .await;
+        self.assert_bytes(
+            &path,
+            &expected,
+            "append/basic: existing bytes were not retained",
+        )
+        .await;
         self.context.record_check(
             "append/basic",
             Some(FileSystemCapability::Append),
@@ -626,7 +679,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             AchievedAtomicity::Atomic,
             "write/atomic-replace-existing: non-atomic outcome"
         );
-        let replacement = bounded_payload(self.context.properties().limits().max_write_bytes(), b"b", b'b');
+        let replacement = bounded_payload(
+            self.context.properties().limits().max_write_bytes(),
+            b"b",
+            b'b',
+        );
         self.assert_bytes(
             &path,
             &replacement,
@@ -643,9 +700,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
 /// Selects a write payload that fits the declared provider limit.
 fn bounded_payload(limit: FileSystemLimit, preferred: &[u8], fill: u8) -> Vec<u8> {
-    let length = limit
-        .maximum()
-        .map_or(preferred.len() as u64, |maximum| maximum.min(preferred.len() as u64)) as usize;
+    let length = limit.maximum().map_or(preferred.len() as u64, |maximum| {
+        maximum.min(preferred.len() as u64)
+    }) as usize;
     if length == preferred.len() {
         preferred.to_vec()
     } else {

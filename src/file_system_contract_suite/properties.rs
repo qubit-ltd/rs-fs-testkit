@@ -75,10 +75,16 @@ impl<'a> FileSystemContractSuite<'a> {
             Some(FileSystemCapability::Read),
             ContractCheckOutcome::Passed,
         );
-        self.context
-            .record_check("properties/path-constraints", None, ContractCheckOutcome::Passed);
-        self.context
-            .record_check("properties/capability-dependencies", None, ContractCheckOutcome::Passed);
+        self.context.record_check(
+            "properties/path-constraints",
+            None,
+            ContractCheckOutcome::Passed,
+        );
+        self.context.record_check(
+            "properties/capability-dependencies",
+            None,
+            ContractCheckOutcome::Passed,
+        );
         self.context
             .record_check("properties/limits", None, ContractCheckOutcome::Passed);
         let path_outcome = match path_limit.maximum() {
@@ -108,7 +114,10 @@ impl<'a> FileSystemContractSuite<'a> {
         };
         self.context
             .record_check("properties/limit-path-admission", None, path_outcome);
-        self.context
-            .record_check("properties/symlink-policy", None, ContractCheckOutcome::Passed);
+        self.context.record_check(
+            "properties/symlink-policy",
+            None,
+            ContractCheckOutcome::Passed,
+        );
     }
 }
