@@ -76,16 +76,10 @@ impl<'a> FileSystemContractSuite<'a> {
             Some(FileSystemCapability::Read),
             ContractCheckOutcome::Passed,
         );
-        self.context.record_check(
-            "properties/path-constraints",
-            None,
-            ContractCheckOutcome::Passed,
-        );
-        self.context.record_check(
-            "properties/capability-dependencies",
-            None,
-            ContractCheckOutcome::Passed,
-        );
+        self.context
+            .record_check("properties/path-constraints", None, ContractCheckOutcome::Passed);
+        self.context
+            .record_check("properties/capability-dependencies", None, ContractCheckOutcome::Passed);
         self.context
             .record_check("properties/limits", None, ContractCheckOutcome::Passed);
         let path_outcome = match path_limit.maximum() {
@@ -148,23 +142,16 @@ impl<'a> FileSystemContractSuite<'a> {
                 },
             }
         };
-        self.context.record_check(
-            "properties/limit-component-admission",
-            None,
-            component_outcome,
-        );
+        self.context
+            .record_check("properties/limit-component-admission", None, component_outcome);
         let page_outcome = match limits.max_list_page_entries().maximum() {
             Some(maximum) if maximum <= MAX_PROBE_ENTRIES => {
-                let requested = usize::try_from(maximum)
-                    .ok()
-                    .and_then(|maximum| maximum.checked_add(1));
+                let requested = usize::try_from(maximum).ok().and_then(|maximum| maximum.checked_add(1));
                 match requested {
                     Some(requested) => {
                         let effective = limits.clamp_list_page_size(Some(requested));
                         assert!(
-                            effective.is_none_or(
-                                |effective| effective <= usize::try_from(maximum).unwrap()
-                            ),
+                            effective.is_none_or(|effective| effective <= usize::try_from(maximum).unwrap()),
                             "properties contract: list page clamp exceeded declared maximum"
                         );
                         ContractCheckOutcome::Passed
@@ -183,10 +170,7 @@ impl<'a> FileSystemContractSuite<'a> {
         };
         self.context
             .record_check("properties/limit-list-page", None, page_outcome);
-        self.context.record_check(
-            "properties/symlink-policy",
-            None,
-            ContractCheckOutcome::Passed,
-        );
+        self.context
+            .record_check("properties/symlink-policy", None, ContractCheckOutcome::Passed);
     }
 }

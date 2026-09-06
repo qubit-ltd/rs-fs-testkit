@@ -37,8 +37,7 @@ impl AsyncFileSystemFixture for DefaultAsyncFixture<'_> {
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/defaults/{relative}"))
-            .map_err(|error| FixtureError::new(error.to_string()))
+        Path::parse(&format!("/defaults/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
     }
 }
 
@@ -103,31 +102,22 @@ fn test_async_file_system_fixture_defaults_are_unsupported() {
 #[test]
 fn async_memory_resource_versions_follow_out_of_band_publication() {
     let fixture = AsyncMemoryFixture::new();
-    let path = match run_controlled(fixture.seed_file("versioned", b"old"))
-        .expect("seed versioned file")
-    {
+    let path = match run_controlled(fixture.seed_file("versioned", b"old")).expect("seed versioned file") {
         FixtureSupport::Supported(path) => path,
         FixtureSupport::Unsupported => panic!("memory fixture must support file seeding"),
     };
-    let first = match run_controlled(fixture.resource_version(&path))
-        .expect("read initial resource version")
-    {
+    let first = match run_controlled(fixture.resource_version(&path)).expect("read initial resource version") {
         FixtureSupport::Supported(version) => version,
         FixtureSupport::Unsupported => panic!("seeded file must have a resource version"),
     };
-    let _ = run_controlled(fixture.write_file_out_of_band(&path, b"new"))
-        .expect("publish updated versioned file");
-    let second = match run_controlled(fixture.resource_version(&path))
-        .expect("read updated resource version")
-    {
+    let _ = run_controlled(fixture.write_file_out_of_band(&path, b"new")).expect("publish updated versioned file");
+    let second = match run_controlled(fixture.resource_version(&path)).expect("read updated resource version") {
         FixtureSupport::Supported(version) => version,
         FixtureSupport::Unsupported => panic!("updated file must have a resource version"),
     };
     assert_ne!(first, second);
     assert_eq!(
-        match run_controlled(fixture.stale_resource_version(&path))
-            .expect("read stale resource version")
-        {
+        match run_controlled(fixture.stale_resource_version(&path)).expect("read stale resource version") {
             FixtureSupport::Supported(version) => version,
             FixtureSupport::Unsupported => panic!("updated file must have stale version"),
         },

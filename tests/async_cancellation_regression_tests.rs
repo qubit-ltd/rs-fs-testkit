@@ -50,18 +50,12 @@ fn test_async_copy_cancellation_drop_leaves_explicit_teardown_responsibility() {
     let mut assertion = Box::pin(suite.assert_copy_cancellation());
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        assertion.as_mut().poll(&mut context),
-        Poll::Pending
-    ));
+    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Pending));
     drop(assertion);
 
     assert!(matches!(
         run_controlled(fixture.teardown()).expect("explicit fixture teardown must succeed"),
         FixtureSupport::Supported(())
     ));
-    assert!(
-        fixture.is_empty(),
-        "explicit fixture teardown must reclaim data"
-    );
+    assert!(fixture.is_empty(), "explicit fixture teardown must reclaim data");
 }

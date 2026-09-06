@@ -26,9 +26,7 @@ pub(crate) const fn bounded_successor(maximum: u64, budget: u64) -> Option<(u64,
 pub(crate) const fn finite_probe(limit: FileSystemLimit, budget: u64) -> Option<(u64, u64)> {
     match limit {
         FileSystemLimit::Maximum(maximum) => bounded_successor(maximum, budget),
-        FileSystemLimit::Unknown | FileSystemLimit::NotApplicable | FileSystemLimit::Unbounded => {
-            None
-        }
+        FileSystemLimit::Unknown | FileSystemLimit::NotApplicable | FileSystemLimit::Unbounded => None,
     }
 }
 use qubit_fs::metadata::FileSystemLimit;
