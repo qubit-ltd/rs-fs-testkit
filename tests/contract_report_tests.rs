@@ -6,6 +6,8 @@
 
 mod common;
 
+use std::panic::AssertUnwindSafe;
+
 use common::MemoryFixture;
 use qubit_fs_testkit::FileSystemContractSuite;
 
@@ -23,6 +25,6 @@ fn test_empty_report_is_incomplete() {
 fn test_empty_report_strict_check_panics() {
     let fixture = MemoryFixture::new();
     let suite = FileSystemContractSuite::new(&fixture);
-    let result = std::panic::catch_unwind(|| suite.report().assert_complete());
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| suite.report().assert_complete()));
     assert!(result.is_err());
 }
