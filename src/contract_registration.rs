@@ -11,14 +11,30 @@
 #[macro_export]
 macro_rules! register_file_system_contract_tests {
     (module: $module:ident, fixture: $fixture:expr $(,)?) => {
+        $crate::register_file_system_contract_tests! {
+            module: $module,
+            fixture: $fixture,
+            require_complete: false,
+        }
+    };
+    (
+        module: $module:ident,
+        fixture: $fixture:expr,
+        require_complete: $require_complete:expr $(,)?
+    ) => {
         mod $module {
             macro_rules! contract_test {
                 ($name:ident, $contract:ident) => {
                     #[cfg_attr(test, test)]
                     fn $name() {
                         let fixture = ($fixture)();
-                        $crate::FileSystemContractSuite::new(&fixture)
-                            .assert_contract($crate::FileSystemContract::$contract);
+                        let report = $crate::FileSystemContractSuite::new(&fixture)
+                            .assert_contract_with_report(
+                                $crate::FileSystemContract::$contract,
+                            );
+                        if $require_complete {
+                            report.assert_complete();
+                        }
                     }
                 };
             }
@@ -57,6 +73,19 @@ macro_rules! register_async_file_system_contract_tests {
         fixture: $fixture:expr,
         runner: $runner:expr $(,)?
     ) => {
+        $crate::register_async_file_system_contract_tests! {
+            module: $module,
+            fixture: $fixture,
+            runner: $runner,
+            require_complete: false,
+        }
+    };
+    (
+        module: $module:ident,
+        fixture: $fixture:expr,
+        runner: $runner:expr,
+        require_complete: $require_complete:expr $(,)?
+    ) => {
         mod $module {
             macro_rules! contract_test {
                 ($name:ident, $contract:ident) => {
@@ -64,9 +93,14 @@ macro_rules! register_async_file_system_contract_tests {
                     fn $name() {
                         let fixture = ($fixture)();
                         ($runner)(async move {
-                            $crate::AsyncFileSystemContractSuite::new(&fixture)
-                                .assert_contract($crate::FileSystemContract::$contract)
+                            let report = $crate::AsyncFileSystemContractSuite::new(&fixture)
+                                .assert_contract_with_report(
+                                    $crate::FileSystemContract::$contract,
+                                )
                                 .await;
+                            if $require_complete {
+                                report.assert_complete();
+                            }
                         });
                     }
                 };
