@@ -163,7 +163,10 @@ fn test_body_panic_is_preserved_when_cleanup_fails() {
                 .map(|value| (*value).to_owned())
         })
         .unwrap_or_default();
-    assert!(message.contains("fixture.read_file"), "unexpected panic: {message}");
+    assert!(
+        message.contains("writer contract: write was not published"),
+        "unexpected panic: {message}"
+    );
     assert!(fixture.inner.entry_count() > 0, "failed cleanup must retain resources");
 }
 

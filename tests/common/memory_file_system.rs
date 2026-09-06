@@ -666,8 +666,14 @@ impl FileSystemFixture for MemoryFixture {
 
     fn teardown(&self) -> FixtureResult<FixtureSupport<()>> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
-        state.entries.clear();
-        state.versions.clear();
+        // Keep facade resources visible when the injected delete fault makes
+        // cleanup retryable. The suite's ledger must remain the source of
+        // truth for a subsequent finish call; clearing the whole namespace
+        // here would turn a failed delete into a false success.
+        if state.fault != MemoryFault::DeleteNoOp {
+            state.entries.clear();
+            state.versions.clear();
+        }
         Ok(FixtureSupport::Supported(()))
     }
 
@@ -1005,19 +1011,21 @@ impl FileSystemSpi for MemorySpi {
     fn delete_file(&self, request: DeleteFileRequest<'_>) -> FsResult<DeleteOutcome> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         state.delete_attempts = state.delete_attempts.saturating_add(1);
+        let existed = state.entries.contains_key(request.path().as_str());
         let removed = if state.fault == MemoryFault::DeleteNoOp {
             None
         } else {
             remove_entry(&mut state, request.path().as_str())
         };
-        Ok(DeleteOutcome::new(removed.is_none()))
+        Ok(DeleteOutcome::new(removed.is_none() && !existed))
     }
 
     fn delete_directory(&self, request: DeleteDirectoryRequest<'_>) -> FsResult<DeleteOutcome> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         state.delete_attempts = state.delete_attempts.saturating_add(1);
+        let existed = state.entries.contains_key(request.path().as_str());
         let already_missing = if state.fault == MemoryFault::DeleteNoOp {
-            true
+            false
         } else {
             let removed = remove_entry(&mut state, request.path().as_str());
             let mut removed_descendant = false;
@@ -1038,7 +1046,7 @@ impl FileSystemSpi for MemorySpi {
                 }
                 removed_descendant = state.entries.len() != before;
             }
-            removed.is_none() && !removed_descendant
+            removed.is_none() && !removed_descendant && !existed
         };
         Ok(DeleteOutcome::new(already_missing))
     }
