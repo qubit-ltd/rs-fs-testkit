@@ -119,35 +119,46 @@ impl ContractContext {
     ///
     /// * `file_system` - Synchronous facade used to inspect and delete paths.
     ///
-    /// # Panics
+    /// Returns cleanup failures after attempting every recorded path.
     ///
-    /// Panics when metadata inspection or deletion fails for a recorded path,
-    /// except when inspection reports that the path is already absent.
-    pub(crate) fn cleanup(&mut self, file_system: &FileSystem) {
+    /// Missing paths are treated as already cleaned.  Other failures are
+    /// accumulated while cleanup continues, so a later resource cannot be
+    /// leaked merely because an earlier deletion failed.
+    pub(crate) fn cleanup(&mut self, file_system: &FileSystem) -> Result<(), String> {
         if !self
             .properties
             .capabilities()
             .supports(FileSystemCapability::Delete)
         {
             self.created_paths.clear();
-            return;
+            return Ok(());
         }
+        let mut failures = Vec::new();
         while let Some(path) = self.created_paths.pop() {
             let metadata = match file_system.stat(&path) {
                 Ok(metadata) => metadata,
                 Err(error) if error.kind() == FsErrorKind::NotFound => continue,
-                Err(error) => panic!(
-                    "{} contract: cleanup stat failed for {path}: {error}",
-                    self.current_contract
-                ),
+                Err(error) => {
+                    failures.push(format!(
+                        "{} contract: cleanup stat failed for {path}: {error}",
+                        self.current_contract
+                    ));
+                    continue;
+                }
             };
             let result = if metadata.is_directory_like() {
                 file_system.delete_directory(&path, Default::default())
             } else {
                 file_system.delete_file(&path, Default::default())
             };
-            result.expect("contract cleanup failed");
+            if let Err(error) = result {
+                failures.push(format!(
+                    "{} contract: cleanup delete failed for {path}: {error}",
+                    self.current_contract
+                ));
+            }
         }
+        if failures.is_empty() { Ok(()) } else { Err(failures.join("; ")) }
     }
 
     /// Asynchronously removes resources recorded by completed contract phases.
@@ -160,31 +171,32 @@ impl ContractContext {
     ///
     /// * `file_system` - Asynchronous facade used to inspect and delete paths.
     ///
-    /// # Panics
-    ///
-    /// Panics when metadata inspection or deletion fails for a recorded path,
-    /// except when inspection reports that the path is already absent.
+    /// Returns cleanup failures after attempting every recorded path.
     #[cfg(feature = "async")]
     pub(crate) async fn cleanup_async(
         &mut self,
         file_system: &AsyncFileSystem,
-    ) {
+    ) -> Result<(), String> {
         if !self
             .properties
             .capabilities()
             .supports(FileSystemCapability::Delete)
         {
             self.created_paths.clear();
-            return;
+            return Ok(());
         }
+        let mut failures = Vec::new();
         while let Some(path) = self.created_paths.pop() {
             let metadata = match file_system.stat(&path).await {
                 Ok(metadata) => metadata,
                 Err(error) if error.kind() == FsErrorKind::NotFound => continue,
-                Err(error) => panic!(
-                    "{} contract: cleanup stat failed for {path}: {error}",
-                    self.current_contract
-                ),
+                Err(error) => {
+                    failures.push(format!(
+                        "{} contract: cleanup stat failed for {path}: {error}",
+                        self.current_contract
+                    ));
+                    continue;
+                }
             };
             let result = if metadata.is_directory_like() {
                 file_system
@@ -193,7 +205,13 @@ impl ContractContext {
             } else {
                 file_system.delete_file(&path, Default::default()).await
             };
-            result.expect("contract cleanup failed");
+            if let Err(error) = result {
+                failures.push(format!(
+                    "{} contract: cleanup delete failed for {path}: {error}",
+                    self.current_contract
+                ));
+            }
         }
+        if failures.is_empty() { Ok(()) } else { Err(failures.join("; ")) }
     }
 }

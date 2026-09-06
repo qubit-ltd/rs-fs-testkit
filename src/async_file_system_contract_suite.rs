@@ -105,7 +105,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             }
         })
         .await;
-        self.finish().await;
+        let cleanup = catch_unwind_future(async { self.finish().await }).await;
+        if let (Err(assertion), Err(cleanup)) = (&result, &cleanup) {
+            panic!(
+                "contract assertion failed: {}; cleanup failed: {}",
+                panic_payload(assertion),
+                panic_payload(cleanup)
+            );
+        }
+        if let Err(cleanup) = cleanup {
+            resume_unwind(cleanup);
+        }
         if let Err(payload) = result {
             resume_unwind(payload);
         }
@@ -122,7 +132,17 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             self.assert_contract_inner(contract).await;
         })
         .await;
-        self.finish().await;
+        let cleanup = catch_unwind_future(async { self.finish().await }).await;
+        if let (Err(assertion), Err(cleanup)) = (&result, &cleanup) {
+            panic!(
+                "contract assertion failed: {}; cleanup failed: {}",
+                panic_payload(assertion),
+                panic_payload(cleanup)
+            );
+        }
+        if let Err(cleanup) = cleanup {
+            resume_unwind(cleanup);
+        }
         if let Err(payload) = result {
             resume_unwind(payload);
         }
@@ -176,7 +196,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when a recorded resource cannot be inspected or deleted.
     pub async fn finish(&mut self) {
-        self.context.cleanup_async(self.fixture.file_system()).await;
+        if let Err(error) = self.context.cleanup_async(self.fixture.file_system()).await {
+            panic!("{error}");
+        }
     }
 
     /// Checks immutable facade properties and fixture path compatibility.
@@ -2607,4 +2629,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             Some(capability),
         );
     }
+}
+
+fn panic_payload(payload: &Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&'static str>().map(ToString::to_string))
+        .unwrap_or_else(|| "non-string panic payload".to_owned())
 }
