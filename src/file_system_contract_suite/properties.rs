@@ -8,6 +8,7 @@
 //! Implements property snapshots and bounded limit checks.
 
 use super::*;
+use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Checks immutable facade properties and fixture path compatibility.
@@ -65,6 +66,9 @@ impl<'a> FileSystemContractSuite<'a> {
             self.fixture.file_system().properties().symlink_policy(),
             "properties contract: symlink policy snapshot changed"
         );
+        let limits = *properties.limits();
+        let path_limit = limits.max_path_text_bytes();
+        let path_semantics = info.path_semantics();
         self.context.record_check(
             "properties/snapshot",
             Some(FileSystemCapability::Read),
@@ -82,6 +86,46 @@ impl<'a> FileSystemContractSuite<'a> {
         );
         self.context.record_check(
             "properties/limits",
+            None,
+            ContractCheckOutcome::Passed,
+        );
+        let path_outcome = match path_limit.maximum() {
+            Some(maximum) if maximum <= MAX_PROBE_BYTES => {
+                let over = usize::try_from(maximum)
+                    .ok()
+                    .and_then(|maximum| {
+                        let component = "x".repeat(maximum.saturating_add(1));
+                        Path::parse(&format!("/{component}")).ok()
+                    });
+                match over {
+                    Some(path) => {
+                        limits.validate_path(
+                                &path,
+                                path_semantics,
+                                FsOperation::Stat,
+                            )
+                            .expect_err("properties contract: path limit admitted oversized path");
+                        ContractCheckOutcome::Passed
+                    }
+                    None => ContractCheckOutcome::SkippedOptional {
+                        reason: "path boundary could not be represented".to_owned(),
+                    },
+                }
+            }
+            Some(_) => ContractCheckOutcome::SkippedOptional {
+                reason: "path boundary exceeds the bounded probe budget".to_owned(),
+            },
+            None => ContractCheckOutcome::SkippedOptional {
+                reason: "path limit is unknown, inapplicable, or unbounded".to_owned(),
+            },
+        };
+        self.context.record_check(
+            "properties/limit-path-admission",
+            None,
+            path_outcome,
+        );
+        self.context.record_check(
+            "properties/symlink-policy",
             None,
             ContractCheckOutcome::Passed,
         );

@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::FixtureCase;
+use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Checks reader behavior.
@@ -34,6 +35,24 @@ impl<'a> FileSystemContractSuite<'a> {
                 Some(FileSystemCapability::Read),
                 ContractCheckOutcome::RejectedAsExpected,
             );
+            for id in [
+                "read/range",
+                "read/range-limit",
+                "read/if-match-current",
+                "read/if-match-stale",
+                "read/if-none-match-current",
+                "read/if-none-match-stale",
+                "read/checksum",
+                "read/checksum-corruption",
+            ] {
+                self.context.record_check(
+                    id,
+                    None,
+                    ContractCheckOutcome::NotApplicable {
+                        reason: "Read capability is unavailable".to_owned(),
+                    },
+                );
+            }
             return;
         }
         let path = self.required_seed("read-file", b"read contract bytes", "read");
@@ -96,22 +115,37 @@ impl<'a> FileSystemContractSuite<'a> {
                 Some(FileSystemCapability::RangeRead),
                 ContractCheckOutcome::Passed,
             );
-            if let Some(maximum) = range_limit.maximum()
-                && let Some(over) = maximum.checked_add(1)
-            {
-                let error = self
-                    .fixture
-                    .file_system()
-                    .open_reader(path, ReadOptions::default().with_length(Some(over)))
-                    .expect_err("read contract: declared range limit was ignored");
-                self.assert_error(
-                    &error,
-                    FsErrorKind::ResourceLimitExceeded,
-                    FsOperation::OpenReader,
-                    path,
-                    None,
-                );
-            }
+            let outcome = match range_limit.maximum() {
+                Some(maximum) if maximum < MAX_PROBE_BYTES => {
+                    let over = maximum
+                        .checked_add(1)
+                        .expect("read contract: range limit successor overflow");
+                    let error = self
+                        .fixture
+                        .file_system()
+                        .open_reader(path, ReadOptions::default().with_length(Some(over)))
+                        .expect_err("read/range-limit: declared range limit was ignored");
+                    self.assert_error(
+                        &error,
+                        FsErrorKind::ResourceLimitExceeded,
+                        FsOperation::OpenReader,
+                        path,
+                        None,
+                    );
+                    ContractCheckOutcome::Passed
+                }
+                Some(_) => ContractCheckOutcome::SkippedOptional {
+                    reason: "range boundary exceeds the bounded probe budget".to_owned(),
+                },
+                None => ContractCheckOutcome::SkippedOptional {
+                    reason: "range limit is unknown, inapplicable, or unbounded".to_owned(),
+                },
+            };
+            self.context.record_check(
+                "read/range-limit",
+                Some(FileSystemCapability::RangeRead),
+                outcome,
+            );
         } else {
             let error = self
                 .fixture
@@ -129,16 +163,29 @@ impl<'a> FileSystemContractSuite<'a> {
                 Some(FileSystemCapability::RangeRead),
                 ContractCheckOutcome::RejectedAsExpected,
             );
+            self.context.record_check(
+                "read/range-limit",
+                Some(FileSystemCapability::RangeRead),
+                ContractCheckOutcome::NotApplicable {
+                    reason: "RangeRead capability is unavailable".to_owned(),
+                },
+            );
         }
 
-        let if_match_support = self
-            .fixture
-            .case_support(FixtureCase::ReadIfMatch)
-            .expect("conditional-read contract: If-Match case query failed");
-        let if_none_match_support = self
-            .fixture
-            .case_support(FixtureCase::ReadIfNoneMatch)
-            .expect("conditional-read contract: If-None-Match case query failed");
+        let if_match_support = if self.capable(FileSystemCapability::ConditionalRead) {
+            self.fixture
+                .case_support(FixtureCase::ReadIfMatch)
+                .expect("conditional-read contract: If-Match case query failed")
+        } else {
+            FixtureSupport::Unsupported
+        };
+        let if_none_match_support = if self.capable(FileSystemCapability::ConditionalRead) {
+            self.fixture
+                .case_support(FixtureCase::ReadIfNoneMatch)
+                .expect("conditional-read contract: If-None-Match case query failed")
+        } else {
+            FixtureSupport::Unsupported
+        };
         if !self.capable(FileSystemCapability::ConditionalRead) {
             let current = ReadOptions::default()
                 .with_if_match(Some(ResourceVersion::new("missing-capability-current")));
@@ -195,7 +242,24 @@ impl<'a> FileSystemContractSuite<'a> {
                 .fixture
                 .stale_resource_version(path)
                 .expect("read contract: stale version observation failed");
-            let FixtureSupport::Supported(current) = current else {
+            if let FixtureSupport::Supported(current) = &current {
+                let bytes = self
+                    .fixture
+                    .file_system()
+                    .read_all(
+                        path,
+                        ReadOptions::default().with_if_match(Some(current.clone())),
+                        64,
+                    )
+                    .expect("read contract: current if-match failed");
+                assert_eq!(bytes, CONTENT);
+                self.context.record_check(
+                    "read/if-match-current",
+                    Some(FileSystemCapability::ConditionalRead),
+                    ContractCheckOutcome::Passed,
+                );
+            }
+            if matches!(&current, FixtureSupport::Unsupported) {
                 self.context.record_check(
                     "read/if-match-current",
                     Some(FileSystemCapability::ConditionalRead),
@@ -203,32 +267,9 @@ impl<'a> FileSystemContractSuite<'a> {
                         reason: "fixture current version unavailable".to_owned(),
                     },
                 );
-                self.context.record_check(
-                    "read/if-match-stale",
-                    Some(FileSystemCapability::ConditionalRead),
-                    ContractCheckOutcome::Unverified {
-                        reason: "fixture current version unavailable".to_owned(),
-                    },
-                );
-                return self.assert_checksum(path, CONTENT);
-            };
-            let bytes = self
-                .fixture
-                .file_system()
-                .read_all(
-                    path,
-                    ReadOptions::default().with_if_match(Some(current.clone())),
-                    64,
-                )
-                .expect("read contract: current if-match failed");
-            assert_eq!(bytes, CONTENT);
-            self.context.record_check(
-                "read/if-match-current",
-                Some(FileSystemCapability::ConditionalRead),
-                ContractCheckOutcome::Passed,
-            );
-            match stale {
-                FixtureSupport::Supported(stale) => {
+            }
+            match (current, stale) {
+                (FixtureSupport::Supported(_), FixtureSupport::Supported(stale)) => {
                     let error = self
                         .fixture
                         .file_system()
@@ -251,13 +292,24 @@ impl<'a> FileSystemContractSuite<'a> {
                         ContractCheckOutcome::Passed,
                     );
                 }
-                FixtureSupport::Unsupported => self.context.record_check(
-                    "read/if-match-stale",
-                    Some(FileSystemCapability::ConditionalRead),
-                    ContractCheckOutcome::Unverified {
-                        reason: "fixture stale version unavailable".to_owned(),
-                    },
-                ),
+                (FixtureSupport::Supported(_), FixtureSupport::Unsupported) => {
+                    self.context.record_check(
+                        "read/if-match-stale",
+                        Some(FileSystemCapability::ConditionalRead),
+                        ContractCheckOutcome::Unverified {
+                            reason: "fixture stale version unavailable".to_owned(),
+                        },
+                    );
+                }
+                (FixtureSupport::Unsupported, _) => {
+                    self.context.record_check(
+                        "read/if-match-stale",
+                        Some(FileSystemCapability::ConditionalRead),
+                        ContractCheckOutcome::Unverified {
+                            reason: "fixture current version unavailable".to_owned(),
+                        },
+                    );
+                }
             }
         }
 
@@ -437,6 +489,13 @@ impl<'a> FileSystemContractSuite<'a> {
                 "read/checksum",
                 Some(FileSystemCapability::ChecksumValidation),
                 ContractCheckOutcome::RejectedAsExpected,
+            );
+            self.context.record_check(
+                "read/checksum-corruption",
+                Some(FileSystemCapability::ChecksumValidation),
+                ContractCheckOutcome::NotApplicable {
+                    reason: "ChecksumValidation capability is unavailable".to_owned(),
+                },
             );
         }
     }

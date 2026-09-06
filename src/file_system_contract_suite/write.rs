@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::FixtureCase;
+use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Checks writer behavior.
@@ -31,6 +32,21 @@ impl<'a> FileSystemContractSuite<'a> {
                 Some(FileSystemCapability::Write),
                 ContractCheckOutcome::RejectedAsExpected,
             );
+            for (id, capability) in [
+                ("write/limit", FileSystemCapability::Write),
+                ("write/if-absent", FileSystemCapability::ConditionalWrite),
+                ("write/if-match", FileSystemCapability::ConditionalWrite),
+                ("write/atomic-replace-existing", FileSystemCapability::AtomicReplace),
+                ("write/durable", FileSystemCapability::DurableWrite),
+            ] {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::NotApplicable {
+                        reason: "Write capability is unavailable".to_owned(),
+                    },
+                );
+            }
             return;
         }
         let limit = self.context.properties().limits().max_write_bytes();
@@ -51,7 +67,45 @@ impl<'a> FileSystemContractSuite<'a> {
             Some(FileSystemCapability::Write),
             ContractCheckOutcome::Passed,
         );
+        self.record_write_limit(limit);
         self.assert_write_options(&path, &initial);
+    }
+
+    /// Verifies the finite write boundary without exceeding the probe budget.
+    fn record_write_limit(&mut self, limit: qubit_fs::metadata::FileSystemLimit) {
+        let outcome = match limit.maximum() {
+            Some(maximum) if maximum < MAX_PROBE_BYTES => {
+                let over = maximum
+                    .checked_add(1)
+                    .expect("write contract: write limit successor overflow");
+                let bytes = vec![b'x'; usize::try_from(over)
+                    .expect("write contract: bounded probe must fit usize")];
+                let path = self.path("write-limit");
+                self.context.record_created(path.clone());
+                let failure = self
+                    .fixture
+                    .file_system()
+                    .write_all(&path, &bytes, WriteOptions::default())
+                    .expect_err("write/limit: declared write limit was ignored");
+                assert_eq!(
+                    failure.error().kind(),
+                    FsErrorKind::ResourceLimitExceeded,
+                    "write/limit: boundary request returned the wrong error"
+                );
+                ContractCheckOutcome::Passed
+            }
+            Some(_) => ContractCheckOutcome::SkippedOptional {
+                reason: "write boundary exceeds the bounded probe budget".to_owned(),
+            },
+            None => ContractCheckOutcome::SkippedOptional {
+                reason: "write limit is unknown, inapplicable, or unbounded".to_owned(),
+            },
+        };
+        self.context.record_check(
+            "write/limit",
+            Some(FileSystemCapability::Write),
+            outcome,
+        );
     }
 
     /// Checks write dispositions, abort behavior, and conditional writes.
@@ -109,10 +163,13 @@ impl<'a> FileSystemContractSuite<'a> {
 
         let conditional_path = self.path("write-conditional");
         let conditional = WriteOptions::default().with_precondition(WritePrecondition::IfAbsent);
-        let if_absent_support = self
-            .fixture
-            .case_support(FixtureCase::WriteIfAbsent)
-            .expect("conditional-write contract: If-Absent case query failed");
+        let if_absent_support = if self.capable(FileSystemCapability::ConditionalWrite) {
+            self.fixture
+                .case_support(FixtureCase::WriteIfAbsent)
+                .expect("conditional-write contract: If-Absent case query failed")
+        } else {
+            FixtureSupport::Unsupported
+        };
         if !self.capable(FileSystemCapability::ConditionalWrite) {
             let error = self
                 .fixture
@@ -171,10 +228,13 @@ impl<'a> FileSystemContractSuite<'a> {
         }
 
         let if_match_path = self.path("write-if-match");
-        let if_match_support = self
-            .fixture
-            .case_support(FixtureCase::WriteIfMatch)
-            .expect("conditional-write contract: If-Match case query failed");
+        let if_match_support = if self.capable(FileSystemCapability::ConditionalWrite) {
+            self.fixture
+                .case_support(FixtureCase::WriteIfMatch)
+                .expect("conditional-write contract: If-Match case query failed")
+        } else {
+            FixtureSupport::Unsupported
+        };
         if !self.capable(FileSystemCapability::ConditionalWrite) {
             let error = self
                 .fixture
@@ -431,6 +491,16 @@ impl<'a> FileSystemContractSuite<'a> {
     /// Checks required-atomic replacement against an existing target.
     pub fn assert_atomic_replace(&mut self) {
         self.context.begin("atomic_replace");
+        if !self.capable(FileSystemCapability::Write) {
+            self.context.record_check(
+                "write/atomic-replace-existing",
+                Some(FileSystemCapability::AtomicReplace),
+                ContractCheckOutcome::NotApplicable {
+                    reason: "Write capability is unavailable".to_owned(),
+                },
+            );
+            return;
+        }
         let path = self.required_seed("atomic-replace-target", b"a", "atomic-replace");
         let options = WriteOptions::default().with_atomicity(AtomicityRequirement::Required);
         if !self.capable(FileSystemCapability::AtomicReplace) {
