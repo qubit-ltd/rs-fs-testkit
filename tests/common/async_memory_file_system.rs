@@ -408,6 +408,12 @@ pub enum AsyncMemoryFault {
     DurableWriteDropsBytes,
     /// Returns corrupted bytes instead of rejecting the checksum probe.
     ChecksumIgnoresCorruption,
+    /// Returns an ordinary error while cleanup inspects a resource.
+    CleanupStatError,
+    /// Returns an ordinary error while cleanup deletes a resource.
+    CleanupDeleteError,
+    /// Panics while cleanup deletes a resource.
+    CleanupDeletePanic,
 }
 
 /// Capability switches used by asynchronous memory fixture profiles.
@@ -1078,6 +1084,13 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             .cloned();
         let fault = self.fault;
         Box::pin(async move {
+            if fault == AsyncMemoryFault::CleanupStatError {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::Stat,
+                    "cleanup stat error",
+                ));
+            }
             match entry {
                 Some(Entry::File(bytes)) => {
                     let mut metadata = FileMetadata::new(if fault == AsyncMemoryFault::ObjectKinds {
@@ -1266,6 +1279,16 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
         Box::pin(async move {
+            if fault == AsyncMemoryFault::CleanupDeletePanic {
+                panic!("cleanup delete panic");
+            }
+            if fault == AsyncMemoryFault::CleanupDeleteError {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::Delete,
+                    "cleanup delete error",
+                ));
+            }
             let missing = if fault == AsyncMemoryFault::DeleteNoOp {
                 false
             } else {
@@ -1285,6 +1308,16 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let recursive = request.options().options().recursive();
         let fault = self.fault;
         Box::pin(async move {
+            if fault == AsyncMemoryFault::CleanupDeletePanic {
+                panic!("cleanup delete panic");
+            }
+            if fault == AsyncMemoryFault::CleanupDeleteError {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::Delete,
+                    "cleanup delete error",
+                ));
+            }
             let missing = if fault == AsyncMemoryFault::DeleteNoOp {
                 true
             } else {

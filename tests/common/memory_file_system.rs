@@ -234,6 +234,12 @@ pub enum MemoryFault {
     DurableWriteDropsBytes,
     /// Reports checksum validation while returning corrupted bytes.
     ChecksumIgnoresCorruption,
+    /// Returns an ordinary error while cleanup inspects a resource.
+    CleanupStatError,
+    /// Returns an ordinary error while cleanup deletes a resource.
+    CleanupDeleteError,
+    /// Panics while cleanup deletes a resource.
+    CleanupDeletePanic,
 }
 
 impl MemoryFixture {
@@ -863,6 +869,13 @@ impl FileSystemSpi for MemorySpi {
 
     fn stat(&self, request: StatRequest<'_>) -> FsResult<StatResponse> {
         let state = self.state.lock().expect("memory state lock must succeed");
+        if state.fault == MemoryFault::CleanupStatError {
+            return Err(FsError::new(
+                FsErrorKind::PermissionDenied,
+                FsOperation::Stat,
+                "cleanup stat error",
+            ));
+        }
         let Some(entry) = state.entries.get(request.path().as_str()) else {
             return Err(FsError::new(
                 FsErrorKind::NotFound,
@@ -982,6 +995,16 @@ impl FileSystemSpi for MemorySpi {
 
     fn delete_file(&self, request: DeleteFileRequest<'_>) -> FsResult<DeleteOutcome> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        if state.fault == MemoryFault::CleanupDeletePanic {
+            panic!("cleanup delete panic");
+        }
+        if state.fault == MemoryFault::CleanupDeleteError {
+            return Err(FsError::new(
+                FsErrorKind::PermissionDenied,
+                FsOperation::Delete,
+                "cleanup delete error",
+            ));
+        }
         state.delete_attempts = state.delete_attempts.saturating_add(1);
         let existed = state.entries.contains_key(request.path().as_str());
         if let Some(version) = request.options().options().if_match()
@@ -1005,6 +1028,16 @@ impl FileSystemSpi for MemorySpi {
 
     fn delete_directory(&self, request: DeleteDirectoryRequest<'_>) -> FsResult<DeleteOutcome> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        if state.fault == MemoryFault::CleanupDeletePanic {
+            panic!("cleanup delete panic");
+        }
+        if state.fault == MemoryFault::CleanupDeleteError {
+            return Err(FsError::new(
+                FsErrorKind::PermissionDenied,
+                FsOperation::Delete,
+                "cleanup delete error",
+            ));
+        }
         state.delete_attempts = state.delete_attempts.saturating_add(1);
         let existed = state.entries.contains_key(request.path().as_str());
         let already_missing = if state.fault == MemoryFault::DeleteNoOp {
