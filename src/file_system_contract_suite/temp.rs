@@ -102,6 +102,33 @@ impl<'a> FileSystemContractSuite<'a> {
                 FsOperation::CreateTemp,
             );
         }
+        self.context.record_check(
+            "temp/file",
+            Some(FileSystemCapability::TempFile),
+            if self.capable(FileSystemCapability::TempFile) {
+                ContractCheckOutcome::Passed
+            } else {
+                ContractCheckOutcome::RejectedAsExpected
+            },
+        );
+        self.context.record_check(
+            "temp/directory",
+            Some(FileSystemCapability::TempDirectory),
+            if self.capable(FileSystemCapability::TempDirectory) {
+                ContractCheckOutcome::Passed
+            } else {
+                ContractCheckOutcome::RejectedAsExpected
+            },
+        );
+        self.context.record_check(
+            "temp/atomic",
+            Some(FileSystemCapability::AtomicTempPersist),
+            if self.capable(FileSystemCapability::AtomicTempPersist) {
+                ContractCheckOutcome::Passed
+            } else {
+                ContractCheckOutcome::RejectedAsExpected
+            },
+        );
         if self.capable(FileSystemCapability::TempDirectory) {
             let parent = self.path("temp-directory-parent");
             if self.capable(FileSystemCapability::CreateDirectory) {

@@ -11,6 +11,7 @@ use std::panic::catch_unwind;
 
 #[cfg(feature = "async")]
 use qubit_fs::AsyncFileSystem;
+use qubit_fs::directory::DeleteOptions;
 use qubit_fs::FileSystem;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::FileSystemCapability;
@@ -194,7 +195,16 @@ impl ContractContext {
             };
             let deleted = catch_unwind(AssertUnwindSafe(|| {
                 if metadata.is_directory_like() {
-                    file_system.delete_directory(&path, Default::default())
+                    let options = if self
+                        .properties
+                        .capabilities()
+                        .supports(FileSystemCapability::RecursiveDelete)
+                    {
+                        DeleteOptions::default().with_recursive(true)
+                    } else {
+                        DeleteOptions::default()
+                    };
+                    file_system.delete_directory(&path, options)
                 } else {
                     file_system.delete_file(&path, Default::default())
                 }
@@ -308,8 +318,17 @@ impl ContractContext {
                 }
             };
             let deleted = if metadata.is_directory_like() {
+                let options = if self
+                    .properties
+                    .capabilities()
+                    .supports(FileSystemCapability::RecursiveDelete)
+                {
+                    DeleteOptions::default().with_recursive(true)
+                } else {
+                    DeleteOptions::default()
+                };
                 crate::internal::catch_unwind_future(
-                    file_system.delete_directory(&path, Default::default()),
+                    file_system.delete_directory(&path, options),
                 )
                 .await
             } else {
