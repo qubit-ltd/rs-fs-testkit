@@ -14,10 +14,8 @@ use qubit_fs_testkit::FixtureSupport;
 /// Verifies that setup failures remain distinguishable from unavailable probes.
 #[test]
 fn test_fixture_support_does_not_conflate_error_with_unsupported() {
-    let unsupported: FixtureResult<FixtureSupport<Path>> =
-        Ok(FixtureSupport::Unsupported);
-    let failure: FixtureResult<FixtureSupport<Path>> =
-        Err(FixtureError::new("setup failed"));
+    let unsupported: FixtureResult<FixtureSupport<Path>> = Ok(FixtureSupport::Unsupported);
+    let failure: FixtureResult<FixtureSupport<Path>> = Err(FixtureError::new("setup failed"));
 
     assert!(matches!(unsupported, Ok(FixtureSupport::Unsupported)));
     assert!(failure.is_err());
