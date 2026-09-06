@@ -85,6 +85,17 @@ fn conditional_case_unavailability_is_reported_as_unverified() {
 }
 
 #[test]
+fn async_conditional_delete_case_unavailability_is_unverified() {
+    let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(FixtureCase::DeleteIfMatch);
+    let report = run_controlled(
+        AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Delete),
+    );
+    assert!(report.checks().iter().any(|check| {
+        check.id() == "delete/if-match" && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
+    }));
+}
+
+#[test]
 fn async_fault_profiles_are_exercised_by_the_real_suite() {
     for fault in [
         AsyncMemoryFault::IgnoreReadIfMatch,

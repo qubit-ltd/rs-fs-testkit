@@ -8,6 +8,7 @@
 //! Implements namespace and metadata contracts.
 
 use super::*;
+use crate::FixtureCase;
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Checks metadata behavior.
@@ -456,6 +457,20 @@ impl<'a> FileSystemContractSuite<'a> {
         let options =
             DeleteOptions::default().with_if_match(Some(ResourceVersion::new("contract-version")));
         if self.capable(FileSystemCapability::ConditionalDelete) {
+            let case_support = self
+                .fixture
+                .case_support(FixtureCase::DeleteIfMatch)
+                .expect("conditional-delete contract: fixture case query failed");
+            if matches!(case_support, FixtureSupport::Unsupported) {
+                self.context.record_check(
+                    "delete/if-match",
+                    Some(FileSystemCapability::ConditionalDelete),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture cannot prepare If-Match delete case".to_owned(),
+                    },
+                );
+                return;
+            }
             let path = self.required_seed(
                 "delete-conditional",
                 b"conditional delete",

@@ -465,6 +465,20 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
         let path = self.path("async-delete-conditional");
         if self.capable(FileSystemCapability::ConditionalDelete) {
+            let case_support = self
+                .fixture
+                .case_support(FixtureCase::DeleteIfMatch)
+                .expect("conditional-delete contract: fixture case query failed");
+            if matches!(case_support, FixtureSupport::Unsupported) {
+                self.context.record_check(
+                    "delete/if-match",
+                    Some(FileSystemCapability::ConditionalDelete),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture cannot prepare If-Match delete case".to_owned(),
+                    },
+                );
+                return;
+            }
             let path = self
                 .required_seed(
                     "async-delete-conditional",

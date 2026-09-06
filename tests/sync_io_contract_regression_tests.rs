@@ -154,6 +154,15 @@ fn test_sync_conditional_case_unavailability_remains_unverified() {
 }
 
 #[test]
+fn test_sync_conditional_delete_case_unavailability_is_unverified() {
+    let fixture = MemoryFixture::with_conditional_case_unavailable(FixtureCase::DeleteIfMatch);
+    let report = FileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Delete);
+    assert!(report.checks().iter().any(|check| {
+        check.id() == "delete/if-match" && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
+    }));
+}
+
+#[test]
 fn test_sync_io_reports_are_complete_when_probes_run() {
     for contract in [
         FileSystemContract::Properties,
