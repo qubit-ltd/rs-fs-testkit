@@ -97,17 +97,20 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             .begin_copy(source.clone(), target.clone(), Default::default())
             .expect("async copy contract: advertised copy preflight failed");
         let outcome = operation.execute().await.expect("async copy contract: copy failed");
-        match outcome.method() {
-            CopyMethod::Streamed => assert!(
+        match (self.fixture.copy_fallback_only(), outcome.method()) {
+            (true, CopyMethod::Streamed) => assert!(
                 outcome.used_fallback(),
                 "async copy contract: streamed copy was not reported as fallback"
             ),
-            CopyMethod::Native | CopyMethod::Clone | CopyMethod::ServerSide | CopyMethod::Mixed => {
-                assert!(
-                    !outcome.used_fallback(),
-                    "async copy contract: completed fast path was reported as fallback"
-                )
-            }
+            (true, _) => panic!("async copy contract: fallback-only fixture used a native method"),
+            (false, CopyMethod::Streamed) => assert!(
+                outcome.used_fallback(),
+                "async copy contract: streamed copy was not reported as fallback"
+            ),
+            (false, _) => assert!(
+                !outcome.used_fallback(),
+                "async copy contract: native copy was reported as fallback"
+            ),
         }
         assert_eq!(
             outcome.stats().bytes,
