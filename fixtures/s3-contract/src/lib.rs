@@ -7,4 +7,4 @@ mod s3_write_session;
 
 pub use config::S3ContractConfig;
 pub use path_mapper::{map, validate_key};
-pub use s3_file_system_spi::open;
+pub use s3_file_system_spi::{open, open_in_memory};

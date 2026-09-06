@@ -988,8 +988,17 @@ dependencies = [
  "futures-util",
  "object_store",
  "qubit-fs",
+ "qubit-fs-testkit",
  "qubit-io",
  "tokio",
+]
+
+[[package]]
+name = "qubit-fs-testkit"
+version = "0.1.0"
+dependencies = [
+ "qubit-fs",
+ "qubit-io",
 ]
 
 [[package]]

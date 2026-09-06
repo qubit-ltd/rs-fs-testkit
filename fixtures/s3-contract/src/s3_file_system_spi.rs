@@ -46,6 +46,30 @@ pub fn open(config: S3ContractConfig) -> Result<AsyncFileSystem, FsError> {
             e,
         )
     })?;
+    build_filesystem(config, Arc::from(store))
+}
+
+/// Builds a deterministic adapter backed by object_store's in-memory store.
+///
+/// This is used by the local contract matrix; the ignored test remains the
+/// end-to-end harness for a real S3-compatible service.
+pub fn open_in_memory(prefix: impl Into<String>) -> Result<AsyncFileSystem, FsError> {
+    let config = S3ContractConfig {
+        endpoint: "memory://".into(),
+        bucket: "contract".into(),
+        region: "local".into(),
+        access_key_id: "test".into(),
+        secret_access_key: "test".into(),
+        prefix: prefix.into(),
+        allow_http: false,
+    };
+    build_filesystem(config, Arc::new(object_store::memory::InMemory::new()))
+}
+
+fn build_filesystem(
+    config: S3ContractConfig,
+    store: Arc<dyn ObjectStore>,
+) -> Result<AsyncFileSystem, FsError> {
     let info = FileSystemInfo::new(
         FileSystemId::new("s3-contract")?,
         "s3-contract",
@@ -59,10 +83,7 @@ pub fn open(config: S3ContractConfig) -> Result<AsyncFileSystem, FsError> {
     let capabilities = FileSystemCapabilities::new()
         .with_conditional(FileSystemCapability::Read)
         .with_conditional(FileSystemCapability::RangeRead)
-        .with_conditional(FileSystemCapability::ConditionalRead)
-        .with_conditional(FileSystemCapability::Write)
-        .with_conditional(FileSystemCapability::ConditionalWrite)
-        .with_conditional(FileSystemCapability::Copy);
+        .with_conditional(FileSystemCapability::Write);
     let limits =
         FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1_048_576));
     let properties = ProviderProperties::new(
@@ -74,7 +95,7 @@ pub fn open(config: S3ContractConfig) -> Result<AsyncFileSystem, FsError> {
         SymlinkPolicy::Reject,
     )?;
     AsyncFileSystem::from_shared_spi(Arc::new(S3FileSystemSpi {
-        store: Arc::from(store),
+        store,
         config,
         properties,
     }))

@@ -13,5 +13,8 @@ bytes = "1"
 futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 
+[dev-dependencies]
+qubit-fs-testkit = { path = "../..", default-features = false, features = ["async"] }
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
