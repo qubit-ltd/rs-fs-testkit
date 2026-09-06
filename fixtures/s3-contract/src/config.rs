@@ -22,10 +22,7 @@ impl S3ContractConfig {
         let access_key_id = required("RS_FS_S3_ACCESS_KEY_ID")?;
         let secret_access_key = required("RS_FS_S3_SECRET_ACCESS_KEY")?;
         let prefix = required("RS_FS_S3_PREFIX")?;
-        if prefix.is_empty()
-            || prefix == "/"
-            || prefix.split('/').any(|part| part == "." || part == "..")
-        {
+        if prefix.is_empty() || prefix == "/" || prefix.split('/').any(|part| part == "." || part == "..") {
             return Err("RS_FS_S3_PREFIX must be non-empty and contain no dot segments".into());
         }
         let allow_http = env::var("RS_FS_S3_ALLOW_HTTP").ok().as_deref() == Some("true");

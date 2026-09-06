@@ -1,7 +1,10 @@
 use qubit_fs::Path;
 use qubit_fs::error::FsErrorKind;
+use qubit_fs_s3_contract::S3ContractConfig;
+use qubit_fs_s3_contract::map;
+use qubit_fs_s3_contract::open_in_memory;
+use qubit_fs_s3_contract::validate_key;
 use qubit_io::AsyncOutput;
-use qubit_fs_s3_contract::{S3ContractConfig, map, open_in_memory, validate_key};
 
 #[test]
 fn object_keys_are_preserved_and_prefixed() {
@@ -27,10 +30,21 @@ fn dot_segments_are_rejected() {
 
 #[test]
 fn invalid_prefix_is_rejected_without_normalizing_object_keys() {
-    let config = S3ContractConfig { prefix: "run/../bad".into(), endpoint: "https://example.invalid".into(), bucket: "bucket".into(), region: "us-east-1".into(), access_key_id: "id".into(), secret_access_key: "secret".into(), allow_http: false };
+    let config = S3ContractConfig {
+        prefix: "run/../bad".into(),
+        endpoint: "https://example.invalid".into(),
+        bucket: "bucket".into(),
+        region: "us-east-1".into(),
+        access_key_id: "id".into(),
+        secret_access_key: "secret".into(),
+        allow_http: false,
+    };
     let path = Path::parse_literal("a/%2e%2e/b").unwrap();
     assert!(map(&config, &path).is_err());
-    let config = S3ContractConfig { prefix: "run".into(), ..config };
+    let config = S3ContractConfig {
+        prefix: "run".into(),
+        ..config
+    };
     assert_eq!(map(&config, &path).unwrap(), "run/a/%2e%2e/b");
 }
 
@@ -52,52 +66,73 @@ fn configuration_debug_does_not_expose_credentials() {
 
 #[tokio::test]
 async fn in_memory_adapter_runs_the_supported_contract_matrix() {
-    use qubit_fs_testkit::{AsyncFileSystemContractSuite, AsyncFileSystemFixture, FixtureResult,
-        FixtureSupport};
-    use qubit_fs::{AsyncFileSystem, Path};
+    use qubit_fs::AsyncFileSystem;
+    use qubit_fs::Path;
     use qubit_fs::metadata::ResourceVersion;
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+    use qubit_fs_testkit::AsyncFileSystemFixture;
+    use qubit_fs_testkit::FixtureResult;
+    use qubit_fs_testkit::FixtureSupport;
 
     struct Fixture {
         filesystem: AsyncFileSystem,
     }
 
     impl AsyncFileSystemFixture for Fixture {
-        fn file_system(&self) -> &AsyncFileSystem { &self.filesystem }
-        fn path(&self, relative: &str) -> FixtureResult<Path> {
-            Path::parse_literal(relative).map_err(|e| qubit_fs_testkit::FixtureError::with_source(
-                "fixture path failed", e))
+        fn file_system(&self) -> &AsyncFileSystem {
+            &self.filesystem
         }
-        fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8])
-            -> qubit_fs_testkit::FixtureFuture<'a, FixtureSupport<Path>> {
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            Path::parse_literal(relative)
+                .map_err(|e| qubit_fs_testkit::FixtureError::with_source("fixture path failed", e))
+        }
+        fn seed_file<'a>(
+            &'a self,
+            relative: &'a str,
+            bytes: &'a [u8],
+        ) -> qubit_fs_testkit::FixtureFuture<'a, FixtureSupport<Path>> {
             Box::pin(async move {
                 let path = self.path(relative)?;
                 let options = qubit_fs::write::WriteOptions::default()
                     .with_disposition(qubit_fs::write::WriteDisposition::CreateNew);
-                self.filesystem.write_all(&path, bytes, options).await
+                self.filesystem
+                    .write_all(&path, bytes, options)
+                    .await
                     .map_err(|e| qubit_fs_testkit::FixtureError::new(format!("seed failed: {e}")))?;
                 Ok(FixtureSupport::Supported(path))
             })
         }
-        fn read_file<'a>(&'a self, path: &'a Path)
-            -> qubit_fs_testkit::FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
+        fn read_file<'a>(&'a self, path: &'a Path) -> qubit_fs_testkit::FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
             Box::pin(async move {
-                self.filesystem.read_all(path, Default::default(), 2 * 1024 * 1024).await
+                self.filesystem
+                    .read_all(path, Default::default(), 2 * 1024 * 1024)
+                    .await
                     .map(FixtureSupport::Supported)
                     .map_err(|e| qubit_fs_testkit::FixtureError::new(format!("read failed: {e}")))
             })
         }
-        fn resource_version<'a>(&'a self, path: &'a Path)
-            -> qubit_fs_testkit::FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+        fn resource_version<'a>(
+            &'a self,
+            path: &'a Path,
+        ) -> qubit_fs_testkit::FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
             Box::pin(async move {
-                let metadata = self.filesystem.stat(path).await
+                let metadata = self
+                    .filesystem
+                    .stat(path)
+                    .await
                     .map_err(|e| qubit_fs_testkit::FixtureError::new(format!("stat failed: {e}")))?;
-                Ok(metadata.etag().cloned()
-                    .map(FixtureSupport::Supported).unwrap_or(FixtureSupport::Unsupported))
+                Ok(metadata
+                    .etag()
+                    .cloned()
+                    .map(FixtureSupport::Supported)
+                    .unwrap_or(FixtureSupport::Unsupported))
             })
         }
     }
 
-    let fixture = Fixture { filesystem: open_in_memory("contract-run").unwrap() };
+    let fixture = Fixture {
+        filesystem: open_in_memory("contract-run").unwrap(),
+    };
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
     suite.assert_properties().await;
     suite.assert_stat().await;
@@ -110,7 +145,9 @@ async fn in_memory_adapter_runs_the_supported_contract_matrix() {
 
 #[tokio::test]
 async fn create_only_collision_is_not_published_and_keeps_payload() {
-    use qubit_fs::write::{WriteDisposition, WriteOptions, WriteFailureState};
+    use qubit_fs::write::WriteDisposition;
+    use qubit_fs::write::WriteFailureState;
+    use qubit_fs::write::WriteOptions;
 
     let filesystem = open_in_memory("writer-recovery").unwrap();
     let path = Path::parse_literal("same-key").unwrap();
@@ -123,14 +160,18 @@ async fn create_only_collision_is_not_published_and_keeps_payload() {
     second.write_fully_async(b"retry-payload").await.unwrap();
     let failure = second.commit_async().await.unwrap_err();
     assert_eq!(failure.state(), WriteFailureState::NotPublished);
-    assert_eq!(filesystem.read_all(&path, Default::default(), 64).await.unwrap(), b"existing");
+    assert_eq!(
+        filesystem.read_all(&path, Default::default(), 64).await.unwrap(),
+        b"existing"
+    );
     let retry = second.commit_async().await.unwrap_err();
     assert_eq!(retry.state(), WriteFailureState::NotPublished);
 }
 
 #[tokio::test]
 async fn empty_object_reports_zero_length() {
-    use qubit_fs::write::{WriteDisposition, WriteOptions};
+    use qubit_fs::write::WriteDisposition;
+    use qubit_fs::write::WriteOptions;
 
     let filesystem = open_in_memory("empty-object").unwrap();
     let path = Path::parse_literal("empty").unwrap();
@@ -142,7 +183,8 @@ async fn empty_object_reports_zero_length() {
 
 #[tokio::test]
 async fn unsupported_writer_options_fail_before_publication() {
-    use qubit_fs::write::{WriteDisposition, WriteOptions};
+    use qubit_fs::write::WriteDisposition;
+    use qubit_fs::write::WriteOptions;
     let filesystem = open_in_memory("writer-options").unwrap();
     let path = Path::parse_literal("options").unwrap();
     let options = WriteOptions::default()
