@@ -497,7 +497,7 @@ impl<'a> FileSystemContractSuite<'a> {
         self.assert_bytes(
             &path,
             &expected,
-            "append contract: existing bytes were not retained",
+            "append/basic: existing bytes were not retained",
         );
         self.context.record_check(
             "append/basic",

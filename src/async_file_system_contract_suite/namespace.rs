@@ -101,7 +101,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             actual.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             let mut expected = vec![first, second];
             expected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-            assert_eq!(actual, expected, "list contract: direct children mismatch");
+            assert_eq!(actual, expected, "list/basic: direct children mismatch");
             self.context.record_check(
                 "list/basic",
                 Some(FileSystemCapability::List),

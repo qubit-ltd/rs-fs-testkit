@@ -101,7 +101,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 )
             }
             FixtureSupport::Unsupported => {
-                panic!("write contract: Write capability requires fixture.read_file support")
+                panic!("write/basic: Write capability requires fixture.read_file support")
             }
         }
         self.context.record_check(
@@ -611,7 +611,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.assert_bytes(
             &path,
             &expected,
-            "append contract: existing bytes were not retained",
+            "append/basic: existing bytes were not retained",
         )
         .await;
         self.context.record_check(
