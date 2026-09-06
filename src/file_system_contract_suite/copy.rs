@@ -254,12 +254,18 @@ impl<'a> FileSystemContractSuite<'a> {
         if self.fixture.copy_fallback_only() {
             let source = self.path("copy-tree-source");
             let target = self.path("copy-tree-target");
+            self.fixture
+                .file_system()
+                .create_directory(&source, CreateDirectoryOptions::default())
+                .expect("copy/atomic-tree: fallback source setup failed");
+            self.context.record_created(source.clone());
+            let _child = self.required_seed("copy-tree-source/child", b"a", "copy/atomic-tree");
             let failure = self
                 .fixture
                 .file_system()
                 .copy(&source, &target, CopyOptions::tree())
                 .expect_err("copy/atomic-tree: fallback unexpectedly accepted tree copy");
-            assert_eq!(failure.error().kind(), FsErrorKind::RequirementNotMet);
+            assert_eq!(failure.error().kind(), FsErrorKind::InvalidOptions);
             assert_eq!(failure.error().operation(), FsOperation::Copy);
             self.context.record_check(
                 "copy/atomic-tree",
