@@ -200,7 +200,43 @@ impl ContractContext {
                 }
             }));
             match deleted {
-                Ok(Ok(_)) => {}
+                Ok(Ok(_outcome)) => {
+                    let verified = catch_unwind(AssertUnwindSafe(|| file_system.stat(&path)));
+                    match verified {
+                        Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
+                        Ok(Ok(_)) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: FixtureError::new(
+                                    "delete reported success but the resource still exists",
+                                ),
+                            });
+                            retained.push(resource);
+                        }
+                        Ok(Err(error)) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: FixtureError::new(format!(
+                                    "delete outcome could not be verified: {error}"
+                                )),
+                            });
+                            retained.push(resource);
+                        }
+                        Err(payload) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: panic_error(payload),
+                            });
+                            retained.push(resource);
+                        }
+                    }
+                }
                 Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
                 Ok(Err(error)) => {
                     failures.push(CleanupFailure {
@@ -283,7 +319,44 @@ impl ContractContext {
                 .await
             };
             match deleted {
-                Ok(Ok(_)) => {}
+                Ok(Ok(_outcome)) => {
+                    let verified =
+                        crate::internal::catch_unwind_future(file_system.stat(&path)).await;
+                    match verified {
+                        Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
+                        Ok(Ok(_)) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: FixtureError::new(
+                                    "delete reported success but the resource still exists",
+                                ),
+                            });
+                            retained.push(resource);
+                        }
+                        Ok(Err(error)) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: FixtureError::new(format!(
+                                    "delete outcome could not be verified: {error}"
+                                )),
+                            });
+                            retained.push(resource);
+                        }
+                        Err(payload) => {
+                            failures.push(CleanupFailure {
+                                owner_check: owner,
+                                operation: "delete",
+                                path: Some(path),
+                                cause: panic_error(payload),
+                            });
+                            retained.push(resource);
+                        }
+                    }
+                }
                 Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
                 Ok(Err(error)) => {
                     failures.push(CleanupFailure {
