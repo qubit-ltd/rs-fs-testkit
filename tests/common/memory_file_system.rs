@@ -113,6 +113,7 @@ struct State {
     create_directory_capability: bool,
     extended_capabilities: bool,
     native_copy: bool,
+    fallback_only: bool,
     delete_attempts: usize,
     limits: FileSystemLimits,
     unavailable_case: Option<FixtureCase>,
@@ -120,17 +121,27 @@ struct State {
 }
 
 pub(crate) fn provider_properties(properties: FileSystemProperties) -> ProviderProperties {
+    provider_properties_with_copy(properties, true)
+}
+
+fn provider_properties_with_copy(
+    properties: FileSystemProperties,
+    try_copy: bool,
+) -> ProviderProperties {
+    let mut operations = ProviderOperations::new()
+        .with(ProviderOperation::Stat)
+        .with(ProviderOperation::List)
+        .with(ProviderOperation::OpenReader)
+        .with(ProviderOperation::OpenWriter)
+        .with(ProviderOperation::CreateDirectory)
+        .with(ProviderOperation::DeleteFile)
+        .with(ProviderOperation::DeleteDirectory);
+    if try_copy {
+        operations = operations.with(ProviderOperation::TryCopy);
+    }
     ProviderProperties::new(
         properties.info().clone(),
-        ProviderOperations::new()
-            .with(ProviderOperation::Stat)
-            .with(ProviderOperation::List)
-            .with(ProviderOperation::OpenReader)
-            .with(ProviderOperation::OpenWriter)
-            .with(ProviderOperation::CreateDirectory)
-            .with(ProviderOperation::DeleteFile)
-            .with(ProviderOperation::DeleteDirectory)
-            .with(ProviderOperation::TryCopy)
+        operations
             .with(ProviderOperation::Rename)
             .with(ProviderOperation::CreateTempFile)
             .with(ProviderOperation::CreateTempDirectory),
@@ -223,6 +234,8 @@ pub enum MemoryFault {
     IgnoreReadIfNoneMatch,
     /// Ignores an If-Match write precondition.
     IgnoreWriteIfMatch,
+    /// Ignores a stale If-Match delete precondition.
+    IgnoreDeleteIfMatch,
     /// Reports atomic replacement while retaining the old bytes.
     AtomicReplaceKeepsOldBytes,
     /// Reports durable write completion while dropping its bytes.
@@ -248,6 +261,20 @@ impl MemoryFixture {
         fixture
     }
 
+    /// Creates a provider whose copy implementation is only the facade
+    /// stream fallback.
+    pub fn fallback_only() -> Self {
+        Self::with_configuration(
+            MemoryFault::None,
+            true,
+            true,
+            false,
+            true,
+            false,
+            "memory-fallback-provider",
+        )
+    }
+
     /// Creates a fresh fixture with exactly one provider fault.
     pub fn with_fault(fault: MemoryFault) -> Self {
         let extended = matches!(
@@ -255,6 +282,7 @@ impl MemoryFixture {
             MemoryFault::IgnoreReadIfMatch
                 | MemoryFault::IgnoreReadIfNoneMatch
                 | MemoryFault::IgnoreWriteIfMatch
+                | MemoryFault::IgnoreDeleteIfMatch
                 | MemoryFault::ChecksumIgnoresCorruption
         );
         Self::with_configuration(
@@ -469,6 +497,7 @@ impl MemoryFixture {
             create_directory_capability,
             extended_capabilities,
             native_copy: false,
+            fallback_only: provider_id == "memory-fallback-provider",
             delete_attempts: 0,
             limits,
             unavailable_case: None,
@@ -597,6 +626,13 @@ impl FileSystemFixture for MemoryFixture {
         } else {
             FixtureSupport::Unsupported
         })
+    }
+
+    fn copy_fallback_only(&self) -> bool {
+        self.state
+            .lock()
+            .expect("memory state lock must succeed")
+            .fallback_only
     }
 
     fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
@@ -838,8 +874,10 @@ impl FileSystemSpi for MemorySpi {
         if state.core_capabilities {
             capabilities = capabilities
                 .with_guaranteed(FileSystemCapability::Read)
-                .with_guaranteed(FileSystemCapability::List)
-                .with_guaranteed(FileSystemCapability::Copy);
+                .with_guaranteed(FileSystemCapability::List);
+            if !state.fallback_only {
+                capabilities = capabilities.with_guaranteed(FileSystemCapability::Copy);
+            }
             if !state.read_only {
                 capabilities = capabilities.with_guaranteed(FileSystemCapability::Write);
             }
@@ -851,8 +889,9 @@ impl FileSystemSpi for MemorySpi {
             }
         }
         let limits = state.limits;
+        let fallback_only = state.fallback_only;
         drop(state);
-        provider_properties(
+        provider_properties_with_copy(
             FileSystemProperties::new(
                 FileSystemInfo::new(
                     FileSystemId::new("memory-contract").expect("memory provider id must be valid"),
@@ -865,6 +904,7 @@ impl FileSystemSpi for MemorySpi {
                 SymlinkPolicy::Reject,
             )
             .expect("memory properties must be valid"),
+            !fallback_only,
         )
     }
 
@@ -1021,6 +1061,25 @@ impl FileSystemSpi for MemorySpi {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         state.delete_attempts = state.delete_attempts.saturating_add(1);
         let existed = state.entries.contains_key(request.path().as_str());
+        if let Some(version) = request.options().options().if_match()
+            && existed
+            && version.as_str()
+                != format!(
+                    "v{}",
+                    state
+                        .versions
+                        .get(request.path().as_str())
+                        .copied()
+                        .unwrap_or(1)
+                )
+            && state.fault != MemoryFault::IgnoreDeleteIfMatch
+        {
+            return Err(FsError::new(
+                FsErrorKind::PreconditionFailed,
+                FsOperation::Delete,
+                "memory delete condition failed",
+            ));
+        }
         let removed = if state.fault == MemoryFault::DeleteNoOp {
             None
         } else {
