@@ -73,6 +73,23 @@ unsupported-capability failure.
 Unadvertised stronger guarantees are checked for structured `RequirementNotMet`
 preflight.
 
+The read budget applies to the selected window, rather than to the complete
+resource. If opened metadata reports a total length, the suite computes
+`min(max(0, total_length - offset), requested_length)` (or the remaining length
+when no length is requested) and compares that value with `max_bytes`. For
+example, reading `offset = 2`, `length = 3` from `0123456789` with
+`max_bytes = 3` must return `234`; a budget of `2` must return
+`ResourceLimitExceeded`. Unknown resource length cannot be preflight-rejected,
+but the actual stream is still checked against the budget. The suite always
+opens the reader first, including for a zero-length window, so not-found,
+permission, and condition errors are preserved.
+
+After a successful writer commit, a second commit is an `InvalidState` error
+whose `WriteFailureState` is `Published`. It must not issue another provider
+commit or automatically abort the writer, and the published target remains
+observable. A retryable `NotPublished` failure remains the only non-terminal
+case that may be committed again.
+
 For an async facade, pass a runtime-specific future runner:
 
 ```rust,ignore
@@ -108,6 +125,16 @@ provider-owned pending-stage controls. The corresponding
 `AsyncFileSystemContractSuite::assert_copy_cancellation()` phase can be run
 independently when a provider wants a focused check. The hook is optional, as
 are the other provider-specific observations.
+
+For a second, remote-provider signal, the repository has a separate unpublished
+validation crate at `fixtures/s3-contract/`. It uses an S3-compatible endpoint
+and the same public testkit to exercise real range reads, create-only writes,
+conflicts, cancellation, and cleanup. It is intentionally outside the
+published provider dependency graph. A successful local testkit run does not
+constitute remote-backend evidence: any claim about S3 compatibility must cite
+that crate's environment, backend version, lockfile, and recorded run output.
+This guide records the validation boundary only and does not claim that the
+remote suite has been run.
 
 ## Errors and Diagnostics
 

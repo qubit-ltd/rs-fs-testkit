@@ -60,6 +60,17 @@ fast path；当 `Read` 与 `Write` 可用且请求属于 allowlist 时，仍可�
 fallback 前提缺失时才返回结构化的 unsupported-capability 错误。未声明的强化保证会被检查
 是否返回结构化的 `RequirementNotMet` 预检错误。
 
+读取预算针对本次选中的窗口，而不是整个资源。若打开时元数据提供总长度，套件会计算
+`min(max(0, total_length - offset), requested_length)`；未指定 length 时使用扣除 offset
+后的剩余长度，再将结果与 `max_bytes` 比较。例如，从 `0123456789` 读取
+`offset = 2`、`length = 3`，且 `max_bytes = 3`，必须返回 `234`；预算为 `2` 时必须返回
+`ResourceLimitExceeded`。总长度未知时不能据此预检拒绝，但实际流仍必须遵守预算。套件始终
+先打开 reader，即使窗口长度为零也如此，因此 NotFound、权限和条件错误仍会保留。
+
+writer 成功 commit 后再次 commit，应返回 `InvalidState`，并将 `WriteFailureState` 报告为
+`Published`。它不得再次调用 provider commit，也不得自动 abort；已发布目标仍应可观察。
+只有可重试的 `NotPublished` 失败仍允许再次 commit。
+
 对于异步门面，传入 runtime 对应的 future runner：
 
 ```rust,ignore
@@ -88,6 +99,12 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 `AsyncFileSystemFixture` 还提供 `copy_cancellation_case`，用于 provider 所有的 pending-stage 控制。
 对应的 `AsyncFileSystemContractSuite::assert_copy_cancellation()` 阶段可以独立运行，适合
 对取消语义进行聚焦检查。该 hook 与其他 provider 特有观察一样是可选的。
+
+仓库还提供一个独立且不可发布的真实远程后端验证 crate：`fixtures/s3-contract/`。它使用
+S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create-only write、冲突、取消
+以及清理，并且不进入已发布 provider 的依赖图。一次本地 testkit 通过不能作为远程后端证据；
+任何关于 S3 兼容性的结论都必须同时记录该 crate 的环境、后端版本、lockfile 和运行输出。
+本手册只说明验证边界，不声称远程套件已经运行。
 
 ## 错误与诊断
 

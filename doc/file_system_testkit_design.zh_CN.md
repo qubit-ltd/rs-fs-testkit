@@ -309,6 +309,15 @@ Limit contract 至少覆盖：
 - `read_all` 同时遵守 caller limit 和 filesystem limit；
 - range、condition 与 checksum requirement。
 
+`read_all` 的 `max_bytes` 预算按本次读取窗口计算。打开元数据中的 `len` 仍表示完整资源长度；
+若已知该长度，先计算
+`selected = min(max(0, len - offset.unwrap_or(0)), length.unwrap_or(max(0, len - offset.unwrap_or(0))))`，
+再以 `selected` 做预检和预算预留。换言之，完整资源为 `0123456789` 时，
+`offset = 2, length = 3, max_bytes = 3` 必须成功并返回 `234`，`max_bytes = 2` 必须返回
+`ResourceLimitExceeded`。未知元数据长度时不做这项预检，实际读取仍逐块检查预算；窗口长度为零也
+必须先执行 open，以保留 NotFound、权限和条件错误。offset 超出 EOF 是否成功属于 provider 的
+range 契约，核心只保证不会因完整资源长度而额外误拒绝已成功打开的窗口。
+
 ### 8.2 Write
 
 验证：
@@ -320,6 +329,11 @@ Limit contract 至少覆盖：
 - commit failure state；
 - abort 不回滚已 published target；
 - `write_all` failure 保留需要恢复的 writer。
+
+成功 commit 后重复 commit 是 `InvalidState`，但其 `WriteFailureState` 必须反映已知发布事实：
+writer 已处于 `Committed` 或 `Published` 时报告 `Published`，不得再次调用 SPI commit 或自动
+abort，且目标内容仍可读取。只有 `RetryableNotPublished` 才允许再次 commit；首次处于
+`Indeterminate` 的 writer 重复调用仍报告 `Indeterminate`，不能被错误降级为未发布。
 
 ### 8.3 List 与 directory
 
@@ -468,6 +482,18 @@ Testkit 必须包含 conforming provider 和一组最小 broken provider：
 | `qubit-fs-testkit` | provider 黑盒公共契约与 assertion 自验证 |
 
 Testkit 不重复其他 crate 的白盒测试。
+
+### 13.1 真实后端验证边界
+
+第二种真实 provider 的证据由独立、`publish = false` 的验证工程
+`fixtures/s3-contract/` 提供。该工程使用 S3 兼容 SDK 对接由环境变量指定的专用 endpoint，
+通过真实 GET metadata/range、create-only PUT、冲突、取消后的发布状态和清理验证公共契约；它不
+成为 `qubit-fs` 或 testkit 的生产依赖，也不等同于一个可发布的 S3 provider。SDK 无法保真表达的
+object key 子集必须在请求前拒绝，并在验证记录中明确限制范围。
+
+本设计只定义验证入口和证据要求，不把本地 testkit 或编译成功当作远程后端已验证。只有在独立
+工程实际运行后，连同后端版本、依赖 lockfile、配置变量（不含 secret）和可追踪的成功/冲突/取消/
+清理结果一并记录，才可以得出远程 provider 结论。
 
 ## 14. 模块组织
 
