@@ -25,7 +25,6 @@ pub struct ContractReport {
 impl ContractReport {
     /// Returns checks in execution order.
     #[inline]
-    #[must_use]
     pub fn checks(&self) -> &[ContractCheck] {
         &self.checks
     }

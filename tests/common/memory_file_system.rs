@@ -476,6 +476,7 @@ impl MemoryFixture {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn with_configuration_and_limits(
         fault: MemoryFault,
         delete_capability: bool,
@@ -1452,8 +1453,8 @@ impl FileWriterSpi for MemoryWriter {
                 self.bytes.clone()
             };
             if !(self.atomicity == AtomicityRequirement::Required
-                && state.fault == MemoryFault::AtomicReplaceKeepsOldBytes)
-                && !(self.durability == DurabilityRequirement::Required
+                && state.fault == MemoryFault::AtomicReplaceKeepsOldBytes
+                || self.durability == DurabilityRequirement::Required
                     && state.fault == MemoryFault::DurableWriteDropsBytes)
             {
                 publish_entry(&mut state, self.path.as_str(), Entry::File(bytes));
