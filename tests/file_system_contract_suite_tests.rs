@@ -16,6 +16,8 @@ use qubit_fs::error::FsError;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::FileSystemLimit;
+use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
@@ -125,6 +127,28 @@ fn test_sync_faults_exercise_full_suite_paths() {
                 FileSystemContractSuite::new(&fixture).assert_contract(contract);
             }));
         }
+    }
+}
+
+#[test]
+fn test_sync_property_profiles_cover_all_limit_outcomes() {
+    let limits = [
+        FileSystemLimit::Maximum(0),
+        FileSystemLimit::Maximum(4),
+        FileSystemLimit::Unknown,
+        FileSystemLimit::Unbounded,
+        FileSystemLimit::NotApplicable,
+        FileSystemLimit::Maximum(u64::MAX),
+    ];
+    for limit in limits {
+        let snapshot = FileSystemLimits::unknown()
+            .with_max_path_text_bytes(limit)
+            .with_max_component_text_bytes(limit)
+            .with_max_list_page_entries(limit);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let fixture = MemoryFixture::with_limits(snapshot);
+            FileSystemContractSuite::new(&fixture).assert_properties();
+        }));
     }
 }
 
