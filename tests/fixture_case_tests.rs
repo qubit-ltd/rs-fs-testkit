@@ -29,8 +29,7 @@ impl FileSystemFixture for DefaultSyncFixture<'_> {
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/defaults/{relative}"))
-            .map_err(|error| FixtureError::new(error.to_string()))
+        Path::parse(&format!("/defaults/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
     }
 }
 
@@ -84,10 +83,7 @@ fn synchronous_fixture_defaults_report_optional_probes_as_unsupported() {
         fixture.checksum_failure_case("corrupt"),
         Ok(FixtureSupport::Unsupported)
     ));
-    assert!(matches!(
-        fixture.teardown(),
-        Ok(FixtureSupport::Unsupported)
-    ));
+    assert!(matches!(fixture.teardown(), Ok(FixtureSupport::Unsupported)));
     assert!(matches!(
         fixture.copy_fast_path_case(CopyMethod::Native),
         Ok(FixtureSupport::Unsupported)
@@ -118,8 +114,7 @@ mod asynchronous_defaults {
         }
 
         fn path(&self, relative: &str) -> FixtureResult<Path> {
-            Path::parse(&format!("/defaults/{relative}"))
-                .map_err(|error| FixtureError::new(error.to_string()))
+            Path::parse(&format!("/defaults/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
         }
     }
 

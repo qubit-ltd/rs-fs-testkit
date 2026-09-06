@@ -107,11 +107,7 @@ pub trait AsyncFileSystemFixture: Sync {
     /// The future returns [`FixtureError`](crate::FixtureError) when
     /// provider-specific setup fails.
     #[inline]
-    fn seed_file<'a>(
-        &'a self,
-        relative: &'a str,
-        bytes: &'a [u8],
-    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = (relative, bytes);
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
@@ -147,41 +143,28 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Asynchronously writes a complete resource through fixture setup.
     #[inline]
-    fn write_file_out_of_band<'a>(
-        &'a self,
-        path: &'a Path,
-        bytes: &'a [u8],
-    ) -> FixtureFuture<'a, FixtureSupport<()>> {
+    fn write_file_out_of_band<'a>(&'a self, path: &'a Path, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<()>> {
         let _ = (path, bytes);
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
     /// Asynchronously observes the current provider resource version.
     #[inline]
-    fn resource_version<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+    fn resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         let _ = path;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
     /// Asynchronously returns a valid version that cannot match the resource.
     #[inline]
-    fn stale_resource_version<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         let _ = path;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
     /// Asynchronously supplies a resource whose checksum is invalid.
     #[inline]
-    fn checksum_failure_case<'a>(
-        &'a self,
-        relative: &'a str,
-    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn checksum_failure_case<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = relative;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
@@ -194,10 +177,7 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Asynchronously seeds an empty directory or prefix.
     #[inline]
-    fn seed_empty_directory<'a>(
-        &'a self,
-        relative: &'a str,
-    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_empty_directory<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = relative;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
@@ -211,10 +191,7 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Supplies an asynchronously prepared native copy fast-path case.
     #[inline]
-    fn copy_fast_path_case<'a>(
-        &'a self,
-        method: CopyMethod,
-    ) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
+    fn copy_fast_path_case<'a>(&'a self, method: CopyMethod) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
         let _ = method;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }

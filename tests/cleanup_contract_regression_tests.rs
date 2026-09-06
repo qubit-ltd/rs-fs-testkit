@@ -113,16 +113,9 @@ fn test_body_panic_is_preserved_when_teardown_also_fails() {
     let message = payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
         .unwrap_or_default();
-    assert!(
-        message.contains("fixture.read_file"),
-        "unexpected panic: {message}"
-    );
+    assert!(message.contains("fixture.read_file"), "unexpected panic: {message}");
     assert_eq!(fixture.calls.load(Ordering::Relaxed), 1);
 }
 
@@ -137,16 +130,9 @@ fn test_body_panic_is_preserved_when_teardown_panics() {
     let message = payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
         .unwrap_or_default();
-    assert!(
-        message.contains("fixture.read_file"),
-        "unexpected panic: {message}"
-    );
+    assert!(message.contains("fixture.read_file"), "unexpected panic: {message}");
     assert_eq!(fixture.calls.load(Ordering::Relaxed), 1);
 }
 
@@ -163,29 +149,19 @@ fn test_body_panic_is_preserved_when_cleanup_fails() {
     let message = payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
         .unwrap_or_default();
     assert!(
         message.contains("writer contract: write was not published"),
         "unexpected panic: {message}"
     );
-    assert!(
-        fixture.inner.entry_count() > 0,
-        "failed cleanup must retain resources"
-    );
+    assert!(fixture.inner.entry_count() > 0, "failed cleanup must retain resources");
 }
 
 /// A facade without Delete still invokes the fixture teardown hook.
 #[test]
 fn test_missing_delete_does_not_skip_fixture_teardown() {
-    let fixture = TeardownProbe::new(
-        MemoryFixture::without_delete(),
-        Ok(FixtureSupport::Supported(())),
-    );
+    let fixture = TeardownProbe::new(MemoryFixture::without_delete(), Ok(FixtureSupport::Supported(())));
     let mut suite = FileSystemContractSuite::new(&fixture);
     suite.assert_error_context();
     suite.finish();
@@ -200,10 +176,7 @@ fn test_cleanup_failure_is_retained_for_retry() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     suite.assert_write();
     let first = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| suite.finish()));
-    assert!(
-        first.is_err(),
-        "the injected delete failure must be reported"
-    );
+    assert!(first.is_err(), "the injected delete failure must be reported");
     let first_message = first
         .as_ref()
         .err()
@@ -238,10 +211,7 @@ fn test_cleanup_continues_after_an_intermediate_failure() {
     let before = fixture.entry_count();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| suite.finish()));
     assert!(result.is_err());
-    assert!(
-        before >= 2,
-        "the write phase must prepare multiple resources"
-    );
+    assert!(before >= 2, "the write phase must prepare multiple resources");
     assert!(
         fixture.delete_attempt_count() >= before,
         "cleanup must attempt every retained resource"
