@@ -132,7 +132,11 @@ pub trait FileSystemFixture {
 
     /// Writes a complete resource through fixture-owned setup facilities.
     #[inline]
-    fn write_file_out_of_band(&self, path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
+    fn write_file_out_of_band(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+    ) -> FixtureResult<FixtureSupport<()>> {
         let _ = (path, bytes);
         Ok(FixtureSupport::Unsupported)
     }
@@ -146,7 +150,10 @@ pub trait FileSystemFixture {
 
     /// Returns a valid version that does not match the current resource.
     #[inline]
-    fn stale_resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version(
+        &self,
+        path: &Path,
+    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let _ = path;
         Ok(FixtureSupport::Unsupported)
     }
@@ -194,7 +201,10 @@ pub trait FileSystemFixture {
     /// Returns [`FixtureError`](crate::FixtureError) when provider-specific
     /// case preparation fails.
     #[inline]
-    fn copy_fast_path_case(&self, method: CopyMethod) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
+    fn copy_fast_path_case(
+        &self,
+        method: CopyMethod,
+    ) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
         let _ = method;
         Ok(FixtureSupport::Unsupported)
     }
