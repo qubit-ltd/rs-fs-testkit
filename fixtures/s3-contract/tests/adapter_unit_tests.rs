@@ -1,4 +1,5 @@
 use qubit_fs::Path;
+use qubit_fs::error::FsErrorKind;
 use qubit_io::AsyncOutput;
 use qubit_fs_s3_contract::{S3ContractConfig, map, open_in_memory, validate_key};
 
@@ -22,6 +23,15 @@ fn dot_segments_are_rejected() {
     assert!(validate_key("a/../b").is_err());
     assert!(validate_key("a/./b").is_err());
     assert!(validate_key("a/%2e%2e/b").is_ok());
+}
+
+#[test]
+fn invalid_prefix_is_rejected_without_normalizing_object_keys() {
+    let config = S3ContractConfig { prefix: "run/../bad".into(), endpoint: "https://example.invalid".into(), bucket: "bucket".into(), region: "us-east-1".into(), access_key_id: "id".into(), secret_access_key: "secret".into(), allow_http: false };
+    let path = Path::parse_literal("a/%2e%2e/b").unwrap();
+    assert!(map(&config, &path).is_err());
+    let config = S3ContractConfig { prefix: "run".into(), ..config };
+    assert_eq!(map(&config, &path).unwrap(), "run/a/%2e%2e/b");
 }
 
 #[test]
@@ -128,4 +138,16 @@ async fn empty_object_reports_zero_length() {
     let mut writer = filesystem.open_writer(&path, options).await.unwrap();
     writer.commit_async().await.unwrap();
     assert_eq!(filesystem.stat(&path).await.unwrap().len(), Some(0));
+}
+
+#[tokio::test]
+async fn unsupported_writer_options_fail_before_publication() {
+    use qubit_fs::write::{WriteDisposition, WriteOptions};
+    let filesystem = open_in_memory("writer-options").unwrap();
+    let path = Path::parse_literal("options").unwrap();
+    let options = WriteOptions::default()
+        .with_disposition(WriteDisposition::CreateNew)
+        .with_content_type(Some("text/plain".into()));
+    let error = filesystem.open_writer(&path, options).await.unwrap_err();
+    assert_eq!(error.kind(), FsErrorKind::RequirementNotMet);
 }

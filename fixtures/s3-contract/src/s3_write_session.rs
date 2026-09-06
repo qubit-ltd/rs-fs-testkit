@@ -4,7 +4,7 @@ use object_store::{ObjectStore, PutMode, PutOptions, path::Path as ObjectPath};
 use qubit_fs::error::{FsErrorKind, FsOperation};
 use qubit_fs::metadata::{AchievedAtomicity, PublicationMethod, WriteOutcome};
 use qubit_fs::spi::AsyncFileWriteSession;
-use qubit_fs::write::{WriteAbortOutcome, WriteFailure};
+use qubit_fs::write::{WriteAbortOutcome, WriteFailure, WritePrecondition};
 use qubit_fs::{FsError, FsResult};
 use qubit_io::AsyncOutput;
 use std::{
@@ -31,13 +31,18 @@ impl S3WriteSession {
         options: &qubit_fs::write::WriteOptions,
     ) -> Result<Self, FsError> {
         if options.disposition() != qubit_fs::write::WriteDisposition::CreateNew
+            || !matches!(options.precondition(), WritePrecondition::None | WritePrecondition::IfAbsent)
+            || options.create_parent()
+            || options.atomicity() == qubit_fs::metadata::AtomicityRequirement::Required
+            || options.durability() != qubit_fs::metadata::DurabilityRequirement::NotRequired
             || options.content_type().is_some()
             || options.checksum().is_some()
+            || !options.user_metadata().is_empty()
         {
             return Err(FsError::new(
                 FsErrorKind::RequirementNotMet,
                 FsOperation::OpenWriter,
-                "S3 contract writer does not support content type or checksum options",
+                "S3 contract writer supports only create-new, best-effort, untyped writes",
             ));
         }
         Ok(Self {
