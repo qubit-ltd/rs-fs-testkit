@@ -79,12 +79,7 @@ impl ContractContext {
     /// A name containing the current contract, invocation counter, and suffix.
     #[inline]
     pub(crate) fn relative_name(&self, relative: &str) -> String {
-        format!(
-            "{}-{}-{}",
-            self.current_contract(),
-            self.name_counter,
-            relative
-        )
+        format!("{}-{}-{}", self.current_contract(), self.name_counter, relative)
     }
 
     /// Records a path created by the current contract assertion.
@@ -125,11 +120,7 @@ impl ContractContext {
     /// accumulated while cleanup continues, so a later resource cannot be
     /// leaked merely because an earlier deletion failed.
     pub(crate) fn cleanup(&mut self, file_system: &FileSystem) -> Result<(), String> {
-        if !self
-            .properties
-            .capabilities()
-            .supports(FileSystemCapability::Delete)
-        {
+        if !self.properties.capabilities().supports(FileSystemCapability::Delete) {
             self.created_paths.clear();
             return Ok(());
         }
@@ -158,7 +149,11 @@ impl ContractContext {
                 ));
             }
         }
-        if failures.is_empty() { Ok(()) } else { Err(failures.join("; ")) }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join("; "))
+        }
     }
 
     /// Asynchronously removes resources recorded by completed contract phases.
@@ -173,15 +168,8 @@ impl ContractContext {
     ///
     /// Returns cleanup failures after attempting every recorded path.
     #[cfg(feature = "async")]
-    pub(crate) async fn cleanup_async(
-        &mut self,
-        file_system: &AsyncFileSystem,
-    ) -> Result<(), String> {
-        if !self
-            .properties
-            .capabilities()
-            .supports(FileSystemCapability::Delete)
-        {
+    pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) -> Result<(), String> {
+        if !self.properties.capabilities().supports(FileSystemCapability::Delete) {
             self.created_paths.clear();
             return Ok(());
         }
@@ -199,9 +187,7 @@ impl ContractContext {
                 }
             };
             let result = if metadata.is_directory_like() {
-                file_system
-                    .delete_directory(&path, Default::default())
-                    .await
+                file_system.delete_directory(&path, Default::default()).await
             } else {
                 file_system.delete_file(&path, Default::default()).await
             };
@@ -212,6 +198,10 @@ impl ContractContext {
                 ));
             }
         }
-        if failures.is_empty() { Ok(()) } else { Err(failures.join("; ")) }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join("; "))
+        }
     }
 }

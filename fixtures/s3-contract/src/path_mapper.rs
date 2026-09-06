@@ -1,7 +1,11 @@
-use crate::config::S3ContractConfig;
-use qubit_fs::error::{FsErrorKind, FsOperation};
+use qubit_fs::FsError;
+use qubit_fs::FsResult;
+use qubit_fs::Path;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
 use qubit_fs::path::PathSemantics;
-use qubit_fs::{FsError, FsResult, Path};
+
+use crate::config::S3ContractConfig;
 
 pub fn map(config: &S3ContractConfig, path: &Path) -> FsResult<String> {
     let prefix = config.prefix.trim_end_matches('/');

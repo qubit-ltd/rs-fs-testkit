@@ -1,17 +1,27 @@
-use crate::error_mapper;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::Context;
+use std::task::Poll;
+
 use bytes::Bytes;
-use object_store::{ObjectStore, PutMode, PutOptions, path::Path as ObjectPath};
-use qubit_fs::error::{FsErrorKind, FsOperation};
-use qubit_fs::metadata::{AchievedAtomicity, PublicationMethod, WriteOutcome};
+use object_store::ObjectStore;
+use object_store::PutMode;
+use object_store::PutOptions;
+use object_store::path::Path as ObjectPath;
+use qubit_fs::FsError;
+use qubit_fs::FsResult;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
+use qubit_fs::metadata::AchievedAtomicity;
+use qubit_fs::metadata::PublicationMethod;
+use qubit_fs::metadata::WriteOutcome;
 use qubit_fs::spi::AsyncFileWriteSession;
-use qubit_fs::write::{WriteAbortOutcome, WriteFailure, WritePrecondition};
-use qubit_fs::{FsError, FsResult};
+use qubit_fs::write::WriteAbortOutcome;
+use qubit_fs::write::WriteFailure;
+use qubit_fs::write::WritePrecondition;
 use qubit_io::AsyncOutput;
-use std::{
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+
+use crate::error_mapper;
 
 pub struct S3WriteSession {
     store: Arc<dyn ObjectStore>,
@@ -31,7 +41,10 @@ impl S3WriteSession {
         options: &qubit_fs::write::WriteOptions,
     ) -> Result<Self, FsError> {
         if options.disposition() != qubit_fs::write::WriteDisposition::CreateNew
-            || !matches!(options.precondition(), WritePrecondition::None | WritePrecondition::IfAbsent)
+            || !matches!(
+                options.precondition(),
+                WritePrecondition::None | WritePrecondition::IfAbsent
+            )
             || options.create_parent()
             || options.atomicity() == qubit_fs::metadata::AtomicityRequirement::Required
             || options.durability() != qubit_fs::metadata::DurabilityRequirement::NotRequired
@@ -83,9 +96,7 @@ impl AsyncOutput for S3WriteSession {
     }
 }
 impl AsyncFileWriteSession for S3WriteSession {
-    fn commit_async<'a>(
-        self: Pin<&'a mut Self>,
-    ) -> qubit_fs::spi::SpiFuture<'a, Result<WriteOutcome, WriteFailure>> {
+    fn commit_async<'a>(self: Pin<&'a mut Self>) -> qubit_fs::spi::SpiFuture<'a, Result<WriteOutcome, WriteFailure>> {
         Box::pin(async move {
             if !matches!(self.state, State::Open) {
                 return Err(WriteFailure::new(
@@ -115,10 +126,8 @@ impl AsyncFileWriteSession for S3WriteSession {
                 Ok(_) => {
                     this.data.clear();
                     this.state = State::Published;
-                    Ok(
-                        WriteOutcome::new(AchievedAtomicity::Atomic, PublicationMethod::Direct)
-                            .with_bytes_written(count),
-                    )
+                    Ok(WriteOutcome::new(AchievedAtomicity::Atomic, PublicationMethod::Direct)
+                        .with_bytes_written(count))
                 }
                 Err(e) => {
                     this.state = if matches!(e, object_store::Error::AlreadyExists { .. }) {
@@ -138,9 +147,7 @@ impl AsyncFileWriteSession for S3WriteSession {
             }
         })
     }
-    fn abort_async<'a>(
-        self: Pin<&'a mut Self>,
-    ) -> qubit_fs::spi::SpiFuture<'a, FsResult<WriteAbortOutcome>> {
+    fn abort_async<'a>(self: Pin<&'a mut Self>) -> qubit_fs::spi::SpiFuture<'a, FsResult<WriteAbortOutcome>> {
         Box::pin(async move {
             let this = self.get_mut();
             Ok(match this.state {

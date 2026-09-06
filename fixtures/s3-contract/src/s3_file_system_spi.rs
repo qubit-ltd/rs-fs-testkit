@@ -1,25 +1,41 @@
 use std::sync::Arc;
 
+use object_store::ObjectStore;
+use object_store::ObjectStoreExt;
+use object_store::aws::AmazonS3Builder;
+use qubit_fs::AsyncFileSystem;
+use qubit_fs::error::FsError;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
+use qubit_fs::metadata::FileKind;
+use qubit_fs::metadata::FileMetadata;
+use qubit_fs::metadata::FileSystemCapabilities;
+use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::FileSystemId;
+use qubit_fs::metadata::FileSystemInfo;
+use qubit_fs::metadata::FileSystemLimit;
+use qubit_fs::metadata::FileSystemLimits;
+use qubit_fs::metadata::ResourceVersion;
+use qubit_fs::metadata::SymlinkPolicy;
+use qubit_fs::path::PathConstraints;
+use qubit_fs::path::PathSemantics;
+use qubit_fs::spi::AsyncFileSystemSpi;
+use qubit_fs::spi::OpenReaderRequest;
+use qubit_fs::spi::OpenWriterRequest;
+use qubit_fs::spi::OpenedAsyncReader;
+use qubit_fs::spi::OpenedAsyncWriter;
+use qubit_fs::spi::ProviderOperation;
+use qubit_fs::spi::ProviderOperations;
+use qubit_fs::spi::ProviderProperties;
+use qubit_fs::spi::SpiFuture;
+use qubit_fs::spi::StatRequest;
+use qubit_fs::spi::StatResponse;
+
 use crate::config::S3ContractConfig;
 use crate::error_mapper;
 use crate::path_mapper;
 use crate::s3_reader::S3Reader;
 use crate::s3_write_session::S3WriteSession;
-use object_store::aws::AmazonS3Builder;
-use object_store::{ObjectStore, ObjectStoreExt};
-use qubit_fs::AsyncFileSystem;
-use qubit_fs::error::{FsError, FsErrorKind, FsOperation};
-use qubit_fs::metadata::{
-    FileKind, FileMetadata, FileSystemCapabilities, FileSystemCapability, FileSystemId,
-    FileSystemInfo, FileSystemLimit, FileSystemLimits, ResourceVersion, SymlinkPolicy,
-};
-use qubit_fs::path::PathConstraints;
-use qubit_fs::path::PathSemantics;
-use qubit_fs::spi::{
-    AsyncFileSystemSpi, OpenReaderRequest, OpenWriterRequest, OpenedAsyncReader, OpenedAsyncWriter,
-    ProviderOperation, ProviderOperations, ProviderProperties, SpiFuture, StatRequest,
-    StatResponse,
-};
 
 pub struct S3FileSystemSpi {
     store: Arc<dyn ObjectStore>,
@@ -66,10 +82,7 @@ pub fn open_in_memory(prefix: impl Into<String>) -> Result<AsyncFileSystem, FsEr
     build_filesystem(config, Arc::new(object_store::memory::InMemory::new()))
 }
 
-fn build_filesystem(
-    config: S3ContractConfig,
-    store: Arc<dyn ObjectStore>,
-) -> Result<AsyncFileSystem, FsError> {
+fn build_filesystem(config: S3ContractConfig, store: Arc<dyn ObjectStore>) -> Result<AsyncFileSystem, FsError> {
     let info = FileSystemInfo::new(
         FileSystemId::new("s3-contract")?,
         "s3-contract",
@@ -84,8 +97,7 @@ fn build_filesystem(
         .with_conditional(FileSystemCapability::Read)
         .with_conditional(FileSystemCapability::RangeRead)
         .with_conditional(FileSystemCapability::Write);
-    let limits =
-        FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1_048_576));
+    let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1_048_576));
     let properties = ProviderProperties::new(
         info,
         operations,
@@ -105,19 +117,11 @@ impl AsyncFileSystemSpi for S3FileSystemSpi {
     fn properties(&self) -> ProviderProperties {
         self.properties.clone()
     }
-    fn stat<'a>(
-        &'a self,
-        request: StatRequest<'a>,
-    ) -> SpiFuture<'a, qubit_fs::FsResult<qubit_fs::spi::StatResponse>> {
+    fn stat<'a>(&'a self, request: StatRequest<'a>) -> SpiFuture<'a, qubit_fs::FsResult<qubit_fs::spi::StatResponse>> {
         Box::pin(async move {
             let key = path_mapper::map(&self.config, request.path())?;
             let object_key = object_store::path::Path::parse(key).map_err(|e| {
-                FsError::with_source(
-                    FsErrorKind::InvalidPath,
-                    FsOperation::Stat,
-                    "invalid S3 object key",
-                    e,
-                )
+                FsError::with_source(FsErrorKind::InvalidPath, FsOperation::Stat, "invalid S3 object key", e)
             })?;
             let meta = self
                 .store
@@ -138,8 +142,7 @@ impl AsyncFileSystemSpi for S3FileSystemSpi {
         Box::pin(async move {
             let key = path_mapper::map(&self.config, request.path())?;
             let options = request.options().options();
-            let reader =
-                S3Reader::open(self.store.clone(), key, request.path().clone(), options).await?;
+            let reader = S3Reader::open(self.store.clone(), key, request.path().clone(), options).await?;
             let info = reader.info().clone();
             Ok(OpenedAsyncReader::new(info, Box::new(reader)))
         })
@@ -154,10 +157,8 @@ impl AsyncFileSystemSpi for S3FileSystemSpi {
                 path_mapper::map(&self.config, request.path())?,
                 request.options().options(),
             )?;
-            let info = qubit_fs::metadata::OpenedFileInfo::new(
-                self.properties.info().id().clone(),
-                request.path().clone(),
-            );
+            let info =
+                qubit_fs::metadata::OpenedFileInfo::new(self.properties.info().id().clone(), request.path().clone());
             Ok(OpenedAsyncWriter::new(info, Box::new(session)))
         })
     }

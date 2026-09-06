@@ -1,17 +1,25 @@
-use crate::error_mapper;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::Context;
+use std::task::Poll;
+
 use bytes::Bytes;
 use futures_util::Stream;
-use object_store::{GetOptions, ObjectStore, path::Path as ObjectPath};
-use qubit_fs::error::{FsErrorKind, FsOperation};
-use qubit_fs::metadata::{FileKind, FileMetadata, FileSystemId, OpenedFileInfo};
+use object_store::GetOptions;
+use object_store::ObjectStore;
+use object_store::path::Path as ObjectPath;
+use qubit_fs::FsError;
+use qubit_fs::Path;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
+use qubit_fs::metadata::FileKind;
+use qubit_fs::metadata::FileMetadata;
+use qubit_fs::metadata::FileSystemId;
+use qubit_fs::metadata::OpenedFileInfo;
 use qubit_fs::read::ReadOptions;
-use qubit_fs::{FsError, Path};
 use qubit_io::AsyncInput;
-use std::{
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+
+use crate::error_mapper;
 
 type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, object_store::Error>> + Send>>;
 pub struct S3Reader {
@@ -35,9 +43,9 @@ impl S3Reader {
         };
         let offset = options.offset().unwrap_or(0);
         if let Some(length) = options.length() {
-            let end = offset.checked_add(length).ok_or_else(|| {
-                FsError::invalid_path(FsOperation::OpenReader, "read range overflows")
-            })?;
+            let end = offset
+                .checked_add(length)
+                .ok_or_else(|| FsError::invalid_path(FsOperation::OpenReader, "read range overflows"))?;
             get.range = Some((offset..end).into());
         }
         let result = store
@@ -58,8 +66,7 @@ impl S3Reader {
             .with_len(Some(result.meta.size as u64))
             .with_etag(result.meta.e_tag.clone().map(Into::into));
         Ok(Self {
-            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path)
-                .with_metadata(metadata),
+            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path).with_metadata(metadata),
             stream: Box::pin(result.into_stream()),
             chunk: Bytes::new(),
             offset: 0,

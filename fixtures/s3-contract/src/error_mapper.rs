@@ -1,5 +1,7 @@
 use object_store::Error as StoreError;
-use qubit_fs::error::{FsError, FsErrorKind, FsOperation};
+use qubit_fs::error::FsError;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
 
 pub fn map(error: StoreError, operation: FsOperation) -> FsError {
     let kind = match &error {
