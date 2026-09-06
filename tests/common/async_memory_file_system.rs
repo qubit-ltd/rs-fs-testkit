@@ -910,12 +910,13 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                     source.as_str().to_owned(),
                     Entry::File(b"copy bytes".to_vec()),
                 );
-            Ok(FixtureSupport::Supported(Box::new(
+            let probe: Box<dyn CopyCancellationProbe> = Box::new(
                 AsyncMemoryCopyCancellationProbe {
                     case: AsyncCopyFixtureCase::new(source, target, CopyOptions::default()),
                     gate: Arc::clone(&self.copy_gate),
                 },
-            )))
+            );
+            Ok(FixtureSupport::Supported(probe))
         })
     }
 
