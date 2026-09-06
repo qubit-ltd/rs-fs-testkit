@@ -8,6 +8,7 @@
 
 #[cfg(feature = "async")]
 pub(crate) mod async_memory_file_system;
+pub(crate) mod check_matrix;
 mod memory_file_system;
 mod shared_model;
 

@@ -10,6 +10,7 @@ mod common;
 
 use common::MemoryFault;
 use common::MemoryFixture;
+use common::check_matrix::{assert_panics_at, sync_fault_cases};
 use qubit_fs::error::FsError;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
@@ -129,22 +130,12 @@ fn test_sync_suite_skips_unadvertised_optional_capabilities() {
 /// Each injected provider defect must be rejected by the matching suite phase.
 #[test]
 fn test_single_faults_are_rejected_by_sync_suite() {
-    for fault in [
-        MemoryFault::WrongStatKind,
-        MemoryFault::KeepTempOnCleanup,
-        MemoryFault::WrongPersistTarget,
-        MemoryFault::EmptyList,
-        MemoryFault::ReadWrongBytes,
-        MemoryFault::WriteDropsBytes,
-        MemoryFault::DeleteNoOp,
-        MemoryFault::RenameNoOp,
-    ] {
-        let fixture = MemoryFixture::with_fault(fault);
-        let result =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                FileSystemContractSuite::new(&fixture).assert_all();
-            }));
-        assert!(result.is_err(), "suite accepted injected fault: {fault:?}");
+    for case in sync_fault_cases() {
+        let fixture = MemoryFixture::with_fault(case.fault);
+        assert_panics_at(
+            || FileSystemContractSuite::new(&fixture).assert_contract(case.phase),
+            case.check_id,
+        );
     }
 }
 
@@ -233,27 +224,11 @@ fn test_stronger_capability_negative_branches_are_exercised() {
 /// synchronous suite rather than accepted as an unchecked provider claim.
 #[test]
 fn test_sync_suite_rejects_advertised_option_and_guarantee_faults() {
-    for fault in [
-        MemoryFault::ListDropsMetadata,
-        MemoryFault::DirectoryCopyDropsChildren,
-        MemoryFault::TempIgnoresOptions,
-        MemoryFault::AppendOverwrites,
-        MemoryFault::RecursiveDeleteLeavesChildren,
-        MemoryFault::AtomicRenameNonAtomic,
-        MemoryFault::AtomicReplaceNonAtomic,
-        MemoryFault::DurableFileCopyNonDurable,
-        MemoryFault::DurableRenameNonDurable,
-        MemoryFault::AtomicTempPersistNonAtomic,
-        MemoryFault::ServerSideCopyFallsBack,
-    ] {
-        let fixture = MemoryFixture::with_fault(fault);
-        let result =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                FileSystemContractSuite::new(&fixture).assert_all();
-            }));
-        assert!(
-            result.is_err(),
-            "suite accepted advertised option or guarantee fault: {fault:?}"
+    for case in sync_fault_cases().iter().skip(8) {
+        let fixture = MemoryFixture::with_fault(case.fault);
+        assert_panics_at(
+            || FileSystemContractSuite::new(&fixture).assert_contract(case.phase),
+            case.check_id,
         );
     }
 }
