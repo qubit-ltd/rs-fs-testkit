@@ -25,6 +25,7 @@ use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
+use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FixtureCase;
 
@@ -75,6 +76,23 @@ fn test_async_phase_matrix_exercises_declared_profiles() {
             assert!(result.is_ok(), "async profile {profile} panicked in {contract:?}");
         }
     }
+}
+
+/// A fallback-only provider rejects native-only conflict and tree requests.
+#[test]
+fn test_async_fallback_copy_rejects_native_conflicts() {
+    let fixture = AsyncMemoryFixture::fallback_only();
+    let report = run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Copy));
+    report.assert_complete();
+    assert!(report.checks().iter().any(|check| {
+        check.id() == "copy/fallback-overwrite-rejected"
+            && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
+    }));
+    assert!(report.checks().iter().any(|check| {
+        check.id() == "copy/atomic-tree"
+            && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
+    }));
+    assert!(fixture.is_empty(), "fallback copy contract leaked resources");
 }
 
 #[test]
