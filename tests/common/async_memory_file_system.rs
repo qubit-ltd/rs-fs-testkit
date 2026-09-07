@@ -126,6 +126,7 @@ use qubit_fs::write::WriteDisposition;
 #[cfg(feature = "async")]
 use qubit_fs::write::WriteFailure;
 use qubit_fs::write::WriteFailureState;
+use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WritePrecondition;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::AsyncCopyCancellationStage;
@@ -133,6 +134,8 @@ use qubit_fs_testkit::AsyncCopyCancellationStage;
 use qubit_fs_testkit::AsyncCopyFixtureCase;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::AsyncFileSystemFixture;
+use qubit_fs_testkit::AsyncWriteCancellationStage;
+use qubit_fs_testkit::AsyncWriteFixtureCase;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::CopyCancellationProbe;
 use qubit_fs_testkit::CopyFixtureCase;
@@ -143,12 +146,15 @@ use qubit_fs_testkit::FixtureError;
 use qubit_fs_testkit::FixtureFuture;
 use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
+use qubit_fs_testkit::WriteCancellationProbe;
 #[cfg(feature = "async")]
 use qubit_io::AsyncInput;
 #[cfg(feature = "async")]
 use qubit_io::AsyncOutput;
 
 use super::MemoryFixture;
+use super::async_write_gate::AsyncMemoryWriteCancellationProbe;
+use super::async_write_gate::WriteGate;
 use super::memory_file_system::listed_entries;
 use super::memory_file_system::provider_properties;
 use super::shared_model::Entry;
@@ -193,9 +199,12 @@ pub struct AsyncMemoryFixture {
     file_system: AsyncFileSystem,
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
     copy_gate: Arc<Mutex<CopyGate>>,
+    write_gate: Arc<Mutex<WriteGate>>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
     versions: Arc<Mutex<HashMap<String, u64>>>,
     supports_cancellation_cases: bool,
+    supports_write_cancellation: bool,
+    unavailable_write_stage: Option<AsyncWriteCancellationStage>,
     path_calls: Arc<AtomicUsize>,
     limits: FileSystemLimits,
     unavailable_case: Option<FixtureCase>,
@@ -529,7 +538,9 @@ impl AsyncMemoryFixture {
 
     /// Creates a conforming fixture without optional cancellation probes.
     pub fn without_cancellation_cases() -> Self {
-        Self::with_copy_behavior(AsyncMemoryFault::None, false, false)
+        let mut fixture = Self::with_copy_behavior(AsyncMemoryFault::None, false, false);
+        fixture.supports_write_cancellation = false;
+        fixture
     }
 
     /// Creates a fixture whose provider completes copy through its native path.
@@ -672,12 +683,14 @@ impl AsyncMemoryFixture {
     ) -> Self {
         let stage = Arc::new(Mutex::new(AsyncCopyCancellationStage::NativeAttempt));
         let copy_gate = Arc::new(Mutex::new(CopyGate::new()));
+        let write_gate = Arc::new(Mutex::new(WriteGate::new()));
         let entries = Arc::new(Mutex::new(HashMap::new()));
         let versions = Arc::new(Mutex::new(HashMap::new()));
         let path_calls = Arc::new(AtomicUsize::new(0));
         let file_system = AsyncFileSystem::from_spi(AsyncMemorySpi {
             stage: Arc::clone(&stage),
             copy_gate: Arc::clone(&copy_gate),
+            write_gate: Arc::clone(&write_gate),
             entries: Arc::clone(&entries),
             versions: Arc::clone(&versions),
             fault,
@@ -695,13 +708,45 @@ impl AsyncMemoryFixture {
             file_system,
             stage,
             copy_gate,
+            write_gate,
             entries,
             versions,
             supports_cancellation_cases,
+            supports_write_cancellation: true,
+            unavailable_write_stage: None,
             path_calls,
             limits,
             unavailable_case,
         }
+    }
+
+    /// Omits one stage probe to exercise strict evidence completeness.
+    pub fn without_write_stage(stage: AsyncWriteCancellationStage) -> Self {
+        let mut fixture = Self::new();
+        fixture.unavailable_write_stage = Some(stage);
+        fixture
+    }
+
+    /// Injects independent acknowledgement and disarm errors after reaching a
+    /// gate.
+    pub fn with_write_probe_failures(fail_disarm: bool) -> Self {
+        let fixture = Self::new();
+        {
+            let mut gate = fixture.write_gate.lock().unwrap();
+            gate.fail_acknowledgement = true;
+            gate.fail_disarm = fail_disarm;
+        }
+        fixture
+    }
+
+    /// Reports whether a failed probe left its provider gate armed.
+    pub fn write_gate_is_armed(&self) -> bool {
+        self.write_gate.lock().unwrap().armed
+    }
+
+    /// Returns the stages for which the suite actually requested probes.
+    pub fn prepared_write_stages(&self) -> Vec<AsyncWriteCancellationStage> {
+        self.write_gate.lock().unwrap().prepared.clone()
     }
 
     /// Returns whether the fixture namespace contains no resources.
@@ -882,6 +927,25 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
+    fn prepare_write_cancellation<'a>(
+        &'a self,
+        stage: AsyncWriteCancellationStage,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Box<dyn WriteCancellationProbe>>> {
+        Box::pin(async move {
+            if !self.supports_write_cancellation || self.unavailable_write_stage == Some(stage) {
+                return Ok(FixtureSupport::Unsupported);
+            }
+            self.write_gate.lock().expect("write gate lock").arm(stage);
+            let path = self.path(relative)?;
+            let probe: Box<dyn WriteCancellationProbe> = Box::new(AsyncMemoryWriteCancellationProbe {
+                case: AsyncWriteFixtureCase::new(path, vec![b'w'], WriteOptions::default()),
+                gate: Arc::clone(&self.write_gate),
+            });
+            Ok(FixtureSupport::Supported(probe))
+        })
+    }
+
     fn prepare_copy_cancellation<'a>(
         &'a self,
         stage: AsyncCopyCancellationStage,
@@ -970,6 +1034,7 @@ fn stale_version(versions: &Arc<Mutex<HashMap<String, u64>>>, path: &Path) -> Re
 struct AsyncMemorySpi {
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
     copy_gate: Arc<Mutex<CopyGate>>,
+    write_gate: Arc<Mutex<WriteGate>>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
     versions: Arc<Mutex<HashMap<String, u64>>>,
     fault: AsyncMemoryFault,
@@ -1240,12 +1305,20 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let state = Arc::clone(&self.entries);
         let versions = Arc::clone(&self.versions);
         let copy_gate = Arc::clone(&self.copy_gate);
+        let write_gate = Arc::clone(&self.write_gate);
         let fault = self.fault;
         let disposition = request.options().options().disposition();
         let atomicity = request.options().options().atomicity();
         let precondition = request.options().options().precondition().clone();
         let durability = request.options().options().durability();
         Box::pin(async move {
+            std::future::poll_fn(|context| {
+                write_gate
+                    .lock()
+                    .expect("write gate lock")
+                    .poll_stage(AsyncWriteCancellationStage::Open, context)
+            })
+            .await;
             Ok(OpenedAsyncWriter::new(
                 info,
                 Box::new(AsyncMemoryWriter {
@@ -1253,6 +1326,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     state,
                     versions,
                     copy_gate,
+                    write_gate,
                     path,
                     bytes: Vec::new(),
                     fault,
@@ -1597,6 +1671,7 @@ impl AsyncInput for AsyncMemoryReader {
 struct AsyncMemoryWriter {
     stage: AsyncCopyCancellationStage,
     copy_gate: Arc<Mutex<CopyGate>>,
+    write_gate: Arc<Mutex<WriteGate>>,
     state: Arc<Mutex<HashMap<String, Entry>>>,
     versions: Arc<Mutex<HashMap<String, u64>>>,
     path: Path,
@@ -1620,6 +1695,15 @@ impl AsyncOutput for AsyncMemoryWriter {
         count: usize,
     ) -> Poll<IoResult<usize>> {
         let this = self.get_mut();
+        if this
+            .write_gate
+            .lock()
+            .expect("write gate lock")
+            .poll_stage(AsyncWriteCancellationStage::Write, context)
+            .is_pending()
+        {
+            return Poll::Pending;
+        }
         if this.stage == AsyncCopyCancellationStage::Writer {
             match this
                 .copy_gate
@@ -1637,9 +1721,12 @@ impl AsyncOutput for AsyncMemoryWriter {
         }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<IoResult<()>> {
-        let _ = self;
-        Poll::Ready(Ok(()))
+    fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<IoResult<()>> {
+        self.write_gate
+            .lock()
+            .expect("write gate lock")
+            .poll_stage(AsyncWriteCancellationStage::Flush, context)
+            .map(Ok)
     }
 }
 
@@ -1661,7 +1748,15 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
         let durability = this.durability;
         let precondition = this.precondition.clone();
         let bytes_written = bytes.len() as u64;
+        let write_gate = Arc::clone(&this.write_gate);
         Box::pin(async move {
+            std::future::poll_fn(|context| {
+                write_gate
+                    .lock()
+                    .expect("write gate lock")
+                    .poll_stage(AsyncWriteCancellationStage::Commit, context)
+            })
+            .await;
             let destination_exists = state
                 .lock()
                 .expect("async memory state lock must succeed")

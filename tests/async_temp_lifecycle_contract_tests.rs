@@ -38,7 +38,7 @@ fn test_async_temp_keep_transfers_identity_and_payload() {
     assert_eq!(TempResourceState::Owned, temporary.state());
 
     let mut operation = file_system
-        .begin_write_all(source.clone(), b"kept-payload", WriteOptions::default())
+        .begin_write_all(source.clone(), b"kept-payload".to_vec(), WriteOptions::default())
         .expect("temporary source write preflight should succeed");
     run_controlled(operation.execute()).expect("temporary source should accept fixture payload");
     let outcome = run_controlled(temporary.keep()).expect("keep should publish the source");
@@ -71,7 +71,7 @@ fn test_async_temp_failed_atomic_persist_remains_cleanup_recoverable() {
         run_controlled(file_system.create_temp_file(TempOptions::default())).expect("temporary file should open");
     let source = temporary.path().clone();
     let mut operation = file_system
-        .begin_write_all(source.clone(), b"retry-payload", WriteOptions::default())
+        .begin_write_all(source.clone(), b"retry-payload".to_vec(), WriteOptions::default())
         .expect("temporary source write preflight should succeed");
     run_controlled(operation.execute()).expect("temporary source should accept fixture payload");
     let target = Path::parse("/contract/async-retry-persist-target").expect("target should parse");

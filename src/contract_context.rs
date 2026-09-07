@@ -129,7 +129,18 @@ impl ContractContext {
 
     /// Registers every check expected for a phase before it executes.
     pub(crate) fn prepare_phase(&mut self, contract: FileSystemContract) {
-        for spec in crate::internal::check_catalog::for_contract(contract) {
+        self.prepare_checks(crate::internal::check_catalog::for_contract(contract));
+    }
+
+    /// Registers checks that require an asynchronous provider.
+    #[cfg(feature = "async")]
+    pub(crate) fn prepare_async_phase(&mut self, contract: FileSystemContract) {
+        self.prepare_checks(crate::internal::check_catalog::for_async_contract(contract));
+    }
+
+    /// Seeds every required check with explicit missing-evidence status.
+    fn prepare_checks(&mut self, checks: Vec<crate::internal::check_catalog::CheckSpec>) {
+        for spec in checks {
             self.report.expect(spec.id);
             let reason = if crate::internal::check_catalog::requires_explicit_evidence(spec.id) {
                 "check requires an explicit provider probe"

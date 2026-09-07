@@ -67,6 +67,8 @@ mod properties;
 mod read;
 // Implements writer and publication contracts.
 mod write;
+// Implements owning write and provider-stage cancellation evidence.
+mod write_cancellation;
 // Implements namespace and metadata contracts.
 mod namespace;
 // Implements copy and cancellation contracts.
@@ -171,7 +173,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
     /// Dispatches one named asynchronous phase without assuming a runtime.
     async fn assert_contract_inner(&mut self, contract: FileSystemContract) {
-        self.context.prepare_phase(contract);
+        self.context.prepare_async_phase(contract);
         match contract {
             FileSystemContract::Properties => self.assert_properties().await,
             FileSystemContract::Stat => self.assert_stat().await,

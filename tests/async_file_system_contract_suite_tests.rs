@@ -181,10 +181,7 @@ fn test_all_capabilities_execute_async_contracts() {
             .collect::<Vec<_>>(),
         FileSystemCapability::ALL.to_vec()
     );
-    let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
+    run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     assert!(fixture.is_empty(), "all-capability suite must clean up");
 }
 
@@ -193,10 +190,7 @@ fn test_all_capabilities_execute_async_contracts() {
 #[test]
 fn test_async_suite_allows_matching_filesystem_and_provider_ids() {
     let fixture = AsyncMemoryFixture::with_matching_ids();
-    let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
+    run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all());
 }
 
 /// Copy cancellation cases are optional fixture probes, not provider
@@ -263,10 +257,7 @@ fn test_async_recursive_delete_does_not_require_create_directory() {
 fn test_async_suite_cleans_resources_before_resuming_panic() {
     let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::WriteDropsBytes);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
-        let waker = Waker::noop();
-        let mut context = Context::from_waker(waker);
-        let _ = assertion.as_mut().poll(&mut context);
+        run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all());
     }));
     assert!(result.is_err(), "injected write fault must fail the suite");
     assert!(fixture.is_empty(), "failed suite must clean published paths");
@@ -291,7 +282,7 @@ fn test_async_core_capability_negative_branches_are_exercised() {
     assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
     assert_eq!(
         fixture.path_call_count(),
-        9,
+        10,
         "negative capability branches must exercise their facade paths"
     );
 }
@@ -301,10 +292,7 @@ fn test_async_core_capability_negative_branches_are_exercised() {
 #[test]
 fn test_async_suite_skips_unadvertised_optional_capabilities() {
     let fixture = AsyncMemoryFixture::without_optional_capabilities();
-    let mut assertion = Box::pin(AsyncFileSystemContractSuite::new(&fixture).assert_all());
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
+    run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all());
 }
 
 /// Every public asynchronous contract phase remains independently pollable for
