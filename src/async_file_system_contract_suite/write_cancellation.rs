@@ -3,11 +3,10 @@
 //
 //    SPDX-License-Identifier: Apache-2.0
 // =============================================================================
-//! Explicit evidence for owning writes and provider-observed cancellation.
+//! Stage-aware cancellation of owning asynchronous writes.
 
 use std::future::Future;
 use std::future::poll_fn;
-use std::panic::resume_unwind;
 use std::task::Poll;
 
 use qubit_fs::error::FsErrorKind;
@@ -15,198 +14,203 @@ use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::write::AsyncWriteAllOperationState;
 use qubit_fs::write::WriteAbortOutcome;
 use qubit_fs::write::WriteFailureState;
-use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WriterState;
 
-use super::AsyncFileSystemContractSuite;
+use crate::AsyncFileSystemContractSuite;
 use crate::AsyncWriteCancellationStage;
+use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
-use crate::FixtureError;
+use crate::ContractFailure;
 use crate::FixtureSupport;
 use crate::WriteCancellationProbe;
-use crate::internal::catch_unwind_future;
+use crate::internal::probe_disarm_guard::ProbeDisarmGuard;
+use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Exercises completed ownership and rejects repeated execution.
-    pub(super) async fn assert_owning_write(&mut self) {
-        let path = self.path("async-owned-write");
-        let prepared = self
-            .fixture
-            .file_system()
-            .begin_write_all(path.clone(), Vec::new(), WriteOptions::default());
+    /// Executes only the selected stage, including its own probe preparation.
+    pub(super) async fn check_write_cancellation_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+        let stage = match id {
+            ContractCheckId::WriteCancelOpen => AsyncWriteCancellationStage::Open,
+            ContractCheckId::WriteCancelWrite => AsyncWriteCancellationStage::Write,
+            ContractCheckId::WriteCancelFlush => AsyncWriteCancellationStage::Flush,
+            ContractCheckId::WriteCancelCommit => AsyncWriteCancellationStage::Commit,
+            _ => return Err(ContractFailure::message_only("selected entry is not write cancellation").at(id)),
+        };
         if !self.capable(FileSystemCapability::Write) {
-            let failure = match prepared {
-                Ok(_) => panic!("write/owning-operation: missing capability accepted"),
-                Err(failure) => failure,
-            };
-            assert_eq!(FsErrorKind::UnsupportedCapability, failure.error().kind());
-            self.write_check("write/owning-operation", ContractCheckOutcome::RejectedAsExpected);
-            self.write_check(
-                "write/repeated-execute",
+            self.context.record_check(
+                id,
+                Some(FileSystemCapability::Write),
                 ContractCheckOutcome::NotApplicable {
-                    reason: "write capability unavailable".to_owned(),
+                    reason: "Write capability is unavailable".to_owned(),
                 },
             );
-            return;
+            return Ok(());
         }
-        self.context.record_created(path.clone());
-        let mut operation = prepared.expect("write/owning-operation: preflight failed");
-        assert_eq!(&path, operation.path());
-        operation
-            .execute()
+        let relative = self.context.relative_name(&format!("write-cancel-{stage:?}"));
+        let prepared = self
+            .fixture
+            .prepare_write_cancellation(stage, &relative)
             .await
-            .expect("write/owning-operation: empty write failed");
-        assert_eq!(AsyncWriteAllOperationState::Completed, operation.state());
-        assert_eq!(0, operation.written_bytes());
-        assert!(!operation.has_recovery_writer());
-        self.write_check("write/owning-operation", ContractCheckOutcome::Passed);
-        let failure = operation
-            .execute()
-            .await
-            .expect_err("write/repeated-execute: operation ran twice");
-        assert_eq!(FsErrorKind::InvalidState, failure.error().kind());
-        assert_eq!(WriteFailureState::Published, failure.state());
-        assert_eq!(AsyncWriteAllOperationState::Completed, operation.state());
-        assert_eq!(0, operation.written_bytes());
-        self.write_check("write/repeated-execute", ContractCheckOutcome::Passed);
+            .map_err(|error| ContractFailure::with_source("write cancellation preparation failed", error).at(id))?;
+        match prepared {
+            FixtureSupport::Supported(probe) => self.run_write_cancellation_probe(stage, id, probe).await?,
+            FixtureSupport::Unsupported => self.context.record_check(
+                id,
+                Some(FileSystemCapability::Write),
+                ContractCheckOutcome::SkippedOptional {
+                    reason: "fixture has no stage acknowledgement probe".to_owned(),
+                },
+            ),
+        }
+        Ok(())
     }
 
-    /// Requires a real stage gate whenever write capability is advertised.
-    pub(super) async fn assert_write_cancellation(&mut self) {
-        for stage in [
-            AsyncWriteCancellationStage::Open,
-            AsyncWriteCancellationStage::Write,
-            AsyncWriteCancellationStage::Flush,
-            AsyncWriteCancellationStage::Commit,
-        ] {
-            let id = check_id(stage);
-            if !self.capable(FileSystemCapability::Write) {
-                self.write_check(
-                    id,
-                    ContractCheckOutcome::NotApplicable {
-                        reason: "write capability unavailable".to_owned(),
-                    },
-                );
-                continue;
-            }
-            let relative = self.context.relative_name(id);
-            match self
-                .fixture
-                .prepare_write_cancellation(stage, &relative)
-                .await
-                .expect("write cancellation: probe setup failed")
-            {
-                FixtureSupport::Supported(probe) => self.run_write_probe(stage, probe).await,
-                FixtureSupport::Unsupported => self.write_check(
-                    id,
-                    ContractCheckOutcome::Unverified {
-                        reason: "provider did not supply a stage-aware write cancellation probe".to_owned(),
-                    },
-                ),
-            }
-        }
-    }
-
-    /// Polls until acknowledgement, cancels execution, and explicitly recovers.
-    async fn run_write_probe(&mut self, stage: AsyncWriteCancellationStage, probe: Box<dyn WriteCancellationProbe>) {
+    async fn run_write_cancellation_probe(
+        &mut self,
+        stage: AsyncWriteCancellationStage,
+        id: ContractCheckId,
+        probe: Box<dyn WriteCancellationProbe>,
+    ) -> Result<(), ContractFailure> {
         let (path, bytes, options) = probe.case().clone().into_parts();
         self.context.record_created(path.clone());
-        let expected_bytes = bytes.len() as u64;
-        let result = catch_unwind_future(async {
-            let mut operation = self
-                .fixture
-                .file_system()
-                .begin_write_all(path, bytes, options)
-                .expect("write cancellation: preflight failed");
-            let mut execution = Box::pin(operation.execute());
-            let reached = poll_fn(|context| match execution.as_mut().poll(context) {
-                Poll::Pending => probe.poll_reached(context),
-                Poll::Ready(_) => Poll::Ready(Err(FixtureError::new(
-                    "write cancellation: execution ended before stage acknowledgement",
-                ))),
-            })
-            .await;
-            drop(execution);
-            reached.expect("write cancellation: stage acknowledgement failed");
-            assert_eq!(
-                AsyncWriteAllOperationState::Failed(WriteFailureState::Indeterminate),
-                operation.state()
-            );
-            let confirmed = operation.written_bytes();
-            match stage {
-                AsyncWriteCancellationStage::Open => {
-                    assert_eq!(0, confirmed);
-                    assert!(!operation.has_recovery_writer());
-                }
-                AsyncWriteCancellationStage::Write => {
-                    assert!(confirmed <= expected_bytes);
-                    assert!(operation.has_recovery_writer());
-                }
-                AsyncWriteCancellationStage::Flush | AsyncWriteCancellationStage::Commit => {
-                    assert_eq!(expected_bytes, confirmed);
-                    assert!(operation.has_recovery_writer());
-                }
+        // The observation can suspend too: own the disarm obligation before it.
+        // Later locals drop first, so execution always stops before disarming.
+        let mut guard = ProbeDisarmGuard::new(|| probe.disarm(), &mut self.context.run.cleanup.failures);
+        let before = probe.observe_target().await.map_err(|error| {
+            ContractFailure::with_source("write cancellation initial observation failed", error).at(id)
+        })?;
+        let mut operation = self
+            .fixture
+            .file_system()
+            .begin_write_all(path, bytes.clone(), options)
+            .map_err(|error| {
+                ContractFailure::with_owned_source(
+                    "write cancellation request admission failed",
+                    crate::ContractAsyncWriteFailure::new(error, None),
+                )
+                .at(id)
+            })?;
+        drop(operation.execute());
+        verify_condition(
+            operation.state() == AsyncWriteAllOperationState::Ready,
+            id,
+            "unpolled execution changed state",
+        )?;
+        let mut execution_failure = None;
+        let mut execution = Box::pin(operation.execute());
+        let reached = poll_fn(|context| match execution.as_mut().poll(context) {
+            Poll::Pending => probe.poll_reached(context).map(|result| {
+                result.map_err(|error| {
+                    ContractFailure::with_source("write cancellation stage acknowledgement failed", error).at(id)
+                })
+            }),
+            Poll::Ready(Ok(_)) => Poll::Ready(Err(ContractFailure::message_only(
+                "write completed before requested stage acknowledgement",
+            )
+            .at(id))),
+            Poll::Ready(Err(error)) => {
+                execution_failure = Some(error);
+                Poll::Ready(Err(ContractFailure::message_only(
+                    "write failed before requested stage acknowledgement",
+                )
+                .at(id)))
             }
-            let failure = operation
-                .execute()
-                .await
-                .expect_err("write cancellation: repeated execution accepted");
-            assert_eq!(FsErrorKind::InvalidState, failure.error().kind());
-            assert_eq!(WriteFailureState::Indeterminate, failure.state());
-            assert_eq!(confirmed, failure.written_bytes());
-            operation
         })
         .await;
-        let disarm = probe.disarm();
-        if let Err(payload) = result {
-            if let Err(error) = disarm {
-                let primary = payload
-                    .downcast_ref::<String>()
-                    .map(String::as_str)
-                    .or_else(|| payload.downcast_ref::<&str>().copied())
-                    .unwrap_or("non-string assertion panic");
-                panic!(
-                    "write cancellation: stage assertion failed and gate disarm failed: {error}; assertion: {primary}"
-                );
-            }
-            resume_unwind(payload);
+        drop(execution);
+        let disarmed = guard.disarm();
+        drop(guard);
+        if let Some(error) = execution_failure {
+            return Err(ContractFailure::with_owned_source(
+                "write failed before requested stage acknowledgement",
+                crate::ContractAsyncWriteFailure::new(error, Some(operation)),
+            )
+            .at(id));
         }
-        disarm.expect("write cancellation: gate disarm failed");
-        let mut operation = result.expect("successful assertion retained operation");
-        let snapshot = operation.written_bytes();
-        if let Some(writer) = operation.recovery_writer() {
-            let outcome = writer
-                .abort_async()
-                .await
-                .expect("write cancellation: writer recovery failed");
-            let expected_state = match outcome {
+        reached?;
+        verify_condition(
+            disarmed,
+            id,
+            "probe disarm failed; original cause is retained in cleanup",
+        )?;
+        let expected_bytes = probe.accepted_bytes().map_err(|error| {
+            ContractFailure::with_source("write cancellation byte observation failed", error).at(id)
+        })?;
+        verify_condition(
+            expected_bytes <= bytes.len() as u64,
+            id,
+            "observed accepted bytes exceed the request",
+        )?;
+        verify_condition(
+            operation.state() == AsyncWriteAllOperationState::Failed(WriteFailureState::Indeterminate),
+            id,
+            "cancellation state mismatch",
+        )?;
+        verify_condition(
+            operation.written_bytes() == expected_bytes,
+            id,
+            "accepted byte count mismatch",
+        )?;
+        verify_condition(
+            operation.has_recovery_writer() == (stage != AsyncWriteCancellationStage::Open),
+            id,
+            "writer recovery responsibility mismatch",
+        )?;
+        let failure = match operation.execute().await {
+            Err(failure) => failure,
+            Ok(_) => return Err(ContractFailure::message_only("cancelled write ran twice").at(id)),
+        };
+        if failure.error().kind() != FsErrorKind::InvalidState
+            || failure.state() != WriteFailureState::Indeterminate
+            || failure.written_bytes() != expected_bytes
+        {
+            return Err(ContractFailure::with_owned_source(
+                "repeated cancelled write lost its recovery facts",
+                crate::ContractAsyncWriteFailure::new(failure, Some(operation)),
+            )
+            .at(id));
+        }
+        verify_condition(
+            operation.has_recovery_writer() == (stage != AsyncWriteCancellationStage::Open),
+            id,
+            "repeated execution lost writer",
+        )?;
+        if let Some(mut writer) = operation.take_recovery_writer() {
+            let outcome = match writer.abort_async().await {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    return Err(ContractFailure::with_owned_source(
+                        "write cancellation recovery abort failed",
+                        crate::ContractWriterFailure::new(error, writer),
+                    )
+                    .at(id));
+                }
+            };
+            let expected = match outcome {
                 WriteAbortOutcome::NotPublished => WriterState::Aborted,
                 WriteAbortOutcome::Published => WriterState::Published,
                 WriteAbortOutcome::Indeterminate => WriterState::Indeterminate,
             };
-            assert_eq!(expected_state, writer.state());
+            verify_condition(writer.state() == expected, id, "recovery state mismatch")?;
+            if outcome != WriteAbortOutcome::Indeterminate {
+                let after = probe.observe_target().await.map_err(|error| {
+                    ContractFailure::with_source("write cancellation recovery observation failed", error).at(id)
+                })?;
+                match outcome {
+                    WriteAbortOutcome::NotPublished => {
+                        verify_condition(after == before, id, "NotPublished recovery changed the target")?
+                    }
+                    WriteAbortOutcome::Published => verify_condition(
+                        after.as_deref() == Some(bytes.as_slice()),
+                        id,
+                        "confirmed publication differs",
+                    )?,
+                    WriteAbortOutcome::Indeterminate => unreachable!(),
+                }
+            }
         }
-        assert_eq!(snapshot, operation.written_bytes());
-        assert_eq!(
-            AsyncWriteAllOperationState::Failed(WriteFailureState::Indeterminate),
-            operation.state()
-        );
-        self.write_check(check_id(stage), ContractCheckOutcome::Passed);
-    }
-
-    /// Records a check with its common write capability requirement.
-    fn write_check(&mut self, id: &'static str, outcome: ContractCheckOutcome) {
         self.context
-            .record_check(id, Some(FileSystemCapability::Write), outcome);
-    }
-}
-
-/// Maps the provider stage to its stable evidence identifier.
-const fn check_id(stage: AsyncWriteCancellationStage) -> &'static str {
-    match stage {
-        AsyncWriteCancellationStage::Open => "write/cancel-open",
-        AsyncWriteCancellationStage::Write => "write/cancel-write",
-        AsyncWriteCancellationStage::Flush => "write/cancel-flush",
-        AsyncWriteCancellationStage::Commit => "write/cancel-commit",
+            .record_check(id, Some(FileSystemCapability::Write), ContractCheckOutcome::Passed);
+        Ok(())
     }
 }

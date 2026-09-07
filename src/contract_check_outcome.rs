@@ -29,4 +29,14 @@ pub enum ContractCheckOutcome {
         /// Why an optional diagnostic probe was unavailable.
         reason: String,
     },
+    /// The executed check violated a contract or its fixture failed.
+    Failed {
+        /// A diagnostic describing the failed assertion or operation.
+        reason: String,
+    },
+    /// Execution ended before this registered check could run.
+    NotRun {
+        /// Why execution did not reach this check.
+        reason: String,
+    },
 }

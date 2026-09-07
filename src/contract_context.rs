@@ -18,6 +18,7 @@ use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::metadata::FileSystemProperties;
 use qubit_fs::path::Path;
 
+use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 use crate::ContractReport;
 use crate::FileSystemContract;
@@ -31,9 +32,8 @@ pub(crate) struct ContractContext {
     name_counter: u64,
     resources: Vec<TrackedResource>,
     current_contract: &'static str,
-    report: ContractReport,
+    pub(crate) run: crate::ContractRun,
     resource_index: u64,
-    resources_prepared: bool,
 }
 
 impl ContractContext {
@@ -45,9 +45,8 @@ impl ContractContext {
             name_counter: 0,
             resources: Vec::new(),
             current_contract: "initialization",
-            report: ContractReport::new(),
+            run: crate::ContractRun::new(),
             resource_index: 0,
-            resources_prepared: false,
         }
     }
 
@@ -67,7 +66,12 @@ impl ContractContext {
     /// Returns a suite-unique relative name for the current contract phase.
     #[inline]
     pub(crate) fn relative_name(&self, relative: &str) -> String {
-        format!("{}-{}-{}", self.current_contract(), self.name_counter, relative)
+        format!(
+            "{}-{}-{}",
+            self.current_contract().replace('/', "-"),
+            self.name_counter,
+            relative
+        )
     }
 
     /// Records a path with its owning check, retaining only the first owner.
@@ -83,7 +87,6 @@ impl ContractContext {
             return;
         }
         self.resource_index = self.resource_index.saturating_add(1);
-        self.resources_prepared = true;
         self.resources.push(TrackedResource {
             path,
             owner_check,
@@ -100,74 +103,69 @@ impl ContractContext {
     /// Returns the report accumulated by the suite.
     #[inline]
     pub(crate) const fn report(&self) -> &ContractReport {
-        &self.report
+        &self.run.report
     }
 
     /// Returns mutable access for a suite phase to record a check outcome.
     #[inline]
     #[allow(dead_code)]
     pub(crate) fn report_mut(&mut self) -> &mut ContractReport {
-        &mut self.report
-    }
-
-    /// Returns whether this run acquired any fixture-owned resource.
-    #[inline]
-    pub(crate) const fn resources_prepared(&self) -> bool {
-        self.resources_prepared
+        &mut self.run.report
     }
 
     /// Records one stable check outcome after its phase has executed.
     #[inline]
     pub(crate) fn record_check(
         &mut self,
-        id: &'static str,
+        id: ContractCheckId,
         capability: Option<FileSystemCapability>,
         outcome: ContractCheckOutcome,
     ) {
-        self.report.record(id, capability, outcome);
+        self.run.report.record(id, capability, outcome);
     }
 
     /// Registers every check expected for a phase before it executes.
-    pub(crate) fn prepare_phase(&mut self, contract: FileSystemContract) {
-        self.prepare_checks(crate::internal::check_catalog::for_contract(contract));
+    pub(crate) fn prepare_phase(&mut self, contract: FileSystemContract, asynchronous: bool) {
+        for spec in crate::internal::check_catalog::for_contract(contract, asynchronous) {
+            self.run.report.register(spec.id, spec.capability);
+        }
     }
 
-    /// Registers checks that require an asynchronous provider.
-    #[cfg(feature = "async")]
-    pub(crate) fn prepare_async_phase(&mut self, contract: FileSystemContract) {
-        self.prepare_checks(crate::internal::check_catalog::for_async_contract(contract));
-    }
-
-    /// Seeds every required check with explicit missing-evidence status.
-    fn prepare_checks(&mut self, checks: Vec<crate::internal::check_catalog::CheckSpec>) {
-        for spec in checks {
-            self.report.expect(spec.id);
-            let reason = if crate::internal::check_catalog::requires_explicit_evidence(spec.id) {
-                "check requires an explicit provider probe"
-            } else {
-                "check not yet executed"
-            };
-            self.report.record(
-                spec.id,
-                spec.capability,
-                ContractCheckOutcome::Unverified {
-                    reason: reason.to_owned(),
+    /// Records a failed check without erasing the original typed cause.
+    pub(crate) fn fail(&mut self, failure: crate::ContractFailure) {
+        if let Some(id) = failure.check() {
+            self.run.report.record(
+                id,
+                crate::internal::check_catalog::specification(id).capability,
+                ContractCheckOutcome::Failed {
+                    reason: failure.message().to_owned(),
                 },
             );
         }
+        self.run.failures.push(failure);
+    }
+
+    /// Saves an observed failure before any later I/O can suspend.
+    fn record_cleanup_failure(&mut self, failure: CleanupFailure) {
+        self.run.cleanup.failures.push(crate::ContractFailure::with_source(
+            format!(
+                "[fs-testkit:cleanup/{}] owner={} path={:?}: {}",
+                failure.operation, failure.owner_check, failure.path, failure.cause
+            ),
+            failure.cause,
+        ));
     }
 
     /// Attempts every recorded synchronous resource and collects failures.
     ///
     /// Missing paths count as already cleaned. Failed resources remain in the
     /// ledger so a later explicit `finish` can retry them.
-    pub(crate) fn cleanup(&mut self, file_system: &FileSystem) -> Vec<CleanupFailure> {
+    pub(crate) fn cleanup(&mut self, file_system: &FileSystem) {
         if !self.properties.capabilities().supports(FileSystemCapability::Delete) {
-            return Vec::new();
+            return;
         }
         let mut pending = std::mem::take(&mut self.resources);
         let mut retained = Vec::with_capacity(pending.len());
-        let mut failures = Vec::new();
         while let Some(resource) = pending.pop() {
             let path = resource.path.clone();
             let owner = resource.owner_check;
@@ -176,17 +174,17 @@ impl ContractContext {
                 Ok(Ok(metadata)) => metadata,
                 Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => continue,
                 Ok(Err(error)) => {
-                    failures.push(CleanupFailure {
+                    self.record_cleanup_failure(CleanupFailure {
                         owner_check: owner,
                         operation: "stat",
                         path: Some(path),
-                        cause: FixtureError::new(error.to_string()),
+                        cause: FixtureError::with_source("facade cleanup operation failed", error),
                     });
                     retained.push(resource);
                     continue;
                 }
                 Err(payload) => {
-                    failures.push(CleanupFailure {
+                    self.record_cleanup_failure(CleanupFailure {
                         owner_check: owner,
                         operation: "stat",
                         path: Some(path),
@@ -218,7 +216,7 @@ impl ContractContext {
                     match verified {
                         Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
                         Ok(Ok(_)) => {
-                            failures.push(CleanupFailure {
+                            self.record_cleanup_failure(CleanupFailure {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
@@ -227,16 +225,16 @@ impl ContractContext {
                             retained.push(resource);
                         }
                         Ok(Err(error)) => {
-                            failures.push(CleanupFailure {
+                            self.record_cleanup_failure(CleanupFailure {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
-                                cause: FixtureError::new(format!("delete outcome could not be verified: {error}")),
+                                cause: FixtureError::with_source("delete outcome could not be verified", error),
                             });
                             retained.push(resource);
                         }
                         Err(payload) => {
-                            failures.push(CleanupFailure {
+                            self.record_cleanup_failure(CleanupFailure {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
@@ -248,16 +246,16 @@ impl ContractContext {
                 }
                 Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
                 Ok(Err(error)) => {
-                    failures.push(CleanupFailure {
+                    self.record_cleanup_failure(CleanupFailure {
                         owner_check: owner,
                         operation: "delete",
                         path: Some(path),
-                        cause: FixtureError::new(error.to_string()),
+                        cause: FixtureError::with_source("facade cleanup operation failed", error),
                     });
                     retained.push(resource);
                 }
                 Err(payload) => {
-                    failures.push(CleanupFailure {
+                    self.record_cleanup_failure(CleanupFailure {
                         owner_check: owner,
                         operation: "delete",
                         path: Some(path),
@@ -269,43 +267,46 @@ impl ContractContext {
         }
         retained.sort_by_key(|resource| resource.creation_index);
         self.resources = retained;
-        failures
     }
 
     /// Attempts every recorded asynchronous resource and collects failures.
+    ///
+    /// Entries stay in the context across every await point. Cancellation may
+    /// leave a deletion unconfirmed, but a subsequent attempt can observe
+    /// `NotFound` and release that entry without losing any other resource.
+    /// Failed entries remain in creation order and are retried by `finish`.
     #[cfg(feature = "async")]
-    pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) -> Vec<CleanupFailure> {
+    pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) {
         if !self.properties.capabilities().supports(FileSystemCapability::Delete) {
-            return Vec::new();
+            return;
         }
-        let mut pending = std::mem::take(&mut self.resources);
-        let mut retained = Vec::with_capacity(pending.len());
-        let mut failures = Vec::new();
-        while let Some(resource) = pending.pop() {
+        for index in (0..self.resources.len()).rev() {
+            let resource = &self.resources[index];
             let path = resource.path.clone();
             let owner = resource.owner_check;
             let inspected = crate::internal::catch_unwind_future(file_system.stat(&path)).await;
             let metadata = match inspected {
                 Ok(Ok(metadata)) => metadata,
-                Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => continue,
+                Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {
+                    self.resources.remove(index);
+                    continue;
+                }
                 Ok(Err(error)) => {
-                    failures.push(CleanupFailure {
+                    self.record_cleanup_failure(CleanupFailure {
                         owner_check: owner,
                         operation: "stat",
                         path: Some(path),
-                        cause: FixtureError::new(error.to_string()),
+                        cause: FixtureError::with_source("facade cleanup operation failed", error),
                     });
-                    retained.push(resource);
                     continue;
                 }
                 Err(payload) => {
-                    failures.push(CleanupFailure {
+                    self.record_cleanup_failure(CleanupFailure {
                         owner_check: owner,
                         operation: "stat",
                         path: Some(path),
                         cause: panic_error(payload),
                     });
-                    retained.push(resource);
                     continue;
                 }
             };
@@ -327,70 +328,63 @@ impl ContractContext {
                 Ok(Ok(_outcome)) => {
                     let verified = crate::internal::catch_unwind_future(file_system.stat(&path)).await;
                     match verified {
-                        Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
+                        Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {
+                            self.resources.remove(index);
+                        }
                         Ok(Ok(_)) => {
-                            failures.push(CleanupFailure {
+                            self.record_cleanup_failure(CleanupFailure {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
                                 cause: FixtureError::new("delete reported success but the resource still exists"),
                             });
-                            retained.push(resource);
                         }
                         Ok(Err(error)) => {
-                            failures.push(CleanupFailure {
+                            self.record_cleanup_failure(CleanupFailure {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
-                                cause: FixtureError::new(format!("delete outcome could not be verified: {error}")),
+                                cause: FixtureError::with_source("delete outcome could not be verified", error),
                             });
-                            retained.push(resource);
                         }
                         Err(payload) => {
-                            failures.push(CleanupFailure {
+                            self.record_cleanup_failure(CleanupFailure {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
                                 cause: panic_error(payload),
                             });
-                            retained.push(resource);
                         }
                     }
                 }
-                Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {}
+                Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {
+                    self.resources.remove(index);
+                }
                 Ok(Err(error)) => {
-                    failures.push(CleanupFailure {
+                    self.record_cleanup_failure(CleanupFailure {
                         owner_check: owner,
                         operation: "delete",
                         path: Some(path),
-                        cause: FixtureError::new(error.to_string()),
+                        cause: FixtureError::with_source("facade cleanup operation failed", error),
                     });
-                    retained.push(resource);
                 }
                 Err(payload) => {
-                    failures.push(CleanupFailure {
+                    self.record_cleanup_failure(CleanupFailure {
                         owner_check: owner,
                         operation: "delete",
                         path: Some(path),
                         cause: panic_error(payload),
                     });
-                    retained.push(resource);
                 }
             }
         }
-        retained.sort_by_key(|resource| resource.creation_index);
-        self.resources = retained;
-        failures
     }
 }
 
 /// Converts an arbitrary provider panic into a safe fixture error.
 fn panic_error(payload: Box<dyn Any + Send>) -> FixtureError {
-    if let Some(message) = payload.downcast_ref::<String>() {
-        FixtureError::new(message.clone())
-    } else if let Some(message) = payload.downcast_ref::<&str>() {
-        FixtureError::new(*message)
-    } else {
-        FixtureError::new("non-string provider panic during cleanup")
-    }
+    FixtureError::with_source(
+        "provider panicked during cleanup",
+        crate::ContractFailure::panicked("provider cleanup panic", payload),
+    )
 }

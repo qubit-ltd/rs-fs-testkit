@@ -28,18 +28,6 @@ pub enum FileSystemContract {
     Copy,
     /// Rename identity, conflicts, overwrite, and guarantees.
     Rename,
-    /// Append publication.
-    Append,
-    /// Recursive directory or prefix deletion.
-    RecursiveDelete,
-    /// Required atomic rename.
-    AtomicRename,
-    /// Required durable rename.
-    DurableRename,
-    /// Required atomic replacement.
-    AtomicReplace,
-    /// Required durable copy.
-    DurableFileCopy,
     /// Temporary file and directory lifecycle and persistence.
     TempResources,
     /// Structured public error context.
@@ -48,7 +36,7 @@ pub enum FileSystemContract {
 
 impl FileSystemContract {
     /// Every named contract in dependency-safe execution order.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 12] = [
         Self::Properties,
         Self::Stat,
         Self::Read,
@@ -59,12 +47,6 @@ impl FileSystemContract {
         Self::Delete,
         Self::Copy,
         Self::Rename,
-        Self::Append,
-        Self::RecursiveDelete,
-        Self::AtomicRename,
-        Self::DurableRename,
-        Self::AtomicReplace,
-        Self::DurableFileCopy,
         Self::TempResources,
         Self::ErrorContext,
     ];

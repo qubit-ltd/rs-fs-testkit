@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -7,18 +8,222 @@
 // =============================================================================
 //! Typed synchronous fixtures for filesystem contract suites.
 
+use qubit_fs as qfs;
 use qubit_fs::FileSystem;
 use qubit_fs::copy::CopyMethod;
 use qubit_fs::metadata::ResourceVersion;
 use qubit_fs::path::Path;
 
 use crate::CopyFixtureCase;
-use crate::FixtureCase;
 use crate::FixtureResult;
 use crate::FixtureSupport;
 
 /// Supplies an isolated facade and provider-specific contract observations.
 pub trait FileSystemFixture {
+    /// Independently prepares a copy source and a scenario-specific target.
+    ///
+    /// File scenarios contain the supplied bytes and use file options, with
+    /// Required atomicity or durability for the respective strong scenario.
+    /// ServerSide cases use provider-selected observable bytes and require
+    /// server-side copy. Ready cases have distinct paths,
+    /// and Conflict targets contain `b"existing"`.
+    /// Teardown must clean partial setup even when preparation fails.
+    fn prepare_copy(
+        &self,
+        scenario: crate::CopyScenario,
+        source_relative: &str,
+        target_relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<crate::FixturePreparation<crate::CopyFixtureCase>> {
+        if scenario == crate::CopyScenario::ServerSide {
+            return Ok(match self.copy_fast_path_case(qfs::copy::CopyMethod::ServerSide)? {
+                FixtureSupport::Supported(case) => crate::FixturePreparation::Ready(case),
+                FixtureSupport::Unsupported => crate::FixturePreparation::Unavailable {
+                    reason: "fixture has no server-side copy case".to_owned(),
+                },
+            });
+        }
+        if matches!(
+            scenario,
+            crate::CopyScenario::AtomicTree | crate::CopyScenario::DurableTree
+        ) {
+            let FixtureSupport::Supported(source) = self.seed_empty_directory(source_relative)? else {
+                return Ok(crate::FixturePreparation::Unavailable {
+                    reason: "tree root setup unavailable".to_owned(),
+                });
+            };
+            let sub_relative = format!("{source_relative}/sub");
+            if matches!(self.seed_empty_directory(&sub_relative)?, FixtureSupport::Unsupported) {
+                return Ok(crate::FixturePreparation::Unavailable {
+                    reason: "tree subdirectory setup unavailable".to_owned(),
+                });
+            }
+            let child_relative = format!("{source_relative}/sub/child");
+            if matches!(self.seed_file(&child_relative, bytes)?, FixtureSupport::Unsupported) {
+                return Ok(crate::FixturePreparation::Unavailable {
+                    reason: "tree child setup unavailable".to_owned(),
+                });
+            }
+            let target = self.path(target_relative)?;
+            let options = if scenario == crate::CopyScenario::AtomicTree {
+                qfs::copy::CopyOptions::tree().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+            } else {
+                qfs::copy::CopyOptions::tree().with_durability(qfs::metadata::DurabilityRequirement::Required)
+            };
+            return Ok(crate::FixturePreparation::Ready(crate::CopyFixtureCase::new(
+                source, target, options,
+            )));
+        }
+        let FixtureSupport::Supported(source) = self.seed_file(source_relative, bytes)? else {
+            return Ok(crate::FixturePreparation::Unavailable {
+                reason: "copy source seed unavailable".to_owned(),
+            });
+        };
+        let target = if scenario == crate::CopyScenario::Conflict {
+            let FixtureSupport::Supported(target) = self.seed_file(target_relative, b"existing")? else {
+                return Ok(crate::FixturePreparation::Unavailable {
+                    reason: "copy conflict target seed unavailable".to_owned(),
+                });
+            };
+            target
+        } else {
+            self.path(target_relative)?
+        };
+        let options = match scenario {
+            crate::CopyScenario::AtomicFile => {
+                qfs::copy::CopyOptions::file().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+            }
+            crate::CopyScenario::DurableFile => {
+                qfs::copy::CopyOptions::file().with_durability(qfs::metadata::DurabilityRequirement::Required)
+            }
+            _ => qfs::copy::CopyOptions::file(),
+        };
+        Ok(crate::FixturePreparation::Ready(crate::CopyFixtureCase::new(
+            source, target, options,
+        )))
+    }
+
+    /// Independently prepares an existing file for a selected deletion
+    /// scenario. Version hooks must provide evidence for
+    /// `DeleteScenario::IfMatch`.
+    fn prepare_delete(
+        &self,
+        _scenario: crate::DeleteScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<crate::FixturePreparation<Path>> {
+        Ok(match self.seed_file(relative, bytes)? {
+            FixtureSupport::Supported(path) => crate::FixturePreparation::Ready(path),
+            FixtureSupport::Unsupported => crate::FixturePreparation::Unavailable {
+                reason: "fixture cannot seed deletion scenario".to_owned(),
+            },
+        })
+    }
+
+    /// Independently prepares one read scenario and its initial content.
+    ///
+    /// A Ready path must contain the supplied bytes, except for the explicit
+    /// corruption scenario. Version observations remain independent fixture
+    /// hooks. Preparation errors must not become inapplicability declarations.
+    fn prepare_read(
+        &self,
+        scenario: crate::ReadScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<crate::FixturePreparation<Path>> {
+        let prepared = if scenario == crate::ReadScenario::ChecksumCorruption {
+            self.checksum_failure_case(relative)?
+        } else {
+            self.seed_file(relative, bytes)?
+        };
+        Ok(match prepared {
+            FixtureSupport::Supported(path) => crate::FixturePreparation::Ready(path),
+            FixtureSupport::Unsupported => crate::FixturePreparation::Unavailable {
+                reason: "fixture cannot independently prepare this read scenario".to_owned(),
+            },
+        })
+    }
+
+    /// Prepares one write scenario without invoking the tested write facade.
+    ///
+    /// The default prepares CreateNew and durable creation requests. Atomic
+    /// replacement, creation conflicts and append use independent seeding.
+    /// Other scenarios require provider-specific setup and evidence.
+    fn prepare_write(
+        &self,
+        scenario: crate::WriteScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<crate::FixturePreparation<crate::WriteFixtureCase>> {
+        if scenario == crate::WriteScenario::Replace {
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"previous contents")? else {
+                return Ok(crate::FixturePreparation::Unavailable {
+                    reason: "replacement seed unavailable".to_owned(),
+                });
+            };
+            return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default(),
+            )));
+        }
+        if scenario == crate::WriteScenario::CreateConflict {
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"a")? else {
+                return Ok(crate::FixturePreparation::Unavailable {
+                    reason: "creation conflict seed unavailable".to_owned(),
+                });
+            };
+            return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::CreateNew),
+            )));
+        }
+        if scenario == crate::WriteScenario::Append {
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"before")? else {
+                return Ok(crate::FixturePreparation::Unavailable {
+                    reason: "append seed unavailable".to_owned(),
+                });
+            };
+            return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::Append),
+            )));
+        }
+        if scenario == crate::WriteScenario::AtomicReplace {
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"a")? else {
+                return Ok(crate::FixturePreparation::Unavailable {
+                    reason: "atomic replacement seed unavailable".to_owned(),
+                });
+            };
+            return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_atomicity(qfs::metadata::AtomicityRequirement::Required),
+            )));
+        }
+        if scenario == crate::WriteScenario::Durable {
+            return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+                self.path(relative)?,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default()
+                    .with_disposition(qfs::write::WriteDisposition::CreateNew)
+                    .with_durability(qfs::metadata::DurabilityRequirement::Required),
+            )));
+        }
+        if !matches!(scenario, crate::WriteScenario::Create | crate::WriteScenario::Abort) {
+            return Ok(crate::FixturePreparation::Unavailable {
+                reason: "fixture does not prepare this write scenario".to_owned(),
+            });
+        }
+        Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+            self.path(relative)?,
+            bytes.to_vec(),
+            qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::CreateNew),
+        )))
+    }
+
     /// Returns the concrete synchronous filesystem facade under test.
     ///
     /// # Returns
@@ -41,17 +246,6 @@ pub trait FileSystemFixture {
     /// Returns [`FixtureError`](crate::FixtureError) when the name cannot be
     /// represented by the provider's path model.
     fn path(&self, relative: &str) -> FixtureResult<Path>;
-
-    /// Declares whether this fixture can prepare and observe a scenario.
-    ///
-    /// Returning [`FixtureSupport::Unsupported`] records that the scenario is
-    /// conditional for this fixture. Setup errors must be returned as errors,
-    /// rather than being hidden as unsupported cases.
-    #[inline]
-    fn case_support(&self, case: FixtureCase) -> FixtureResult<FixtureSupport<()>> {
-        let _ = case;
-        Ok(FixtureSupport::Unsupported)
-    }
 
     /// Reports whether copy is intentionally limited to the stream fallback.
     #[inline]
@@ -158,11 +352,14 @@ pub trait FileSystemFixture {
         Ok(FixtureSupport::Unsupported)
     }
 
-    /// Releases fixture-owned setup resources and staging state.
-    #[inline]
-    fn teardown(&self) -> FixtureResult<FixtureSupport<()>> {
-        Ok(FixtureSupport::Unsupported)
-    }
+    /// Independently releases every resource owned by this fixture.
+    ///
+    /// This mandatory operation must be idempotent and must reclaim partially
+    /// prepared resources and staging state, including resources unknown to
+    /// the suite. Use a native or out-of-band channel independent of the
+    /// facade under test. Return an error if cleanup could not be confirmed.
+    /// A cancelled asynchronous attempt must remain safe to retry.
+    fn teardown(&self) -> FixtureResult<()>;
 
     /// Seeds an empty directory or prefix outside the operation under test.
     #[inline]

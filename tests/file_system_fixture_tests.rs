@@ -7,8 +7,6 @@
 // =============================================================================
 
 mod common;
-
-use common::MemoryFixture;
 use qubit_fs::FileSystem;
 use qubit_fs::copy::CopyMethod;
 use qubit_fs::path::Path;
@@ -17,12 +15,17 @@ use qubit_fs_testkit::FixtureError;
 use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
 
+use self::common::MemoryFixture;
 /// Fixture that uses every synchronous optional-hook default.
 struct DefaultSyncFixture<'a> {
     file_system: &'a FileSystem,
 }
 
 impl FileSystemFixture for DefaultSyncFixture<'_> {
+    fn teardown(&self) -> FixtureResult<()> {
+        Ok(())
+    }
+
     fn file_system(&self) -> &FileSystem {
         self.file_system
     }

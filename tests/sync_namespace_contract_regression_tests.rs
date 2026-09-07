@@ -1,8 +1,8 @@
-use common::MemoryFixture;
 use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 
+use self::common::MemoryFixture;
 mod common;
 
 /// A provider exposing only the stream fallback still passes the applicable
@@ -10,10 +10,13 @@ mod common;
 #[test]
 fn test_sync_accepts_fallback_only_copy() {
     let fixture = MemoryFixture::fallback_only();
-    let report = FileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Copy);
-    report.assert_complete();
+    let report = FileSystemContractSuite::new(&fixture)
+        .run_contract(FileSystemContract::Copy)
+        .report()
+        .clone();
+    report.assert_satisfied();
     assert!(report.checks().iter().any(|check| {
-        check.id() == "copy/fallback-overwrite-rejected"
+        check.id().as_str() == "copy/fallback-overwrite-rejected"
             && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
     }));
     assert!(fixture.is_empty(), "fallback copy contract leaked resources");
@@ -23,5 +26,7 @@ fn test_sync_accepts_fallback_only_copy() {
 #[test]
 fn test_sync_read_only_reports_missing_write_for_copy() {
     let fixture = MemoryFixture::read_only();
-    FileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Copy);
+    FileSystemContractSuite::new(&fixture)
+        .run_contract(FileSystemContract::Copy)
+        .assert_satisfied();
 }

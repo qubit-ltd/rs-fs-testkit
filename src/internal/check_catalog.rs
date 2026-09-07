@@ -1,138 +1,803 @@
-// qubit-style: allow type-file-name
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
 // =============================================================================
-//! Stable check catalog used to detect missing phase evidence.
+//! Exhaustive ownership and applicability of provider contract checks.
 
 use qubit_fs::metadata::FileSystemCapability;
 
+use crate::ContractCheckId;
 use crate::FileSystemContract;
+use crate::internal::check_spec::CheckSpec;
 
-/// Returns whether a check must retain `Unverified` until real evidence is
-/// recorded.
-#[allow(dead_code)]
-pub(crate) fn requires_explicit_evidence(id: &str) -> bool {
-    matches!(
-        id,
-        "write/owning-operation"
-            | "write/cancel-open"
-            | "write/cancel-write"
-            | "write/cancel-flush"
-            | "write/cancel-commit"
-            | "write/repeated-execute"
-            | "temp/repeated-lifecycle"
-            | "copy/repeated-execute"
-            | "list/literal-prefix"
-    )
-}
-
-/// Description of one catalog entry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct CheckSpec {
-    /// Stable check identifier.
-    pub(crate) id: &'static str,
-    /// Capability required by the check, if any.
-    pub(crate) capability: Option<FileSystemCapability>,
-}
-
-const fn capability(capability: FileSystemCapability, id: &'static str) -> CheckSpec {
-    CheckSpec {
-        id,
-        capability: Some(capability),
+/// Resolves one typed identity to its sole execution owner.
+///
+/// Fixture teardown is reported by the lifecycle layer, outside phase
+/// execution.
+pub(crate) const fn specification(id: ContractCheckId) -> CheckSpec {
+    match id {
+        ContractCheckId::AppendBasic => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::Append),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Append),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::AsyncCopyCancelCommit => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::Copy),
+            asynchronous_only: true,
+            optional: true,
+        },
+        ContractCheckId::AsyncCopyCancelNativeAttempt => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::Copy),
+            asynchronous_only: true,
+            optional: true,
+        },
+        ContractCheckId::AsyncCopyCancelReader => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::Copy),
+            asynchronous_only: true,
+            optional: true,
+        },
+        ContractCheckId::AsyncCopyCancelWriter => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::Copy),
+            asynchronous_only: true,
+            optional: true,
+        },
+        ContractCheckId::CopyAtomicFile => CheckSpec {
+            id,
+            copy_scenario: Some(crate::CopyScenario::AtomicFile),
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::AtomicFileCopy),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::CopyAtomicTree => CheckSpec {
+            id,
+            copy_scenario: Some(crate::CopyScenario::AtomicTree),
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::AtomicTreeCopy),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::CopyBasic => CheckSpec {
+            id,
+            copy_scenario: Some(crate::CopyScenario::Basic),
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::Copy),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::CopyDurableFile => CheckSpec {
+            id,
+            copy_scenario: Some(crate::CopyScenario::DurableFile),
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::DurableFileCopy),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::CopyDurableTree => CheckSpec {
+            id,
+            copy_scenario: Some(crate::CopyScenario::DurableTree),
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::DurableTreeCopy),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::CopyFallbackOverwriteRejected => CheckSpec {
+            id,
+            copy_scenario: Some(crate::CopyScenario::Conflict),
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::Copy),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::CopyRepeatedExecute => CheckSpec {
+            id,
+            copy_scenario: Some(crate::CopyScenario::Basic),
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::Copy),
+            asynchronous_only: true,
+            optional: false,
+        },
+        ContractCheckId::CopyServerSide => CheckSpec {
+            id,
+            copy_scenario: Some(crate::CopyScenario::ServerSide),
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Copy,
+            capability: Some(FileSystemCapability::ServerSideCopy),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::DeleteBasic => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Delete,
+            capability: Some(FileSystemCapability::Delete),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::DeleteIfMatch => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Delete,
+            capability: Some(FileSystemCapability::ConditionalDelete),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::DeleteMissingOk => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Delete,
+            capability: Some(FileSystemCapability::Delete),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::DeleteTree => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Delete,
+            capability: Some(FileSystemCapability::RecursiveDelete),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::DirectoryCreate => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::CreateDirectory,
+            capability: Some(FileSystemCapability::CreateDirectory),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::DirectoryRecursive => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::CreateDirectory,
+            capability: Some(FileSystemCapability::CreateDirectory),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ErrorContext => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::ErrorContext,
+            capability: None,
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ListBasic => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::List,
+            capability: Some(FileSystemCapability::List),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ListLiteralPrefix => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::List,
+            capability: Some(FileSystemCapability::List),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ListPagination => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::List,
+            capability: Some(FileSystemCapability::List),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ListPrefix => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::List,
+            capability: Some(FileSystemCapability::List),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::PropertiesCapabilityDependencies => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Properties,
+            capability: None,
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::PropertiesLimitComponentAdmission => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Properties,
+            capability: None,
+            asynchronous_only: false,
+            optional: true,
+        },
+        ContractCheckId::PropertiesLimitListPage => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Properties,
+            capability: None,
+            asynchronous_only: false,
+            optional: true,
+        },
+        ContractCheckId::PropertiesLimitPathAdmission => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Properties,
+            capability: None,
+            asynchronous_only: false,
+            optional: true,
+        },
+        ContractCheckId::PropertiesLimits => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Properties,
+            capability: None,
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::PropertiesPathConstraints => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Properties,
+            capability: None,
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::PropertiesSnapshot => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Properties,
+            capability: Some(FileSystemCapability::Read),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::PropertiesSymlinkPolicy => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Properties,
+            capability: None,
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ReadBasic => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: Some(crate::ReadScenario::Basic),
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::Read),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ReadChecksum => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: Some(crate::ReadScenario::Checksum),
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::ChecksumValidation),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ReadChecksumCorruption => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: Some(crate::ReadScenario::ChecksumCorruption),
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::ChecksumValidation),
+            asynchronous_only: false,
+            optional: true,
+        },
+        ContractCheckId::ReadIfMatchCurrent => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: Some(crate::ReadScenario::IfMatchCurrent),
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::ConditionalRead),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ReadIfMatchStale => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: Some(crate::ReadScenario::IfMatchStale),
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::ConditionalRead),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ReadIfNoneMatchCurrent => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: Some(crate::ReadScenario::IfNoneMatchCurrent),
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::ConditionalRead),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ReadIfNoneMatchStale => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: Some(crate::ReadScenario::IfNoneMatchStale),
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::ConditionalRead),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ReadRange => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: Some(crate::ReadScenario::Range),
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::RangeRead),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::ReadRangeLimit => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: Some(crate::ReadScenario::RangeLimit),
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::RangeRead),
+            asynchronous_only: false,
+            optional: true,
+        },
+        ContractCheckId::RenameAtomic => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Rename,
+            capability: Some(FileSystemCapability::AtomicRename),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::RenameBasic => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Rename,
+            capability: Some(FileSystemCapability::Rename),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::RenameConflict => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Rename,
+            capability: Some(FileSystemCapability::Rename),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::RenameDurable => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Rename,
+            capability: Some(FileSystemCapability::DurableRename),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::RepresentationEmpty => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Representations,
+            capability: Some(FileSystemCapability::EmptyDirectory),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::RepresentationSymlink => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Representations,
+            capability: Some(FileSystemCapability::Symlink),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::StatBasic => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Stat,
+            capability: Some(FileSystemCapability::Read),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::StatFileKind => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Stat,
+            capability: None,
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::TempAtomic => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::TempResources,
+            capability: Some(FileSystemCapability::AtomicTempPersist),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::TempDirectory => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::TempResources,
+            capability: Some(FileSystemCapability::TempDirectory),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::TempFile => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::TempResources,
+            capability: Some(FileSystemCapability::TempFile),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::TempRepeatedLifecycle => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::TempResources,
+            capability: None,
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::WriteAtomicReplaceExisting => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::AtomicReplace),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::AtomicReplace),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::WriteBasic => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::Create),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::WriteAbort => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::Abort),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::WriteReplace => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::Replace),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::WriteCreateConflict => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::CreateConflict),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::WriteCancelCommit => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: true,
+            optional: true,
+        },
+        ContractCheckId::WriteCancelFlush => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: true,
+            optional: true,
+        },
+        ContractCheckId::WriteCancelOpen => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: true,
+            optional: true,
+        },
+        ContractCheckId::WriteCancelWrite => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: true,
+            optional: true,
+        },
+        ContractCheckId::WriteDurable => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::Durable),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::DurableWrite),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::WriteIfAbsent => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::IfAbsent),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::ConditionalWrite),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::WriteIfMatch => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::IfMatch),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::ConditionalWrite),
+            asynchronous_only: false,
+            optional: false,
+        },
+        ContractCheckId::WriteLimit => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::Create),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: false,
+            optional: true,
+        },
+        ContractCheckId::WriteOwningOperation => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::Create),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: true,
+            optional: false,
+        },
+        ContractCheckId::WriteRepeatedExecute => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: Some(crate::WriteScenario::Create),
+            read_scenario: None,
+            contract: FileSystemContract::Write,
+            capability: Some(FileSystemCapability::Write),
+            asynchronous_only: true,
+            optional: false,
+        },
     }
 }
 
-const fn unscoped(id: &'static str) -> CheckSpec {
-    CheckSpec { id, capability: None }
+/// Stable write execution order, independent of enum declaration order.
+const WRITE_CHECKS: &[ContractCheckId] = &[
+    ContractCheckId::WriteBasic,
+    ContractCheckId::WriteCreateConflict,
+    ContractCheckId::WriteReplace,
+    ContractCheckId::WriteAbort,
+    ContractCheckId::WriteLimit,
+    ContractCheckId::WriteIfAbsent,
+    ContractCheckId::WriteIfMatch,
+    ContractCheckId::WriteAtomicReplaceExisting,
+    ContractCheckId::WriteDurable,
+    ContractCheckId::WriteOwningOperation,
+    ContractCheckId::WriteRepeatedExecute,
+    ContractCheckId::WriteCancelOpen,
+    ContractCheckId::WriteCancelWrite,
+    ContractCheckId::WriteCancelFlush,
+    ContractCheckId::WriteCancelCommit,
+    ContractCheckId::AppendBasic,
+];
+
+/// Copy order is shared by preregistration and independent execution.
+const COPY_CHECKS: &[ContractCheckId] = &[
+    ContractCheckId::CopyBasic,
+    ContractCheckId::CopyRepeatedExecute,
+    ContractCheckId::CopyFallbackOverwriteRejected,
+    ContractCheckId::CopyServerSide,
+    ContractCheckId::CopyAtomicFile,
+    ContractCheckId::CopyAtomicTree,
+    ContractCheckId::CopyDurableFile,
+    ContractCheckId::CopyDurableTree,
+    ContractCheckId::AsyncCopyCancelNativeAttempt,
+    ContractCheckId::AsyncCopyCancelReader,
+    ContractCheckId::AsyncCopyCancelWriter,
+    ContractCheckId::AsyncCopyCancelCommit,
+];
+
+/// Selects every applicable entry before the phase starts executing.
+pub(crate) fn for_contract(contract: FileSystemContract, asynchronous: bool) -> Vec<CheckSpec> {
+    let ids = match contract {
+        FileSystemContract::Write => WRITE_CHECKS,
+        FileSystemContract::Copy => COPY_CHECKS,
+        _ => ContractCheckId::ALL,
+    };
+    ids.iter()
+        .copied()
+        .map(specification)
+        .filter(|check| check.contract == contract && (asynchronous || !check.asynchronous_only))
+        .collect()
 }
 
-/// Returns the required check IDs for one independently run phase.
-pub(crate) fn for_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
-    match contract {
-        FileSystemContract::Properties => vec![
-            capability(FileSystemCapability::Read, "properties/snapshot"),
-            unscoped("properties/path-constraints"),
-            unscoped("properties/capability-dependencies"),
-            unscoped("properties/limits"),
-            unscoped("properties/limit-path-admission"),
-            unscoped("properties/limit-component-admission"),
-            unscoped("properties/limit-list-page"),
-            unscoped("properties/symlink-policy"),
-        ],
-        FileSystemContract::Stat => vec![
-            capability(FileSystemCapability::Read, "stat/basic"),
-            unscoped("stat/file-kind"),
-        ],
-        FileSystemContract::Read => vec![
-            capability(FileSystemCapability::Read, "read/basic"),
-            capability(FileSystemCapability::RangeRead, "read/range"),
-            capability(FileSystemCapability::RangeRead, "read/range-limit"),
-            capability(FileSystemCapability::ConditionalRead, "read/if-match-current"),
-            capability(FileSystemCapability::ConditionalRead, "read/if-match-stale"),
-            capability(FileSystemCapability::ConditionalRead, "read/if-none-match-current"),
-            capability(FileSystemCapability::ConditionalRead, "read/if-none-match-stale"),
-            capability(FileSystemCapability::ChecksumValidation, "read/checksum"),
-            capability(FileSystemCapability::ChecksumValidation, "read/checksum-corruption"),
-        ],
-        FileSystemContract::Write => vec![
-            capability(FileSystemCapability::Write, "write/basic"),
-            capability(FileSystemCapability::Write, "write/limit"),
-            capability(FileSystemCapability::ConditionalWrite, "write/if-absent"),
-            capability(FileSystemCapability::ConditionalWrite, "write/if-match"),
-            capability(FileSystemCapability::AtomicReplace, "write/atomic-replace-existing"),
-            capability(FileSystemCapability::DurableWrite, "write/durable"),
-        ],
-        FileSystemContract::List => vec![
-            capability(FileSystemCapability::List, "list/basic"),
-            capability(FileSystemCapability::List, "list/prefix"),
-            capability(FileSystemCapability::List, "list/pagination"),
-        ],
-        FileSystemContract::CreateDirectory => vec![
-            capability(FileSystemCapability::CreateDirectory, "directory/create"),
-            capability(FileSystemCapability::CreateDirectory, "directory/recursive"),
-        ],
-        FileSystemContract::Representations => vec![
-            capability(FileSystemCapability::EmptyDirectory, "representation/empty"),
-            capability(FileSystemCapability::Symlink, "representation/symlink"),
-        ],
-        FileSystemContract::Delete => vec![
-            capability(FileSystemCapability::Delete, "delete/basic"),
-            capability(FileSystemCapability::Delete, "delete/missing-ok"),
-            capability(FileSystemCapability::ConditionalDelete, "delete/if-match"),
-        ],
-        FileSystemContract::Copy => vec![
-            capability(FileSystemCapability::Copy, "copy/basic"),
-            capability(FileSystemCapability::Copy, "copy/fallback-overwrite-rejected"),
-            capability(FileSystemCapability::ServerSideCopy, "copy/server-side"),
-            capability(FileSystemCapability::AtomicFileCopy, "copy/atomic-file"),
-            capability(FileSystemCapability::AtomicTreeCopy, "copy/atomic-tree"),
-        ],
-        FileSystemContract::Rename => vec![
-            capability(FileSystemCapability::Rename, "rename/basic"),
-            capability(FileSystemCapability::Rename, "rename/conflict"),
-        ],
-        FileSystemContract::Append => {
-            vec![capability(FileSystemCapability::Append, "append/basic")]
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::for_contract;
+    use super::specification;
+    use crate::ContractCheckId;
+    use crate::FileSystemContract;
+
+    #[test]
+    fn each_executable_check_has_one_owner() {
+        let mut seen = HashSet::new();
+        for phase in FileSystemContract::ALL {
+            for check in for_contract(phase, true) {
+                assert!(seen.insert(check.id), "duplicate owner for {}", check.id);
+                assert_eq!(
+                    check.read_scenario.is_some(),
+                    phase == FileSystemContract::Read,
+                    "read preparation metadata must match execution ownership for {}",
+                    check.id
+                );
+            }
         }
-        FileSystemContract::RecursiveDelete => vec![capability(FileSystemCapability::RecursiveDelete, "delete/tree")],
-        FileSystemContract::AtomicRename => vec![capability(FileSystemCapability::AtomicRename, "rename/atomic")],
-        FileSystemContract::DurableRename => vec![capability(FileSystemCapability::DurableRename, "rename/durable")],
-        FileSystemContract::AtomicReplace => vec![capability(
-            FileSystemCapability::AtomicReplace,
-            "write/atomic-replace-existing",
-        )],
-        FileSystemContract::DurableFileCopy => vec![
-            capability(FileSystemCapability::DurableFileCopy, "copy/durable-file"),
-            capability(FileSystemCapability::DurableTreeCopy, "copy/durable-tree"),
-        ],
-        FileSystemContract::TempResources => vec![
-            capability(FileSystemCapability::TempFile, "temp/file"),
-            capability(FileSystemCapability::TempDirectory, "temp/directory"),
-            capability(FileSystemCapability::AtomicTempPersist, "temp/atomic"),
-        ],
-        FileSystemContract::ErrorContext => vec![unscoped("error/context")],
+        for id in ContractCheckId::ALL {
+            assert!(seen.contains(id), "missing catalog entry for {id}");
+        }
+    }
+
+    #[test]
+    fn prerequisites_are_cataloged_in_the_same_phase() {
+        for id in ContractCheckId::ALL {
+            let spec = specification(*id);
+            assert!(
+                !spec.prerequisites().contains(id),
+                "check cannot depend on itself: {id}"
+            );
+            for prerequisite in spec.prerequisites() {
+                assert!(
+                    ContractCheckId::ALL.contains(prerequisite),
+                    "unknown prerequisite for {id}"
+                );
+                assert_eq!(
+                    specification(*prerequisite).contract,
+                    spec.contract,
+                    "prerequisite must be owned by the same phase: {id}"
+                );
+            }
+        }
     }
 }
 

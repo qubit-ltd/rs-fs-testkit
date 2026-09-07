@@ -134,19 +134,32 @@ async fn in_memory_adapter_runs_the_supported_contract_matrix() {
                     .unwrap_or(FixtureSupport::Unsupported))
             })
         }
+        fn teardown(&self) -> qubit_fs_testkit::FixtureFuture<'_, ()> {
+            Box::pin(async { Ok(()) })
+        }
     }
 
     let fixture = Fixture {
         filesystem: open_in_memory("contract-run").unwrap(),
     };
-    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-    suite.assert_properties().await;
-    suite.assert_stat().await;
-    suite.assert_read().await;
+    let mut properties_suite = AsyncFileSystemContractSuite::new(&fixture);
+    properties_suite
+        .run_contract(qubit_fs_testkit::FileSystemContract::Properties)
+        .await
+        .assert_satisfied();
+    let mut stat_suite = AsyncFileSystemContractSuite::new(&fixture);
+    stat_suite
+        .run_contract(qubit_fs_testkit::FileSystemContract::Stat)
+        .await
+        .assert_satisfied();
+    let mut read_suite = AsyncFileSystemContractSuite::new(&fixture);
+    read_suite
+        .run_contract(qubit_fs_testkit::FileSystemContract::Read)
+        .await
+        .assert_satisfied();
     // The adapter deliberately exposes create-only writes. The full write
     // phase uses replace-by-default options, so its dedicated tests below
     // cover the supported writer contract instead.
-    suite.finish().await;
 }
 
 #[tokio::test]
@@ -203,9 +216,7 @@ async fn in_memory_listing_preserves_literal_object_prefixes() {
     for key in ["folder/a", "folder/ab", "other"] {
         let path = Path::parse_literal(key).unwrap();
         let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
-        let mut operation = filesystem
-            .begin_write_all(path, b"x".to_vec(), options)
-            .unwrap();
+        let mut operation = filesystem.begin_write_all(path, b"x".to_vec(), options).unwrap();
         operation.execute().await.unwrap();
     }
     let root = Path::parse_literal("folder").unwrap();
