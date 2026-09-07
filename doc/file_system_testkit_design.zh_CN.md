@@ -154,18 +154,10 @@ impl<'a> FileSystemContractSuite<'a> {
         fixture: &'a dyn FileSystemFixture,
     ) -> Self;
 
-    pub fn assert_all(mut self);
-    pub fn assert_properties(&mut self);
-    pub fn assert_stat(&mut self);
-    pub fn assert_read(&mut self);
-    pub fn assert_write(&mut self);
-    pub fn assert_list(&mut self);
-    pub fn assert_create_directory(&mut self);
-    pub fn assert_delete(&mut self);
-    pub fn assert_copy(&mut self);
-    pub fn assert_rename(&mut self);
-    pub fn assert_temp_resources(&mut self);
-    pub fn assert_error_context(&mut self);
+    pub fn run_all(&mut self) -> &ContractRun;
+    pub fn run_contract(&mut self, contract: FileSystemContract) -> &ContractRun;
+    pub fn run(&self) -> &ContractRun;
+    pub fn finish(&mut self);
 }
 ```
 
@@ -177,12 +169,12 @@ pub struct AsyncFileSystemContractSuite<'a> {
 }
 ```
 
-它提供同名 async assertion methods。调用者自行使用所选 runtime 的 `#[test]` /
+它提供同名 async 运行和清理方法，`run()` 读取结果不需要 await。调用者自行使用所选 runtime 的 `#[test]` /
 `#[tokio::test]` 等入口。
 
-Suite 持有 name generator、resource 清单和当前 contract，因此单项 assertion 使用
-`&mut self`；`assert_all` 消费并在内部可变地驱动 suite。不能只为保留 `&self`
-签名而给 testkit 自身增加 `RefCell`、`Mutex` 或原子计数器。
+Suite 持有 name generator、资源清单和 ContractRun。运行入口借用 `&mut self`，
+结果保留在套件中；运行 future 被取消后仍可读取证据并重试清理。
+一个套件只执行一次，重跑必须创建新的 fixture 和套件。
 
 Provider 可以运行完整 suite：
 
@@ -190,7 +182,8 @@ Provider 可以运行完整 suite：
 #[test]
 fn test_file_system_contract() {
     let fixture = RootedFixture::new();
-    FileSystemContractSuite::new(&fixture).assert_all();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    suite.run_all().assert_satisfied();
 }
 ```
 
@@ -198,7 +191,8 @@ fn test_file_system_contract() {
 
 `register_file_system_contract_tests!` 和异步对应宏为 Rust test harness
 生成多个独立 `#[test]` wrapper，以获得并行执行和精确测试名称。该 macro 只能调用
-`assert_contract(FileSystemContract)`，不能包含 assertion、fixture mutation 或 capability 判断；不使用 macro
+`run_contract(FileSystemContract)` 并对返回的 ContractRun 调用 `assert_satisfied()`，
+不能自行实现契约 assertion、fixture mutation 或 capability 判断；不使用 macro
 的 provider 必须能获得完全相同的 contract coverage。
 
 ## 5. Suite 运行上下文
@@ -274,7 +268,7 @@ side effect。门面“SPI 完全未调用”的白盒保证由 `qubit-fs` 自�
 
 ## 7. Properties 与 limits contract
 
-`assert_properties` 验证：
+Properties contract 验证：
 
 - filesystem id 和 provider id 有效且不同概念不混用；
 - properties getter 不执行 I/O；
@@ -497,23 +491,20 @@ object key 子集必须在请求前拒绝，并在验证记录中明确限制范
 
 ## 14. 模块组织
 
+同步与异步 suite 共享 contract identity、report、run、context、fixture
+准备和 scenario 类型；各 suite 再按 phase 拆分为 copy、read、write、delete、
+list、properties、temp 等模块。取消、失败恢复和 capability 预检位于独立的
+typed helper 模块中，避免把状态机隐藏在宏或 fixture trait 中。
+
 ```text
 src/
-├── file_system_fixture.rs
-├── async_file_system_fixture.rs
-├── fixture_support.rs
-├── file_system_contract_suite.rs
-├── async_file_system_contract_suite.rs
-├── contract_context.rs
-├── properties_contract.rs
-├── io_contract.rs
-├── namespace_contract.rs
-├── copy_contract.rs
-├── async_copy_contract.rs
-├── optional_capability_contract.rs
-├── temp_contract.rs
-├── error_contract.rs
-└── representation_contract.rs
+├── contract_check_id.rs / contract_check.rs
+├── contract_report.rs / contract_run.rs / contract_context.rs
+├── file_system_fixture.rs / async_file_system_fixture.rs
+├── file_system_contract_suite/
+│   ├── copy.rs, read.rs, write.rs, delete.rs, temp_file_check.rs, ...
+└── async_file_system_contract_suite/
+    ├── copy.rs, read.rs, write.rs, delete.rs, temp_file_check.rs, ...
 ```
 
 各 contract 模块的执行入口是 suite 的私有方法；无状态 helper 使用私有零变体 enum
@@ -534,3 +525,7 @@ src/
 - `AsyncCopyOperation` 的状态、取消和 recovery responsibility 被确定性验证；
 - public API 中不再出现 `&dyn FileSystem` 或 assertion free function；
 - 可选 registration macro 只生成 test wrapper，不承载 contract 逻辑。
+
+覆盖率阈值仍适用于 catalog、report、run 和 resource ledger 核心。依赖 provider
+能力的契约分支列在经过评审的阈值豁免清单中，因为单个 fixture 无法真实覆盖所有
+native capability 与失败组合；确定性矩阵和聚焦回归测试仍是这些分支的可执行覆盖。

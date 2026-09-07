@@ -23,3 +23,11 @@ pub(crate) use async_memory_file_system::AsyncMemoryFixture;
 pub use memory_file_system::MemoryFault;
 #[allow(unused)]
 pub use memory_file_system::MemoryFixture;
+
+#[cfg(feature = "async")]
+mod async_memory_write_cancellation_probe;
+#[cfg(feature = "async")]
+mod write_gate;
+
+mod unavailable_scenario;
+pub use unavailable_scenario::UnavailableScenario;

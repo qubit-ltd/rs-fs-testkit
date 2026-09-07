@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -7,22 +8,22 @@
 // =============================================================================
 
 mod common;
-
-use common::MemoryFault;
-use common::MemoryFixture;
-use common::check_matrix::assert_panics_at;
-use common::check_matrix::sync_fault_cases;
 use qubit_fs::error::FsError;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
+use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
-use qubit_fs_testkit::FixtureCase;
 
+use self::common::MemoryFault;
+use self::common::MemoryFixture;
+use self::common::check_matrix::assert_panics_at;
+use self::common::check_matrix::sync_fault_cases;
+use crate::common::UnavailableScenario;
 /// Both suites intentionally cover every capability in this stable order.
 const COVERED_CAPABILITIES: [FileSystemCapability; 28] = [
     FileSystemCapability::List,
@@ -75,7 +76,7 @@ fn test_all_capabilities_execute_sync_contracts() {
             .collect::<Vec<_>>(),
         FileSystemCapability::ALL.to_vec()
     );
-    FileSystemContractSuite::new(&fixture).assert_all();
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
     assert!(fixture.is_empty(), "all-capability suite must clean up");
 }
 
@@ -96,7 +97,7 @@ fn test_conforming_memory_provider_satisfies_sync_suite() {
     ] {
         assert!(fixture.file_system().properties().capabilities().supports(capability));
     }
-    FileSystemContractSuite::new(&fixture).assert_all();
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
     assert!(fixture.is_empty(), "suite must clean up created resources");
 }
 
@@ -112,7 +113,9 @@ fn test_sync_phase_matrix_exercises_declared_profiles() {
                 _ => MemoryFixture::read_only(),
             };
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                FileSystemContractSuite::new(&fixture).assert_contract(contract);
+                FileSystemContractSuite::new(&fixture)
+                    .run_contract(contract)
+                    .assert_satisfied();
             }));
             assert!(result.is_ok(), "sync profile {profile} panicked in {contract:?}");
         }
@@ -125,7 +128,9 @@ fn test_sync_faults_exercise_full_suite_paths() {
         for contract in FileSystemContract::ALL {
             let fixture = MemoryFixture::with_fault(case.fault);
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                FileSystemContractSuite::new(&fixture).assert_contract(contract);
+                FileSystemContractSuite::new(&fixture)
+                    .run_contract(contract)
+                    .assert_satisfied();
             }));
         }
     }
@@ -148,7 +153,9 @@ fn test_sync_property_profiles_cover_all_limit_outcomes() {
             .with_max_list_page_entries(limit);
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let fixture = MemoryFixture::with_limits(snapshot);
-            FileSystemContractSuite::new(&fixture).assert_properties();
+            FileSystemContractSuite::new(&fixture)
+                .run_contract(FileSystemContract::Properties)
+                .assert_satisfied();
         }));
     }
 }
@@ -156,23 +163,23 @@ fn test_sync_property_profiles_cover_all_limit_outcomes() {
 #[test]
 fn test_sync_unavailable_fixture_cases_are_exercised() {
     let cases = [
-        FixtureCase::ReadIfMatch,
-        FixtureCase::ReadIfNoneMatch,
-        FixtureCase::WriteIfAbsent,
-        FixtureCase::WriteIfMatch,
-        FixtureCase::DeleteIfMatch,
-        FixtureCase::CopyOverwrite,
-        FixtureCase::CopyTree,
-        FixtureCase::Capability(FileSystemCapability::ServerSideCopy),
-        FixtureCase::Capability(FileSystemCapability::AtomicFileCopy),
-        FixtureCase::Capability(FileSystemCapability::AtomicTreeCopy),
-        FixtureCase::Capability(FileSystemCapability::DurableFileCopy),
-        FixtureCase::Capability(FileSystemCapability::DurableTreeCopy),
+        UnavailableScenario::ReadIfMatch,
+        UnavailableScenario::ReadIfNoneMatch,
+        UnavailableScenario::WriteIfAbsent,
+        UnavailableScenario::WriteIfMatch,
+        UnavailableScenario::DeleteIfMatch,
+        UnavailableScenario::CopyOverwrite,
+        UnavailableScenario::CopyTree,
+        UnavailableScenario::Capability(FileSystemCapability::ServerSideCopy),
+        UnavailableScenario::Capability(FileSystemCapability::AtomicFileCopy),
+        UnavailableScenario::Capability(FileSystemCapability::AtomicTreeCopy),
+        UnavailableScenario::Capability(FileSystemCapability::DurableFileCopy),
+        UnavailableScenario::Capability(FileSystemCapability::DurableTreeCopy),
     ];
     for case in cases {
         let fixture = MemoryFixture::with_conditional_case_unavailable(case);
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _ = FileSystemContractSuite::new(&fixture).assert_all_with_report();
+            FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
         }));
     }
 }
@@ -181,14 +188,14 @@ fn test_sync_unavailable_fixture_cases_are_exercised() {
 #[test]
 fn test_sync_suite_allows_matching_filesystem_and_provider_ids() {
     let fixture = MemoryFixture::with_matching_ids();
-    FileSystemContractSuite::new(&fixture).assert_all();
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
 }
 
 /// A suite must not attempt end-of-run deletion when the facade lacks it.
 #[test]
 fn test_sync_suite_skips_cleanup_without_delete_capability() {
     let fixture = MemoryFixture::without_delete();
-    FileSystemContractSuite::new(&fixture).assert_all();
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
 }
 
 /// Unadvertised optional operations do not prevent core contracts from
@@ -196,7 +203,7 @@ fn test_sync_suite_skips_cleanup_without_delete_capability() {
 #[test]
 fn test_sync_suite_skips_unadvertised_optional_capabilities() {
     let fixture = MemoryFixture::without_optional_capabilities();
-    FileSystemContractSuite::new(&fixture).assert_all();
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
     assert!(fixture.is_empty(), "core contract resources must be cleaned");
 }
 
@@ -206,7 +213,11 @@ fn test_single_faults_are_rejected_by_sync_suite() {
     for case in sync_fault_cases() {
         let fixture = MemoryFixture::with_fault(case.fault);
         assert_panics_at(
-            || FileSystemContractSuite::new(&fixture).assert_contract(case.phase),
+            || {
+                FileSystemContractSuite::new(&fixture)
+                    .run_contract(case.phase)
+                    .assert_satisfied()
+            },
             case.check_id,
         );
     }
@@ -217,19 +228,19 @@ fn test_single_faults_are_rejected_by_sync_suite() {
 fn test_sync_copy_accepts_native_outcome() {
     let fixture = MemoryFixture::with_native_copy();
     let mut suite = FileSystemContractSuite::new(&fixture);
-    suite.assert_copy();
+    suite.run_contract(FileSystemContract::Copy).assert_satisfied();
 }
 
 /// Object and prefix metadata kinds satisfy provider-neutral file and cleanup
 /// contracts.
 #[test]
 fn test_sync_suite_accepts_object_and_prefix_kinds() {
-    let fixture = MemoryFixture::with_object_kinds();
-    let mut suite = FileSystemContractSuite::new(&fixture);
-    suite.assert_stat();
-    suite.assert_create_directory();
-    suite.finish();
-    assert!(fixture.is_empty(), "object resources must be cleaned");
+    for phase in [FileSystemContract::Stat, FileSystemContract::CreateDirectory] {
+        let fixture = MemoryFixture::with_object_kinds();
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        suite.run_contract(phase).assert_satisfied();
+        assert!(fixture.is_empty(), "object resources must be cleaned");
+    }
 }
 
 /// Recursive prefix deletion does not imply directory-creation support.
@@ -237,8 +248,7 @@ fn test_sync_suite_accepts_object_and_prefix_kinds() {
 fn test_sync_recursive_delete_does_not_require_create_directory() {
     let fixture = MemoryFixture::recursive_delete_without_create_directory();
     let mut suite = FileSystemContractSuite::new(&fixture);
-    suite.assert_recursive_delete();
-    suite.finish();
+    suite.run_check(testkit::ContractCheckId::DeleteTree).assert_satisfied();
     assert!(fixture.is_empty(), "recursive deletion must remove the prefix");
 }
 
@@ -247,7 +257,7 @@ fn test_sync_recursive_delete_does_not_require_create_directory() {
 fn test_sync_suite_cleans_resources_before_resuming_panic() {
     let fixture = MemoryFixture::with_fault(MemoryFault::WriteDropsBytes);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        FileSystemContractSuite::new(&fixture).assert_all();
+        FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
     }));
     assert!(result.is_err(), "injected write fault must fail the suite");
     assert!(fixture.is_empty(), "failed suite must clean published paths");
@@ -257,34 +267,61 @@ fn test_sync_suite_cleans_resources_before_resuming_panic() {
 /// preflight.
 #[test]
 fn test_core_capability_negative_branches_are_exercised() {
-    let fixture = MemoryFixture::without_operation_capabilities();
-    let mut suite = FileSystemContractSuite::new(&fixture);
-    suite.assert_read();
-    suite.assert_write();
-    suite.assert_list();
-    suite.assert_create_directory();
-    suite.assert_delete();
-    suite.assert_copy();
-    suite.assert_rename();
-    assert_eq!(
-        fixture.path_call_count(),
-        9,
-        "negative capability branches must exercise their facade paths"
-    );
+    for id in [
+        testkit::ContractCheckId::ReadBasic,
+        testkit::ContractCheckId::WriteBasic,
+        testkit::ContractCheckId::ListBasic,
+        testkit::ContractCheckId::DirectoryCreate,
+        testkit::ContractCheckId::DirectoryRecursive,
+        testkit::ContractCheckId::DeleteBasic,
+        testkit::ContractCheckId::CopyBasic,
+        testkit::ContractCheckId::RenameBasic,
+    ] {
+        let fixture = MemoryFixture::without_operation_capabilities();
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_contract(id.contract());
+        run.assert_satisfied();
+        let check = run
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == id)
+            .unwrap_or_else(|| panic!("{id}: core negative check must execute"));
+        assert!(
+            matches!(check.outcome(), testkit::ContractCheckOutcome::RejectedAsExpected),
+            "{id}: expected an actual facade rejection, got {:?}",
+            check.outcome()
+        );
+    }
 }
 
 /// Unadvertised stronger operation guarantees must fail at the facade
 /// preflight before a provider primitive is reached.
 #[test]
 fn test_stronger_capability_negative_branches_are_exercised() {
-    let fixture = MemoryFixture::without_optional_capabilities();
-    let mut suite = FileSystemContractSuite::new(&fixture);
-    suite.assert_append();
-    suite.assert_recursive_delete();
-    suite.assert_atomic_rename();
-    suite.assert_durable_rename();
-    suite.assert_atomic_replace();
-    suite.assert_durable_copy();
+    use qubit_fs_testkit::ContractCheckId;
+    for id in [
+        ContractCheckId::AppendBasic,
+        ContractCheckId::DeleteTree,
+        ContractCheckId::RenameAtomic,
+        ContractCheckId::RenameDurable,
+        ContractCheckId::WriteAtomicReplaceExisting,
+        ContractCheckId::CopyDurableFile,
+        ContractCheckId::CopyDurableTree,
+    ] {
+        let fixture = MemoryFixture::without_optional_capabilities();
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        run.assert_satisfied();
+        assert!(
+            matches!(
+                run.report().checks()[0].outcome(),
+                testkit::ContractCheckOutcome::RejectedAsExpected
+            ),
+            "{id}"
+        );
+        assert!(fixture.is_empty());
+    }
 }
 
 /// Each advertised option and stronger guarantee must be observed by the
@@ -294,7 +331,11 @@ fn test_sync_suite_rejects_advertised_option_and_guarantee_faults() {
     for case in sync_fault_cases().iter().skip(8) {
         let fixture = MemoryFixture::with_fault(case.fault);
         assert_panics_at(
-            || FileSystemContractSuite::new(&fixture).assert_contract(case.phase),
+            || {
+                FileSystemContractSuite::new(&fixture)
+                    .run_contract(case.phase)
+                    .assert_satisfied()
+            },
             case.check_id,
         );
     }
