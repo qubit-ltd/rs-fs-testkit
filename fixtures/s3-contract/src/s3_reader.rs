@@ -47,6 +47,8 @@ impl S3Reader {
                 FsError::invalid_path(FsOperation::OpenReader, "read range overflows")
             })?;
             get.range = Some((offset..end).into());
+        } else if offset != 0 {
+            get.range = Some((offset..).into());
         }
         let result = store
             .get_opts(

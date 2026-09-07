@@ -750,6 +750,13 @@ pub(crate) fn for_contract(contract: FileSystemContract, asynchronous: bool) -> 
         .collect()
 }
 
+/// Returns asynchronous checks without adding runtime requirements to sync
+/// suites.
+#[cfg(feature = "async")]
+pub(crate) fn for_async_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
+    for_contract(contract, true)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -799,24 +806,4 @@ mod tests {
             }
         }
     }
-}
-
-/// Returns asynchronous checks without adding runtime requirements to sync
-/// suites.
-#[cfg(feature = "async")]
-pub(crate) fn for_async_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
-    let mut checks = for_contract(contract);
-    if contract == FileSystemContract::Write {
-        for id in [
-            "write/owning-operation",
-            "write/repeated-execute",
-            "write/cancel-open",
-            "write/cancel-write",
-            "write/cancel-flush",
-            "write/cancel-commit",
-        ] {
-            checks.push(capability(FileSystemCapability::Write, id));
-        }
-    }
-    checks
 }
