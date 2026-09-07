@@ -4,7 +4,7 @@
 
 ## 手册目标与读者
 
-本手册面向同步或异步 `qubit-fs` provider 作者，覆盖当前 `qubit-fs-testkit` 0.1 契约套件。
+本手册面向同步或异步 `qubit-fs` provider 作者，覆盖当前 `qubit-fs-testkit` 0.3 契约套件。
 它是测试支持，因此应作为 provider 的开发依赖使用。
 
 ## 概念模型
@@ -137,3 +137,19 @@ S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create
 - [README](../README.zh_CN.md)
 - [English user guide](user_guide.md)
 - [API 文档](https://docs.rs/qubit-fs-testkit)
+
+## 异步整文件写入恢复（0.3）
+
+`qubit-fs` 0.4 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
+`write/owning-operation`、`write/repeated-execute`，并真实调用 Open、Write、Flush、Commit
+四阶段的 `prepare_write_cancellation`。`WriteCancellationProbe::poll_reached` 应确认
+提供者已经在指定阶段 Pending，等待时按需唤醒调用方；`disarm` 只释放 gate，不启动文件系统
+I/O。suite 仅取消执行 future，保留 operation，检查确认进度，再释放 gate 并恢复 writer。
+
+声明 Write 能力却缺少探针时，对应 `write/cancel-*` 为 `Unverified`，
+`report.assert_complete()` 失败。只有请求参数的 case 不能证明阶段到达；缺失一个阶段就
+足以使报告不完整。不支持 Write 的提供者会验证调用前拒绝，异步取消检查不适用。
+同步 Write 目录不包含这些异步要求。
+
+内存 fixture 自测记录四阶段探针调用，并故意遗漏一个阶段检查严格完整性。gate 使用确定性
+poll，不依赖 sleep。已有 copy 取消探针继续采用其独立的检查标识和适用规则。

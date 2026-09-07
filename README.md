@@ -113,3 +113,5 @@ API documentation and tests current, and run `./align-ci.sh` to format code and
 **Haixing Hu** - *Qubit Co. Ltd.*
 
 Repository: [https://github.com/qubit-ltd/rs-fs-testkit](https://github.com/qubit-ltd/rs-fs-testkit)
+
+Async Write contracts require stage-aware `prepare_write_cancellation` probes. Missing evidence remains `Unverified` and fails strict completeness; see the [user guide](doc/user_guide.md).
