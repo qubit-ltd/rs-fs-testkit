@@ -97,7 +97,7 @@ async fn in_memory_adapter_runs_the_supported_contract_matrix() {
                     .with_disposition(qubit_fs::write::WriteDisposition::CreateNew);
                 let mut operation = self
                     .filesystem
-                    .begin_write_all(path.clone(), bytes, options)
+                    .begin_write_all(path.clone(), bytes.to_vec(), options)
                     .map_err(|e| {
                         qubit_fs_testkit::FixtureError::new(format!("seed preflight failed: {e}"))
                     })?;
@@ -203,7 +203,9 @@ async fn in_memory_listing_preserves_literal_object_prefixes() {
     for key in ["folder/a", "folder/ab", "other"] {
         let path = Path::parse_literal(key).unwrap();
         let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
-        let mut operation = filesystem.begin_write_all(path, b"x", options).unwrap();
+        let mut operation = filesystem
+            .begin_write_all(path, b"x".to_vec(), options)
+            .unwrap();
         operation.execute().await.unwrap();
     }
     let root = Path::parse_literal("folder").unwrap();
