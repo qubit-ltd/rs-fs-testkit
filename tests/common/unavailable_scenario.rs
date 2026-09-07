@@ -3,15 +3,14 @@
 //
 //    SPDX-License-Identifier: Apache-2.0
 // =============================================================================
-//! Fixture-level applicability declarations for contract probes.
+//! Test-only selection of intentionally unavailable fixture evidence.
 
 use qubit_fs::metadata::FileSystemCapability;
 
-/// Identifies a provider scenario that a fixture can prepare and observe.
+/// Selects one scenario whose preparation a test fixture deliberately omits.
 #[must_use]
-#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FixtureCase {
+pub enum UnavailableScenario {
     /// A basic capability or guarantee probe.
     Capability(FileSystemCapability),
     /// A file copy whose destination already exists.

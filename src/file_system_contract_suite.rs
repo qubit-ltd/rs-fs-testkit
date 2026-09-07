@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -9,42 +10,13 @@
 
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
-use std::panic::resume_unwind;
 
-use qubit_fs::copy::CopyConflictPolicy;
-use qubit_fs::copy::CopyMethod;
-use qubit_fs::copy::CopyMode;
-use qubit_fs::copy::CopyOptions;
-use qubit_fs::copy::ServerSidePreference;
-use qubit_fs::directory::CreateDirectoryOptions;
-use qubit_fs::directory::DeleteOptions;
-use qubit_fs::directory::ListOptions;
-use qubit_fs::error::FsError;
-use qubit_fs::error::FsErrorKind;
-use qubit_fs::error::FsOperation;
-use qubit_fs::metadata::AchievedAtomicity;
-use qubit_fs::metadata::AtomicityRequirement;
-use qubit_fs::metadata::DurabilityRequirement;
-use qubit_fs::metadata::FileKind;
-use qubit_fs::metadata::FileSystemCapability;
-use qubit_fs::metadata::ResourceVersion;
-use qubit_fs::path::Path;
-use qubit_fs::path::PathSemantics;
-use qubit_fs::read::ChecksumPolicy;
-use qubit_fs::read::ReadOptions;
-use qubit_fs::rename::RenameFailureState;
-use qubit_fs::rename::RenameOptions;
-use qubit_fs::temp::PersistFailureState;
-use qubit_fs::temp::PersistOptions;
-use qubit_fs::temp::TempDirectory;
-use qubit_fs::temp::TempFile;
-use qubit_fs::temp::TempOptions as TempDirectoryOptions;
-use qubit_fs::temp::TempOptions as TempFileOptions;
-use qubit_fs::temp::TempResourceState;
-use qubit_fs::write::WriteDisposition;
-use qubit_fs::write::WriteOptions;
-use qubit_fs::write::WritePrecondition;
-use qubit_io::Output;
+pub(crate) use qubit_fs::error::FsError;
+pub(crate) use qubit_fs::error::FsErrorKind;
+pub(crate) use qubit_fs::error::FsOperation;
+pub(crate) use qubit_fs::metadata::FileSystemCapability;
+pub(crate) use qubit_fs::path::Path;
+pub(crate) use qubit_fs::write::WriteDisposition;
 
 use crate::ContractCheckOutcome;
 use crate::ContractReport;
@@ -52,21 +24,57 @@ use crate::FileSystemContract;
 use crate::FileSystemFixture;
 use crate::FixtureSupport;
 use crate::contract_context::ContractContext;
-use crate::internal::assert_error_with_source_or_target;
-use crate::internal::assert_error_with_target;
-use crate::internal::assert_unsupported_error;
+pub(crate) use crate::internal::assert_error_with_source_or_target;
+pub(crate) use crate::internal::assert_error_with_target;
+pub(crate) use crate::internal::assert_unsupported_error;
 // Implements property snapshots and bounded limit checks.
 mod properties;
 // Implements reader contracts.
 mod read;
 // Implements writer and publication contracts.
 mod write;
+// Implements independently prepared bounded write evidence.
+mod write_limit;
+// Implements explicit conditional creation evidence.
+mod write_if_absent;
+// Implements explicit version-conditional replacement evidence.
+mod write_if_match;
+// Implements strong write guarantee evidence.
+mod write_guarantee;
+// Implements independent append evidence.
+mod append;
+// Implements independently seeded creation conflicts.
+mod create_conflict;
+// Implements independently prepared replacement and truncation.
+mod replace;
+// Implements independently prepared explicit abort.
+mod abort;
 // Implements namespace and metadata contracts.
-mod namespace;
+// Implements independently prepared metadata checks.
+mod stat;
+// Implements independently observed directory creation.
+mod create_directory;
+// Implements independent representation checks.
+mod representations;
+// Implements independent deletion checks.
+mod delete;
+// Implements independently prepared recursive deletion.
+mod delete_tree;
+// Implements independent rename requirements.
+mod rename;
+// Implements independent hierarchy and object listing.
+mod list;
 // Implements copy contracts.
+mod basic_copy;
 mod copy;
+mod copy_conflict;
+mod server_side_copy;
+mod strong_file_copy;
+mod strong_tree_copy;
 // Implements temporary resource contracts.
 mod temp;
+mod temp_directory_check;
+mod temp_file_check;
 // Implements fixture adaptation and suite lifecycle support.
 mod support;
 
@@ -103,56 +111,79 @@ impl<'a> FileSystemContractSuite<'a> {
         }
     }
 
-    /// Runs all synchronous contracts in their dependency-safe fixed order.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the provider violates any contract or fixture setup and
-    /// observation fails. Cleanup still runs before the panic is resumed.
-    pub fn assert_all(self) {
-        let _ = self.assert_all_with_report();
+    /// Returns the result retained by this suite, including a failed session.
+    pub const fn run(&self) -> &crate::ContractRun {
+        &self.context.run
     }
 
-    /// Runs one named synchronous contract and always performs cleanup.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the provider violates the selected contract or cleanup
-    /// fails. Cleanup runs before an assertion panic is resumed.
-    pub fn assert_contract(self, contract: FileSystemContract) {
-        let _ = self.assert_contract_with_report(contract);
+    /// Executes all phases once and retains both execution and cleanup
+    /// failures.
+    pub fn run_all(&mut self) -> &crate::ContractRun {
+        self.run_selected(&FileSystemContract::ALL, None)
     }
 
-    /// Runs all phases, performs cleanup, and returns the execution report.
-    pub fn assert_all_with_report(mut self) -> ContractReport {
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            for contract in FileSystemContract::ALL {
-                self.assert_contract_inner(contract);
+    /// Executes one phase once and retains its result in the suite.
+    pub fn run_contract(&mut self, contract: FileSystemContract) -> &crate::ContractRun {
+        self.run_selected(&[contract], None)
+    }
+
+    /// Executes one selected check in a fresh session and retains its cleanup
+    /// result.
+    pub fn run_check(&mut self, id: crate::ContractCheckId) -> &crate::ContractRun {
+        self.run_selected(&[id.contract()], Some(id))
+    }
+
+    fn run_selected(
+        &mut self,
+        contracts: &[FileSystemContract],
+        selected: Option<crate::ContractCheckId>,
+    ) -> &crate::ContractRun {
+        if self.context.run.started {
+            self.context.run.failures.push(crate::ContractFailure::message_only(
+                "session already started; create a fresh fixture for another run",
+            ));
+            return &self.context.run;
+        }
+        self.context.run.started = true;
+        // Register the entire selection before entering provider code.
+        if let Some(id) = selected {
+            let spec = crate::internal::check_catalog::specification(id);
+            self.context.run.report.register(id, spec.capability);
+            self.context.begin(id.as_str());
+        } else {
+            for contract in contracts {
+                self.context.prepare_phase(*contract, false);
             }
-        }));
-        let cleanup = catch_unwind(AssertUnwindSafe(|| self.finish()));
-        if let Err(payload) = result {
-            resume_unwind(payload);
         }
-        if let Err(payload) = cleanup {
-            resume_unwind(payload);
+        for contract in contracts {
+            let result = catch_unwind(AssertUnwindSafe(|| match selected {
+                Some(id) => self.dispatch_check(id),
+                None => self.dispatch_contract(*contract),
+            }));
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(failure)) => {
+                    self.context.fail(failure);
+                    break;
+                }
+                Err(payload) => {
+                    let mut failure = crate::ContractFailure::panicked("contract execution panicked", payload);
+                    if let Some(id) = selected {
+                        failure = failure.at(id);
+                    }
+                    self.context.fail(failure);
+                    break;
+                }
+            }
         }
-        self.context.report().clone()
-    }
-
-    /// Runs one phase, performs cleanup, and returns the execution report.
-    pub fn assert_contract_with_report(mut self, contract: FileSystemContract) -> ContractReport {
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            self.assert_contract_inner(contract);
-        }));
-        let cleanup = catch_unwind(AssertUnwindSafe(|| self.finish()));
-        if let Err(payload) = result {
-            resume_unwind(payload);
+        if let Err(payload) = catch_unwind(AssertUnwindSafe(|| self.finish())) {
+            self.context
+                .run
+                .failures
+                .push(crate::ContractFailure::panicked("cleanup failed", payload));
         }
-        if let Err(payload) = cleanup {
-            resume_unwind(payload);
-        }
-        self.context.report().clone()
+        self.context.run.completed = true;
+        &self.context.run
     }
 
     /// Returns the report currently accumulated by this suite.
@@ -161,28 +192,51 @@ impl<'a> FileSystemContractSuite<'a> {
         self.context.report()
     }
 
-    /// Dispatches one named phase without changing cleanup ownership.
-    fn assert_contract_inner(&mut self, contract: FileSystemContract) {
-        self.context.prepare_phase(contract);
-        match contract {
-            FileSystemContract::Properties => self.assert_properties(),
-            FileSystemContract::Stat => self.assert_stat(),
-            FileSystemContract::Read => self.assert_read(),
-            FileSystemContract::Write => self.assert_write(),
-            FileSystemContract::List => self.assert_list(),
-            FileSystemContract::CreateDirectory => self.assert_create_directory(),
-            FileSystemContract::Representations => self.assert_representations(),
-            FileSystemContract::Delete => self.assert_delete(),
-            FileSystemContract::Copy => self.assert_copy(),
-            FileSystemContract::Rename => self.assert_rename(),
-            FileSystemContract::Append => self.assert_append(),
-            FileSystemContract::RecursiveDelete => self.assert_recursive_delete(),
-            FileSystemContract::AtomicRename => self.assert_atomic_rename(),
-            FileSystemContract::DurableRename => self.assert_durable_rename(),
-            FileSystemContract::AtomicReplace => self.assert_atomic_replace(),
-            FileSystemContract::DurableFileCopy => self.assert_durable_copy(),
-            FileSystemContract::TempResources => self.assert_temp_resources(),
-            FileSystemContract::ErrorContext => self.assert_error_context(),
+    /// Resolves focused execution without running sibling checks.
+    fn dispatch_check(&mut self, id: crate::ContractCheckId) -> Result<(), crate::ContractFailure> {
+        if !id.supports_synchronous() {
+            return Err(crate::ContractFailure::message_only("selected check requires asynchronous execution").at(id));
         }
+        match id.contract() {
+            FileSystemContract::Copy => self.check_copy_item(id),
+            FileSystemContract::TempResources => self.check_temp_item(id),
+            FileSystemContract::List => self.check_list_item(id),
+            FileSystemContract::Rename => self.check_rename_item(id),
+            FileSystemContract::Delete => self.check_delete_item(id),
+            FileSystemContract::Representations => self.check_representation_item(id),
+            FileSystemContract::CreateDirectory => self.check_create_directory_item(id),
+            FileSystemContract::Properties => self.check_properties_item(id),
+            FileSystemContract::Stat => self.check_stat_item(id),
+            FileSystemContract::Read => self.check_read_item(id),
+            FileSystemContract::Write => self.check_write_item(id),
+            FileSystemContract::ErrorContext => self.check_error_context(),
+        }
+    }
+
+    fn dispatch_contract(&mut self, contract: FileSystemContract) -> Result<(), crate::ContractFailure> {
+        match contract {
+            FileSystemContract::Properties => self.check_properties()?,
+            FileSystemContract::Stat => self.check_stat()?,
+            FileSystemContract::Read => self.check_read()?,
+            FileSystemContract::Write => {
+                self.check_write()?;
+            }
+            FileSystemContract::List => self.check_list()?,
+            FileSystemContract::CreateDirectory => self.check_create_directory()?,
+            FileSystemContract::Representations => self.check_representations()?,
+            FileSystemContract::Delete => {
+                self.check_delete()?;
+                self.check_delete_tree()?;
+            }
+            FileSystemContract::Copy => {
+                self.check_copy()?;
+            }
+            FileSystemContract::Rename => {
+                self.check_rename()?;
+            }
+            FileSystemContract::TempResources => self.check_temp_resources()?,
+            FileSystemContract::ErrorContext => self.check_error_context()?,
+        }
+        Ok(())
     }
 }

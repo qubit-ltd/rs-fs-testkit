@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -6,449 +5,258 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Implements reader contracts.
+//! Executes individual read checks with independent typed preparation.
 
-use qubit_fs::metadata::FileSystemLimit;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
+use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::ResourceVersion;
+use qubit_fs::read::ReadOptions;
 
-use super::*;
+use crate::AsyncFileSystemContractSuite;
+use crate::ContractCheckId;
+use crate::ContractCheckOutcome;
+use crate::ContractFailure;
+use crate::FileSystemContract;
+use crate::FixturePreparation;
+use crate::FixtureSupport;
+use crate::ReadScenario;
+use crate::internal::check_catalog;
 use crate::internal::limit_probe_plan::MAX_PROBE_BYTES;
+use crate::internal::limit_probe_plan::finite_probe;
+use crate::internal::read_expectations;
+use crate::internal::verify_condition;
+use crate::internal::verify_fs_error;
 
-impl<'a> AsyncFileSystemContractSuite<'a> {
-    /// Checks asynchronous reader behavior.
-    ///
-    /// # Panics
-    ///
-    /// Panics when capability preflight, seeded reads, byte limits, or
-    /// structured error context violates the reader contract.
-    pub async fn assert_read(&mut self) {
+impl AsyncFileSystemContractSuite<'_> {
+    /// Executes each registered read entry with its own request and setup.
+    pub(super) async fn check_read(&mut self) -> Result<(), ContractFailure> {
         self.context.begin("read");
-        if !self.capable(FileSystemCapability::Read) {
-            let path = self.path("async-read-unavailable");
-            let error = self
-                .fixture
-                .file_system()
-                .open_reader(&path, Default::default())
-                .await
-                .expect_err("read contract: unadvertised reader open succeeded");
-            self.assert_error(
-                &error,
-                FsErrorKind::UnsupportedCapability,
-                FsOperation::OpenReader,
-                &path,
-            );
-            assert_eq!(
-                error.required_capability(),
-                Some(FileSystemCapability::Read),
-                "read contract: missing required-capability context"
-            );
-            self.context.record_check(
-                "read/basic",
-                Some(FileSystemCapability::Read),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
-            for (id, capability) in [
-                ("read/range", FileSystemCapability::RangeRead),
-                ("read/range-limit", FileSystemCapability::RangeRead),
-                ("read/if-match-current", FileSystemCapability::ConditionalRead),
-                ("read/if-match-stale", FileSystemCapability::ConditionalRead),
-                ("read/if-none-match-current", FileSystemCapability::ConditionalRead),
-                ("read/if-none-match-stale", FileSystemCapability::ConditionalRead),
-                ("read/checksum", FileSystemCapability::ChecksumValidation),
-                ("read/checksum-corruption", FileSystemCapability::ChecksumValidation),
-            ] {
-                self.context.record_check(
-                    id,
-                    Some(capability),
-                    ContractCheckOutcome::NotApplicable {
-                        reason: "Read capability is unavailable".to_owned(),
-                    },
-                );
-            }
-            return;
+        for spec in check_catalog::for_contract(FileSystemContract::Read, true) {
+            self.check_read_item(spec.id).await?;
         }
-        let path = match self
-            .fixture
-            .seed_file("async-read", b"async bytes")
-            .await
-            .expect("read contract: fixture seed failed")
-        {
-            FixtureSupport::Supported(path) => {
-                self.context.record_created(path.clone());
-                let actual = self
-                    .fixture
-                    .file_system()
-                    .read_all(&path, Default::default(), 64)
-                    .await
-                    .expect("read contract: facade could not read seeded bytes");
-                assert_eq!(actual, b"async bytes", "read/basic: seeded bytes mismatch");
-                let error = self
-                    .fixture
-                    .file_system()
-                    .read_all(&path, Default::default(), 4)
-                    .await
-                    .expect_err("read contract: caller byte limit was ignored");
-                self.assert_error(&error, FsErrorKind::ResourceLimitExceeded, FsOperation::Read, &path);
-                self.context.record_check(
-                    "read/basic",
-                    Some(FileSystemCapability::Read),
-                    ContractCheckOutcome::Passed,
-                );
-                path
-            }
-            FixtureSupport::Unsupported => {
-                panic!("read contract: advertised capability requires fixture.seed_file support")
-            }
-        };
-        self.assert_read_options(&path).await;
+        Ok(())
     }
 
-    /// Checks asynchronous range, conditional, and checksum read guarantees.
-    pub async fn assert_read_options(&mut self, path: &Path) {
-        let range_limit = self.context.properties().limits().max_read_range_bytes();
-        let range_length = range_limit.maximum().map_or(5, |limit| limit.min(5));
-        let range = ReadOptions::default()
-            .with_offset(Some(0))
-            .with_length(Some(range_length));
-        if self.capable(FileSystemCapability::RangeRead) {
-            let bytes = self
+    /// Executes exactly one read check; it never completes another check.
+    pub(super) async fn check_read_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+        self.context.begin(id.as_str());
+        let spec = check_catalog::specification(id);
+        let scenario = spec
+            .read_scenario
+            .ok_or_else(|| ContractFailure::message_only("selected entry is not a read check").at(id))?;
+        let outcome = self.execute_read_scenario(id, scenario).await?;
+        self.context.record_check(id, spec.capability, outcome);
+        Ok(())
+    }
+
+    /// Keeps observation and request failures attached to their actual entry.
+    async fn execute_read_scenario(
+        &mut self,
+        id: ContractCheckId,
+        scenario: ReadScenario,
+    ) -> Result<ContractCheckOutcome, ContractFailure> {
+        let spec = check_catalog::specification(id);
+        let capability = spec
+            .capability
+            .ok_or_else(|| ContractFailure::message_only("read catalog entry lacks a capability").at(id))?;
+        let limit = self.context.properties().limits().max_read_range_bytes();
+        let name = if scenario == ReadScenario::ChecksumCorruption {
+            "checksum-failure".to_owned()
+        } else {
+            id.as_str().replace('/', "-")
+        };
+        let relative = self.context.relative_name(&name);
+        let read_available = self.capable(FileSystemCapability::Read);
+        if !read_available && id != ContractCheckId::ReadBasic {
+            return Ok(ContractCheckOutcome::NotApplicable {
+                reason: "Read capability is unavailable".to_owned(),
+            });
+        }
+        if !read_available || !self.capable(capability) {
+            if spec.optional {
+                return Ok(ContractCheckOutcome::NotApplicable {
+                    reason: format!("{capability:?} capability is unavailable"),
+                });
+            }
+            let path = self
                 .fixture
-                .file_system()
-                .read_all(path, range, 64)
-                .await
-                .expect("read contract: advertised range read failed");
-            assert_eq!(
-                bytes,
-                &b"async bytes"[..range_length as usize],
-                "read contract: range mismatch"
-            );
-            self.context.record_check(
-                "read/range",
-                Some(FileSystemCapability::RangeRead),
-                ContractCheckOutcome::Passed,
-            );
-            let limit_outcome = match range_limit {
-                FileSystemLimit::Maximum(maximum) if maximum < MAX_PROBE_BYTES => {
-                    let over = maximum
-                        .checked_add(1)
-                        .expect("read/range-limit: range limit successor overflow");
-                    self.fixture
-                        .file_system()
-                        .open_reader(path, ReadOptions::default().with_length(Some(maximum)))
-                        .await
-                        .expect("read/range-limit: boundary request was rejected");
-                    let error = self
-                        .fixture
-                        .file_system()
-                        .open_reader(path, ReadOptions::default().with_length(Some(over)))
-                        .await
-                        .expect_err("read/range-limit: declared range limit was ignored");
-                    self.assert_error(
-                        &error,
-                        FsErrorKind::ResourceLimitExceeded,
-                        FsOperation::OpenReader,
-                        path,
+                .path(&relative)
+                .map_err(|error| ContractFailure::with_source("read request path preparation failed", error).at(id))?;
+            let options =
+                read_expectations::options(scenario, limit, ResourceVersion::new("missing-capability-version"));
+            let error = match self.fixture.file_system().open_reader(&path, options).await {
+                Err(error) => error,
+                Ok(_) => {
+                    return Err(
+                        ContractFailure::message_only(format!("{id}: unavailable read request succeeded")).at(id),
                     );
-                    ContractCheckOutcome::Passed
-                }
-                FileSystemLimit::Maximum(_) => ContractCheckOutcome::SkippedOptional {
-                    reason: "range boundary exceeds the bounded probe budget".to_owned(),
-                },
-                FileSystemLimit::Unknown | FileSystemLimit::NotApplicable | FileSystemLimit::Unbounded => {
-                    ContractCheckOutcome::SkippedOptional {
-                        reason: "range limit is unknown, inapplicable, or unbounded".to_owned(),
-                    }
                 }
             };
-            self.context
-                .record_check("read/range-limit", Some(FileSystemCapability::RangeRead), limit_outcome);
-        } else {
-            let error = self
-                .fixture
-                .file_system()
-                .open_reader(path, range)
-                .await
-                .expect_err("read contract: unadvertised range read succeeded");
-            self.assert_requirement_error(
-                &error,
-                FsOperation::OpenReader,
-                FileSystemCapability::RangeRead,
-                "range-read contract",
-            );
-            self.context.record_check(
-                "read/range",
-                Some(FileSystemCapability::RangeRead),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
-            self.context.record_check(
-                "read/range-limit",
-                Some(FileSystemCapability::RangeRead),
-                ContractCheckOutcome::NotApplicable {
-                    reason: "RangeRead capability is unavailable".to_owned(),
+            verify_fs_error(
+                error,
+                if read_available {
+                    FsErrorKind::RequirementNotMet
+                } else {
+                    FsErrorKind::UnsupportedCapability
                 },
-            );
-        }
-
-        let conditional_read = self.capable(FileSystemCapability::ConditionalRead);
-        let if_match_support = if conditional_read {
-            self.fixture
-                .case_support(FixtureCase::ReadIfMatch)
-                .expect("conditional-read contract: If-Match case query failed")
-        } else {
-            FixtureSupport::Unsupported
-        };
-        let if_none_match_support = if conditional_read {
-            self.fixture
-                .case_support(FixtureCase::ReadIfNoneMatch)
-                .expect("conditional-read contract: If-None-Match case query failed")
-        } else {
-            FixtureSupport::Unsupported
-        };
-        let version_support = if conditional_read
-            && (matches!(&if_match_support, FixtureSupport::Supported(_))
-                || matches!(&if_none_match_support, FixtureSupport::Supported(_)))
-        {
-            self.fixture
-                .resource_version(path)
-                .await
-                .expect("read contract: version observation failed")
-        } else {
-            FixtureSupport::Unsupported
-        };
-        let conditional = ReadOptions::default().with_if_match(Some(match &version_support {
-            FixtureSupport::Supported(version) => version.clone(),
-            FixtureSupport::Unsupported => ResourceVersion::new("contract-version"),
-        }));
-        if conditional_read {
-            if matches!(&if_match_support, FixtureSupport::Unsupported)
-                || !matches!(&version_support, FixtureSupport::Supported(_))
-            {
-                self.context.record_check(
-                    "read/if-match-current",
-                    Some(FileSystemCapability::ConditionalRead),
-                    ContractCheckOutcome::Unverified {
-                        reason: "fixture cannot prepare current If-Match case".to_owned(),
-                    },
-                );
-                self.context.record_check(
-                    "read/if-match-stale",
-                    Some(FileSystemCapability::ConditionalRead),
-                    ContractCheckOutcome::Unverified {
-                        reason: "fixture cannot prepare stale If-Match case".to_owned(),
-                    },
-                );
-            } else {
-                let bytes = self
-                    .fixture
-                    .file_system()
-                    .read_all(path, conditional, 64)
-                    .await
-                    .expect("read contract: advertised conditional read failed");
-                assert_eq!(bytes, b"async bytes");
-                self.context.record_check(
-                    "read/if-match-current",
-                    Some(FileSystemCapability::ConditionalRead),
-                    ContractCheckOutcome::Passed,
-                );
-                let stale = self
-                    .fixture
-                    .stale_resource_version(path)
-                    .await
-                    .expect("conditional-read contract: stale version observation failed");
-                match stale {
-                    FixtureSupport::Supported(version) => {
-                        let error = self
-                            .fixture
-                            .file_system()
-                            .open_reader(path, ReadOptions::default().with_if_match(Some(version)))
-                            .await
-                            .expect_err("read/if-match-stale: stale If-Match succeeded");
-                        self.assert_error(&error, FsErrorKind::PreconditionFailed, FsOperation::OpenReader, path);
-                        self.context.record_check(
-                            "read/if-match-stale",
-                            Some(FileSystemCapability::ConditionalRead),
-                            ContractCheckOutcome::RejectedAsExpected,
-                        );
-                    }
-                    FixtureSupport::Unsupported => self.context.record_check(
-                        "read/if-match-stale",
-                        Some(FileSystemCapability::ConditionalRead),
-                        ContractCheckOutcome::Unverified {
-                            reason: "fixture cannot prepare stale If-Match case".to_owned(),
-                        },
-                    ),
-                }
-            }
-        } else {
-            let error = self
-                .fixture
-                .file_system()
-                .open_reader(path, conditional)
-                .await
-                .expect_err("read contract: unadvertised conditional read succeeded");
-            self.assert_requirement_error(
-                &error,
                 FsOperation::OpenReader,
-                FileSystemCapability::ConditionalRead,
-                "conditional-read contract",
-            );
-            self.context.record_check(
-                "read/if-match-current",
-                Some(FileSystemCapability::ConditionalRead),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
-            self.context.record_check(
-                "read/if-match-stale",
-                Some(FileSystemCapability::ConditionalRead),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
+                &path,
+                self.context.properties().info().provider_id(),
+                Some(capability),
+                id,
+            )?;
+            return Ok(ContractCheckOutcome::RejectedAsExpected);
         }
-
-        if conditional_read {
-            if matches!(&if_none_match_support, FixtureSupport::Unsupported)
-                || !matches!(&version_support, FixtureSupport::Supported(_))
-            {
-                for id in ["read/if-none-match-current", "read/if-none-match-stale"] {
-                    self.context.record_check(
-                        id,
-                        Some(FileSystemCapability::ConditionalRead),
-                        ContractCheckOutcome::Unverified {
-                            reason: "fixture cannot prepare If-None-Match cases".to_owned(),
-                        },
-                    );
-                }
-            } else {
-                let FixtureSupport::Supported(current) = &version_support else {
-                    unreachable!("current version support checked above")
+        let boundary = finite_probe(limit, MAX_PROBE_BYTES);
+        if scenario == ReadScenario::RangeLimit && boundary.is_none() {
+            return Ok(ContractCheckOutcome::SkippedOptional {
+                reason: "range limit is unknown, unbounded, inapplicable, or exceeds the bounded probe budget"
+                    .to_owned(),
+            });
+        }
+        let prepared = self
+            .fixture
+            .prepare_read(scenario, &relative, read_expectations::CONTENT)
+            .await
+            .map_err(|error| ContractFailure::with_source("read scenario preparation failed", error).at(id))?;
+        let path = match prepared {
+            FixturePreparation::Ready(path) => path,
+            FixturePreparation::NotApplicable { reason } => {
+                return Ok(ContractCheckOutcome::Unverified {
+                    reason: format!("declared read capability requires scenario evidence: {reason}"),
+                });
+            }
+            FixturePreparation::Unavailable { reason } => {
+                return Ok(if spec.optional {
+                    ContractCheckOutcome::SkippedOptional { reason }
+                } else {
+                    ContractCheckOutcome::Unverified { reason }
+                });
+            }
+        };
+        self.context.record_created(path.clone());
+        let mut version = ResourceVersion::new("version-unused-by-request");
+        if read_expectations::uses_version(scenario) {
+            let current = self.fixture.resource_version(&path).await.map_err(|error| {
+                ContractFailure::with_source("read current version observation failed", error).at(id)
+            })?;
+            let FixtureSupport::Supported(current) = current else {
+                return Ok(ContractCheckOutcome::Unverified {
+                    reason: "fixture current version unavailable".to_owned(),
+                });
+            };
+            version = current.clone();
+            if read_expectations::uses_stale(scenario) {
+                let stale = self.fixture.stale_resource_version(&path).await.map_err(|error| {
+                    ContractFailure::with_source("read stale version observation failed", error).at(id)
+                })?;
+                let FixtureSupport::Supported(stale) = stale else {
+                    return Ok(ContractCheckOutcome::Unverified {
+                        reason: "fixture stale version unavailable".to_owned(),
+                    });
                 };
-                let current = self
-                    .fixture
-                    .file_system()
-                    .open_reader(path, ReadOptions::default().with_if_none_match(Some(current.clone())))
-                    .await
-                    .expect_err("read/if-none-match-current: current If-None-Match succeeded");
-                self.assert_error(&current, FsErrorKind::PreconditionFailed, FsOperation::OpenReader, path);
-                self.context.record_check(
-                    "read/if-none-match-current",
-                    Some(FileSystemCapability::ConditionalRead),
-                    ContractCheckOutcome::RejectedAsExpected,
-                );
-                let stale = self
-                    .fixture
-                    .stale_resource_version(path)
-                    .await
-                    .expect("conditional-read contract: stale version observation failed");
-                match stale {
-                    FixtureSupport::Supported(stale) => {
-                        let bytes = self
-                            .fixture
-                            .file_system()
-                            .read_all(path, ReadOptions::default().with_if_none_match(Some(stale)), 64)
-                            .await
-                            .expect("conditional-read contract: stale If-None-Match failed");
-                        assert_eq!(bytes, b"async bytes");
-                        self.context.record_check(
-                            "read/if-none-match-stale",
-                            Some(FileSystemCapability::ConditionalRead),
-                            ContractCheckOutcome::Passed,
-                        );
-                    }
-                    FixtureSupport::Unsupported => self.context.record_check(
-                        "read/if-none-match-stale",
-                        Some(FileSystemCapability::ConditionalRead),
-                        ContractCheckOutcome::Unverified {
-                            reason: "fixture cannot prepare stale If-None-Match case".to_owned(),
-                        },
-                    ),
-                }
-            }
-        } else {
-            for id in ["read/if-none-match-current", "read/if-none-match-stale"] {
-                self.context.record_check(
-                    id,
-                    Some(FileSystemCapability::ConditionalRead),
-                    ContractCheckOutcome::RejectedAsExpected,
-                );
+                verify_condition(stale != current, id, "fixture stale version equals current version")?;
+                version = stale;
             }
         }
-
-        let checksummed = ReadOptions::default().with_checksum(ChecksumPolicy::Required);
-        if self.capable(FileSystemCapability::ChecksumValidation) {
-            let bytes = self
+        if scenario == ReadScenario::RangeLimit {
+            let (maximum, over) =
+                boundary.ok_or_else(|| ContractFailure::message_only("bounded range check has no boundary").at(id))?;
+            let actual = self
                 .fixture
                 .file_system()
-                .read_all(path, checksummed, 64)
+                .read_all(
+                    &path,
+                    ReadOptions::default().with_length(Some(maximum)),
+                    maximum as usize,
+                )
                 .await
-                .expect("read contract: advertised checksum validation failed");
-            assert_eq!(bytes, b"async bytes");
-            self.context.record_check(
-                "read/checksum",
-                Some(FileSystemCapability::ChecksumValidation),
-                ContractCheckOutcome::Passed,
-            );
-            let failure_relative = self.context.relative_name("async-checksum-failure");
-            match self
+                .map_err(|error| {
+                    ContractFailure::with_source("read at declared range boundary failed", error).at(id)
+                })?;
+            let expected = &read_expectations::CONTENT[..(maximum as usize).min(read_expectations::CONTENT.len())];
+            verify_condition(
+                actual == expected,
+                id,
+                "range boundary bytes differ from seeded content",
+            )?;
+            let error = match self
                 .fixture
-                .checksum_failure_case(&failure_relative)
+                .file_system()
+                .open_reader(&path, ReadOptions::default().with_length(Some(over)))
                 .await
-                .expect("checksum-read contract: failure case setup failed")
             {
-                FixtureSupport::Supported(failure_path) => {
-                    self.context.record_created(failure_path.clone());
-                    let error = self
-                        .fixture
-                        .file_system()
-                        .read_all(
-                            &failure_path,
-                            ReadOptions::default().with_checksum(ChecksumPolicy::Required),
-                            64,
-                        )
-                        .await
-                        .expect_err("read/checksum: corrupted bytes were accepted");
-                    self.assert_error(
-                        &error,
-                        FsErrorKind::DataCorruption,
-                        FsOperation::OpenReader,
-                        &failure_path,
-                    );
-                    self.context.record_check(
-                        "read/checksum-corruption",
-                        Some(FileSystemCapability::ChecksumValidation),
-                        ContractCheckOutcome::Passed,
-                    );
+                Err(error) => error,
+                Ok(_) => return Err(ContractFailure::message_only("read range limit was ignored").at(id)),
+            };
+            verify_fs_error(
+                error,
+                FsErrorKind::ResourceLimitExceeded,
+                FsOperation::OpenReader,
+                &path,
+                self.context.properties().info().provider_id(),
+                None,
+                id,
+            )?;
+            return Ok(ContractCheckOutcome::Passed);
+        }
+        let options = read_expectations::options(scenario, limit, version);
+        let result = self.fixture.file_system().read_all(&path, options, 64).await;
+        if let Some(kind) = read_expectations::rejection(scenario) {
+            let error = match result {
+                Err(error) => error,
+                Ok(_) => {
+                    return Err(ContractFailure::message_only(format!(
+                        "{id}: read accepted a request requiring rejection"
+                    ))
+                    .at(id));
                 }
-                FixtureSupport::Unsupported => self.context.record_check(
-                    "read/checksum-corruption",
-                    Some(FileSystemCapability::ChecksumValidation),
-                    ContractCheckOutcome::SkippedOptional {
-                        reason: "fixture has no independent checksum corruption probe".to_owned(),
-                    },
-                ),
-            }
+            };
+            let operation = if kind == FsErrorKind::DataCorruption && error.operation() == FsOperation::Read {
+                FsOperation::Read
+            } else {
+                FsOperation::OpenReader
+            };
+            verify_fs_error(
+                error,
+                kind,
+                operation,
+                &path,
+                self.context.properties().info().provider_id(),
+                None,
+                id,
+            )?;
+            return Ok(ContractCheckOutcome::RejectedAsExpected);
         } else {
-            let error = self
+            let actual = result
+                .map_err(|error| ContractFailure::with_source(format!("{id}: read request failed"), error).at(id))?;
+            verify_condition(
+                actual == read_expectations::bytes(scenario, limit),
+                id,
+                "read bytes differ from independent seed",
+            )?;
+        }
+        if scenario == ReadScenario::Basic {
+            let error = match self
                 .fixture
                 .file_system()
-                .open_reader(path, checksummed)
+                .read_all(&path, ReadOptions::default(), 4)
                 .await
-                .expect_err("read contract: unadvertised checksum validation succeeded");
-            self.assert_requirement_error(
-                &error,
-                FsOperation::OpenReader,
-                FileSystemCapability::ChecksumValidation,
-                "checksum-read contract",
-            );
-            self.context.record_check(
-                "read/checksum",
-                Some(FileSystemCapability::ChecksumValidation),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
-            self.context.record_check(
-                "read/checksum-corruption",
-                Some(FileSystemCapability::ChecksumValidation),
-                ContractCheckOutcome::NotApplicable {
-                    reason: "ChecksumValidation capability is unavailable".to_owned(),
-                },
-            );
+            {
+                Err(error) => error,
+                Ok(_) => return Err(ContractFailure::message_only("read caller byte limit was ignored").at(id)),
+            };
+            verify_fs_error(
+                error,
+                FsErrorKind::ResourceLimitExceeded,
+                FsOperation::Read,
+                &path,
+                self.context.properties().info().provider_id(),
+                None,
+                id,
+            )?;
         }
+        Ok(ContractCheckOutcome::Passed)
     }
 }

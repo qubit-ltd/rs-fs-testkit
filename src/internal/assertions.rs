@@ -30,6 +30,7 @@ use qubit_fs::path::Path;
 ///
 /// Panics when any expected field differs from the actual error.
 #[track_caller]
+#[allow(dead_code)]
 pub(crate) fn assert_error(
     error: &FsError,
     kind: FsErrorKind,
@@ -68,6 +69,7 @@ pub(crate) fn assert_error(
 ///
 /// Panics when any expected field differs from the actual error.
 #[track_caller]
+#[allow(dead_code)]
 pub(crate) fn assert_error_with_target(
     error: &FsError,
     kind: FsErrorKind,
@@ -88,6 +90,7 @@ pub(crate) fn assert_error_with_target(
 /// public error therefore preserves either request path as its primary path
 /// and always retains the destination in `target`.
 #[track_caller]
+#[allow(dead_code)]
 pub(crate) fn assert_error_with_source_or_target(
     error: &FsError,
     kind: FsErrorKind,
@@ -132,6 +135,7 @@ pub(crate) fn assert_error_with_source_or_target(
 /// match the configured provider. Missing provider context remains valid for
 /// trait-default errors.
 #[track_caller]
+#[allow(dead_code)]
 pub(crate) fn assert_unsupported_error(
     error: &FsError,
     kind: FsErrorKind,
@@ -152,4 +156,63 @@ pub(crate) fn assert_unsupported_error(
         error.provider().is_none() || error.provider() == provider,
         "filesystem error provider must be absent or match the configured provider",
     );
+}
+
+/// Validates a missing-resource error while preserving a mismatched source.
+pub(crate) fn verify_missing_error(
+    error: FsError,
+    path: &Path,
+    provider: &str,
+    check: crate::ContractCheckId,
+) -> Result<(), crate::ContractFailure> {
+    let valid = error.kind() == FsErrorKind::NotFound
+        && error.operation() == FsOperation::Stat
+        && error.path() == Some(path)
+        && error.target().is_none()
+        && error.required_capability().is_none()
+        && error.provider().is_none_or(|actual| actual == provider);
+    if valid {
+        Ok(())
+    } else {
+        Err(
+            crate::ContractFailure::with_source("missing-resource error context differs from the contract", error)
+                .at(check),
+        )
+    }
+}
+
+/// Checks structured fields using an ordinary error return and owned source.
+pub(crate) fn verify_fs_error(
+    error: FsError,
+    kind: FsErrorKind,
+    operation: FsOperation,
+    path: &Path,
+    provider: &str,
+    capability: Option<FileSystemCapability>,
+    check: crate::ContractCheckId,
+) -> Result<(), crate::ContractFailure> {
+    let valid = error.kind() == kind
+        && error.operation() == operation
+        && error.path() == Some(path)
+        && error.required_capability() == capability
+        && error.provider().is_none_or(|actual| actual == provider);
+    if valid {
+        Ok(())
+    } else {
+        Err(crate::ContractFailure::with_source(format!("{check}: filesystem error context mismatch"), error).at(check))
+    }
+}
+
+/// Returns a check-attributed failure without formatting observed provider
+/// data.
+pub(crate) fn verify_condition(
+    condition: bool,
+    check: crate::ContractCheckId,
+    message: &str,
+) -> Result<(), crate::ContractFailure> {
+    if condition {
+        Ok(())
+    } else {
+        Err(crate::ContractFailure::message_only(format!("{check}: {message}")).at(check))
+    }
 }

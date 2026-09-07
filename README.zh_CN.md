@@ -17,6 +17,9 @@
 cargo add --dev qubit-fs-testkit
 ```
 
+同步契约套件无需额外 feature 即可使用；使用异步套件时，请在开发依赖中加入
+`features = ["async"]`。
+
 ## 快速开始
 
 对于能提供全新测试文件系统的 provider，请实现 `FileSystemFixture`，并注册具名同步契约：
@@ -38,22 +41,23 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 }
 ```
 
-套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝，同时跳过 provider
-没有声明的可选操作。
+套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝。
+不适用的检查和缺失的可选探针会在报告中明确记录。
 
 ## 提供的能力
 
 - `FileSystemFixture` 和 `AsyncFileSystemFixture`：提供隔离门面与 provider 特有路径映射；可选
   hooks 可在被测操作之外执行准备和观察。
-- `FileSystemContractSuite::new(&fixture).assert_all()` 与异步
-  `AsyncFileSystemContractSuite` 对应方法，均按固定、依赖安全的工作流运行。
+- 两个套件均提供借用式 `run_all()` 和 `run_contract(...)` 入口。
+  套件保留包含检查证据和清理失败的 `ContractRun`；调用 `run.assert_satisfied()`
+  对完整运行结果执行严格断言。
 - 注册宏为每个具名 `FileSystemContract` 阶段生成独立 fixture、自动清理的测试。
 - 覆盖门面属性、核心操作、capability 预检、结构化错误上下文、清理和已支持的可选操作的契约。
   同步与异步套件对全部 `FileSystemCapability` 保持对称覆盖，包括范围/条件读取、checksum、
   representation、copy policy、强化保证和临时资源持久化。
-- `AsyncFileSystemContractSuite::assert_copy_cancellation()` 将异步 pending-stage 取消检查
-  暴露为可独立运行的阶段。若 provider 无法控制自身 pending 阶段，`copy_cancellation_case`
-  可以返回 `Unsupported`。
+- `prepare_copy_cancellation` 和 `prepare_write_cancellation` 提供可选的阶段确认探针。
+  套件检查取消状态、显式恢复和独立发布证据。可用 `run.assert_satisfied_with(&[check_id])`
+  强制要求缺失的探针；已经执行的探针失败始终使运行失败。
 
 provider crate 仍需自行负责平台行为、路径编码、安全边界、服务注册，以及当前套件覆盖范围外的
 capability。
@@ -62,6 +66,8 @@ capability。
 
 - [English user guide](doc/user_guide.md)
 - [中文用户手册](doc/user_guide.zh_CN.md)
+- [English design](doc/file_system_testkit_design.md)
+- [中文设计](doc/file_system_testkit_design.zh_CN.md)
 - [API 文档](https://docs.rs/qubit-fs-testkit)
 - [English README](README.md)
 

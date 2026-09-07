@@ -5,9 +5,6 @@
 // =============================================================================
 
 mod common;
-
-use common::MemoryFault;
-use common::MemoryFixture;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::AtomicityRequirement;
 use qubit_fs::path::Path;
@@ -19,6 +16,8 @@ use qubit_fs::write::WriteOptions;
 use qubit_fs_testkit::FileSystemFixture;
 use qubit_fs_testkit::FixtureSupport;
 
+use self::common::MemoryFault;
+use self::common::MemoryFixture;
 fn assert_fixture_file(fixture: &MemoryFixture, path: &Path, expected: &[u8]) {
     match fixture.read_file(path).expect("fixture file observation must succeed") {
         FixtureSupport::Supported(actual) => assert_eq!(actual, expected),
@@ -54,8 +53,7 @@ fn test_sync_temp_keep_transfers_identity_and_payload() {
     assert!(temporary.cleanup().is_err(), "kept handle must not reclaim the target");
     assert!(temporary.keep().is_err(), "kept handle must reject a second keep");
 
-    let teardown = fixture.teardown().expect("fixture teardown must succeed");
-    assert!(matches!(teardown, FixtureSupport::Supported(())));
+    fixture.teardown().expect("fixture teardown must succeed");
     assert!(fixture.is_empty(), "teardown must release the kept target");
 }
 
@@ -96,7 +94,6 @@ fn test_sync_temp_failed_atomic_persist_remains_cleanup_recoverable() {
             .kind()
     );
 
-    let teardown = fixture.teardown().expect("fixture teardown must succeed");
-    assert!(matches!(teardown, FixtureSupport::Supported(())));
+    fixture.teardown().expect("fixture teardown must succeed");
     assert!(fixture.is_empty(), "teardown must release the published target");
 }
