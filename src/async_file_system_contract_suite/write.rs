@@ -22,6 +22,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// structured error context violates the writer contract.
     pub async fn assert_write(&mut self) {
         self.context.begin("write");
+        self.assert_owning_write().await;
+        self.assert_write_cancellation().await;
         if !self.capable(FileSystemCapability::Write) {
             let path = self.path("async-write-unavailable");
             let error = self
@@ -118,7 +120,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 let mut operation = self
                     .fixture
                     .file_system()
-                    .begin_write_all(at_path.clone(), &at_payload, WriteOptions::default())
+                    .begin_write_all(at_path.clone(), at_payload, WriteOptions::default())
                     .expect("write/limit-at: boundary request was rejected");
                 operation
                     .execute()
@@ -131,7 +133,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     vec![b'o'; usize::try_from(over).expect("write/limit-over: successor must fit usize")];
                 let failure = match self.fixture.file_system().begin_write_all(
                     over_path.clone(),
-                    &over_payload,
+                    over_payload,
                     WriteOptions::default(),
                 ) {
                     Ok(mut operation) => operation
@@ -493,7 +495,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 .file_system()
                 .begin_write_all(
                     durable_path.clone(),
-                    &durable_bytes,
+                    durable_bytes.clone(),
                     WriteOptions::default().with_durability(DurabilityRequirement::Required),
                 )
                 .expect("write/durable: preflight failed");

@@ -9,7 +9,7 @@ use qubit_fs::write::WriteOptions;
 pub struct AsyncWriteFixtureCase {
     /// Destination path passed to the operation.
     path: Path,
-    /// Bytes retained for the operation's borrow lifetime.
+    /// Owned bytes transferred into the write operation.
     bytes: Vec<u8>,
     /// Publication and durability options.
     options: WriteOptions,
