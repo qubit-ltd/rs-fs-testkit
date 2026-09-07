@@ -5,7 +5,7 @@
 ## Purpose and Audience
 
 This guide is for authors of synchronous or asynchronous `qubit-fs` providers.
-It covers the current `qubit-fs-testkit` 0.1 contract suites, which are test
+It covers the current `qubit-fs-testkit` 0.3 contract suites, which are test
 support and therefore belong in provider development dependencies.
 
 ## Conceptual Model
@@ -172,3 +172,26 @@ mapping or hooks are surfaced as `FixtureError`/`FixtureResult` failures.
 - [README](../README.md)
 - [中文用户手册](user_guide.zh_CN.md)
 - [API documentation](https://docs.rs/qubit-fs-testkit)
+
+## Whole-file asynchronous write recovery (0.3)
+
+`qubit-fs` 0.4 requires owned payloads for `begin_write_all`. The async Write
+phase checks `write/owning-operation` and `write/repeated-execute`, and actually
+calls `prepare_write_cancellation` for Open, Write, Flush and Commit.
+Implement `WriteCancellationProbe::poll_reached` to acknowledge that the selected
+provider stage is pending; provide a wake while waiting and release the gate in
+`disarm` without starting filesystem I/O. The suite cancels only the execution
+future, preserves its operation, verifies confirmed progress and recovers any
+writer after releasing the gate.
+
+An advertised Write capability without a probe yields `Unverified` for the
+corresponding `write/cancel-*` check; `report.assert_complete()` then fails.
+Request-only cases do not prove a pending stage was reached. Missing a single
+stage is enough to make the report incomplete. Providers without Write are
+checked for preflight rejection; asynchronous cancellation does not apply.
+The synchronous Write catalog contains none of these async requirements.
+
+The memory fixture self-tests count all four probe preparations and deliberately
+omit one stage to verify strict completeness. These gates use deterministic
+polling, not elapsed-time sleeps. Existing copy cancellation hooks have their
+own check identifiers and applicability rules.

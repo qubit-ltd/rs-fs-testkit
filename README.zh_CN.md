@@ -98,3 +98,5 @@ Pull Request 前运行 `./align-ci.sh`格式化代码，运行`./ci-check.sh`对
 **Haixing Hu** - *Qubit Co. Ltd.*
 
 仓库地址：[https://github.com/qubit-ltd/rs-fs-testkit](https://github.com/qubit-ltd/rs-fs-testkit)
+
+异步 Write 契约要求通过 `prepare_write_cancellation` 提供阶段探针。缺失证据保持 `Unverified`，严格完整性检查失败，详见[用户指南](doc/user_guide.zh_CN.md)。
