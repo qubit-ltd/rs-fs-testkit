@@ -1,6 +1,9 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 
 #![cfg(feature = "async")]
+
+use qubit_fs_testkit as testkit;
 //    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
@@ -9,14 +12,11 @@
 // =============================================================================
 
 mod common;
-
 use std::future::Future;
 use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
 
-use common::AsyncMemoryFixture;
-use common::async_memory_file_system::run_controlled;
 use qubit_fs::AsyncFileSystem;
 use qubit_fs::copy::CopyMethod;
 use qubit_fs::path::Path;
@@ -26,12 +26,18 @@ use qubit_fs_testkit::FixtureError;
 use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
 
+use self::common::AsyncMemoryFixture;
+use self::common::async_memory_file_system::run_controlled;
 /// Fixture that uses every asynchronous optional-hook default.
 struct DefaultAsyncFixture<'a> {
     file_system: &'a AsyncFileSystem,
 }
 
 impl AsyncFileSystemFixture for DefaultAsyncFixture<'_> {
+    fn teardown(&self) -> testkit::FixtureFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
     fn file_system(&self) -> &AsyncFileSystem {
         self.file_system
     }
@@ -94,7 +100,7 @@ fn test_async_file_system_fixture_defaults_are_unsupported() {
         Ok(FixtureSupport::Unsupported)
     ));
     assert!(matches!(
-        fixture.copy_cancellation_case(AsyncCopyCancellationStage::Reader),
+        poll_fixture_future(fixture.prepare_copy_cancellation(AsyncCopyCancellationStage::Reader, "cancel-reader")),
         Ok(FixtureSupport::Unsupported)
     ));
 }

@@ -19,8 +19,9 @@ dependency graphs.
 cargo add --dev qubit-fs-testkit
 ```
 
-The synchronous contract suite is enabled by default. Add features = ["async"]
-to the development dependency when using the asynchronous suite.
+The synchronous contract suite is available without features. Add
+`features = ["async"]` to the development dependency when using the
+asynchronous suite.
 
 ## Quick Start
 
@@ -45,17 +46,17 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 ```
 
 The suite follows advertised capabilities. It checks supported behavior and
-structured rejection of unavailable operations, while skipping optional
-operations the provider does not advertise.
+structured rejection of unavailable operations. Inapplicable checks and missing
+optional instrumentation remain explicit in the report.
 
 ## What It Provides
 
 - `FileSystemFixture` and `AsyncFileSystemFixture` for an isolated facade and
   provider-specific path mapping; optional hooks support setup and observations
   outside the operation under test.
-- `FileSystemContractSuite::new(&fixture).assert_all()` and the asynchronous
-  `AsyncFileSystemContractSuite` counterpart, each running a fixed,
-  dependency-safe workflow.
+- Borrowed `run_all()` and `run_contract(...)` entry points on both suites.
+  The suite retains the `ContractRun`, including check evidence and cleanup
+  failures. Call `run.assert_satisfied()` to enforce the complete result.
 - Registration macros that create one isolated, cleanup-safe test per named
   `FileSystemContract` phase.
 - Contracts for facade properties, core operations, capability preflight,
@@ -63,10 +64,11 @@ operations the provider does not advertise.
   suites cover every `FileSystemCapability`, including ranges, conditions,
   checksums, representations, copy policies, required guarantees, and temporary
   resource persistence.
-- `AsyncFileSystemContractSuite::assert_copy_cancellation()` exposes the
-  asynchronous pending-stage cancellation checks as an independently runnable
-  phase. `copy_cancellation_case` may return `Unsupported` when a provider
-  cannot control its own pending stages.
+- `prepare_copy_cancellation` and `prepare_write_cancellation` provide optional
+  stage-acknowledged probes. The suite verifies cancellation state, explicit
+  recovery, and independent publication evidence. Missing probes can be
+  required with `run.assert_satisfied_with(&[check_id])`; executed failures
+  always fail the run.
 
 Provider crates remain responsible for their own platform behavior, path
 encoding, security boundaries, service registration, and capabilities outside
@@ -76,6 +78,8 @@ the suite's current coverage.
 
 - [English user guide](doc/user_guide.md)
 - [中文用户手册](doc/user_guide.zh_CN.md)
+- [English design](doc/file_system_testkit_design.md)
+- [中文设计](doc/file_system_testkit_design.zh_CN.md)
 - [API documentation](https://docs.rs/qubit-fs-testkit)
 - [中文 README](README.zh_CN.md)
 

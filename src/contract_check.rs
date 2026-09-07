@@ -7,13 +7,14 @@
 
 use qubit_fs::metadata::FileSystemCapability;
 
+use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 
 /// One named check in a contract report.
 #[must_use]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractCheck {
-    pub(crate) id: &'static str,
+    pub(crate) id: ContractCheckId,
     pub(crate) capability: Option<FileSystemCapability>,
     pub(crate) outcome: ContractCheckOutcome,
 }
@@ -21,8 +22,7 @@ pub struct ContractCheck {
 impl ContractCheck {
     /// Returns the stable check identifier.
     #[inline]
-    #[must_use]
-    pub const fn id(&self) -> &'static str {
+    pub const fn id(&self) -> ContractCheckId {
         self.id
     }
 

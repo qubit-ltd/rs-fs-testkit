@@ -7,10 +7,6 @@
 #![cfg(feature = "async")]
 
 mod common;
-
-use common::AsyncMemoryFault;
-use common::AsyncMemoryFixture;
-use common::async_memory_file_system::run_controlled;
 use qubit_fs::metadata::AtomicityRequirement;
 use qubit_fs::path::Path;
 use qubit_fs::temp::PersistFailureState;
@@ -21,6 +17,9 @@ use qubit_fs::write::WriteOptions;
 use qubit_fs_testkit::AsyncFileSystemFixture;
 use qubit_fs_testkit::FixtureSupport;
 
+use self::common::AsyncMemoryFault;
+use self::common::AsyncMemoryFixture;
+use self::common::async_memory_file_system::run_controlled;
 fn assert_fixture_file(fixture: &AsyncMemoryFixture, path: &Path, expected: &[u8]) {
     match run_controlled(fixture.read_file(path)).expect("fixture file observation must succeed") {
         FixtureSupport::Supported(actual) => assert_eq!(actual, expected),
@@ -58,8 +57,7 @@ fn test_async_temp_keep_transfers_identity_and_payload() {
         "kept handle must reject a second keep"
     );
 
-    let teardown = run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
-    assert!(matches!(teardown, FixtureSupport::Supported(())));
+    run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
     assert!(fixture.is_empty(), "teardown must release the kept target");
 }
 
@@ -93,7 +91,6 @@ fn test_async_temp_failed_atomic_persist_remains_cleanup_recoverable() {
         "cleanup must not run twice"
     );
 
-    let teardown = run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
-    assert!(matches!(teardown, FixtureSupport::Supported(())));
+    run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
     assert!(fixture.is_empty(), "teardown must release the published target");
 }

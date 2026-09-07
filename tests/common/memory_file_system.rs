@@ -1,3 +1,4 @@
+// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -17,6 +18,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
+use qubit_fs as qfs;
 use qubit_fs::FileSystem;
 use qubit_fs::copy::CopyConflictPolicy;
 use qubit_fs::copy::CopyFailureState;
@@ -91,16 +93,18 @@ use qubit_fs::temp::PersistOutcome;
 use qubit_fs::write::WriteAbortOutcome;
 use qubit_fs::write::WriteDisposition;
 use qubit_fs::write::WriteFailureState;
+use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WritePrecondition;
+use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::CopyFixtureCase;
 use qubit_fs_testkit::FileSystemFixture;
-use qubit_fs_testkit::FixtureCase;
 use qubit_fs_testkit::FixtureError;
 use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
 use qubit_io::Output;
 
 use super::shared_model::Entry;
+use crate::common::UnavailableScenario;
 
 struct State {
     entries: HashMap<String, Entry>,
@@ -116,7 +120,7 @@ struct State {
     fallback_only: bool,
     delete_attempts: usize,
     limits: FileSystemLimits,
-    unavailable_case: Option<FixtureCase>,
+    unavailable_case: Option<UnavailableScenario>,
     read_only: bool,
 }
 
@@ -182,6 +186,8 @@ pub enum MemoryFault {
     None,
     /// Returns directory metadata for an existing file.
     WrongStatKind,
+    /// Claims recursive creation while omitting ancestors.
+    RecursiveCreateLeavesParentsMissing,
     /// Leaves a cleaned temporary resource in the namespace.
     KeepTempOnCleanup,
     /// Reports a persisted target different from the requested target.
@@ -192,6 +198,8 @@ pub enum MemoryFault {
     ReadWrongBytes,
     /// Accepts writes without publishing their content.
     WriteDropsBytes,
+    /// Rejects commit while retaining the acquired writer for recovery.
+    WriteCommitFailure,
     /// Reports deletion success without removing the resource.
     DeleteNoOp,
     /// Reports rename success without moving the resource.
@@ -200,18 +208,36 @@ pub enum MemoryFault {
     ListDropsMetadata,
     /// Copies a directory root without its descendants.
     DirectoryCopyDropsChildren,
+    /// Reports successful overwrite while retaining the old destination bytes.
+    CopyOverwriteKeepsTarget,
     /// Ignores temporary-resource parent and affix options.
     TempIgnoresOptions,
     /// Uses object and prefix metadata kinds for stored resources.
     ObjectKinds,
     /// Overwrites instead of appending to an existing file.
     AppendOverwrites,
+    /// Ignores CreateNew and replaces an existing destination.
+    CreateNewOverwrites,
+    /// Replaces only a prefix and leaves the old file suffix intact.
+    ReplaceKeepsSuffix,
+    /// Fails the first explicit abort while retaining a recoverable writer.
+    AbortFailsOnce,
+    /// Publishes during explicit abort while claiming the target is unchanged.
+    AbortLies,
     /// Reports non-atomic completion for an atomic-required rename.
     AtomicRenameNonAtomic,
     /// Reports non-atomic completion for an atomic-required write.
     AtomicReplaceNonAtomic,
     /// Reports a non-durable completion for a durability-required copy.
     DurableFileCopyNonDurable,
+    /// Publishes a file copy without the required atomic guarantee.
+    AtomicFileCopyNonAtomic,
+    /// Publishes a tree without its required atomic guarantee.
+    AtomicTreeCopyNonAtomic,
+    /// Publishes a tree without its required durability guarantee.
+    DurableTreeCopyNonDurable,
+    /// Copies the complete tree but omits descendant byte statistics.
+    TreeCopyWrongStats,
     /// Reports a non-durable completion for a durability-required rename.
     DurableRenameNonDurable,
     /// Reports non-atomic completion for an atomic-required temp persist.
@@ -281,6 +307,10 @@ impl MemoryFixture {
                 | MemoryFault::AtomicRenameNonAtomic
                 | MemoryFault::AtomicReplaceNonAtomic
                 | MemoryFault::DurableFileCopyNonDurable
+                | MemoryFault::AtomicFileCopyNonAtomic
+                | MemoryFault::AtomicTreeCopyNonAtomic
+                | MemoryFault::DurableTreeCopyNonDurable
+                | MemoryFault::TreeCopyWrongStats
                 | MemoryFault::DurableRenameNonDurable
                 | MemoryFault::AtomicTempPersistNonAtomic
                 | MemoryFault::ServerSideCopyFallsBack
@@ -297,6 +327,10 @@ impl MemoryFixture {
             MemoryFault::DirectoryCopyDropsChildren
                 | MemoryFault::ServerSideCopyFallsBack
                 | MemoryFault::DurableFileCopyNonDurable
+                | MemoryFault::AtomicFileCopyNonAtomic
+                | MemoryFault::AtomicTreeCopyNonAtomic
+                | MemoryFault::DurableTreeCopyNonDurable
+                | MemoryFault::TreeCopyWrongStats
         ) {
             fixture
                 .state
@@ -335,7 +369,7 @@ impl MemoryFixture {
     }
 
     /// Creates a fixture which cannot prepare one conditional case.
-    pub fn with_conditional_case_unavailable(case: FixtureCase) -> Self {
+    pub fn with_conditional_case_unavailable(case: UnavailableScenario) -> Self {
         let fixture = Self::with_configuration(
             MemoryFault::None,
             true,
@@ -425,6 +459,10 @@ impl MemoryFixture {
     }
 
     /// Creates a fixture advertising every capability contract.
+    pub fn tree_copy_without_directory_creation() -> Self {
+        Self::with_configuration(MemoryFault::None, true, true, true, false, true, "memory-tree-provider")
+    }
+
     pub fn with_all_capabilities() -> Self {
         Self::with_configuration(
             MemoryFault::None,
@@ -556,6 +594,40 @@ impl MemoryFixture {
 }
 
 impl FileSystemFixture for MemoryFixture {
+    fn prepare_read(
+        &self,
+        scenario: testkit::ReadScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<testkit::FixturePreparation<Path>> {
+        let unavailable = self.state.lock().expect("memory state lock").unavailable_case;
+        let excluded = match scenario {
+            testkit::ReadScenario::IfMatchCurrent | testkit::ReadScenario::IfMatchStale => {
+                unavailable == Some(UnavailableScenario::ReadIfMatch)
+            }
+            testkit::ReadScenario::IfNoneMatchCurrent | testkit::ReadScenario::IfNoneMatchStale => {
+                unavailable == Some(UnavailableScenario::ReadIfNoneMatch)
+            }
+            _ => false,
+        };
+        if excluded {
+            return Ok(testkit::FixturePreparation::Unavailable {
+                reason: "selected read scenario preparation is unavailable".to_owned(),
+            });
+        }
+        let prepared = if scenario == testkit::ReadScenario::ChecksumCorruption {
+            self.checksum_failure_case(relative)?
+        } else {
+            self.seed_file(relative, bytes)?
+        };
+        Ok(match prepared {
+            FixtureSupport::Supported(path) => testkit::FixturePreparation::Ready(path),
+            FixtureSupport::Unsupported => testkit::FixturePreparation::Unavailable {
+                reason: "independent read setup is unavailable".to_owned(),
+            },
+        })
+    }
+
     fn file_system(&self) -> &FileSystem {
         &self.file_system
     }
@@ -565,54 +637,251 @@ impl FileSystemFixture for MemoryFixture {
         Self::path_for(relative)
     }
 
-    fn case_support(&self, case: FixtureCase) -> FixtureResult<FixtureSupport<()>> {
-        let state = self.state.lock().expect("memory state lock must succeed");
-        if state.unavailable_case == Some(case) {
-            return Ok(FixtureSupport::Unsupported);
+    /// Prepares fresh requests independently, including explicit absence
+    /// conditions.
+    fn prepare_copy(
+        &self,
+        scenario: testkit::CopyScenario,
+        source_relative: &str,
+        target_relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<testkit::FixturePreparation<testkit::CopyFixtureCase>> {
+        if scenario == testkit::CopyScenario::Conflict
+            && self.state.lock().expect("memory state lock").unavailable_case
+                == Some(UnavailableScenario::CopyOverwrite)
+        {
+            return Ok(testkit::FixturePreparation::Unavailable {
+                reason: "copy conflict setup unavailable".to_owned(),
+            });
         }
-        let supported = match case {
-            FixtureCase::Capability(capability) => match capability {
-                FileSystemCapability::Read | FileSystemCapability::List | FileSystemCapability::Copy => {
-                    state.core_capabilities
-                }
-                FileSystemCapability::Write => state.core_capabilities && !state.read_only,
-                FileSystemCapability::Delete => state.delete_capability,
-                FileSystemCapability::RecursiveDelete => state.delete_capability && state.optional_capabilities,
-                FileSystemCapability::CreateDirectory => state.create_directory_capability,
-                FileSystemCapability::Rename
-                | FileSystemCapability::Append
-                | FileSystemCapability::AtomicRename
-                | FileSystemCapability::AtomicReplace
-                | FileSystemCapability::DurableRename
-                | FileSystemCapability::DurableWrite
-                | FileSystemCapability::TempFile
-                | FileSystemCapability::TempDirectory
-                | FileSystemCapability::AtomicTempPersist
-                | FileSystemCapability::ServerSideCopy
-                | FileSystemCapability::AtomicFileCopy
-                | FileSystemCapability::DurableFileCopy => state.optional_capabilities,
-                FileSystemCapability::RangeRead
-                | FileSystemCapability::ConditionalRead
-                | FileSystemCapability::ChecksumValidation
-                | FileSystemCapability::ConditionalWrite
-                | FileSystemCapability::EmptyDirectory
-                | FileSystemCapability::ConditionalDelete
-                | FileSystemCapability::Symlink
-                | FileSystemCapability::AtomicTreeCopy
-                | FileSystemCapability::DurableTreeCopy => state.extended_capabilities,
-                _ => false,
-            },
-            FixtureCase::ReadIfMatch | FixtureCase::ReadIfNoneMatch => state.extended_capabilities,
-            FixtureCase::WriteIfAbsent | FixtureCase::WriteIfMatch => state.extended_capabilities && !state.read_only,
-            FixtureCase::DeleteIfMatch => state.extended_capabilities && state.delete_capability,
-            FixtureCase::CopyOverwrite | FixtureCase::CopyTree => state.native_copy,
-            _ => false,
+        if scenario == testkit::CopyScenario::ServerSide {
+            if self.state.lock().expect("memory state lock").unavailable_case
+                == Some(UnavailableScenario::Capability(FileSystemCapability::ServerSideCopy))
+            {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "server-side copy setup unavailable".to_owned(),
+                });
+            }
+            return Ok(match self.copy_fast_path_case(qfs::copy::CopyMethod::ServerSide)? {
+                FixtureSupport::Supported(case) => testkit::FixturePreparation::Ready(case),
+                FixtureSupport::Unsupported => testkit::FixturePreparation::Unavailable {
+                    reason: "fixture has no server-side copy case".to_owned(),
+                },
+            });
+        }
+        let required = match scenario {
+            testkit::CopyScenario::AtomicFile => Some(FileSystemCapability::AtomicFileCopy),
+            testkit::CopyScenario::AtomicTree => Some(FileSystemCapability::AtomicTreeCopy),
+            testkit::CopyScenario::DurableTree => Some(FileSystemCapability::DurableTreeCopy),
+            testkit::CopyScenario::DurableFile => Some(FileSystemCapability::DurableFileCopy),
+            _ => None,
         };
-        Ok(if supported {
-            FixtureSupport::Supported(())
+        if required.is_some_and(|capability| {
+            self.state.lock().expect("memory state lock").unavailable_case
+                == Some(UnavailableScenario::Capability(capability))
+        }) {
+            return Ok(testkit::FixturePreparation::Unavailable {
+                reason: "strong file-copy setup unavailable".to_owned(),
+            });
+        }
+        if matches!(
+            scenario,
+            testkit::CopyScenario::AtomicTree | testkit::CopyScenario::DurableTree
+        ) {
+            if self.state.lock().expect("memory state lock").unavailable_case == Some(UnavailableScenario::CopyTree) {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "tree copy setup unavailable".to_owned(),
+                });
+            }
+            let FixtureSupport::Supported(source) = self.seed_empty_directory(source_relative)? else {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "tree root setup unavailable".to_owned(),
+                });
+            };
+            let sub_relative = format!("{source_relative}/sub");
+            if matches!(self.seed_empty_directory(&sub_relative)?, FixtureSupport::Unsupported) {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "tree subdirectory setup unavailable".to_owned(),
+                });
+            }
+            let child_relative = format!("{source_relative}/sub/child");
+            if matches!(self.seed_file(&child_relative, bytes)?, FixtureSupport::Unsupported) {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "tree child setup unavailable".to_owned(),
+                });
+            }
+            let target = self.path(target_relative)?;
+            let options = if scenario == testkit::CopyScenario::AtomicTree {
+                qfs::copy::CopyOptions::tree().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+            } else {
+                qfs::copy::CopyOptions::tree().with_durability(qfs::metadata::DurabilityRequirement::Required)
+            };
+            return Ok(testkit::FixturePreparation::Ready(testkit::CopyFixtureCase::new(
+                source, target, options,
+            )));
+        }
+        let FixtureSupport::Supported(source) = self.seed_file(source_relative, bytes)? else {
+            return Ok(testkit::FixturePreparation::Unavailable {
+                reason: "copy source seed unavailable".to_owned(),
+            });
+        };
+        let target = if scenario == testkit::CopyScenario::Conflict {
+            let FixtureSupport::Supported(target) = self.seed_file(target_relative, b"existing")? else {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "copy conflict target seed unavailable".to_owned(),
+                });
+            };
+            target
         } else {
-            FixtureSupport::Unsupported
+            self.path(target_relative)?
+        };
+        let options = match scenario {
+            testkit::CopyScenario::AtomicFile => {
+                qfs::copy::CopyOptions::file().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+            }
+            testkit::CopyScenario::DurableFile => {
+                qfs::copy::CopyOptions::file().with_durability(qfs::metadata::DurabilityRequirement::Required)
+            }
+            _ => qfs::copy::CopyOptions::file(),
+        };
+        Ok(testkit::FixturePreparation::Ready(testkit::CopyFixtureCase::new(
+            source, target, options,
+        )))
+    }
+
+    fn prepare_delete(
+        &self,
+        scenario: testkit::DeleteScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<testkit::FixturePreparation<Path>> {
+        if scenario == testkit::DeleteScenario::IfMatch
+            && self.state.lock().expect("memory state lock").unavailable_case
+                == Some(UnavailableScenario::DeleteIfMatch)
+        {
+            return Ok(testkit::FixturePreparation::Unavailable {
+                reason: "conditional delete setup unavailable".to_owned(),
+            });
+        }
+        Ok(match self.seed_file(relative, bytes)? {
+            FixtureSupport::Supported(path) => testkit::FixturePreparation::Ready(path),
+            FixtureSupport::Unsupported => testkit::FixturePreparation::Unavailable {
+                reason: "delete seed unavailable".to_owned(),
+            },
         })
+    }
+
+    fn prepare_write(
+        &self,
+        scenario: testkit::WriteScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<testkit::FixturePreparation<testkit::WriteFixtureCase>> {
+        let unavailable = self
+            .state
+            .lock()
+            .expect("memory state lock must succeed")
+            .unavailable_case;
+        if scenario == testkit::WriteScenario::IfAbsent && unavailable == Some(UnavailableScenario::WriteIfAbsent) {
+            return Ok(testkit::FixturePreparation::Unavailable {
+                reason: "fixture cannot prepare If-Absent case".to_owned(),
+            });
+        }
+        if scenario == testkit::WriteScenario::IfMatch {
+            if unavailable == Some(UnavailableScenario::WriteIfMatch) {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "fixture cannot prepare If-Match case".to_owned(),
+                });
+            }
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"a")? else {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "conditional seed unavailable".to_owned(),
+                });
+            };
+            let FixtureSupport::Supported(version) = self.resource_version(&path)? else {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "conditional version unavailable".to_owned(),
+                });
+            };
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                WriteOptions::default().with_precondition(WritePrecondition::IfMatch(version)),
+            )));
+        }
+        if scenario == testkit::WriteScenario::Replace {
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"previous contents")? else {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "replacement seed unavailable".to_owned(),
+                });
+            };
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default(),
+            )));
+        }
+        if scenario == testkit::WriteScenario::CreateConflict {
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"a")? else {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "creation conflict seed unavailable".to_owned(),
+                });
+            };
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::CreateNew),
+            )));
+        }
+        if scenario == testkit::WriteScenario::Append {
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"before")? else {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "append seed unavailable".to_owned(),
+                });
+            };
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::Append),
+            )));
+        }
+        if scenario == testkit::WriteScenario::AtomicReplace {
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"a")? else {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "atomic replacement seed unavailable".to_owned(),
+                });
+            };
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_atomicity(qfs::metadata::AtomicityRequirement::Required),
+            )));
+        }
+        if scenario == testkit::WriteScenario::Durable {
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                self.path(relative)?,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default()
+                    .with_disposition(qfs::write::WriteDisposition::CreateNew)
+                    .with_durability(qfs::metadata::DurabilityRequirement::Required),
+            )));
+        }
+        let options = match scenario {
+            testkit::WriteScenario::Create | testkit::WriteScenario::Abort => {
+                WriteOptions::default().with_disposition(WriteDisposition::CreateNew)
+            }
+            testkit::WriteScenario::IfAbsent => WriteOptions::default().with_precondition(WritePrecondition::IfAbsent),
+            _ => {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "write scenario preparation unavailable".to_owned(),
+                });
+            }
+        };
+        Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+            self.path(relative)?,
+            bytes.to_vec(),
+            options,
+        )))
     }
 
     fn copy_fallback_only(&self) -> bool {
@@ -680,12 +949,11 @@ impl FileSystemFixture for MemoryFixture {
         Ok(FixtureSupport::Supported(path))
     }
 
-    fn teardown(&self) -> FixtureResult<FixtureSupport<()>> {
+    fn teardown(&self) -> FixtureResult<()> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
-        // Keep facade resources visible when the injected delete fault makes
-        // cleanup retryable. The suite's ledger must remain the source of
-        // truth for a subsequent finish call; clearing the whole namespace
-        // here would turn a failed delete into a false success.
+        // These self-test faults also inject an out-of-band teardown failure
+        // so retry tests retain real resources. Never claim successful
+        // teardown while deliberately retaining fixture-owned state.
         if !matches!(
             state.fault,
             MemoryFault::DeleteNoOp
@@ -695,8 +963,10 @@ impl FileSystemFixture for MemoryFixture {
         ) {
             state.entries.clear();
             state.versions.clear();
+        } else {
+            return Err(FixtureError::new("injected independent teardown failure"));
         }
-        Ok(FixtureSupport::Supported(()))
+        Ok(())
     }
 
     fn seed_empty_directory(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
@@ -737,7 +1007,7 @@ impl FileSystemFixture for MemoryFixture {
         Ok(FixtureSupport::Supported(CopyFixtureCase::new(
             source,
             target,
-            CopyOptions::default().with_server_side(ServerSidePreference::Require),
+            CopyOptions::file().with_server_side(ServerSidePreference::Require),
         )))
     }
 }
@@ -990,6 +1260,19 @@ impl FileSystemSpi for MemorySpi {
     fn create_directory(&self, request: CreateDirectoryRequest<'_>) -> FsResult<CreateDirectoryOutcome> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         let already_existed = state.entries.contains_key(request.path().as_str());
+        if request.options().options().recursive() && state.fault != MemoryFault::RecursiveCreateLeavesParentsMissing {
+            for (index, _) in request
+                .path()
+                .as_str()
+                .match_indices('/')
+                .filter(|(index, _)| *index > 0)
+            {
+                let ancestor = &request.path().as_str()[..index];
+                if !state.entries.contains_key(ancestor) {
+                    publish_entry(&mut state, ancestor, Entry::Directory);
+                }
+            }
+        }
         if !already_existed {
             publish_entry(&mut state, request.path().as_str(), Entry::Directory);
         }
@@ -1115,13 +1398,27 @@ impl FileSystemSpi for MemorySpi {
                     CopyConflictPolicy::Overwrite => {}
                 }
             }
-            let bytes = match &entry {
-                Entry::File(bytes) => bytes.len() as u64,
-                Entry::Directory | Entry::Symlink => 0,
+            let mut stats = match &entry {
+                Entry::File(bytes) => CopyStats {
+                    files: 1,
+                    bytes: bytes.len() as u64,
+                    ..CopyStats::default()
+                },
+                Entry::Directory => CopyStats {
+                    directories: 1,
+                    ..CopyStats::default()
+                },
+                Entry::Symlink => CopyStats {
+                    symlinks: 1,
+                    ..CopyStats::default()
+                },
             };
             let overwritten = state.entries.contains_key(request.target().as_str())
                 && options.conflict() == CopyConflictPolicy::Overwrite;
-            publish_entry(&mut state, request.target().as_str(), entry);
+            stats.overwritten = u64::from(overwritten);
+            if !(overwritten && state.fault == MemoryFault::CopyOverwriteKeepsTarget) {
+                publish_entry(&mut state, request.target().as_str(), entry);
+            }
             if matches!(state.entries.get(request.source().as_str()), Some(Entry::Directory))
                 && state.fault != MemoryFault::DirectoryCopyDropsChildren
             {
@@ -1136,8 +1433,19 @@ impl FileSystemSpi for MemorySpi {
                     })
                     .collect::<Vec<_>>();
                 for (path, entry) in descendants {
+                    match &entry {
+                        Entry::File(bytes) => {
+                            stats.files += 1;
+                            stats.bytes += bytes.len() as u64;
+                        }
+                        Entry::Directory => stats.directories += 1,
+                        Entry::Symlink => stats.symlinks += 1,
+                    }
                     publish_entry(&mut state, &path, entry);
                 }
+            }
+            if options.mode() == CopyMode::Tree && state.fault == MemoryFault::TreeCopyWrongStats {
+                stats.bytes = 0;
             }
             let method = if options.server_side() == ServerSidePreference::Require
                 && state.fault != MemoryFault::ServerSideCopyFallsBack
@@ -1148,14 +1456,12 @@ impl FileSystemSpi for MemorySpi {
             };
             return Ok(CopyAttempt::Completed(
                 CopyOutcome::new(
-                    CopyStats {
-                        files: 1,
-                        bytes,
-                        overwritten: u64::from(overwritten),
-                        ..CopyStats::default()
-                    },
+                    stats,
                     method,
-                    if options.atomicity() == AtomicityRequirement::Required {
+                    if options.atomicity() == AtomicityRequirement::Required
+                        && !(options.mode() == CopyMode::File && state.fault == MemoryFault::AtomicFileCopyNonAtomic)
+                        && !(options.mode() == CopyMode::Tree && state.fault == MemoryFault::AtomicTreeCopyNonAtomic)
+                    {
                         AchievedAtomicity::Atomic
                     } else {
                         AchievedAtomicity::NonAtomic
@@ -1163,7 +1469,8 @@ impl FileSystemSpi for MemorySpi {
                 )
                 .with_durable(
                     options.durability() == DurabilityRequirement::Required
-                        && state.fault != MemoryFault::DurableFileCopyNonDurable,
+                        && state.fault != MemoryFault::DurableFileCopyNonDurable
+                        && !(options.mode() == CopyMode::Tree && state.fault == MemoryFault::DurableTreeCopyNonDurable),
                 ),
             ));
         }
@@ -1325,7 +1632,20 @@ impl Output for MemoryWriter {
 impl FileWriterSpi for MemoryWriter {
     fn commit(&mut self) -> Result<WriteOutcome, SpiWriteFailure> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
-        if self.disposition == WriteDisposition::CreateNew && state.entries.contains_key(self.path.as_str()) {
+        if state.fault == MemoryFault::WriteCommitFailure {
+            return Err(SpiWriteFailure::new(
+                FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::CommitWriter,
+                    "injected commit failure",
+                ),
+                WriteFailureState::NotPublished,
+            ));
+        }
+        if self.disposition == WriteDisposition::CreateNew
+            && state.entries.contains_key(self.path.as_str())
+            && state.fault != MemoryFault::CreateNewOverwrites
+        {
             return Err(SpiWriteFailure::new(
                 FsError::new(
                     FsErrorKind::AlreadyExists,
@@ -1363,8 +1683,15 @@ impl FileWriterSpi for MemoryWriter {
             }
         }
         if state.fault != MemoryFault::WriteDropsBytes {
-            let bytes = if self.disposition == WriteDisposition::Append && state.fault != MemoryFault::AppendOverwrites
+            let bytes = if self.disposition == WriteDisposition::CreateOrReplace
+                && state.fault == MemoryFault::ReplaceKeepsSuffix
             {
+                let mut combined = self.bytes.clone();
+                if let Some(Entry::File(existing)) = state.entries.get(self.path.as_str()) {
+                    combined.extend_from_slice(existing.get(self.bytes.len()..).unwrap_or_default());
+                }
+                combined
+            } else if self.disposition == WriteDisposition::Append && state.fault != MemoryFault::AppendOverwrites {
                 match state.entries.get(self.path.as_str()) {
                     Some(Entry::File(existing)) => [existing.as_slice(), self.bytes.as_slice()].concat(),
                     Some(Entry::Directory | Entry::Symlink) | None => self.bytes.clone(),
@@ -1394,6 +1721,22 @@ impl FileWriterSpi for MemoryWriter {
     }
 
     fn abort(&mut self) -> FsResult<WriteAbortOutcome> {
+        if self.path.as_str().contains("write-aborted") {
+            let mut state = self.state.lock().expect("memory state lock");
+            if state.fault == MemoryFault::AbortFailsOnce {
+                state.fault = MemoryFault::None;
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::AbortWriter,
+                    "abort failed once",
+                ));
+            }
+            if state.fault == MemoryFault::AbortLies {
+                state
+                    .entries
+                    .insert(self.path.as_str().to_owned(), Entry::File(self.bytes.clone()));
+            }
+        }
         Ok(WriteAbortOutcome::NotPublished)
     }
 }

@@ -77,32 +77,32 @@ pub const fn sync_fault_cases() -> &'static [SyncFaultCase] {
         },
         SyncFaultCase {
             fault: MemoryFault::AppendOverwrites,
-            phase: FileSystemContract::Append,
+            phase: FileSystemContract::Write,
             check_id: "append/basic",
         },
         SyncFaultCase {
             fault: MemoryFault::RecursiveDeleteLeavesChildren,
-            phase: FileSystemContract::RecursiveDelete,
+            phase: FileSystemContract::Delete,
             check_id: "delete/tree",
         },
         SyncFaultCase {
             fault: MemoryFault::AtomicRenameNonAtomic,
-            phase: FileSystemContract::AtomicRename,
+            phase: FileSystemContract::Rename,
             check_id: "rename/atomic",
         },
         SyncFaultCase {
             fault: MemoryFault::AtomicReplaceNonAtomic,
-            phase: FileSystemContract::AtomicReplace,
+            phase: FileSystemContract::Write,
             check_id: "write/atomic-replace-existing",
         },
         SyncFaultCase {
             fault: MemoryFault::DurableFileCopyNonDurable,
-            phase: FileSystemContract::DurableFileCopy,
+            phase: FileSystemContract::Copy,
             check_id: "copy/durable-file",
         },
         SyncFaultCase {
             fault: MemoryFault::DurableRenameNonDurable,
-            phase: FileSystemContract::DurableRename,
+            phase: FileSystemContract::Rename,
             check_id: "rename/durable",
         },
         SyncFaultCase {
@@ -137,7 +137,7 @@ pub const fn sync_fault_cases() -> &'static [SyncFaultCase] {
         },
         SyncFaultCase {
             fault: MemoryFault::AtomicReplaceKeepsOldBytes,
-            phase: FileSystemContract::AtomicReplace,
+            phase: FileSystemContract::Write,
             check_id: "write/atomic-replace-existing",
         },
         SyncFaultCase {
@@ -241,32 +241,32 @@ pub const fn async_fault_cases() -> &'static [AsyncFaultCase] {
         },
         AsyncFaultCase {
             fault: AsyncMemoryFault::AppendOverwrites,
-            phase: FileSystemContract::Append,
+            phase: FileSystemContract::Write,
             check_id: "append/basic",
         },
         AsyncFaultCase {
             fault: AsyncMemoryFault::RecursiveDeleteLeavesChildren,
-            phase: FileSystemContract::RecursiveDelete,
+            phase: FileSystemContract::Delete,
             check_id: "delete/tree",
         },
         AsyncFaultCase {
             fault: AsyncMemoryFault::AtomicRenameNonAtomic,
-            phase: FileSystemContract::AtomicRename,
+            phase: FileSystemContract::Rename,
             check_id: "rename/atomic",
         },
         AsyncFaultCase {
             fault: AsyncMemoryFault::AtomicReplaceNonAtomic,
-            phase: FileSystemContract::AtomicReplace,
+            phase: FileSystemContract::Write,
             check_id: "write/atomic-replace-existing",
         },
         AsyncFaultCase {
             fault: AsyncMemoryFault::DurableFileCopyNonDurable,
-            phase: FileSystemContract::DurableFileCopy,
+            phase: FileSystemContract::Copy,
             check_id: "copy/durable-file",
         },
         AsyncFaultCase {
             fault: AsyncMemoryFault::DurableRenameNonDurable,
-            phase: FileSystemContract::DurableRename,
+            phase: FileSystemContract::Rename,
             check_id: "rename/durable",
         },
         AsyncFaultCase {
@@ -301,7 +301,7 @@ pub const fn async_fault_cases() -> &'static [AsyncFaultCase] {
         },
         AsyncFaultCase {
             fault: AsyncMemoryFault::AtomicReplaceKeepsOldBytes,
-            phase: FileSystemContract::AtomicReplace,
+            phase: FileSystemContract::Write,
             check_id: "write/atomic-replace-existing",
         },
         AsyncFaultCase {

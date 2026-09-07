@@ -42,6 +42,7 @@ use std::task::Wake;
 #[cfg(feature = "async")]
 use std::task::Waker;
 
+use qubit_fs as qfs;
 #[cfg(feature = "async")]
 use qubit_fs::AsyncFileSystem;
 use qubit_fs::copy::CopyConflictPolicy;
@@ -128,6 +129,7 @@ use qubit_fs::write::WriteFailure;
 use qubit_fs::write::WriteFailureState;
 use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WritePrecondition;
+use qubit_fs_testkit as testkit;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::AsyncCopyCancellationStage;
 #[cfg(feature = "async")]
@@ -139,7 +141,6 @@ use qubit_fs_testkit::AsyncWriteFixtureCase;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::CopyCancellationProbe;
 use qubit_fs_testkit::CopyFixtureCase;
-use qubit_fs_testkit::FixtureCase;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::FixtureError;
 #[cfg(feature = "async")]
@@ -158,6 +159,7 @@ use super::async_write_gate::WriteGate;
 use super::memory_file_system::listed_entries;
 use super::memory_file_system::provider_properties;
 use super::shared_model::Entry;
+use crate::common::UnavailableScenario;
 
 #[cfg(feature = "async")]
 struct WakeFlag(AtomicUsize);
@@ -193,6 +195,13 @@ pub(crate) fn run_controlled<T>(future: impl Future<Output = T>) -> T {
     panic!("controlled future exceeded the poll budget");
 }
 
+use qubit_fs_testkit::AsyncWriteCancellationStage;
+use qubit_fs_testkit::AsyncWriteFixtureCase;
+use qubit_fs_testkit::WriteCancellationProbe;
+
+use super::async_memory_write_cancellation_probe::AsyncMemoryWriteCancellationProbe;
+use super::write_gate::WriteGate;
+
 /// Async fixture whose copy pipeline exposes one real pending point per stage.
 #[cfg(feature = "async")]
 pub struct AsyncMemoryFixture {
@@ -207,7 +216,8 @@ pub struct AsyncMemoryFixture {
     unavailable_write_stage: Option<AsyncWriteCancellationStage>,
     path_calls: Arc<AtomicUsize>,
     limits: FileSystemLimits,
-    unavailable_case: Option<FixtureCase>,
+    unavailable_case: Option<UnavailableScenario>,
+    invalid_probe_path: Option<&'static str>,
 }
 
 /// Shared stage gate used by the asynchronous cancellation self-test.
@@ -217,6 +227,8 @@ struct CopyGate {
     pending_before_reached: u8,
     target_reached: bool,
     armed: bool,
+    execution_live: bool,
+    ever_reached: bool,
     waker: Option<Waker>,
 }
 
@@ -229,6 +241,8 @@ impl CopyGate {
             pending_before_reached: 0,
             target_reached: false,
             armed: false,
+            execution_live: false,
+            ever_reached: false,
             waker: None,
         }
     }
@@ -260,6 +274,7 @@ impl CopyGate {
         }
         if !self.target_reached {
             self.target_reached = true;
+            self.ever_reached = true;
             context.waker().wake_by_ref();
         }
         Poll::Pending
@@ -281,6 +296,9 @@ impl CopyGate {
 
     /// Releases the gate and wakes the operation owner, without doing I/O.
     fn disarm(&mut self) -> FixtureResult<()> {
+        if self.execution_live {
+            return Err(FixtureError::new("probe was disarmed before dropping execute future"));
+        }
         self.armed = false;
         self.target_reached = false;
         if let Some(waker) = self.waker.take() {
@@ -339,10 +357,19 @@ impl Future for CopyGateFuture {
 
     /// Polls the gate and never completes while cancellation owns it.
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut gate = self.gate.lock().expect("async copy gate lock must succeed");
+        gate.execution_live = true;
+        gate.poll_stage(self.stage, context)
+    }
+}
+
+#[cfg(feature = "async")]
+impl Drop for CopyGateFuture {
+    fn drop(&mut self) {
         self.gate
             .lock()
             .expect("async copy gate lock must succeed")
-            .poll_stage(self.stage, context)
+            .execution_live = false;
     }
 }
 
@@ -357,12 +384,21 @@ async fn wait_copy_gate(gate: Arc<Mutex<CopyGate>>, stage: AsyncCopyCancellation
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(feature = "async")]
 pub enum AsyncMemoryFault {
+    /// Publishes a copy destination while falsely reporting an unpublished
+    /// abort.
+    CopyAbortPublishes,
+    /// Publishes staged bytes while falsely reporting an unpublished abort.
+    WriteAbortPublishes,
     /// Behaves conformingly.
     None,
     /// Reports a missing path as an existing file.
     MissingPathExists,
     /// Returns directory metadata for an existing file.
     WrongStatMetadata,
+    /// Claims recursive creation while omitting ancestors.
+    RecursiveCreateLeavesParentsMissing,
+    /// Ignores an explicitly stale deletion condition.
+    IgnoreDeleteIfMatch,
     /// Returns bytes different from the provider's seeded content.
     ReadWrongBytes,
     /// Accepts writes but does not publish their bytes.
@@ -383,10 +419,33 @@ pub enum AsyncMemoryFault {
     RenameWrongOutcome,
     /// Copies a directory root without its descendants.
     DirectoryCopyDropsChildren,
+    /// Reports successful overwrite while retaining the old destination bytes.
+    CopyOverwriteKeepsTarget,
+    /// Publishes through a native method despite requiring server-side copy.
+    ServerSideCopyFallsBack,
     /// Reports temporary cleanup success without removing the resource.
     TempCleanupNoOp,
     /// Appends by replacing existing bytes.
     AppendOverwrites,
+    /// Ignores CreateNew and replaces an existing destination.
+    CreateNewOverwrites,
+    /// Replaces only a prefix and leaves the old file suffix intact.
+    ReplaceKeepsSuffix,
+    /// Fails the first explicit abort while retaining a recoverable writer.
+    AbortFailsOnce,
+    /// Fails recovery abort once after a cancellation stage was acknowledged.
+    RecoveryAbortFailsOnce,
+    /// Fails copied output before the requested commit stage is reached.
+    CopyWriteFails,
+    /// Publishes during explicit abort while claiming the target is unchanged.
+    AbortLies,
+    /// Rejects basic writer publication before changing the target.
+    BasicCommitFails,
+    /// Rejects owning writer publication while leaving its recovery session
+    /// open.
+    OwningCommitFails,
+    /// Rejects prepared replacement publication with its recovery session open.
+    ReplaceCommitFails,
     /// Removes only the requested directory during recursive deletion.
     RecursiveDeleteLeavesChildren,
     /// Reports non-atomic completion for a required atomic rename.
@@ -395,6 +454,14 @@ pub enum AsyncMemoryFault {
     AtomicReplaceNonAtomic,
     /// Reports non-durable completion for a required durable copy.
     DurableFileCopyNonDurable,
+    /// Publishes a file copy without the required atomic guarantee.
+    AtomicFileCopyNonAtomic,
+    /// Publishes a tree without its required atomic guarantee.
+    AtomicTreeCopyNonAtomic,
+    /// Publishes a tree without its required durability guarantee.
+    DurableTreeCopyNonDurable,
+    /// Copies the complete tree but omits descendant byte statistics.
+    TreeCopyWrongStats,
     /// Reports non-durable completion for a required durable rename.
     DurableRenameNonDurable,
     /// Publishes the requested destination but reports a different target.
@@ -518,8 +585,15 @@ impl AsyncMemoryFixture {
         )
     }
 
+    /// Creates a bounded fixture with real cancellation gates enabled.
+    pub fn with_cancellation_limits(limits: FileSystemLimits) -> Self {
+        let mut fixture = Self::with_limits(limits);
+        fixture.supports_cancellation_cases = true;
+        fixture
+    }
+
     /// Creates a fixture whose selected conditional case is unavailable.
-    pub fn with_conditional_case_unavailable(case: FixtureCase) -> Self {
+    pub fn with_conditional_case_unavailable(case: UnavailableScenario) -> Self {
         let mut fixture = Self::with_configuration(
             AsyncMemoryFault::None,
             false,
@@ -533,7 +607,7 @@ impl AsyncMemoryFixture {
 
     /// Creates an asynchronous fixture with exactly one provider fault.
     pub fn with_fault(fault: AsyncMemoryFault) -> Self {
-        Self::with_copy_behavior(fault, true, false)
+        Self::with_copy_behavior(fault, true, fault == AsyncMemoryFault::AtomicFileCopyNonAtomic)
     }
 
     /// Creates a conforming fixture without optional cancellation probes.
@@ -631,6 +705,19 @@ impl AsyncMemoryFixture {
     }
 
     /// Creates an asynchronous fixture advertising every capability contract.
+    pub fn tree_copy_without_directory_creation() -> Self {
+        Self::with_configuration(
+            AsyncMemoryFault::None,
+            false,
+            false,
+            AsyncCapabilityProfile {
+                create_directory: false,
+                ..AsyncCapabilityProfile::ALL
+            },
+            "async-memory-tree-provider",
+        )
+    }
+
     pub fn with_all_capabilities() -> Self {
         Self::with_configuration(
             AsyncMemoryFault::None,
@@ -679,7 +766,7 @@ impl AsyncMemoryFixture {
         capabilities: AsyncCapabilityProfile,
         provider_id: &'static str,
         limits: FileSystemLimits,
-        unavailable_case: Option<FixtureCase>,
+        unavailable_case: Option<UnavailableScenario>,
     ) -> Self {
         let stage = Arc::new(Mutex::new(AsyncCopyCancellationStage::NativeAttempt));
         let copy_gate = Arc::new(Mutex::new(CopyGate::new()));
@@ -717,36 +804,24 @@ impl AsyncMemoryFixture {
             path_calls,
             limits,
             unavailable_case,
+            invalid_probe_path: None,
         }
     }
 
-    /// Omits one stage probe to exercise strict evidence completeness.
-    pub fn without_write_stage(stage: AsyncWriteCancellationStage) -> Self {
-        let mut fixture = Self::new();
-        fixture.unavailable_write_stage = Some(stage);
-        fixture
+    /// Injects an incompatible logical path into one selected negative probe.
+    pub fn with_invalid_probe_path(mut self, suffix: &'static str) -> Self {
+        self.invalid_probe_path = Some(suffix);
+        self
     }
 
-    /// Injects independent acknowledgement and disarm errors after reaching a
-    /// gate.
-    pub fn with_write_probe_failures(fail_disarm: bool) -> Self {
-        let fixture = Self::new();
-        {
-            let mut gate = fixture.write_gate.lock().unwrap();
-            gate.fail_acknowledgement = true;
-            gate.fail_disarm = fail_disarm;
-        }
-        fixture
+    /// Reports whether a write probe still owns an armed gate.
+    pub fn write_cancellation_is_armed(&self) -> bool {
+        self.write_gate.lock().expect("write gate lock").is_armed()
     }
 
-    /// Reports whether a failed probe left its provider gate armed.
-    pub fn write_gate_is_armed(&self) -> bool {
-        self.write_gate.lock().unwrap().armed
-    }
-
-    /// Returns the stages for which the suite actually requested probes.
-    pub fn prepared_write_stages(&self) -> Vec<AsyncWriteCancellationStage> {
-        self.write_gate.lock().unwrap().prepared.clone()
+    /// Returns stages acknowledged by the provider's actual write gate.
+    pub fn write_cancellation_stages(&self) -> Vec<AsyncWriteCancellationStage> {
+        self.write_gate.lock().expect("write gate lock").observed.clone()
     }
 
     /// Returns whether the fixture namespace contains no resources.
@@ -765,6 +840,42 @@ impl AsyncMemoryFixture {
 
 #[cfg(feature = "async")]
 impl AsyncFileSystemFixture for AsyncMemoryFixture {
+    fn prepare_read<'a>(
+        &'a self,
+        scenario: testkit::ReadScenario,
+        relative: &'a str,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, testkit::FixturePreparation<Path>> {
+        Box::pin(async move {
+            let unavailable = self.unavailable_case;
+            let excluded = match scenario {
+                testkit::ReadScenario::IfMatchCurrent | testkit::ReadScenario::IfMatchStale => {
+                    unavailable == Some(UnavailableScenario::ReadIfMatch)
+                }
+                testkit::ReadScenario::IfNoneMatchCurrent | testkit::ReadScenario::IfNoneMatchStale => {
+                    unavailable == Some(UnavailableScenario::ReadIfNoneMatch)
+                }
+                _ => false,
+            };
+            if excluded {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "selected read scenario preparation is unavailable".to_owned(),
+                });
+            }
+            let prepared = if scenario == testkit::ReadScenario::ChecksumCorruption {
+                self.checksum_failure_case(relative).await?
+            } else {
+                self.seed_file(relative, bytes).await?
+            };
+            Ok(match prepared {
+                FixtureSupport::Supported(path) => testkit::FixturePreparation::Ready(path),
+                FixtureSupport::Unsupported => testkit::FixturePreparation::Unavailable {
+                    reason: "independent read setup is unavailable".to_owned(),
+                },
+            })
+        })
+    }
+
     fn file_system(&self) -> &AsyncFileSystem {
         &self.file_system
     }
@@ -775,14 +886,266 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
         self.path_calls.fetch_add(1, Ordering::Relaxed);
+        if self.invalid_probe_path.is_some_and(|suffix| relative.ends_with(suffix)) {
+            return Path::parse_literal("/invalid-probe-path")
+                .map_err(|error| FixtureError::with_source("probe path", error));
+        }
         MemoryFixture::path_for(relative)
     }
 
-    fn case_support(&self, case: FixtureCase) -> FixtureResult<FixtureSupport<()>> {
-        if self.unavailable_case == Some(case) {
-            return Ok(FixtureSupport::Unsupported);
-        }
-        Ok(FixtureSupport::Supported(()))
+    /// Prepares fresh requests independently, including explicit absence
+    /// conditions.
+    fn prepare_copy<'a>(
+        &'a self,
+        scenario: testkit::CopyScenario,
+        source_relative: &'a str,
+        target_relative: &'a str,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, testkit::FixturePreparation<testkit::CopyFixtureCase>> {
+        Box::pin(async move {
+            if scenario == testkit::CopyScenario::Conflict
+                && self.unavailable_case == Some(UnavailableScenario::CopyOverwrite)
+            {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "copy conflict setup unavailable".to_owned(),
+                });
+            }
+            if scenario == testkit::CopyScenario::ServerSide {
+                if self.unavailable_case == Some(UnavailableScenario::Capability(FileSystemCapability::ServerSideCopy))
+                {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "server-side copy setup unavailable".to_owned(),
+                    });
+                }
+                return Ok(
+                    match self.copy_fast_path_case(qfs::copy::CopyMethod::ServerSide).await? {
+                        FixtureSupport::Supported(case) => testkit::FixturePreparation::Ready(case),
+                        FixtureSupport::Unsupported => testkit::FixturePreparation::Unavailable {
+                            reason: "fixture has no server-side copy case".to_owned(),
+                        },
+                    },
+                );
+            }
+            let required = match scenario {
+                testkit::CopyScenario::AtomicFile => Some(FileSystemCapability::AtomicFileCopy),
+                testkit::CopyScenario::AtomicTree => Some(FileSystemCapability::AtomicTreeCopy),
+                testkit::CopyScenario::DurableTree => Some(FileSystemCapability::DurableTreeCopy),
+                testkit::CopyScenario::DurableFile => Some(FileSystemCapability::DurableFileCopy),
+                _ => None,
+            };
+            if required
+                .is_some_and(|capability| self.unavailable_case == Some(UnavailableScenario::Capability(capability)))
+            {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "strong file-copy setup unavailable".to_owned(),
+                });
+            }
+            if matches!(
+                scenario,
+                testkit::CopyScenario::AtomicTree | testkit::CopyScenario::DurableTree
+            ) {
+                if self.unavailable_case == Some(UnavailableScenario::CopyTree) {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "tree copy setup unavailable".to_owned(),
+                    });
+                }
+                let FixtureSupport::Supported(source) = self.seed_empty_directory(source_relative).await? else {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "tree root setup unavailable".to_owned(),
+                    });
+                };
+                let sub_relative = format!("{source_relative}/sub");
+                if matches!(
+                    self.seed_empty_directory(&sub_relative).await?,
+                    FixtureSupport::Unsupported
+                ) {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "tree subdirectory setup unavailable".to_owned(),
+                    });
+                }
+                let child_relative = format!("{source_relative}/sub/child");
+                if matches!(
+                    self.seed_file(&child_relative, bytes).await?,
+                    FixtureSupport::Unsupported
+                ) {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "tree child setup unavailable".to_owned(),
+                    });
+                }
+                let target = self.path(target_relative)?;
+                let options = if scenario == testkit::CopyScenario::AtomicTree {
+                    qfs::copy::CopyOptions::tree().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+                } else {
+                    qfs::copy::CopyOptions::tree().with_durability(qfs::metadata::DurabilityRequirement::Required)
+                };
+                return Ok(testkit::FixturePreparation::Ready(testkit::CopyFixtureCase::new(
+                    source, target, options,
+                )));
+            }
+            let FixtureSupport::Supported(source) = self.seed_file(source_relative, bytes).await? else {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "copy source seed unavailable".to_owned(),
+                });
+            };
+            let target = if scenario == testkit::CopyScenario::Conflict {
+                let FixtureSupport::Supported(target) = self.seed_file(target_relative, b"existing").await? else {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "copy conflict target seed unavailable".to_owned(),
+                    });
+                };
+                target
+            } else {
+                self.path(target_relative)?
+            };
+            let options = match scenario {
+                testkit::CopyScenario::AtomicFile => {
+                    qfs::copy::CopyOptions::file().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+                }
+                testkit::CopyScenario::DurableFile => {
+                    qfs::copy::CopyOptions::file().with_durability(qfs::metadata::DurabilityRequirement::Required)
+                }
+                _ => qfs::copy::CopyOptions::file(),
+            };
+            Ok(testkit::FixturePreparation::Ready(testkit::CopyFixtureCase::new(
+                source, target, options,
+            )))
+        })
+    }
+
+    fn prepare_delete<'a>(
+        &'a self,
+        scenario: testkit::DeleteScenario,
+        relative: &'a str,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, testkit::FixturePreparation<Path>> {
+        Box::pin(async move {
+            if scenario == testkit::DeleteScenario::IfMatch
+                && self.unavailable_case == Some(UnavailableScenario::DeleteIfMatch)
+            {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "conditional delete setup unavailable".to_owned(),
+                });
+            }
+            Ok(match self.seed_file(relative, bytes).await? {
+                FixtureSupport::Supported(path) => testkit::FixturePreparation::Ready(path),
+                FixtureSupport::Unsupported => testkit::FixturePreparation::Unavailable {
+                    reason: "delete seed unavailable".to_owned(),
+                },
+            })
+        })
+    }
+
+    fn prepare_write<'a>(
+        &'a self,
+        scenario: testkit::WriteScenario,
+        relative: &'a str,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, testkit::FixturePreparation<testkit::WriteFixtureCase>> {
+        Box::pin(async move {
+            let unavailable = self.unavailable_case;
+            if scenario == testkit::WriteScenario::IfAbsent && unavailable == Some(UnavailableScenario::WriteIfAbsent) {
+                return Ok(testkit::FixturePreparation::Unavailable {
+                    reason: "fixture cannot prepare If-Absent case".to_owned(),
+                });
+            }
+            if scenario == testkit::WriteScenario::IfMatch {
+                if unavailable == Some(UnavailableScenario::WriteIfMatch) {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "fixture cannot prepare If-Match case".to_owned(),
+                    });
+                }
+                let FixtureSupport::Supported(path) = self.seed_file(relative, b"a").await? else {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "conditional seed unavailable".to_owned(),
+                    });
+                };
+                let FixtureSupport::Supported(version) = self.resource_version(&path).await? else {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "conditional version unavailable".to_owned(),
+                    });
+                };
+                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                    path,
+                    bytes.to_vec(),
+                    WriteOptions::default().with_precondition(WritePrecondition::IfMatch(version)),
+                )));
+            }
+            if scenario == testkit::WriteScenario::Replace {
+                let FixtureSupport::Supported(path) = self.seed_file(relative, b"previous contents").await? else {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "replacement seed unavailable".to_owned(),
+                    });
+                };
+                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                    path,
+                    bytes.to_vec(),
+                    qfs::write::WriteOptions::default(),
+                )));
+            }
+            if scenario == testkit::WriteScenario::CreateConflict {
+                let FixtureSupport::Supported(path) = self.seed_file(relative, b"a").await? else {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "creation conflict seed unavailable".to_owned(),
+                    });
+                };
+                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                    path,
+                    bytes.to_vec(),
+                    qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::CreateNew),
+                )));
+            }
+            if scenario == testkit::WriteScenario::Append {
+                let FixtureSupport::Supported(path) = self.seed_file(relative, b"before").await? else {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "append seed unavailable".to_owned(),
+                    });
+                };
+                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                    path,
+                    bytes.to_vec(),
+                    qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::Append),
+                )));
+            }
+            if scenario == testkit::WriteScenario::AtomicReplace {
+                let FixtureSupport::Supported(path) = self.seed_file(relative, b"a").await? else {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "atomic replacement seed unavailable".to_owned(),
+                    });
+                };
+                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                    path,
+                    bytes.to_vec(),
+                    qfs::write::WriteOptions::default().with_atomicity(qfs::metadata::AtomicityRequirement::Required),
+                )));
+            }
+            if scenario == testkit::WriteScenario::Durable {
+                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                    self.path(relative)?,
+                    bytes.to_vec(),
+                    qfs::write::WriteOptions::default()
+                        .with_disposition(qfs::write::WriteDisposition::CreateNew)
+                        .with_durability(qfs::metadata::DurabilityRequirement::Required),
+                )));
+            }
+            let options = match scenario {
+                testkit::WriteScenario::Create | testkit::WriteScenario::Abort => {
+                    WriteOptions::default().with_disposition(WriteDisposition::CreateNew)
+                }
+                testkit::WriteScenario::IfAbsent => {
+                    WriteOptions::default().with_precondition(WritePrecondition::IfAbsent)
+                }
+                _ => {
+                    return Ok(testkit::FixturePreparation::Unavailable {
+                        reason: "write scenario preparation unavailable".to_owned(),
+                    });
+                }
+            };
+            Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                self.path(relative)?,
+                bytes.to_vec(),
+                options,
+            )))
+        })
     }
 
     fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
@@ -876,13 +1239,13 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
-    fn teardown(&self) -> FixtureFuture<'_, FixtureSupport<()>> {
+    fn teardown(&self) -> FixtureFuture<'_, ()> {
         Box::pin(async move {
             self.entries
                 .lock()
                 .expect("async memory state lock must succeed")
                 .clear();
-            Ok(FixtureSupport::Supported(()))
+            Ok(())
         })
     }
 
@@ -922,7 +1285,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             Ok(FixtureSupport::Supported(CopyFixtureCase::new(
                 source,
                 target,
-                CopyOptions::default().with_server_side(ServerSidePreference::Require),
+                CopyOptions::file().with_server_side(ServerSidePreference::Require),
             )))
         })
     }
@@ -933,14 +1296,20 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         relative: &'a str,
     ) -> FixtureFuture<'a, FixtureSupport<Box<dyn WriteCancellationProbe>>> {
         Box::pin(async move {
-            if !self.supports_write_cancellation || self.unavailable_write_stage == Some(stage) {
+            if !self.supports_cancellation_cases {
                 return Ok(FixtureSupport::Unsupported);
             }
-            self.write_gate.lock().expect("write gate lock").arm(stage);
             let path = self.path(relative)?;
+            self.write_gate.lock().expect("write gate lock").arm(stage);
+            let mut bytes = b"write cancellation bytes".to_vec();
+            if let Some(maximum) = self.limits.max_write_bytes().maximum() {
+                bytes.truncate(maximum.min(bytes.len() as u64) as usize);
+            }
+            let case = AsyncWriteFixtureCase::new(path, bytes, Default::default());
             let probe: Box<dyn WriteCancellationProbe> = Box::new(AsyncMemoryWriteCancellationProbe {
-                case: AsyncWriteFixtureCase::new(path, vec![b'w'], WriteOptions::default()),
+                case,
                 gate: Arc::clone(&self.write_gate),
+                entries: Arc::clone(&self.entries),
             });
             Ok(FixtureSupport::Supported(probe))
         })
@@ -974,26 +1343,6 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             });
             Ok(FixtureSupport::Supported(probe))
         })
-    }
-
-    fn copy_cancellation_case(
-        &self,
-        stage: AsyncCopyCancellationStage,
-    ) -> FixtureResult<FixtureSupport<AsyncCopyFixtureCase>> {
-        if !self.supports_cancellation_cases {
-            return Ok(FixtureSupport::Unsupported);
-        }
-        *self.stage.lock().expect("async stage lock must succeed") = stage;
-        let source = self.path("async-copy-source")?;
-        self.entries
-            .lock()
-            .expect("async memory state lock must succeed")
-            .insert(source.as_str().to_owned(), Entry::File(b"copy bytes".to_vec()));
-        Ok(FixtureSupport::Supported(AsyncCopyFixtureCase::new(
-            source,
-            self.path("async-copy-target")?,
-            CopyOptions::default(),
-        )))
     }
 }
 
@@ -1316,7 +1665,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 write_gate
                     .lock()
                     .expect("write gate lock")
-                    .poll_stage(AsyncWriteCancellationStage::Open, context)
+                    .poll(AsyncWriteCancellationStage::Open, context)
             })
             .await;
             Ok(OpenedAsyncWriter::new(
@@ -1344,13 +1693,19 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         request: CreateDirectoryRequest<'a>,
     ) -> SpiFuture<'a, FsResult<CreateDirectoryOutcome>> {
         let path = request.path().clone();
+        let recursive = request.options().options().recursive();
         let entries = Arc::clone(&self.entries);
+        let fault = self.fault;
         Box::pin(async move {
-            let already_existed = entries
-                .lock()
-                .expect("async memory state lock must succeed")
-                .insert(path.as_str().to_owned(), Entry::Directory)
-                .is_some();
+            let mut entries = entries.lock().expect("async memory state lock must succeed");
+            if recursive && fault != AsyncMemoryFault::RecursiveCreateLeavesParentsMissing {
+                for (index, _) in path.as_str().match_indices('/').filter(|(index, _)| *index > 0) {
+                    entries
+                        .entry(path.as_str()[..index].to_owned())
+                        .or_insert(Entry::Directory);
+                }
+            }
+            let already_existed = entries.insert(path.as_str().to_owned(), Entry::Directory).is_some();
             Ok(CreateDirectoryOutcome::new(already_existed))
         })
     }
@@ -1359,6 +1714,8 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let path = request.path().clone();
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
+        let condition = request.options().options().if_match().cloned();
+        let versions = Arc::clone(&self.versions);
         Box::pin(async move {
             if fault == AsyncMemoryFault::CleanupDeletePanic {
                 panic!("cleanup delete panic");
@@ -1368,6 +1725,20 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     FsErrorKind::PermissionDenied,
                     FsOperation::Delete,
                     "cleanup delete error",
+                ));
+            }
+            if let Some(condition) = condition
+                && entries
+                    .lock()
+                    .expect("async memory state lock")
+                    .contains_key(path.as_str())
+                && condition != current_version(&versions, &path)
+                && fault != AsyncMemoryFault::IgnoreDeleteIfMatch
+            {
+                return Err(FsError::new(
+                    FsErrorKind::PreconditionFailed,
+                    FsOperation::Delete,
+                    "async memory delete condition failed",
                 ));
             }
             let missing = if fault == AsyncMemoryFault::DeleteNoOp {
@@ -1479,13 +1850,27 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                         CopyConflictPolicy::Overwrite => {}
                     }
                 }
-                let bytes = match &entry {
-                    Entry::File(bytes) => bytes.len() as u64,
-                    Entry::Directory | Entry::Symlink => 0,
+                let mut stats = match &entry {
+                    Entry::File(bytes) => CopyStats {
+                        files: 1,
+                        bytes: bytes.len() as u64,
+                        ..CopyStats::default()
+                    },
+                    Entry::Directory => CopyStats {
+                        directories: 1,
+                        ..CopyStats::default()
+                    },
+                    Entry::Symlink => CopyStats {
+                        symlinks: 1,
+                        ..CopyStats::default()
+                    },
                 };
                 let directory = matches!(&entry, Entry::Directory);
                 let overwritten = entries.contains_key(target.as_str()) && conflict == CopyConflictPolicy::Overwrite;
-                entries.insert(target.as_str().to_owned(), entry);
+                stats.overwritten = u64::from(overwritten);
+                if !(overwritten && fault == AsyncMemoryFault::CopyOverwriteKeepsTarget) {
+                    entries.insert(target.as_str().to_owned(), entry);
+                }
                 if directory && fault != AsyncMemoryFault::DirectoryCopyDropsChildren {
                     let source_prefix = format!("{}/", source.as_str().trim_end_matches('/'));
                     let target_prefix = format!("{}/", target.as_str().trim_end_matches('/'));
@@ -1497,30 +1882,41 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                         })
                         .collect::<Vec<_>>();
                     for (path, entry) in descendants {
+                        match &entry {
+                            Entry::File(bytes) => {
+                                stats.files += 1;
+                                stats.bytes += bytes.len() as u64;
+                            }
+                            Entry::Directory => stats.directories += 1,
+                            Entry::Symlink => stats.symlinks += 1,
+                        }
                         entries.insert(path, entry);
                     }
                 }
+                if mode == CopyMode::Tree && fault == AsyncMemoryFault::TreeCopyWrongStats {
+                    stats.bytes = 0;
+                }
                 Ok(CopyAttempt::Completed(
                     CopyOutcome::new(
-                        CopyStats {
-                            files: 1,
-                            bytes,
-                            overwritten: u64::from(overwritten),
-                            ..CopyStats::default()
-                        },
-                        if server_side {
+                        stats,
+                        if server_side && fault != AsyncMemoryFault::ServerSideCopyFallsBack {
                             CopyMethod::ServerSide
                         } else {
                             CopyMethod::Native
                         },
-                        if atomicity == AtomicityRequirement::Required {
+                        if atomicity == AtomicityRequirement::Required
+                            && !(mode == CopyMode::File && fault == AsyncMemoryFault::AtomicFileCopyNonAtomic)
+                            && !(mode == CopyMode::Tree && fault == AsyncMemoryFault::AtomicTreeCopyNonAtomic)
+                        {
                             AchievedAtomicity::Atomic
                         } else {
                             AchievedAtomicity::NonAtomic
                         },
                     )
                     .with_durable(
-                        durable && !(mode == CopyMode::File && fault == AsyncMemoryFault::DurableFileCopyNonDurable),
+                        durable
+                            && !(mode == CopyMode::File && fault == AsyncMemoryFault::DurableFileCopyNonDurable)
+                            && !(mode == CopyMode::Tree && fault == AsyncMemoryFault::DurableTreeCopyNonDurable),
                     ),
                 ))
             });
@@ -1695,11 +2091,17 @@ impl AsyncOutput for AsyncMemoryWriter {
         count: usize,
     ) -> Poll<IoResult<usize>> {
         let this = self.get_mut();
+        if this.fault == AsyncMemoryFault::CopyWriteFails {
+            return Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "copy write failed",
+            )));
+        }
         if this
             .write_gate
             .lock()
             .expect("write gate lock")
-            .poll_stage(AsyncWriteCancellationStage::Write, context)
+            .poll(AsyncWriteCancellationStage::Write, context)
             .is_pending()
         {
             return Poll::Pending;
@@ -1717,6 +2119,7 @@ impl AsyncOutput for AsyncMemoryWriter {
         }
         {
             this.bytes.extend_from_slice(&input[index..index + count]);
+            this.write_gate.lock().expect("write gate lock").accepted += count as u64;
             Poll::Ready(Ok(count))
         }
     }
@@ -1725,7 +2128,7 @@ impl AsyncOutput for AsyncMemoryWriter {
         self.write_gate
             .lock()
             .expect("write gate lock")
-            .poll_stage(AsyncWriteCancellationStage::Flush, context)
+            .poll(AsyncWriteCancellationStage::Flush, context)
             .map(Ok)
     }
 }
@@ -1754,14 +2157,30 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                 write_gate
                     .lock()
                     .expect("write gate lock")
-                    .poll_stage(AsyncWriteCancellationStage::Commit, context)
+                    .poll(AsyncWriteCancellationStage::Commit, context)
             })
             .await;
             let destination_exists = state
                 .lock()
                 .expect("async memory state lock must succeed")
                 .contains_key(path.as_str());
-            if disposition == WriteDisposition::CreateNew && destination_exists {
+            if (fault == AsyncMemoryFault::BasicCommitFails && path.as_str().ends_with("write-create"))
+                || (fault == AsyncMemoryFault::OwningCommitFails && path.as_str().ends_with("owning-write"))
+                || (fault == AsyncMemoryFault::ReplaceCommitFails && path.as_str().ends_with("write-replace"))
+            {
+                return Err(WriteFailure::new(
+                    FsError::new(
+                        FsErrorKind::PermissionDenied,
+                        FsOperation::CommitWriter,
+                        "basic commit failed",
+                    ),
+                    WriteFailureState::RetryableNotPublished,
+                ));
+            }
+            if disposition == WriteDisposition::CreateNew
+                && destination_exists
+                && fault != AsyncMemoryFault::CreateNewOverwrites
+            {
                 return Err(WriteFailure::new(
                     FsError::new(
                         FsErrorKind::AlreadyExists,
@@ -1800,10 +2219,20 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                 && !(fault == AsyncMemoryFault::AtomicReplaceKeepsOldBytes
                     && atomicity == AtomicityRequirement::Required
                     && destination_exists)
-                && !(fault == AsyncMemoryFault::CopyDropsTarget && path.as_str().contains("async-copy-positive-target"))
+                && !(fault == AsyncMemoryFault::CopyDropsTarget
+                    && path.as_str().contains("copy-basic-")
+                    && path.as_str().ends_with("copy-target"))
             {
                 let mut state = state.lock().expect("async memory state lock must succeed");
-                let bytes = if disposition == WriteDisposition::Append && fault != AsyncMemoryFault::AppendOverwrites {
+                let bytes = if disposition == WriteDisposition::CreateOrReplace
+                    && fault == AsyncMemoryFault::ReplaceKeepsSuffix
+                {
+                    let mut combined = bytes.clone();
+                    if let Some(Entry::File(existing)) = state.get(path.as_str()) {
+                        combined.extend_from_slice(existing.get(bytes.len()..).unwrap_or_default());
+                    }
+                    combined
+                } else if disposition == WriteDisposition::Append && fault != AsyncMemoryFault::AppendOverwrites {
                     let mut combined = match state.get(path.as_str()) {
                         Some(Entry::File(existing)) => existing.clone(),
                         Some(Entry::Directory | Entry::Symlink) | None => Vec::new(),
@@ -1833,8 +2262,47 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
     }
 
     fn abort_async<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, FsResult<WriteAbortOutcome>> {
-        let _ = self;
-        Box::pin(async { Ok(WriteAbortOutcome::NotPublished) })
+        let this = self.get_mut();
+        Box::pin(async move {
+            if this.fault == AsyncMemoryFault::RecoveryAbortFailsOnce
+                && (this.copy_gate.lock().expect("copy gate lock").ever_reached
+                    || !this.write_gate.lock().expect("write gate lock").observed.is_empty())
+            {
+                this.fault = AsyncMemoryFault::None;
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::AbortWriter,
+                    "recovery abort failed once",
+                ));
+            }
+            if this.path.as_str().contains("write-aborted") {
+                if this.fault == AsyncMemoryFault::AbortFailsOnce {
+                    this.fault = AsyncMemoryFault::None;
+                    return Err(FsError::new(
+                        FsErrorKind::PermissionDenied,
+                        FsOperation::AbortWriter,
+                        "abort failed once",
+                    ));
+                }
+                if this.fault == AsyncMemoryFault::AbortLies {
+                    this.state
+                        .lock()
+                        .expect("async memory state lock")
+                        .insert(this.path.as_str().to_owned(), Entry::File(this.bytes.clone()));
+                }
+            }
+            if (this.fault == AsyncMemoryFault::CopyAbortPublishes
+                && this.copy_gate.lock().expect("copy gate lock").ever_reached)
+                || (this.fault == AsyncMemoryFault::WriteAbortPublishes
+                    && !this.write_gate.lock().expect("write gate lock").observed.is_empty())
+            {
+                this.state
+                    .lock()
+                    .expect("async memory state lock")
+                    .insert(this.path.as_str().to_owned(), Entry::File(this.bytes.clone()));
+            }
+            Ok(WriteAbortOutcome::NotPublished)
+        })
     }
 
     fn cancel_on_drop(self: Pin<&mut Self>) {

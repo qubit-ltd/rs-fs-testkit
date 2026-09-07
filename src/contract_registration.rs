@@ -8,31 +8,20 @@
 /// Registers one independently named synchronous test for every contract phase.
 ///
 /// The fixture factory is evaluated separately by each generated test.
+/// Every generated test requires a satisfied run, including cleanup evidence.
 #[macro_export]
 macro_rules! register_file_system_contract_tests {
     (module: $module:ident, fixture: $fixture:expr $(,)?) => {
-        $crate::register_file_system_contract_tests! {
-            module: $module,
-            fixture: $fixture,
-            require_complete: false,
-        }
-    };
-    (
-        module: $module:ident,
-        fixture: $fixture:expr,
-        require_complete: $require_complete:expr $(,)?
-    ) => {
         mod $module {
             macro_rules! contract_test {
                 ($name:ident, $contract:ident) => {
                     #[cfg_attr(test, test)]
                     fn $name() {
                         let fixture = ($fixture)();
-                        let report = $crate::FileSystemContractSuite::new(&fixture)
-                            .assert_contract_with_report($crate::FileSystemContract::$contract);
-                        if $require_complete {
-                            report.assert_complete();
-                        }
+                        let mut suite = $crate::FileSystemContractSuite::new(&fixture);
+                        suite
+                            .run_contract($crate::FileSystemContract::$contract)
+                            .assert_satisfied();
                     }
                 };
             }
@@ -47,12 +36,6 @@ macro_rules! register_file_system_contract_tests {
             contract_test!(delete, Delete);
             contract_test!(copy, Copy);
             contract_test!(rename, Rename);
-            contract_test!(append, Append);
-            contract_test!(recursive_delete, RecursiveDelete);
-            contract_test!(atomic_rename, AtomicRename);
-            contract_test!(durable_rename, DurableRename);
-            contract_test!(atomic_replace, AtomicReplace);
-            contract_test!(durable_copy, DurableFileCopy);
             contract_test!(temp_resources, TempResources);
             contract_test!(error_context, ErrorContext);
         }
@@ -71,19 +54,6 @@ macro_rules! register_async_file_system_contract_tests {
         fixture: $fixture:expr,
         runner: $runner:expr $(,)?
     ) => {
-        $crate::register_async_file_system_contract_tests! {
-            module: $module,
-            fixture: $fixture,
-            runner: $runner,
-            require_complete: false,
-        }
-    };
-    (
-        module: $module:ident,
-        fixture: $fixture:expr,
-        runner: $runner:expr,
-        require_complete: $require_complete:expr $(,)?
-    ) => {
         mod $module {
             macro_rules! contract_test {
                 ($name:ident, $contract:ident) => {
@@ -91,12 +61,11 @@ macro_rules! register_async_file_system_contract_tests {
                     fn $name() {
                         let fixture = ($fixture)();
                         ($runner)(async move {
-                            let report = $crate::AsyncFileSystemContractSuite::new(&fixture)
-                                .assert_contract_with_report($crate::FileSystemContract::$contract)
-                                .await;
-                            if $require_complete {
-                                report.assert_complete();
-                            }
+                            let mut suite = $crate::AsyncFileSystemContractSuite::new(&fixture);
+                            suite
+                                .run_contract($crate::FileSystemContract::$contract)
+                                .await
+                                .assert_satisfied();
                         });
                     }
                 };
@@ -112,12 +81,6 @@ macro_rules! register_async_file_system_contract_tests {
             contract_test!(delete, Delete);
             contract_test!(copy, Copy);
             contract_test!(rename, Rename);
-            contract_test!(append, Append);
-            contract_test!(recursive_delete, RecursiveDelete);
-            contract_test!(atomic_rename, AtomicRename);
-            contract_test!(durable_rename, DurableRename);
-            contract_test!(atomic_replace, AtomicReplace);
-            contract_test!(durable_copy, DurableFileCopy);
             contract_test!(temp_resources, TempResources);
             contract_test!(error_context, ErrorContext);
         }

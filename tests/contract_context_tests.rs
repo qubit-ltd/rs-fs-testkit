@@ -7,18 +7,24 @@
 // =============================================================================
 
 mod common;
-
-use common::MemoryFixture;
+use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 
+use self::common::MemoryFixture;
 /// Repeated phases use distinct context names and cleanup all recorded paths.
 #[test]
 fn test_contract_context_tracks_unique_names_and_cleanup() {
     let fixture = MemoryFixture::new();
     let mut suite = FileSystemContractSuite::new(&fixture);
-    suite.assert_write();
-    suite.assert_write();
-    assert_eq!(fixture.entry_count(), 6);
+    let first = suite.run_contract(FileSystemContract::Write);
+    assert!(
+        first.requirements_satisfied(),
+        "write run should clean its resources automatically"
+    );
+    assert!(fixture.is_empty(), "completed runs must drain tracked resources");
+    let run = suite.run_contract(FileSystemContract::Write);
+    assert!(!run.requirements_satisfied(), "a second run must be rejected");
+    assert!(fixture.is_empty(), "a rejected second run must not execute writes");
 
     suite.finish();
     assert!(

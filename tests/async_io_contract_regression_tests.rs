@@ -2,22 +2,19 @@
 #![cfg(feature = "async")]
 
 mod common;
-#[path = "common/panic_support.rs"]
-mod panic_support;
-
 use std::task::Poll;
 
-use common::AsyncMemoryFault;
-use common::AsyncMemoryFixture;
-use common::async_memory_file_system::run_controlled;
 use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncWriteCancellationStage;
 use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContract;
-use qubit_fs_testkit::FixtureCase;
 
+use self::common::AsyncMemoryFault;
+use self::common::AsyncMemoryFixture;
+use self::common::async_memory_file_system::run_controlled;
+use crate::common::UnavailableScenario;
 #[test]
 fn controlled_runner_accepts_real_pending_then_completion() {
     let mut first = true;
@@ -52,7 +49,12 @@ fn controlled_runner_does_not_treat_first_pending_as_completion() {
 fn async_limits_allow_single_byte_write() {
     let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1));
     let fixture = AsyncMemoryFixture::with_limits(limits);
-    run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write));
+    run_controlled(async {
+        AsyncFileSystemContractSuite::new(&fixture)
+            .run_contract(FileSystemContract::Write)
+            .await
+            .assert_satisfied()
+    });
 }
 
 #[test]
@@ -66,10 +68,14 @@ fn async_write_limit_small_boundaries_are_reported() {
         FileSystemLimit::Maximum(u64::MAX),
     ] {
         let fixture = AsyncMemoryFixture::with_limits(FileSystemLimits::unknown().with_max_write_bytes(limit));
-        let report = run_controlled(
-            AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Write),
-        );
-        report.assert_complete();
+        let report = run_controlled(async {
+            AsyncFileSystemContractSuite::new(&fixture)
+                .run_contract(FileSystemContract::Write)
+                .await
+                .report()
+                .clone()
+        });
+        report.assert_satisfied();
     }
 }
 
@@ -79,31 +85,44 @@ fn async_property_limit_boundaries_are_reported() {
         .with_max_component_text_bytes(FileSystemLimit::Maximum(4))
         .with_max_list_page_entries(FileSystemLimit::Maximum(2));
     let fixture = AsyncMemoryFixture::with_limits(limits);
-    let report = run_controlled(
-        AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Properties),
-    );
-    report.assert_complete();
+    let report = run_controlled(async {
+        AsyncFileSystemContractSuite::new(&fixture)
+            .run_contract(FileSystemContract::Properties)
+            .await
+            .report()
+            .clone()
+    });
+    report.assert_satisfied();
 }
 
 #[test]
 fn conditional_case_unavailability_is_reported_as_unverified() {
-    let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(FixtureCase::ReadIfMatch);
-    let report = run_controlled(
-        AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Read),
-    );
+    let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(UnavailableScenario::ReadIfMatch);
+    let report = run_controlled(async {
+        AsyncFileSystemContractSuite::new(&fixture)
+            .run_contract(FileSystemContract::Read)
+            .await
+            .report()
+            .clone()
+    });
     assert!(report.checks().iter().any(|check| {
-        check.id() == "read/if-match-current" && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
+        check.id().as_str() == "read/if-match-current"
+            && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
     }));
 }
 
 #[test]
 fn async_conditional_delete_case_unavailability_is_unverified() {
-    let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(FixtureCase::DeleteIfMatch);
-    let report = run_controlled(
-        AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Delete),
-    );
+    let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(UnavailableScenario::DeleteIfMatch);
+    let report = run_controlled(async {
+        AsyncFileSystemContractSuite::new(&fixture)
+            .run_contract(FileSystemContract::Delete)
+            .await
+            .report()
+            .clone()
+    });
     assert!(report.checks().iter().any(|check| {
-        check.id() == "delete/if-match" && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
+        check.id().as_str() == "delete/if-match" && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
     }));
 }
 
@@ -119,107 +138,36 @@ fn async_fault_profiles_are_exercised_by_the_real_suite() {
     ] {
         let fixture = AsyncMemoryFixture::with_fault(fault);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_all());
+            run_controlled(async {
+                AsyncFileSystemContractSuite::new(&fixture)
+                    .run_all()
+                    .await
+                    .assert_satisfied()
+            });
         }));
         assert!(result.is_err(), "fault was not caught by async suite: {fault:?}");
     }
 }
 
+/// A deliberately invalid request must be observed by the real facade call;
+/// recording RejectedAsExpected without issuing it cannot pass this regression.
 #[test]
-fn write_cancellation_requires_real_stage_evidence() {
-    let fixture = AsyncMemoryFixture::without_cancellation_cases();
-    let report = run_controlled(
-        AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Write),
-    );
-    for id in [
-        "write/cancel-open",
-        "write/cancel-write",
-        "write/cancel-flush",
-        "write/cancel-commit",
-    ] {
-        assert!(
-            report
-                .checks()
-                .iter()
-                .any(|check| check.id() == id && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })),
-            "missing unverified check: {id}"
-        );
-    }
-    assert!(!report.is_complete());
-}
-
-#[test]
-fn write_cancellation_observes_all_four_provider_stages() {
-    let fixture = AsyncMemoryFixture::new();
-    let report = run_controlled(
-        AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Write),
-    );
-    for id in [
-        "write/owning-operation",
-        "write/repeated-execute",
-        "write/cancel-open",
-        "write/cancel-write",
-        "write/cancel-flush",
-        "write/cancel-commit",
-    ] {
-        assert!(
-            report
-                .checks()
-                .iter()
-                .any(|check| check.id() == id && check.outcome() == &ContractCheckOutcome::Passed),
-            "missing evidence: {id}"
-        );
-    }
-    report.assert_complete();
-    assert_eq!(
-        vec![
-            AsyncWriteCancellationStage::Open,
-            AsyncWriteCancellationStage::Write,
-            AsyncWriteCancellationStage::Flush,
-            AsyncWriteCancellationStage::Commit
-        ],
-        fixture.prepared_write_stages()
-    );
-    assert!(fixture.is_empty());
-}
-
-#[test]
-fn one_missing_write_stage_prevents_strict_completion() {
-    let fixture = AsyncMemoryFixture::without_write_stage(AsyncWriteCancellationStage::Flush);
-    let report = run_controlled(
-        AsyncFileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Write),
-    );
-    let missing: Vec<_> = report
-        .checks()
-        .iter()
-        .filter(|check| matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }))
-        .map(|check| check.id())
-        .collect();
-    assert_eq!(vec!["write/cancel-flush"], missing);
-    assert!(std::panic::catch_unwind(|| report.assert_complete()).is_err());
-    assert_eq!(3, fixture.prepared_write_stages().len());
-    assert!(fixture.is_empty());
-}
-
-/// Assertion and disarm failures remain diagnosable after fixture cleanup.
-#[test]
-fn write_probe_failure_disarms_and_preserves_both_diagnostics() {
-    for fail_disarm in [false, true] {
-        let fixture = AsyncMemoryFixture::with_write_probe_failures(fail_disarm);
-        let message = panic_support::catch_message(std::panic::AssertUnwindSafe(|| {
-            run_controlled(AsyncFileSystemContractSuite::new(&fixture).assert_contract(FileSystemContract::Write));
+fn async_negative_write_guarantees_issue_real_requests() {
+    let fixture = AsyncMemoryFixture::without_optional_capabilities();
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        suite.run_contract(FileSystemContract::Write).await.assert_satisfied();
+    });
+    for suffix in ["async-atomic-replace-unavailable", "async-durable-write"] {
+        let fixture = AsyncMemoryFixture::without_optional_capabilities().with_invalid_probe_path(suffix);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                suite.run_contract(FileSystemContract::Write).await.assert_satisfied();
+            })
         }));
-        assert!(
-            message.contains("injected write acknowledgement failure"),
-            "primary diagnostic lost: {message}"
-        );
-        if fail_disarm {
-            assert!(
-                message.contains("injected write disarm failure"),
-                "disarm diagnostic lost: {message}"
-            );
-        }
-        assert!(!fixture.write_gate_is_armed());
-        assert!(fixture.is_empty());
+        assert!(result.is_err(), "{suffix}: the incompatible request was never checked");
+        use qubit_fs_testkit::AsyncFileSystemFixture;
+        run_controlled(fixture.teardown()).expect("independent teardown");
     }
 }
