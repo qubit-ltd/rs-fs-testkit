@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-fs"
-version = "0.5.0"
+version = "0.4.0"
 dependencies = [
  "fluent-uri",
  "qubit-budget",
@@ -66,7 +66,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-redact"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "fluent-uri",
  "qubit-budget",

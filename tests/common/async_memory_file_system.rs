@@ -154,11 +154,11 @@ use qubit_io::AsyncInput;
 use qubit_io::AsyncOutput;
 
 use super::MemoryFixture;
-use super::async_write_gate::AsyncMemoryWriteCancellationProbe;
-use super::async_write_gate::WriteGate;
+use super::async_memory_write_cancellation_probe::AsyncMemoryWriteCancellationProbe;
 use super::memory_file_system::listed_entries;
 use super::memory_file_system::provider_properties;
 use super::shared_model::Entry;
+use super::write_gate::WriteGate;
 use crate::common::UnavailableScenario;
 
 #[cfg(feature = "async")]
@@ -194,13 +194,6 @@ pub(crate) fn run_controlled<T>(future: impl Future<Output = T>) -> T {
     }
     panic!("controlled future exceeded the poll budget");
 }
-
-use qubit_fs_testkit::AsyncWriteCancellationStage;
-use qubit_fs_testkit::AsyncWriteFixtureCase;
-use qubit_fs_testkit::WriteCancellationProbe;
-
-use super::async_memory_write_cancellation_probe::AsyncMemoryWriteCancellationProbe;
-use super::write_gate::WriteGate;
 
 /// Async fixture whose copy pipeline exposes one real pending point per stage.
 #[cfg(feature = "async")]

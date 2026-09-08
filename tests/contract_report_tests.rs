@@ -7,6 +7,7 @@
 mod common;
 use std::panic::AssertUnwindSafe;
 
+use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 
 use self::common::MemoryFixture;
@@ -32,8 +33,11 @@ fn test_empty_report_strict_check_panics() {
 #[test]
 fn test_sync_write_catalog_excludes_async_checks() {
     let fixture = MemoryFixture::new();
-    let report = FileSystemContractSuite::new(&fixture).assert_contract_with_report(FileSystemContract::Write);
-    report.assert_complete();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_contract(FileSystemContract::Write);
+    run.assert_satisfied();
+    let report = run.report();
+    report.assert_satisfied();
     for id in [
         "write/owning-operation",
         "write/repeated-execute",
@@ -43,7 +47,7 @@ fn test_sync_write_catalog_excludes_async_checks() {
         "write/cancel-commit",
     ] {
         assert!(
-            !report.checks().iter().any(|check| check.id() == id),
+            !report.checks().iter().any(|check| check.id().as_str() == id),
             "sync catalog included {id}"
         );
     }
