@@ -227,16 +227,18 @@ pub(crate) const fn specification(id: ContractCheckId) -> CheckSpec {
             asynchronous_only: false,
             optional: false,
         },
-        ContractCheckId::ListLiteralPrefix => CheckSpec {
-            id,
-            copy_scenario: None,
-            write_scenario: None,
-            read_scenario: None,
-            contract: FileSystemContract::List,
-            capability: Some(FileSystemCapability::List),
-            asynchronous_only: false,
-            optional: false,
-        },
+        ContractCheckId::ListLiteralPrefix | ContractCheckId::ListNamespace | ContractCheckId::ListRawRootPrefix => {
+            CheckSpec {
+                id,
+                copy_scenario: None,
+                write_scenario: None,
+                read_scenario: None,
+                contract: FileSystemContract::List,
+                capability: Some(FileSystemCapability::List),
+                asynchronous_only: false,
+                optional: false,
+            }
+        }
         ContractCheckId::ListPagination => CheckSpec {
             id,
             copy_scenario: None,
@@ -748,13 +750,6 @@ pub(crate) fn for_contract(contract: FileSystemContract, asynchronous: bool) -> 
         .map(specification)
         .filter(|check| check.contract == contract && (asynchronous || !check.asynchronous_only))
         .collect()
-}
-
-/// Returns asynchronous checks without adding runtime requirements to sync
-/// suites.
-#[cfg(feature = "async")]
-pub(crate) fn for_async_contract(contract: FileSystemContract) -> Vec<CheckSpec> {
-    for_contract(contract, true)
 }
 
 #[cfg(test)]

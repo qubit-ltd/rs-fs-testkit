@@ -594,6 +594,17 @@ impl MemoryFixture {
 }
 
 impl FileSystemFixture for MemoryFixture {
+    /// Reads the entire isolated model without calling the facade.
+    fn snapshot_namespace_paths(&self) -> FixtureResult<FixtureSupport<Vec<Path>>> {
+        let state = self.state.lock().expect("memory state lock");
+        let paths = state
+            .entries
+            .keys()
+            .map(|key| Path::parse(key).map_err(|error| FixtureError::with_source("invalid stored path", error)))
+            .collect::<FixtureResult<Vec<_>>>()?;
+        Ok(FixtureSupport::Supported(paths))
+    }
+
     fn prepare_read(
         &self,
         scenario: testkit::ReadScenario,
@@ -1178,7 +1189,7 @@ impl FileSystemSpi for MemorySpi {
         } else {
             listed_entries(
                 &state.entries,
-                request.path(),
+                request.scope().path().expect("hierarchical fixture scope"),
                 request.options().options(),
                 state.fault != MemoryFault::ListDropsMetadata,
             )

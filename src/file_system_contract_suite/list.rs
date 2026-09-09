@@ -7,6 +7,7 @@
 
 use qubit_fs::directory::ListFilter;
 use qubit_fs::directory::ListOptions;
+use qubit_fs::directory::ListScope;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
@@ -28,6 +29,8 @@ impl FileSystemContractSuite<'_> {
             ContractCheckId::ListPrefix,
             ContractCheckId::ListPagination,
             ContractCheckId::ListLiteralPrefix,
+            ContractCheckId::ListNamespace,
+            ContractCheckId::ListRawRootPrefix,
         ] {
             self.check_list_item(id)?;
         }
@@ -37,6 +40,9 @@ impl FileSystemContractSuite<'_> {
     /// Fixes expected entries from fixture preparation before reading the
     /// stream.
     pub(super) fn check_list_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+        if matches!(id, ContractCheckId::ListNamespace | ContractCheckId::ListRawRootPrefix) {
+            return self.check_flat_scope_item(id);
+        }
         if !matches!(
             id,
             ContractCheckId::ListBasic
@@ -73,7 +79,7 @@ impl FileSystemContractSuite<'_> {
             || (!hierarchical && id == ContractCheckId::ListPrefix);
         let capability = FileSystemCapability::List;
         if incompatible || !self.capable(capability) {
-            let error = match self.fixture.file_system().list(&root, options) {
+            let error = match self.fixture.file_system().list(&ListScope::Path(root.clone()), options) {
                 Err(error) => error,
                 Ok(_) => return Err(ContractFailure::message_only("unsupported list request succeeded").at(id)),
             };
@@ -158,7 +164,7 @@ impl FileSystemContractSuite<'_> {
         let mut stream = self
             .fixture
             .file_system()
-            .list(&root, options)
+            .list(&ListScope::Path(root.clone()), options)
             .map_err(|error| ContractFailure::with_source("list request failed", error).at(id))?;
         let mut actual = Vec::new();
         while let Some(entry) = stream

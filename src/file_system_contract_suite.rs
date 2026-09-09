@@ -64,6 +64,7 @@ mod delete_tree;
 mod rename;
 // Implements independent hierarchy and object listing.
 mod list;
+mod namespace;
 // Implements copy contracts.
 mod basic_copy;
 mod copy;
