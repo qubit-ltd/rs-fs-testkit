@@ -22,11 +22,8 @@ impl S3ContractConfig {
         let access_key_id = required("RS_FS_S3_ACCESS_KEY_ID")?;
         let secret_access_key = required("RS_FS_S3_SECRET_ACCESS_KEY")?;
         let prefix = required("RS_FS_S3_PREFIX")?;
-        if prefix.is_empty()
-            || prefix == "/"
-            || prefix.split('/').any(|part| part == "." || part == "..")
-        {
-            return Err("RS_FS_S3_PREFIX must be non-empty and contain no dot segments".into());
+        if crate::path_mapper::validate_key(&prefix).is_err() {
+            return Err("RS_FS_S3_PREFIX must be a non-empty, exactly representable relative key".into());
         }
         let allow_http = env::var("RS_FS_S3_ALLOW_HTTP").ok().as_deref() == Some("true");
         if endpoint.starts_with("http://") && !allow_http {
