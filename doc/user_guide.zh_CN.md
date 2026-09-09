@@ -4,7 +4,7 @@
 
 ## 手册目标与读者
 
-本手册面向同步或异步 `qubit-fs` provider 作者，覆盖当前 `qubit-fs-testkit` 0.4 契约套件。
+本手册面向同步或异步 `qubit-fs` provider 作者，覆盖当前 `qubit-fs-testkit` 0.5 契约套件。
 它是测试支持，因此应作为 provider 的开发依赖使用。
 
 ## 概念模型
@@ -213,7 +213,7 @@ S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create
 
 ## 异步整文件写入恢复（0.3）
 
-`qubit-fs` 0.4 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
+`qubit-fs` 0.5 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
 `write/owning-operation`、`write/repeated-execute`，并真实调用 Open、Write、Flush、Commit
 四阶段的 `prepare_write_cancellation`。`WriteCancellationProbe::poll_reached` 应确认
 提供者已经在指定阶段 Pending，等待时按需唤醒调用方；`disarm` 只释放 gate，不启动文件系统
@@ -226,3 +226,20 @@ I/O。suite 仅取消执行 future，保留 operation，检查确认进度，再
 
 内存 fixture 自测记录四阶段探针调用，并故意遗漏一个阶段检查严格完整性。gate 使用确定性
 poll，不依赖 sleep。已有 copy 取消探针继续采用其独立的检查标识和适用规则。
+
+## 文件系统契约更新
+
+List 契约新增可独立执行的 `list/namespace` 和 `list/raw-root-prefix` 检查。
+平面命名空间夹具通过 SDK 或独立模型实现 `snapshot_namespace_paths`，快照必须包含
+本次检查之前已经存在的键。缺少该观察能力时，完整性标记为 **Unverified**。
+原始前缀检查区分 `folder`、`folder/a`、`folderish` 与无关键；字面过滤器在非空根范围下验证。
+
+在包含 `rs-fs`、`rs-fs-local`、`rs-fs-registry`、`rs-fs-testkit` 和 `rs-mime`
+的同级检出目录中，可运行下面的生态验证命令。默认 tests 阶段检查各 feature 组合；
+`--phase ci` 串行运行各仓库现有 CI。脚本拒绝混用不同来源的核心类型或验证时改变锁文件。
+真实 S3 服务测试需要显式启用，被忽略时不会计为通过。
+
+```bash
+python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests
+python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase ci
+```

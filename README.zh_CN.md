@@ -71,6 +71,13 @@ capability。
 - [API 文档](https://docs.rs/qubit-fs-testkit)
 - [English README](README.md)
 
+## 文件系统契约更新
+
+List 契约新增可独立执行的 `list/namespace` 和 `list/raw-root-prefix` 检查。
+平面命名空间夹具通过 SDK 或独立模型实现 `snapshot_namespace_paths`，快照必须包含
+本次检查之前已经存在的键。缺少该观察能力时，完整性标记为 **Unverified**。
+原始前缀检查区分 `folder`、`folder/a`、`folderish` 与无关键；字面过滤器在非空根范围下验证。
+
 ## 测试
 
 ```bash
