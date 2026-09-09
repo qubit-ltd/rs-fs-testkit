@@ -72,6 +72,10 @@ pub enum ContractCheckId {
     ListBasic,
     /// Evidence for the `list/literal-prefix` contract.
     ListLiteralPrefix,
+    /// Evidence for the `list/namespace` contract.
+    ListNamespace,
+    /// Evidence for the `list/raw-root-prefix` contract.
+    ListRawRootPrefix,
     /// Evidence for the `list/pagination` contract.
     ListPagination,
     /// Evidence for the `list/prefix` contract.
@@ -191,6 +195,8 @@ impl ContractCheckId {
         Self::ErrorContext,
         Self::ListBasic,
         Self::ListLiteralPrefix,
+        Self::ListNamespace,
+        Self::ListRawRootPrefix,
         Self::ListPagination,
         Self::ListPrefix,
         Self::PropertiesCapabilityDependencies,
@@ -291,6 +297,8 @@ impl ContractCheckId {
             Self::ErrorContext => "error/context",
             Self::ListBasic => "list/basic",
             Self::ListLiteralPrefix => "list/literal-prefix",
+            Self::ListNamespace => "list/namespace",
+            Self::ListRawRootPrefix => "list/raw-root-prefix",
             Self::ListPagination => "list/pagination",
             Self::ListPrefix => "list/prefix",
             Self::PropertiesCapabilityDependencies => "properties/capability-dependencies",

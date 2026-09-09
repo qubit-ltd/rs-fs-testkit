@@ -20,6 +20,15 @@ use crate::FixtureSupport;
 
 /// Supplies an isolated facade and provider-specific contract observations.
 pub trait FileSystemFixture {
+    /// Snapshots every logical path in the isolated configured namespace.
+    ///
+    /// Use the underlying SDK or fixture model, never the facade list method.
+    /// Include resources created by earlier checks, not only the current seed.
+    /// Returns unsupported when independent completeness cannot be established.
+    fn snapshot_namespace_paths(&self) -> FixtureResult<FixtureSupport<Vec<Path>>> {
+        Ok(FixtureSupport::Unsupported)
+    }
+
     /// Independently prepares a copy source and a scenario-specific target.
     ///
     /// File scenarios contain the supplied bytes and use file options, with

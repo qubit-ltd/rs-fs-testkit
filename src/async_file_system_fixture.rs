@@ -35,6 +35,15 @@ pub type FixtureFuture<'a, T> = Pin<Box<dyn Future<Output = FixtureResult<T>> + 
 
 /// Supplies an isolated asynchronous facade and optional provider observations.
 pub trait AsyncFileSystemFixture: Sync {
+    /// Snapshots every logical path in the isolated configured namespace.
+    ///
+    /// Use the underlying SDK or fixture model, never the facade list method.
+    /// Include resources created by earlier checks, not only the current seed.
+    /// Returns unsupported when independent completeness cannot be established.
+    fn snapshot_namespace_paths(&self) -> FixtureFuture<'_, FixtureSupport<Vec<Path>>> {
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
     /// Independently prepares a copy source and a scenario-specific target.
     ///
     /// File scenarios contain the supplied bytes and use file options, with

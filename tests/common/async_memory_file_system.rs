@@ -833,6 +833,18 @@ impl AsyncMemoryFixture {
 
 #[cfg(feature = "async")]
 impl AsyncFileSystemFixture for AsyncMemoryFixture {
+    /// Reads the entire isolated model without calling the facade.
+    fn snapshot_namespace_paths(&self) -> FixtureFuture<'_, FixtureSupport<Vec<Path>>> {
+        Box::pin(async move {
+            let entries = self.entries.lock().expect("async memory state lock");
+            let paths = entries
+                .keys()
+                .map(|key| Path::parse(key).map_err(|error| FixtureError::with_source("invalid stored path", error)))
+                .collect::<FixtureResult<Vec<_>>>()?;
+            Ok(FixtureSupport::Supported(paths))
+        })
+    }
+
     fn prepare_read<'a>(
         &'a self,
         scenario: testkit::ReadScenario,
@@ -1550,7 +1562,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         } else {
             listed_entries(
                 &self.entries.lock().expect("async memory state lock must succeed"),
-                request.path(),
+                request.scope().path().expect("hierarchical fixture scope"),
                 request.options().options(),
                 self.fault != AsyncMemoryFault::ListDropsMetadata,
             )
