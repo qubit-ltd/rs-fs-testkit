@@ -83,6 +83,15 @@ the suite's current coverage.
 - [API documentation](https://docs.rs/qubit-fs-testkit)
 - [中文 README](README.zh_CN.md)
 
+## Filesystem contract update
+
+The List contract includes independently selectable `list/namespace` and
+`list/raw-root-prefix` checks. Flat fixtures implement `snapshot_namespace_paths`
+using their SDK or fixture model, including keys created before the current
+check. Without that observation, namespace completeness is **Unverified**.
+The raw-prefix check distinguishes `folder`, `folder/a`, and `folderish` from
+unrelated keys; literal filters are tested relative to a nonempty root.
+
 ## Testing
 
 ```bash
