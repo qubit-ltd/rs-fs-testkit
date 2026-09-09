@@ -5,7 +5,7 @@
 ## Purpose and Audience
 
 This guide is for authors of synchronous or asynchronous `qubit-fs` providers.
-It covers the current `qubit-fs-testkit` 0.4 contract suites, which are test
+It covers the current `qubit-fs-testkit` 0.5 contract suites, which are test
 support and therefore belong in provider development dependencies.
 
 ## Conceptual Model
@@ -282,7 +282,7 @@ mapping or hooks are surfaced as `FixtureError`/`FixtureResult` failures.
 
 ## Whole-file asynchronous write recovery (0.3)
 
-`qubit-fs` 0.4 requires owned payloads for `begin_write_all`. The async Write
+`qubit-fs` 0.5 requires owned payloads for `begin_write_all`. The async Write
 phase checks `write/owning-operation` and `write/repeated-execute`, and actually
 calls `prepare_write_cancellation` for Open, Write, Flush and Commit.
 Implement `WriteCancellationProbe::poll_reached` to acknowledge that the selected
@@ -302,3 +302,24 @@ The memory fixture self-tests count all four probe preparations and deliberately
 omit one stage to verify strict completeness. These gates use deterministic
 polling, not elapsed-time sleeps. Existing copy cancellation hooks have their
 own check identifiers and applicability rules.
+
+## Filesystem contract update
+
+The List contract includes independently selectable `list/namespace` and
+`list/raw-root-prefix` checks. Flat fixtures implement `snapshot_namespace_paths`
+using their SDK or fixture model, including keys created before the current
+check. Without that observation, namespace completeness is **Unverified**.
+The raw-prefix check distinguishes `folder`, `folder/a`, and `folderish` from
+unrelated keys; literal filters are tested relative to a nonempty root.
+
+For a sibling checkout of `rs-fs`, `rs-fs-local`, `rs-fs-registry`,
+`rs-fs-testkit`, and `rs-mime`, use the ecosystem command below. The default
+`tests` phase exercises explicit feature combinations; `--phase ci` runs each
+repository's existing CI serially. The script rejects mixed core sources and
+changed lockfiles. Real S3 service tests remain opt-in and are not counted as
+passing when ignored.
+
+```bash
+python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests
+python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase ci
+```

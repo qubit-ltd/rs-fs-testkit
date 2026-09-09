@@ -1,5 +1,7 @@
 # Rust
 /target/
+/fixtures/s3-contract/target/
+__pycache__/
 **/*.rs.bk
 *.pdb
 

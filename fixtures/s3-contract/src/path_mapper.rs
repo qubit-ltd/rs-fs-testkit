@@ -8,7 +8,7 @@ use qubit_fs::path::PathSemantics;
 use crate::config::S3ContractConfig;
 
 pub fn map(config: &S3ContractConfig, path: &Path) -> FsResult<String> {
-    let prefix = config.prefix.trim_end_matches('/');
+    let prefix = config.prefix.as_str();
     if prefix.is_empty() || prefix.starts_with('/') || validate_key(prefix).is_err() {
         return Err(FsError::new(
             FsErrorKind::InvalidPath,
@@ -32,10 +32,28 @@ pub fn map(config: &S3ContractConfig, path: &Path) -> FsResult<String> {
     Ok(format!("{prefix}/{}", path.as_str()))
 }
 
+/// Rejects resource keys whose SDK representation would change their identity.
 pub fn validate_key(key: &str) -> Result<(), &'static str> {
-    if key.is_empty() || key.split('/').any(|p| p == "." || p == "..") {
-        Err("invalid object key")
-    } else {
-        Ok(())
+    if key.is_empty() || key.contains('\0') {
+        return Err("invalid object key");
     }
+    let parsed = object_store::path::Path::parse(key).map_err(|_| "invalid object key")?;
+    if parsed.as_ref() != key {
+        return Err("object key is not preserved by the SDK");
+    }
+    Ok(())
+}
+
+/// Validates the configured namespace independently of a caller's query prefix.
+pub(crate) fn configured_prefix(config: &S3ContractConfig) -> FsResult<object_store::path::Path> {
+    validate_key(&config.prefix)
+        .map_err(|message| FsError::new(FsErrorKind::InvalidOptions, FsOperation::Provider, message))?;
+    object_store::path::Path::parse(&config.prefix).map_err(|error| {
+        FsError::with_source(
+            FsErrorKind::InvalidOptions,
+            FsOperation::Provider,
+            "invalid configured prefix",
+            error,
+        )
+    })
 }
