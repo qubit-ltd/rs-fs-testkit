@@ -7,6 +7,7 @@
 
 use qubit_fs::directory::ListFilter;
 use qubit_fs::directory::ListOptions;
+use qubit_fs::directory::ListScope;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
@@ -28,6 +29,8 @@ impl AsyncFileSystemContractSuite<'_> {
             ContractCheckId::ListPrefix,
             ContractCheckId::ListPagination,
             ContractCheckId::ListLiteralPrefix,
+            ContractCheckId::ListNamespace,
+            ContractCheckId::ListRawRootPrefix,
         ] {
             self.check_list_item(id).await?;
         }
@@ -37,6 +40,9 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Fixes expected entries from fixture preparation before reading the
     /// stream.
     pub(super) async fn check_list_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+        if matches!(id, ContractCheckId::ListNamespace | ContractCheckId::ListRawRootPrefix) {
+            return self.check_flat_scope_item(id).await;
+        }
         if !matches!(
             id,
             ContractCheckId::ListBasic
@@ -73,7 +79,12 @@ impl AsyncFileSystemContractSuite<'_> {
             || (!hierarchical && id == ContractCheckId::ListPrefix);
         let capability = FileSystemCapability::List;
         if incompatible || !self.capable(capability) {
-            let error = match self.fixture.file_system().list(&root, options).await {
+            let error = match self
+                .fixture
+                .file_system()
+                .list(&ListScope::Path(root.clone()), options)
+                .await
+            {
                 Err(error) => error,
                 Ok(_) => return Err(ContractFailure::message_only("unsupported list request succeeded").at(id)),
             };
@@ -160,7 +171,7 @@ impl AsyncFileSystemContractSuite<'_> {
         let mut stream = self
             .fixture
             .file_system()
-            .list(&root, options)
+            .list(&ListScope::Path(root.clone()), options)
             .await
             .map_err(|error| ContractFailure::with_source("list request failed", error).at(id))?;
         let mut actual = Vec::new();

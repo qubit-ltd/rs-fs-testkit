@@ -43,9 +43,9 @@ impl S3Reader {
         };
         let offset = options.offset().unwrap_or(0);
         if let Some(length) = options.length() {
-            let end = offset.checked_add(length).ok_or_else(|| {
-                FsError::invalid_path(FsOperation::OpenReader, "read range overflows")
-            })?;
+            let end = offset
+                .checked_add(length)
+                .ok_or_else(|| FsError::invalid_path(FsOperation::OpenReader, "read range overflows"))?;
             get.range = Some((offset..end).into());
         } else if offset != 0 {
             get.range = Some((offset..).into());
@@ -68,8 +68,7 @@ impl S3Reader {
             .with_len(Some(result.meta.size as u64))
             .with_etag(result.meta.e_tag.clone().map(Into::into));
         Ok(Self {
-            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path)
-                .with_metadata(metadata),
+            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path).with_metadata(metadata),
             stream: Box::pin(result.into_stream()),
             chunk: Bytes::new(),
             offset: 0,
@@ -107,11 +106,47 @@ impl AsyncInput for S3Reader {
                     self.offset = 0;
                 }
                 Poll::Ready(Some(Err(error))) => {
-                    return Poll::Ready(Err(std::io::Error::other(
-                        error_mapper::map(error, FsOperation::Read).to_string(),
-                    )));
+                    return Poll::Ready(Err(error_mapper::map(error, FsOperation::Read).into_io_error()));
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use super::*;
+
+    /// Stream failures retain their filesystem category and original SDK
+    /// source.
+    #[tokio::test]
+    async fn stream_error_retains_typed_source() {
+        let error = object_store::Error::Precondition {
+            path: "key".into(),
+            source: Box::new(std::io::Error::other("SDK source")),
+        };
+        let mut reader = S3Reader {
+            info: OpenedFileInfo::new(
+                FileSystemId::new("s3-contract").unwrap(),
+                Path::parse_literal("key").unwrap(),
+            ),
+            stream: Box::pin(futures_util::stream::iter([Err(error)])),
+            chunk: Bytes::new(),
+            offset: 0,
+        };
+        let mut output = [0; 1];
+        let error = reader.read_async(&mut output).await.unwrap_err();
+        let error = error.get_ref().unwrap().downcast_ref::<FsError>().unwrap();
+        assert_eq!(error.kind(), FsErrorKind::PreconditionFailed);
+        let mut cause: &dyn Error = error;
+        let mut found_sdk = false;
+        while let Some(source) = cause.source() {
+            found_sdk |= source.is::<object_store::Error>();
+            cause = source;
+        }
+        assert!(found_sdk);
+        assert_eq!(cause.to_string(), "SDK source");
     }
 }

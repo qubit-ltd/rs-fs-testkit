@@ -11,3 +11,4 @@ pub use path_mapper::map;
 pub use path_mapper::validate_key;
 pub use s3_file_system_spi::open;
 pub use s3_file_system_spi::open_in_memory;
+pub use s3_file_system_spi::open_with_store;
