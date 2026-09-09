@@ -7,7 +7,6 @@ use std::task::Poll;
 use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
-use qubit_fs_testkit::AsyncWriteCancellationStage;
 use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContract;
 
