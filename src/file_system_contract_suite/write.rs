@@ -69,7 +69,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 }
                 Err(error) => error,
             };
-            crate::internal::verify_fs_error(
+            crate::internal::verify_open_failure(
                 error,
                 FsErrorKind::UnsupportedCapability,
                 FsOperation::OpenWriter,

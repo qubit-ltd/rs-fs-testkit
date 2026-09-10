@@ -79,7 +79,7 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .file_system()
             .open_writer(&path, case.options().clone())
-            .map_err(|error| ContractFailure::with_source("abort writer opening failed", error))?;
+            .map_err(|error| ContractFailure::with_owned_source("abort writer opening failed", error))?;
         if let Err(error) = Output::write_fully(&mut writer, &bytes) {
             return Err(ContractFailure::with_owned_source(
                 "abort writer rejected bytes",

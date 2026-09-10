@@ -1301,7 +1301,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         relative: &'a str,
     ) -> FixtureFuture<'a, FixtureSupport<Box<dyn WriteCancellationProbe>>> {
         Box::pin(async move {
-            if !self.supports_cancellation_cases {
+            if !self.supports_write_cancellation {
                 return Ok(FixtureSupport::Unsupported);
             }
             let path = self.path(relative)?;

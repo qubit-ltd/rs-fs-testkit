@@ -82,7 +82,7 @@ impl AsyncFileSystemContractSuite<'_> {
             .file_system()
             .open_writer(&path, case.options().clone())
             .await
-            .map_err(|error| ContractFailure::with_source("abort writer opening failed", error))?;
+            .map_err(|error| ContractFailure::with_owned_source("abort writer opening failed", error))?;
         if let Err(error) = writer.write_fully_async(&bytes).await {
             return Err(ContractFailure::with_owned_source(
                 "abort writer rejected bytes",

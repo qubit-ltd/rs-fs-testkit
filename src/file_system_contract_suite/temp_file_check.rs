@@ -7,6 +7,7 @@
 
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
+use qubit_fs::error::OpenFailureStage;
 use qubit_fs::metadata::AchievedAtomicity;
 use qubit_fs::metadata::AtomicityRequirement;
 use qubit_fs::metadata::FileSystemCapability;
@@ -52,11 +53,13 @@ impl FileSystemContractSuite<'_> {
                         .at(id));
                     }
                 };
-            if error.kind() != FsErrorKind::InvalidPath
-                || error.operation() != FsOperation::CreateTemp
-                || error.path() != Some(&incompatible)
+            if error.recovery().is_some()
+                || error.stage() != OpenFailureStage::Preflight
+                || error.error().kind() != FsErrorKind::InvalidPath
+                || error.error().operation() != FsOperation::CreateTemp
+                || error.error().path() != Some(&incompatible)
             {
-                return Err(ContractFailure::with_source("temporary parent validation differs", error).at(id));
+                return Err(ContractFailure::with_owned_source("temporary parent validation differs", error).at(id));
             }
             if self.capable(FileSystemCapability::CreateDirectory) {
                 let relative = self.context.relative_name("temp-file-parent");
@@ -80,15 +83,21 @@ impl FileSystemContractSuite<'_> {
         let mut temporary = match filesystem.create_temp_file(options) {
             Ok(resource) => resource,
             Err(error) if !self.capable(FileSystemCapability::TempFile) => {
-                if error.kind() != FsErrorKind::UnsupportedCapability
-                    || error.operation() != FsOperation::CreateTemp
-                    || error.required_capability() != Some(FileSystemCapability::TempFile)
+                if error.recovery().is_some()
+                    || error.stage() != OpenFailureStage::Preflight
+                    || error.error().kind() != FsErrorKind::UnsupportedCapability
+                    || error.error().operation() != FsOperation::CreateTemp
+                    || error.error().required_capability() != Some(FileSystemCapability::TempFile)
                 {
-                    return Err(ContractFailure::with_source("temporary creation rejection differs", error).at(id));
+                    return Err(
+                        ContractFailure::with_owned_source("temporary creation rejection differs", error).at(id),
+                    );
                 }
                 return Ok(());
             }
-            Err(error) => return Err(ContractFailure::with_source("temporary resource creation failed", error).at(id)),
+            Err(error) => {
+                return Err(ContractFailure::with_owned_source("temporary resource creation failed", error).at(id));
+            }
         };
         let source = temporary.path().clone();
         self.context.record_created(source.clone());
@@ -128,9 +137,9 @@ impl FileSystemContractSuite<'_> {
                 id,
                 "temp/file: cleanup retained source",
             )?;
-            temporary = filesystem
-                .create_temp_file(TempOptions::default())
-                .map_err(|error| ContractFailure::with_source("temporary keep preparation failed", error).at(id))?;
+            temporary = filesystem.create_temp_file(TempOptions::default()).map_err(|error| {
+                ContractFailure::with_owned_source("temporary keep preparation failed", error).at(id)
+            })?;
             self.context.record_created(temporary.path().clone());
         }
         if id != ContractCheckId::TempAtomic {
@@ -206,7 +215,7 @@ impl FileSystemContractSuite<'_> {
                     "kept publication disappeared",
                 )?;
                 let mut cleaned = filesystem.create_temp_file(TempOptions::default()).map_err(|error| {
-                    ContractFailure::with_source("repeated cleanup preparation failed", error).at(id)
+                    ContractFailure::with_owned_source("repeated cleanup preparation failed", error).at(id)
                 })?;
                 let cleaned_source = cleaned.path().clone();
                 self.context.record_created(cleaned_source.clone());
@@ -243,7 +252,7 @@ impl FileSystemContractSuite<'_> {
                 return Ok(());
             }
             temporary = filesystem.create_temp_file(TempOptions::default()).map_err(|error| {
-                ContractFailure::with_source("temporary persistence preparation failed", error).at(id)
+                ContractFailure::with_owned_source("temporary persistence preparation failed", error).at(id)
             })?;
             self.context.record_created(temporary.path().clone());
         }

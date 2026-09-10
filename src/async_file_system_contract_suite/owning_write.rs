@@ -109,11 +109,7 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "unpolled future changed state",
         )?;
-        verify_condition(
-            !operation.has_recovery_writer(),
-            id,
-            "unpolled future acquired a writer",
-        )?;
+        verify_condition(!operation.has_recovery(), id, "unpolled future acquired a writer")?;
         if let Err(error) = operation.execute().await {
             return Err(ContractFailure::with_owned_source(
                 "owning write execution failed",

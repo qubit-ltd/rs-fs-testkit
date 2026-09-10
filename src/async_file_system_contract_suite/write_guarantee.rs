@@ -22,7 +22,7 @@ use crate::FixturePreparation;
 use crate::FixtureSupport;
 use crate::WriteScenario;
 use crate::internal::verify_condition;
-use crate::internal::verify_fs_error;
+use crate::internal::verify_open_failure;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes one strong guarantee check and retains its exact identity.
@@ -58,7 +58,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 Err(error) => error,
                 Ok(_) => return Err(ContractFailure::message_only("unavailable write guarantee succeeded").at(id)),
             };
-            verify_fs_error(
+            verify_open_failure(
                 error,
                 FsErrorKind::RequirementNotMet,
                 FsOperation::OpenWriter,
