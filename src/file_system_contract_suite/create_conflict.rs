@@ -99,6 +99,7 @@ impl FileSystemContractSuite<'_> {
                 failure,
             ));
         }
+        crate::internal::finish_expected_write_failure::finish_expected_write_failure(failure, id)?;
         let observed = self
             .fixture
             .read_file(&path)

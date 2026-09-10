@@ -109,7 +109,7 @@ fn test_write_failure_preserves_owned_recovery_source() {
             let write = error
                 .downcast_ref::<qfs::write::WriteAllFailure>()
                 .expect("typed whole-write failure");
-            assert!(write.writer().is_some(), "recovery writer must be retained");
+            assert!(write.recovery().is_some(), "recovery writer must be retained");
         })
         .expect("source has not been taken");
     let mut original = retained
@@ -118,7 +118,11 @@ fn test_write_failure_preserves_owned_recovery_source() {
         .downcast::<qfs::write::WriteAllFailure>()
         .expect("original type remains intact");
     let outcome = original
-        .writer_mut()
+        .recovery_mut()
+        .map(|recovery| match recovery {
+            qfs::write::WriterRecovery::Opened(writer) => writer,
+            qfs::write::WriterRecovery::Rejected(_) => panic!("validated fixture writer"),
+        })
         .expect("retained recovery writer")
         .abort()
         .expect("explicit recovery");

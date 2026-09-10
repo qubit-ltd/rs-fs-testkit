@@ -18,7 +18,7 @@ use crate::ContractFailure;
 use crate::FixturePreparation;
 use crate::FixtureSupport;
 use crate::internal::verify_condition;
-use crate::internal::verify_fs_error;
+use crate::internal::verify_open_failure;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes one append scenario and attributes preparation or I/O failures.
@@ -45,7 +45,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 Err(error) => error,
                 Ok(_) => return Err(ContractFailure::message_only("unavailable append request succeeded")),
             };
-            verify_fs_error(
+            verify_open_failure(
                 error,
                 FsErrorKind::RequirementNotMet,
                 FsOperation::OpenWriter,

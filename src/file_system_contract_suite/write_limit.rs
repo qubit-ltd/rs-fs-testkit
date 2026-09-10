@@ -93,6 +93,7 @@ impl FileSystemContractSuite<'_> {
                 {
                     return Err(ContractFailure::with_owned_source("write limit rejection differs", failure).at(id));
                 }
+                crate::internal::finish_expected_write_failure::finish_expected_write_failure(failure, id)?;
             } else {
                 let outcome = result.map_err(|error| {
                     ContractFailure::with_owned_source("write boundary request failed", error).at(id)

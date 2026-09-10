@@ -200,6 +200,10 @@ pub enum MemoryFault {
     WriteDropsBytes,
     /// Rejects commit while retaining the acquired writer for recovery.
     WriteCommitFailure,
+    /// Confirms a chosen commit failure after deterministic short writes.
+    WriteCommitState(WriteFailureState),
+    /// Returns a foreign identity while retaining the actual writer session.
+    InvalidWriterIdentity,
     /// Reports deletion success without removing the resource.
     DeleteNoOp,
     /// Reports rename success without moving the resource.
@@ -222,6 +226,8 @@ pub enum MemoryFault {
     ReplaceKeepsSuffix,
     /// Fails the first explicit abort while retaining a recoverable writer.
     AbortFailsOnce,
+    /// Fails explicit cleanup of an expected conditional rejection.
+    ConditionalAbortFailsOnce,
     /// Publishes during explicit abort while claiming the target is unchanged.
     AbortLies,
     /// Reports non-atomic completion for an atomic-required rename.
@@ -318,6 +324,7 @@ impl MemoryFixture {
                 | MemoryFault::IgnoreReadIfMatch
                 | MemoryFault::IgnoreReadIfNoneMatch
                 | MemoryFault::IgnoreWriteIfMatch
+                | MemoryFault::ConditionalAbortFailsOnce
                 | MemoryFault::IgnoreDeleteIfMatch
                 | MemoryFault::ChecksumIgnoresCorruption
         );
@@ -1254,8 +1261,16 @@ impl FileSystemSpi for MemorySpi {
     }
 
     fn open_writer(&self, request: OpenWriterRequest<'_>) -> FsResult<OpenedWriter> {
+        let info = if self.state.lock().expect("memory state lock").fault == MemoryFault::InvalidWriterIdentity {
+            OpenedFileInfo::new(
+                FileSystemId::new("foreign-identity").expect("identity"),
+                request.path().clone(),
+            )
+        } else {
+            Self::info(request.path().clone())
+        };
         Ok(OpenedWriter::new(
-            Self::info(request.path().clone()),
+            info,
             Box::new(MemoryWriter {
                 state: Arc::clone(&self.state),
                 path: request.path().clone(),
@@ -1631,6 +1646,14 @@ impl Output for MemoryWriter {
     type Item = u8;
 
     unsafe fn write_unchecked(&mut self, input: &[u8], index: usize, count: usize) -> IoResult<usize> {
+        let count = if matches!(
+            self.state.lock().expect("memory state lock").fault,
+            MemoryFault::WriteCommitState(_)
+        ) {
+            count.min(if self.bytes.is_empty() { 2 } else { 3 })
+        } else {
+            count
+        };
         self.bytes.extend_from_slice(&input[index..index + count]);
         Ok(count)
     }
@@ -1643,6 +1666,21 @@ impl Output for MemoryWriter {
 impl FileWriterSpi for MemoryWriter {
     fn commit(&mut self) -> Result<WriteOutcome, SpiWriteFailure> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        if let MemoryFault::WriteCommitState(publication) = state.fault {
+            if publication == WriteFailureState::Published {
+                state
+                    .entries
+                    .insert(self.path.as_str().to_owned(), Entry::File(self.bytes.clone()));
+            }
+            return Err(SpiWriteFailure::new(
+                FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::CommitWriter,
+                    "injected commit snapshot",
+                ),
+                publication,
+            ));
+        }
         if state.fault == MemoryFault::WriteCommitFailure {
             return Err(SpiWriteFailure::new(
                 FsError::new(
@@ -1732,6 +1770,26 @@ impl FileWriterSpi for MemoryWriter {
     }
 
     fn abort(&mut self) -> FsResult<WriteAbortOutcome> {
+        if let MemoryFault::WriteCommitState(state) = self.state.lock().expect("memory state lock").fault {
+            return Ok(match state {
+                WriteFailureState::Published => WriteAbortOutcome::Published,
+                WriteFailureState::Indeterminate => WriteAbortOutcome::Indeterminate,
+                _ => WriteAbortOutcome::NotPublished,
+            });
+        }
+
+        {
+            let mut state = self.state.lock().expect("memory state lock");
+            if state.fault == MemoryFault::ConditionalAbortFailsOnce {
+                state.fault = MemoryFault::None;
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::AbortWriter,
+                    "conditional abort failed once",
+                ));
+            }
+        }
+
         if self.path.as_str().contains("write-aborted") {
             let mut state = self.state.lock().expect("memory state lock");
             if state.fault == MemoryFault::AbortFailsOnce {

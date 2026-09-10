@@ -146,7 +146,7 @@ impl AsyncFileSystemContractSuite<'_> {
             })?;
         drop(operation.execute());
         verify_condition(
-            operation.state() == qfs::copy::AsyncCopyOperationState::Ready && !operation.has_recovery_writer(),
+            operation.state() == qfs::copy::AsyncCopyOperationState::Ready && !operation.has_recovery(),
             id,
             "unpolled copy changed operation state",
         )?;

@@ -12,6 +12,7 @@ use std::task::Poll;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::write::AsyncWriteAllOperationState;
+use qubit_fs::write::AsyncWriterRecovery;
 use qubit_fs::write::WriteAbortOutcome;
 use qubit_fs::write::WriteFailureState;
 use qubit_fs::write::WriterState;
@@ -57,7 +58,7 @@ impl AsyncFileSystemContractSuite<'_> {
             FixtureSupport::Unsupported => self.context.record_check(
                 id,
                 Some(FileSystemCapability::Write),
-                ContractCheckOutcome::SkippedOptional {
+                ContractCheckOutcome::Unverified {
                     reason: "fixture has no stage acknowledgement probe".to_owned(),
                 },
             ),
@@ -152,7 +153,7 @@ impl AsyncFileSystemContractSuite<'_> {
             "accepted byte count mismatch",
         )?;
         verify_condition(
-            operation.has_recovery_writer() == (stage != AsyncWriteCancellationStage::Open),
+            operation.has_recovery() == (stage != AsyncWriteCancellationStage::Open),
             id,
             "writer recovery responsibility mismatch",
         )?;
@@ -171,11 +172,24 @@ impl AsyncFileSystemContractSuite<'_> {
             .at(id));
         }
         verify_condition(
-            operation.has_recovery_writer() == (stage != AsyncWriteCancellationStage::Open),
+            operation.has_recovery() == (stage != AsyncWriteCancellationStage::Open),
             id,
             "repeated execution lost writer",
         )?;
-        if let Some(mut writer) = operation.take_recovery_writer() {
+        if let Some(recovery) = operation.take_recovery() {
+            let mut writer = match recovery {
+                AsyncWriterRecovery::Opened(writer) => *writer,
+                AsyncWriterRecovery::Rejected(recovery) => {
+                    return Err(ContractFailure::with_owned_source(
+                        "cancellation probe retained a rejected provider identity",
+                        crate::ContractWriterFailure::new(
+                            ContractFailure::message_only("validated writer required by this stage probe"),
+                            recovery,
+                        ),
+                    )
+                    .at(id));
+                }
+            };
             let outcome = match writer.abort_async().await {
                 Ok(outcome) => outcome,
                 Err(error) => {

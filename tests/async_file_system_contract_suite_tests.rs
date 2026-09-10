@@ -216,15 +216,12 @@ fn test_all_capabilities_execute_async_contracts() {
             .collect::<Vec<_>>(),
         FileSystemCapability::ALL.to_vec()
     );
-    let mut assertion = Box::pin(async {
+    run_controlled(async {
         AsyncFileSystemContractSuite::new(&fixture)
             .run_all()
             .await
             .assert_satisfied()
     });
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
     assert!(fixture.is_empty(), "all-capability suite must clean up");
 }
 
@@ -233,15 +230,12 @@ fn test_all_capabilities_execute_async_contracts() {
 #[test]
 fn test_async_suite_allows_matching_filesystem_and_provider_ids() {
     let fixture = AsyncMemoryFixture::with_matching_ids();
-    let mut assertion = Box::pin(async {
+    run_controlled(async {
         AsyncFileSystemContractSuite::new(&fixture)
             .run_all()
             .await
             .assert_satisfied()
     });
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
 }
 
 /// Copy cancellation cases are optional fixture probes, not provider
@@ -358,15 +352,12 @@ fn test_async_core_capability_negative_branches_are_exercised() {
 #[test]
 fn test_async_suite_skips_unadvertised_optional_capabilities() {
     let fixture = AsyncMemoryFixture::without_optional_capabilities();
-    let mut assertion = Box::pin(async {
+    run_controlled(async {
         AsyncFileSystemContractSuite::new(&fixture)
             .run_all()
             .await
             .assert_satisfied()
     });
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
 }
 
 /// Every public asynchronous contract phase remains independently pollable for

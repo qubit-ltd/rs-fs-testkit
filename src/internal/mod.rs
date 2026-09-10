@@ -32,3 +32,11 @@ pub(crate) use assertions::verify_fs_error;
 pub(crate) use assertions::verify_missing_error;
 #[cfg(feature = "async")]
 pub(crate) use catch_unwind_future::catch_unwind_future;
+
+mod verify_open_failure;
+pub(crate) use verify_open_failure::verify_open_failure;
+
+pub(crate) mod finish_expected_write_failure;
+
+#[cfg(feature = "async")]
+pub(crate) mod expected_write_cleanup_guard;

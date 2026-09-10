@@ -234,6 +234,24 @@ impl FileSystemContractSuite<'_> {
                 "read bytes differ from independent seed",
             )?;
         }
+        if scenario == ReadScenario::Range {
+            let eof = read_expectations::CONTENT.len() as u64;
+            let length = limit.maximum().unwrap_or(1).min(1);
+            for options in [
+                ReadOptions::default().with_length(Some(0)),
+                ReadOptions::default().with_offset(Some(eof)).with_length(Some(length)),
+                ReadOptions::default()
+                    .with_offset(Some(eof + 1))
+                    .with_length(Some(length)),
+            ] {
+                let actual = self
+                    .fixture
+                    .file_system()
+                    .read_all(&path, options, 64)
+                    .map_err(|error| ContractFailure::with_source("empty range observation failed", error).at(id))?;
+                verify_condition(actual.is_empty(), id, "empty or beyond-EOF range returned bytes")?;
+            }
+        }
         if scenario == ReadScenario::Basic {
             let error = match self.fixture.file_system().read_all(&path, ReadOptions::default(), 4) {
                 Err(error) => error,

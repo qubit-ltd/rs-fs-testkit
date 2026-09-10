@@ -7,6 +7,8 @@
 //! Recovery ownership remains available through a borrowed contract result.
 
 use qubit_fs as qfs;
+#[cfg(feature = "async")]
+use qubit_fs::write::AsyncWriterRecovery;
 
 mod common;
 use qubit_fs::error::FsError;
@@ -59,16 +61,24 @@ fn test_async_owning_failure_retains_operation() {
                 qfs::write::WriteFailureState::RetryableNotPublished
             );
             assert!(original.failure().written_bytes() > 0);
-            assert!(original.operation().expect("retained operation").has_recovery_writer());
+            assert!(original.operation().expect("retained operation").has_recovery());
             let operation = original.operation_mut().expect("execution started");
-            let mut writer = operation.take_recovery_writer().expect("recovery writer");
+            let mut writer = operation
+                .take_recovery()
+                .map(|recovery| match recovery {
+                    AsyncWriterRecovery::Opened(writer) => writer,
+                    AsyncWriterRecovery::Rejected(_) => {
+                        panic!("fixture must return a validated identity")
+                    }
+                })
+                .expect("recovery writer");
             assert_eq!(
                 writer.abort_async().await.expect("explicit abort"),
                 WriteAbortOutcome::NotPublished
             );
             let (snapshot, operation) = original.into_parts();
             assert_eq!(snapshot.error().kind(), FsErrorKind::PermissionDenied);
-            assert!(!operation.expect("operation remains owned").has_recovery_writer());
+            assert!(!operation.expect("operation remains owned").has_recovery());
             assert!(retained.take().is_none());
             assert!(!run.requirements_satisfied());
         });

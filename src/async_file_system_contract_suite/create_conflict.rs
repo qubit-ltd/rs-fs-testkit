@@ -104,6 +104,12 @@ impl AsyncFileSystemContractSuite<'_> {
                 failure,
             ));
         }
+        crate::internal::finish_expected_write_failure::finish_expected_async_write_failure(
+            failure,
+            id,
+            &mut self.context.run.failures,
+        )
+        .await?;
         let observed = self
             .fixture
             .read_file(&path)

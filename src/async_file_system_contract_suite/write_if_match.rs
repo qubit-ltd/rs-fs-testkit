@@ -20,7 +20,7 @@ use crate::ContractFailure;
 use crate::FixturePreparation;
 use crate::FixtureSupport;
 use crate::internal::verify_condition;
-use crate::internal::verify_fs_error;
+use crate::internal::verify_open_failure;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Records only the If-Match check, retaining original errors on failure.
@@ -50,7 +50,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 Err(error) => error,
                 Ok(_) => return Err(ContractFailure::message_only("unavailable conditional write succeeded").at(id)),
             };
-            verify_fs_error(
+            verify_open_failure(
                 error,
                 FsErrorKind::RequirementNotMet,
                 FsOperation::OpenWriter,
@@ -152,6 +152,12 @@ impl AsyncFileSystemContractSuite<'_> {
         {
             return Err(ContractFailure::with_owned_source("conditional write rejection differs", failure).at(id));
         }
+        crate::internal::finish_expected_write_failure::finish_expected_async_write_failure(
+            failure,
+            id,
+            &mut self.context.run.failures,
+        )
+        .await?;
         let observed = self.fixture.read_file(&path).await.map_err(|error| {
             ContractFailure::with_source("conditional write rejection observation failed", error).at(id)
         })?;

@@ -7,6 +7,7 @@
 //! Cancellation failures transfer usable recovery ownership through the report.
 #![cfg(feature = "async")]
 
+use qubit_fs::write::AsyncWriterRecovery;
 use qubit_fs_testkit as testkit;
 
 mod common;
@@ -78,11 +79,17 @@ fn test_copy_error_before_requested_stage_retains_operation() {
                 .downcast::<ContractAsyncCopyFailure>()
                 .expect("copy failure");
             assert_eq!(retained.failure().partial_stats().bytes, 0);
-            assert!(retained.operation().expect("admitted operation").has_recovery_writer());
+            assert!(retained.operation().expect("admitted operation").has_recovery());
             let mut writer = retained
                 .operation_mut()
                 .expect("admitted operation")
-                .take_recovery_writer()
+                .take_recovery()
+                .map(|recovery| match recovery {
+                    AsyncWriterRecovery::Opened(writer) => writer,
+                    AsyncWriterRecovery::Rejected(_) => {
+                        panic!("fixture must return a validated identity")
+                    }
+                })
                 .expect("retained writer");
             assert_eq!(
                 writer.abort_async().await.expect("explicit abort"),
@@ -90,7 +97,7 @@ fn test_copy_error_before_requested_stage_retains_operation() {
             );
             let (snapshot, operation) = retained.into_parts();
             assert_eq!(snapshot.partial_stats().bytes, 0);
-            assert!(!operation.expect("operation remains").has_recovery_writer());
+            assert!(!operation.expect("operation remains").has_recovery());
             assert!(!run.requirements_satisfied());
         });
     }
@@ -116,11 +123,15 @@ fn test_write_error_before_requested_stage_retains_operation() {
             .downcast::<testkit::ContractAsyncWriteFailure>()
             .expect("copy failure");
         assert_eq!(retained.failure().written_bytes(), 0);
-        assert!(retained.operation().expect("admitted operation").has_recovery_writer());
+        assert!(retained.operation().expect("admitted operation").has_recovery());
         let mut writer = retained
             .operation_mut()
             .expect("admitted operation")
-            .take_recovery_writer()
+            .take_recovery()
+            .map(|recovery| match recovery {
+                AsyncWriterRecovery::Opened(writer) => writer,
+                AsyncWriterRecovery::Rejected(_) => panic!("fixture must return a validated identity"),
+            })
             .expect("retained writer");
         assert_eq!(
             writer.abort_async().await.expect("explicit abort"),
@@ -128,7 +139,7 @@ fn test_write_error_before_requested_stage_retains_operation() {
         );
         let (snapshot, operation) = retained.into_parts();
         assert_eq!(snapshot.written_bytes(), 0);
-        assert!(!operation.expect("operation remains").has_recovery_writer());
+        assert!(!operation.expect("operation remains").has_recovery());
         assert!(!run.requirements_satisfied());
     });
 }
