@@ -126,7 +126,7 @@ async fn ambiguous_resources_are_rejected_before_sdk_dispatch() {
         );
         let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
         assert_eq!(
-            filesystem.open_writer(&path, options).await.unwrap_err().kind(),
+            filesystem.open_writer(&path, options).await.unwrap_err().error().kind(),
             FsErrorKind::InvalidPath
         );
     }
