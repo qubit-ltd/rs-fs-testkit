@@ -71,7 +71,7 @@ every native capability and failure combination; the deterministic matrix and
 focused regression tests remain the executable coverage for those branches.
 
 
-## Recovery ownership in core 0.6
+## Recovery ownership in core 0.7
 
 Negative writer/temp open checks retain the complete `OpenFailure<R>` when the
 provider violates its contract. Inspect `OpenFailureStage` and match recovery
@@ -91,3 +91,10 @@ while `writer()` owns the original failure and its recovery responsibility.
 Recovering it never changes historical state or bytes. Missing write cancellation
 probes are Unverified, not passed or optional evidence. Existing check IDs remain
 unchanged; range checks now include zero and EOF windows when capability permits.
+
+Temporary-resource checks retain their existing repeated-lifecycle coverage,
+including the publication target after a successful `keep`. Version 0.6 follows
+the core 0.7 contract that separates current publication from source
+qualification. Deterministic coverage of the three new source states, cleanup
+errors, invalid retries, and cancellation belongs to `qubit-fs` core and adapter
+regressions rather than this reusable suite.
