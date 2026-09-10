@@ -5,7 +5,7 @@
 ## Purpose and Audience
 
 This guide is for authors of synchronous or asynchronous `qubit-fs` providers.
-It covers the current `qubit-fs-testkit` 0.5 contract suites, which are test
+It covers the current `qubit-fs-testkit` 0.6 contract suites, which are test
 support and therefore belong in provider development dependencies.
 
 ## Conceptual Model
@@ -167,7 +167,7 @@ failed run into a passing one.
 Unexpected failures from prepared asynchronous whole-file writes retain
 `ContractAsyncWriteFailure`. Its `failure()` preserves the publication state and
 accepted byte count. `operation_mut()` exposes the operation that owns any
-recovery writer; call `take_recovery_writer()` to take that writer for explicit
+recovery writer; call `take_recovery()` to take that writer for explicit
 abort. Admission failures have no operation. Taking the source transfers recovery
 responsibility; dropping it does not perform asynchronous abort.
 
@@ -282,7 +282,7 @@ mapping or hooks are surfaced as `FixtureError`/`FixtureResult` failures.
 
 ## Whole-file asynchronous write recovery (0.3)
 
-`qubit-fs` 0.5 requires owned payloads for `begin_write_all`. The async Write
+`qubit-fs` 0.6 requires owned payloads for `begin_write_all`. The async Write
 phase checks `write/owning-operation` and `write/repeated-execute`, and actually
 calls `prepare_write_cancellation` for Open, Write, Flush and Commit.
 Implement `WriteCancellationProbe::poll_reached` to acknowledge that the selected
@@ -323,3 +323,25 @@ passing when ignored.
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase ci
 ```
+
+
+## Recovery ownership in core 0.6
+
+Negative writer/temp open checks retain the complete `OpenFailure<R>` when the
+provider violates its contract. Inspect `OpenFailureStage` and match recovery
+variants; rejected sessions only permit explicit cleanup. Whole-file operations
+use `WriterRecovery` / `AsyncWriterRecovery`, with `Opened` and `Rejected` variants.
+The suite does not add synthetic mandatory commit failures to healthy providers:
+its own recording providers test immutable failure state and confirmed bytes.
+
+An expected conditional rejection may still own an opened writer. Before marking
+IfAbsent, IfMatch, CreateConflict or WriteLimit satisfied, the suite confirms
+non-publication and explicitly aborts that session when one is retained. Without
+a recovery session, the original failure state is preserved and the target result
+is checked through independent observation. Failed cleanup retains
+`ContractWriterFailure<WriteAllFailure>` or
+`ContractWriterFailure<ContractAsyncWriteFailure>`: `error()` describes cleanup,
+while `writer()` owns the original failure and its recovery responsibility.
+Recovering it never changes historical state or bytes. Missing write cancellation
+probes are Unverified, not passed or optional evidence. Existing check IDs remain
+unchanged; range checks now include zero and EOF windows when capability permits.

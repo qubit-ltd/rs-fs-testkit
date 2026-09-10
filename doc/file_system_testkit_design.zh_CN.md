@@ -428,7 +428,7 @@ I/O driver 和 cancellation assertion 分开实现。公共 API 不通过宏生�
 - 在 native attempt、reader、writer 和 commit await 点取消时进入
   `Failed(Indeterminate)`；
 - fallback 已创建 writer 后取消，operation 仍持有 recovery writer；
-- `take_recovery_writer` 显式转移 cleanup/recovery responsibility；
+- `take_recovery` 显式转移 cleanup/recovery responsibility；
 - 未 poll 的 execute future 被 drop 不改变 `Ready`；
 - operation drop 不执行 I/O；
 - 非 `Ready` operation 不能盲目重新 execute。
@@ -529,3 +529,21 @@ src/
 覆盖率阈值仍适用于 catalog、report、run 和 resource ledger 核心。依赖 provider
 能力的契约分支列在经过评审的阈值豁免清单中，因为单个 fixture 无法真实覆盖所有
 native capability 与失败组合；确定性矩阵和聚焦回归测试仍是这些分支的可执行覆盖。
+
+
+## 核心 0.6 的恢复所有权
+
+writer／临时资源打开的负面检查遇到 provider 契约违例时，会完整保留 `OpenFailure<R>`。
+应检查 `OpenFailureStage`，并区分恢复类型；隔离会话只允许显式清理。
+整文件操作通过 `WriterRecovery` / `AsyncWriterRecovery` 的 `Opened` 和 `Rejected`
+变体交回所有权。套件不要求健康 provider 人为制造提交失败；不可变失败状态和确认字节数
+由 testkit 自身的 recording provider 回归测试验证。
+
+预期的条件拒绝也可能带有已打开 writer。IfAbsent、IfMatch、CreateConflict、WriteLimit
+检查在持有会话时，只有确认未发布并显式 abort 后才通过。没有恢复会话时，
+保留原始失败状态，并通过独立观察验证目标结果。清理失败时保留
+`ContractWriterFailure<WriteAllFailure>` 或
+`ContractWriterFailure<ContractAsyncWriteFailure>`：`error()` 表示清理错误，
+`writer()` 持有原始失败及恢复责任。恢复不会改变历史状态和字节数。
+缺少写取消探针时保持 Unverified，不能按通过或可选证据处理。既有检查 ID 不变，
+范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
