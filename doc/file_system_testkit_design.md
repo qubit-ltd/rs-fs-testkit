@@ -69,3 +69,25 @@ resource-ledger core. Provider-dependent contract branches are listed as
 reviewed threshold exemptions because one fixture cannot truthfully exercise
 every native capability and failure combination; the deterministic matrix and
 focused regression tests remain the executable coverage for those branches.
+
+
+## Recovery ownership in core 0.6
+
+Negative writer/temp open checks retain the complete `OpenFailure<R>` when the
+provider violates its contract. Inspect `OpenFailureStage` and match recovery
+variants; rejected sessions only permit explicit cleanup. Whole-file operations
+use `WriterRecovery` / `AsyncWriterRecovery`, with `Opened` and `Rejected` variants.
+The suite does not add synthetic mandatory commit failures to healthy providers:
+its own recording providers test immutable failure state and confirmed bytes.
+
+An expected conditional rejection may still own an opened writer. Before marking
+IfAbsent, IfMatch, CreateConflict or WriteLimit satisfied, the suite confirms
+non-publication and explicitly aborts that session when one is retained. Without
+a recovery session, the original failure state is preserved and the target result
+is checked through independent observation. Failed cleanup retains
+`ContractWriterFailure<WriteAllFailure>` or
+`ContractWriterFailure<ContractAsyncWriteFailure>`: `error()` describes cleanup,
+while `writer()` owns the original failure and its recovery responsibility.
+Recovering it never changes historical state or bytes. Missing write cancellation
+probes are Unverified, not passed or optional evidence. Existing check IDs remain
+unchanged; range checks now include zero and EOF windows when capability permits.

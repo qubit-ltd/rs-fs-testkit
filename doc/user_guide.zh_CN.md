@@ -4,7 +4,7 @@
 
 ## 手册目标与读者
 
-本手册面向同步或异步 `qubit-fs` provider 作者，覆盖当前 `qubit-fs-testkit` 0.5 契约套件。
+本手册面向同步或异步 `qubit-fs` provider 作者，覆盖当前 `qubit-fs-testkit` 0.6 契约套件。
 它是测试支持，因此应作为 provider 的开发依赖使用。
 
 ## 概念模型
@@ -127,7 +127,7 @@ fixture 所有者必须安排独立 teardown。
 
 已准备的异步整文件写入发生非预期失败时，保留 `ContractAsyncWriteFailure`。
 其 `failure()` 保存发布状态和已接受字节数；`operation_mut()` 提供持有恢复 writer 的
-operation，可调用 `take_recovery_writer()` 取出 writer 并显式 abort。
+operation，可调用 `take_recovery()` 取出 writer 并显式 abort。
 请求准入失败时没有 operation。取出 source 即转移恢复责任；丢弃它不会执行异步 abort。
 
 复制探针的执行失败通过 `ContractAsyncCopyFailure` 同时保留原始 `AsyncCopyFailure`
@@ -213,7 +213,7 @@ S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create
 
 ## 异步整文件写入恢复（0.3）
 
-`qubit-fs` 0.5 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
+`qubit-fs` 0.6 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
 `write/owning-operation`、`write/repeated-execute`，并真实调用 Open、Write、Flush、Commit
 四阶段的 `prepare_write_cancellation`。`WriteCancellationProbe::poll_reached` 应确认
 提供者已经在指定阶段 Pending，等待时按需唤醒调用方；`disarm` 只释放 gate，不启动文件系统
@@ -243,3 +243,21 @@ List 契约新增可独立执行的 `list/namespace` 和 `list/raw-root-prefix` 
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase ci
 ```
+
+
+## 核心 0.6 的恢复所有权
+
+writer／临时资源打开的负面检查遇到 provider 契约违例时，会完整保留 `OpenFailure<R>`。
+应检查 `OpenFailureStage`，并区分恢复类型；隔离会话只允许显式清理。
+整文件操作通过 `WriterRecovery` / `AsyncWriterRecovery` 的 `Opened` 和 `Rejected`
+变体交回所有权。套件不要求健康 provider 人为制造提交失败；不可变失败状态和确认字节数
+由 testkit 自身的 recording provider 回归测试验证。
+
+预期的条件拒绝也可能带有已打开 writer。IfAbsent、IfMatch、CreateConflict、WriteLimit
+检查在持有会话时，只有确认未发布并显式 abort 后才通过。没有恢复会话时，
+保留原始失败状态，并通过独立观察验证目标结果。清理失败时保留
+`ContractWriterFailure<WriteAllFailure>` 或
+`ContractWriterFailure<ContractAsyncWriteFailure>`：`error()` 表示清理错误，
+`writer()` 持有原始失败及恢复责任。恢复不会改变历史状态和字节数。
+缺少写取消探针时保持 Unverified，不能按通过或可选证据处理。既有检查 ID 不变，
+范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
