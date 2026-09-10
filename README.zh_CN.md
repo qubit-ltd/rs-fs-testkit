@@ -14,7 +14,7 @@
 ## 安装
 
 ```bash
-cargo add --dev qubit-fs-testkit
+cargo add --dev qubit-fs-testkit@0.6
 ```
 
 同步契约套件无需额外 feature 即可使用；使用异步套件时，请在开发依赖中加入
@@ -72,6 +72,10 @@ capability。
 - [English README](README.md)
 
 ## 文件系统契约更新
+
+0.6 版本对应 `qubit-fs` 0.7，并遵循目标发布与源资格分离的契约。共享套件保留既有的
+重复生命周期检查，包括成功 `keep` 后保留发布目标；新增源状态和取消矩阵由
+`qubit-fs` 核心与 adapter 回归验证，不属于此可复用套件自身的覆盖范围。
 
 List 契约新增可独立执行的 `list/namespace` 和 `list/raw-root-prefix` 检查。
 平面命名空间夹具通过 SDK 或独立模型实现 `snapshot_namespace_paths`，快照必须包含

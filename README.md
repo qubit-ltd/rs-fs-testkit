@@ -16,7 +16,7 @@ dependency graphs.
 ## Installation
 
 ```bash
-cargo add --dev qubit-fs-testkit
+cargo add --dev qubit-fs-testkit@0.6
 ```
 
 The synchronous contract suite is available without features. Add
@@ -84,6 +84,12 @@ the suite's current coverage.
 - [中文 README](README.zh_CN.md)
 
 ## Filesystem contract update
+
+Version 0.6 targets `qubit-fs` 0.7 and follows its separate target-publication
+and source-qualification contract. The shared suite retains its existing
+repeated-lifecycle checks, including the publication target after a successful
+`keep`. The new source-state and cancellation matrices are verified by
+`qubit-fs` core and adapter regressions rather than by this reusable suite.
 
 The List contract includes independently selectable `list/namespace` and
 `list/raw-root-prefix` checks. Flat fixtures implement `snapshot_namespace_paths`

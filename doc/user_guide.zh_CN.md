@@ -213,7 +213,7 @@ S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create
 
 ## 异步整文件写入恢复（0.3）
 
-`qubit-fs` 0.6 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
+`qubit-fs` 0.7 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
 `write/owning-operation`、`write/repeated-execute`，并真实调用 Open、Write、Flush、Commit
 四阶段的 `prepare_write_cancellation`。`WriteCancellationProbe::poll_reached` 应确认
 提供者已经在指定阶段 Pending，等待时按需唤醒调用方；`disarm` 只释放 gate，不启动文件系统
@@ -245,7 +245,7 @@ python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase ci
 ```
 
 
-## 核心 0.6 的恢复所有权
+## 核心 0.7 的恢复所有权
 
 writer／临时资源打开的负面检查遇到 provider 契约违例时，会完整保留 `OpenFailure<R>`。
 应检查 `OpenFailureStage`，并区分恢复类型；隔离会话只允许显式清理。
@@ -261,3 +261,7 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 `writer()` 持有原始失败及恢复责任。恢复不会改变历史状态和字节数。
 缺少写取消探针时保持 Unverified，不能按通过或可选证据处理。既有检查 ID 不变，
 范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
+
+对于临时资源，0.6 版本遵循核心 0.7 将 publication 事实与源资格分开的契约。本套件
+检查既有的重复生命周期，包括成功 `keep` 后的发布目标；新增源状态、非法重试、
+cleanup 失败与取消由核心及 adapter 回归覆盖。
