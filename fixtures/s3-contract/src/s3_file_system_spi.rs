@@ -33,6 +33,8 @@ use qubit_fs::spi::SpiFuture;
 use qubit_fs::spi::StatRequest;
 use qubit_fs::spi::StatResponse;
 
+use crate::TestControl;
+use crate::TestStage;
 use crate::config::S3ContractConfig;
 use crate::error_mapper;
 use crate::path_mapper;
@@ -45,6 +47,7 @@ pub struct S3FileSystemSpi {
     store: Arc<dyn ObjectStore>,
     config: S3ContractConfig,
     properties: ProviderProperties,
+    control: TestControl,
 }
 
 pub fn open(config: S3ContractConfig) -> Result<AsyncFileSystem, FsError> {
@@ -88,6 +91,15 @@ pub fn open_in_memory(prefix: impl Into<String>) -> Result<AsyncFileSystem, FsEr
 }
 
 pub fn open_with_store(config: S3ContractConfig, store: Arc<dyn ObjectStore>) -> Result<AsyncFileSystem, FsError> {
+    open_with_control(config, store, TestControl::default())
+}
+
+/// Builds an adapter with explicitly supplied fixture-only stage control.
+pub fn open_with_control(
+    config: S3ContractConfig,
+    store: Arc<dyn ObjectStore>,
+    control: TestControl,
+) -> Result<AsyncFileSystem, FsError> {
     path_mapper::configured_prefix(&config)?;
     let info = FileSystemInfo::new(
         FileSystemId::new("s3-contract")?,
@@ -105,7 +117,8 @@ pub fn open_with_store(config: S3ContractConfig, store: Arc<dyn ObjectStore>) ->
         .with_conditional(FileSystemCapability::List)
         .with_conditional(FileSystemCapability::Read)
         .with_conditional(FileSystemCapability::RangeRead)
-        .with_conditional(FileSystemCapability::Write);
+        .with_conditional(FileSystemCapability::Write)
+        .with_conditional(FileSystemCapability::ConditionalWrite);
     let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1_048_576));
     let properties = ProviderProperties::new(
         info,
@@ -119,6 +132,7 @@ pub fn open_with_store(config: S3ContractConfig, store: Arc<dyn ObjectStore>) ->
         store,
         config,
         properties,
+        control,
     }))
 }
 
@@ -178,10 +192,12 @@ impl AsyncFileSystemSpi for S3FileSystemSpi {
         request: OpenWriterRequest<'a>,
     ) -> SpiFuture<'a, qubit_fs::FsResult<OpenedAsyncWriter>> {
         Box::pin(async move {
+            self.control.wait(TestStage::Open).await;
             let session = S3WriteSession::open(
                 self.store.clone(),
                 path_mapper::map(&self.config, request.path())?,
                 request.options().options(),
+                self.control.clone(),
             )?;
             let info =
                 qubit_fs::metadata::OpenedFileInfo::new(self.properties.info().id().clone(), request.path().clone());

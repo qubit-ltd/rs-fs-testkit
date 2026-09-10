@@ -93,10 +93,10 @@ async fn s3_contract_requires_explicit_environment() {
     // exact keys are confined to this run's unique child of the configured prefix.
     let mut cleanup_errors = Vec::new();
     for key in &owned {
-        if let Err(error) = store.delete(key).await {
-            if !matches!(error, object_store::Error::NotFound { .. }) {
-                cleanup_errors.push(error);
-            }
+        if let Err(error) = store.delete(key).await
+            && !matches!(error, object_store::Error::NotFound { .. })
+        {
+            cleanup_errors.push(error);
         }
     }
     assert!(
@@ -105,4 +105,46 @@ async fn s3_contract_requires_explicit_environment() {
         cleanup_errors.len()
     );
     result.expect("real service PUT/GET/HEAD/LIST verification failed");
+}
+
+mod common;
+
+/// Runs real conditional writes, stage probes and SDK-boundary result
+/// suppression. This injection does not claim to simulate packet loss or
+/// multipart cleanup.
+#[tokio::test]
+#[ignore = "requires explicit RS_FS_S3_* configuration; writes exact keys under a unique prefix"]
+async fn real_s3_recovery_matrix_preserves_published_targets() {
+    use futures_util::FutureExt;
+    use qubit_fs_testkit::AsyncFileSystemFixture;
+    let mut config = qubit_fs_s3_contract::S3ContractConfig::from_env().expect("explicit S3 configuration required");
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("time")
+        .as_nanos();
+    config.prefix = format!("{}/recovery-{}-{nonce}", config.prefix, std::process::id());
+    let store: Arc<dyn ObjectStore> = Arc::new(
+        object_store::aws::AmazonS3Builder::new()
+            .with_endpoint(&config.endpoint)
+            .with_allow_http(config.allow_http)
+            .with_bucket_name(&config.bucket)
+            .with_region(&config.region)
+            .with_access_key_id(&config.access_key_id)
+            .with_secret_access_key(&config.secret_access_key)
+            .with_retry(object_store::RetryConfig {
+                max_retries: 0,
+                ..Default::default()
+            })
+            .build()
+            .expect("explicit service client"),
+    );
+    let fixture = common::Fixture::new(config, store);
+    let result = std::panic::AssertUnwindSafe(common::recovery_matrix::verify(&fixture))
+        .catch_unwind()
+        .await;
+    let cleanup = fixture.teardown().await;
+    cleanup.expect("exact-key cleanup must succeed");
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
 }

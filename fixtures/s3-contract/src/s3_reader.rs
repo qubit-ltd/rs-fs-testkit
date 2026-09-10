@@ -6,6 +6,8 @@ use std::task::Poll;
 use bytes::Bytes;
 use futures_util::Stream;
 use object_store::GetOptions;
+use object_store::GetRange;
+use object_store::GetResult;
 use object_store::ObjectStore;
 use object_store::path::Path as ObjectPath;
 use qubit_fs::FsError;
@@ -36,43 +38,67 @@ impl S3Reader {
         path: Path,
         options: &ReadOptions,
     ) -> Result<Self, FsError> {
+        options.validate()?;
+        let key = ObjectPath::parse(key).map_err(|error| {
+            FsError::with_source(
+                FsErrorKind::InvalidPath,
+                FsOperation::OpenReader,
+                "invalid S3 object key",
+                error,
+            )
+        })?;
         let mut get = GetOptions {
             if_match: options.if_match().map(|v| v.as_ref().to_owned()),
             if_none_match: options.if_none_match().map(|v| v.as_ref().to_owned()),
             ..Default::default()
         };
         let offset = options.offset().unwrap_or(0);
-        if let Some(length) = options.length() {
-            let end = offset
-                .checked_add(length)
-                .ok_or_else(|| FsError::invalid_path(FsOperation::OpenReader, "read range overflows"))?;
+        let empty = options.length() == Some(0);
+        if empty {
+            // HEAD verifies existence, access, and preconditions without issuing
+            // an invalid zero-byte Range request or downloading object contents.
+            get.head = true;
+        } else if let Some(length) = options.length() {
+            let end = offset.checked_add(length).expect("validated range sum");
             get.range = Some((offset..end).into());
         } else if offset != 0 {
             get.range = Some((offset..).into());
         }
-        let result = store
-            .get_opts(
-                &ObjectPath::parse(key).map_err(|e| {
-                    FsError::with_source(
-                        FsErrorKind::InvalidPath,
-                        FsOperation::OpenReader,
-                        "invalid S3 object key",
-                        e,
-                    )
-                })?,
-                get,
-            )
-            .await
-            .map_err(|e| error_mapper::map(e, FsOperation::OpenReader))?;
+        let result = match store.get_opts(&key, get.clone()).await {
+            Ok(result) => result,
+            Err(error) if get.range.is_some() && is_range_rejection(&error) => {
+                get.range = None;
+                get.head = true;
+                let observed = store
+                    .get_opts(&key, get)
+                    .await
+                    .map_err(|error| error_mapper::map(error, FsOperation::OpenReader))?;
+                if offset >= observed.meta.size {
+                    return Ok(Self::from_result(observed, path, true));
+                }
+                return Err(error_mapper::map(error, FsOperation::OpenReader));
+            }
+            Err(error) => return Err(error_mapper::map(error, FsOperation::OpenReader)),
+        };
+        Ok(Self::from_result(result, path, empty))
+    }
+
+    /// Retains full-object metadata; an empty window never polls a payload
+    /// stream.
+    fn from_result(result: GetResult, path: Path, empty: bool) -> Self {
         let metadata = FileMetadata::new(FileKind::Object)
-            .with_len(Some(result.meta.size as u64))
+            .with_len(Some(result.meta.size))
             .with_etag(result.meta.e_tag.clone().map(Into::into));
-        Ok(Self {
+        Self {
             info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path).with_metadata(metadata),
-            stream: Box::pin(result.into_stream()),
+            stream: if empty {
+                Box::pin(futures_util::stream::empty())
+            } else {
+                Box::pin(result.into_stream())
+            },
             chunk: Bytes::new(),
             offset: 0,
-        })
+        }
     }
     pub fn info(&self) -> &OpenedFileInfo {
         &self.info
@@ -111,6 +137,43 @@ impl AsyncInput for S3Reader {
             }
         }
     }
+}
+
+/// Recognizes only the SDK's range failure, never arbitrary transport errors.
+///
+/// object_store 0.14.1 hides the name of its InvalidGetRange and RetryError
+/// types. Infer the former from GetRange and compare its exact variant through
+/// the source chain. For HTTP, the pinned SDK's status source exposes 416 only
+/// through Display. This narrow fixture boundary must be rechecked on upgrades.
+fn is_range_rejection(error: &object_store::Error) -> bool {
+    let expected = GetRange::Offset(0)
+        .as_range(0)
+        .expect_err("empty object has no nonempty offset range");
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(cause) = source {
+        if same_error_variant(cause, &expected) {
+            return true;
+        }
+        let text = cause.to_string();
+        if text.starts_with("Server returned non-2xx status code: 416:")
+            || text.starts_with("Server returned non-2xx status code: 416 ")
+        {
+            return true;
+        }
+        source = cause.source();
+    }
+    false
+}
+
+/// Compares a private SDK error variant without depending on its unexported
+/// name.
+fn same_error_variant<T: std::error::Error + 'static>(
+    actual: &(dyn std::error::Error + 'static),
+    expected: &T,
+) -> bool {
+    actual
+        .downcast_ref::<T>()
+        .is_some_and(|value| std::mem::discriminant(value) == std::mem::discriminant(expected))
 }
 
 #[cfg(test)]

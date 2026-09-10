@@ -88,6 +88,12 @@ async fn in_memory_adapter_runs_the_supported_contract_matrix() {
         ContractCheckId::WriteAbort,
         ContractCheckId::WriteLimit,
         ContractCheckId::WriteOwningOperation,
+        ContractCheckId::WriteIfAbsent,
+        ContractCheckId::WriteIfMatch,
+        ContractCheckId::WriteCancelOpen,
+        ContractCheckId::WriteCancelWrite,
+        ContractCheckId::WriteCancelFlush,
+        ContractCheckId::WriteCancelCommit,
     ] {
         let fixture = common::Fixture::memory("write-contract-run");
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
@@ -169,5 +175,132 @@ async fn unsupported_writer_options_fail_before_publication() {
         .with_disposition(WriteDisposition::CreateNew)
         .with_content_type(Some("text/plain".into()));
     let error = filesystem.open_writer(&path, options).await.unwrap_err();
-    assert_eq!(error.kind(), FsErrorKind::RequirementNotMet);
+    assert_eq!(error.error().kind(), FsErrorKind::RequirementNotMet);
+    assert!(error.recovery().is_none());
+}
+
+/// The same recovery matrix used by opt-in real-service tests runs locally.
+#[tokio::test]
+async fn shared_recovery_matrix_runs_in_memory() {
+    use futures_util::FutureExt;
+    use qubit_fs_testkit::AsyncFileSystemFixture;
+    let fixture = common::Fixture::memory("shared-recovery");
+    let result = std::panic::AssertUnwindSafe(common::recovery_matrix::verify(&fixture))
+        .catch_unwind()
+        .await;
+    let cleanup = fixture.teardown().await;
+    cleanup.expect("exact-key cleanup");
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+#[tokio::test]
+async fn expected_conditional_failures_abort_the_retained_session() {
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+    use qubit_fs_testkit::ContractCheckId;
+    for id in [ContractCheckId::WriteIfAbsent, ContractCheckId::WriteIfMatch] {
+        let fixture = common::Fixture::memory("expected-cleanup");
+        AsyncFileSystemContractSuite::new(&fixture)
+            .run_check(id)
+            .await
+            .assert_satisfied();
+        assert_eq!(
+            fixture.control.abort_calls(),
+            1,
+            "expected rejection must release its session"
+        );
+    }
+}
+
+#[tokio::test]
+async fn conditional_cleanup_failure_retains_original_snapshot_and_session() {
+    use qubit_fs::write::AsyncWriterRecovery;
+    use qubit_fs::write::WriteAbortOutcome;
+    use qubit_fs::write::WriteFailureState;
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+    use qubit_fs_testkit::ContractAsyncWriteFailure;
+    use qubit_fs_testkit::ContractCheckId;
+    use qubit_fs_testkit::ContractSource;
+    use qubit_fs_testkit::ContractWriterFailure;
+    let fixture = common::Fixture::memory("expected-cleanup");
+    fixture.control.fail_next_abort();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::WriteIfAbsent).await;
+    assert!(
+        !run.requirements_satisfied(),
+        "cleanup failure cannot count as a passed check"
+    );
+    let source = std::error::Error::source(&run.failures()[0])
+        .expect("source")
+        .downcast_ref::<ContractSource>()
+        .expect("owned source");
+    let mut retained = source
+        .take()
+        .expect("owned failure")
+        .downcast::<ContractWriterFailure<ContractAsyncWriteFailure>>()
+        .expect("both failures and operation");
+    assert_eq!(retained.writer().error().kind(), FsErrorKind::PreconditionFailed);
+    let state = retained.writer().failure().state();
+    let bytes = retained.writer().failure().written_bytes();
+    assert_eq!(state, WriteFailureState::NotPublished);
+    let operation = retained.writer_mut().operation_mut().expect("retained operation");
+    let Some(AsyncWriterRecovery::Opened(writer)) = operation.recovery() else {
+        panic!("opened session")
+    };
+    assert_eq!(
+        writer.abort_async().await.expect("explicit retry"),
+        WriteAbortOutcome::NotPublished
+    );
+    assert_eq!(retained.writer().failure().state(), state);
+    assert_eq!(retained.writer().failure().written_bytes(), bytes);
+    assert_eq!(fixture.control.abort_calls(), 2);
+}
+
+#[tokio::test]
+async fn cancelling_expected_rejection_cleanup_preserves_session_in_run() {
+    use std::future::Future;
+
+    use qubit_fs::write::AsyncWriterRecovery;
+    use qubit_fs::write::WriteAbortOutcome;
+    use qubit_fs_s3_contract::TestStage;
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+    use qubit_fs_testkit::ContractAsyncWriteFailure;
+    use qubit_fs_testkit::ContractCheckId;
+    use qubit_fs_testkit::ContractSource;
+    let fixture = common::Fixture::memory("cancel-expected-cleanup");
+    fixture.control.arm(TestStage::Abort);
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let mut checking = Box::pin(suite.run_check(ContractCheckId::WriteIfAbsent));
+    std::future::poll_fn(|cx| {
+        assert!(checking.as_mut().poll(cx).is_pending());
+        fixture.control.poll_reached(cx)
+    })
+    .await;
+    drop(checking);
+    fixture.control.release();
+    let run = suite.run();
+    assert!(run.was_interrupted());
+    assert!(
+        !run.failures().is_empty(),
+        "cancelled cleanup must preserve the original rejection"
+    );
+    let source = std::error::Error::source(&run.failures()[0])
+        .expect("source")
+        .downcast_ref::<ContractSource>()
+        .expect("owned source");
+    let mut failure = source
+        .take()
+        .expect("original failure")
+        .downcast::<ContractAsyncWriteFailure>()
+        .expect("operation ownership");
+    let bytes = failure.failure().written_bytes();
+    let Some(AsyncWriterRecovery::Opened(writer)) = failure.operation_mut().expect("operation").recovery() else {
+        panic!("retained writer")
+    };
+    assert_eq!(
+        writer.abort_async().await.expect("explicit cleanup retry"),
+        WriteAbortOutcome::NotPublished
+    );
+    assert_eq!(failure.failure().written_bytes(), bytes);
 }

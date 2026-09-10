@@ -17,10 +17,14 @@ use qubit_fs::metadata::PublicationMethod;
 use qubit_fs::metadata::WriteOutcome;
 use qubit_fs::spi::AsyncFileWriteSession;
 use qubit_fs::write::WriteAbortOutcome;
+use qubit_fs::write::WriteDisposition;
 use qubit_fs::write::WriteFailure;
+use qubit_fs::write::WriteFailureState;
 use qubit_fs::write::WritePrecondition;
 use qubit_io::AsyncOutput;
 
+use crate::TestControl;
+use crate::TestStage;
 use crate::error_mapper;
 
 pub struct S3WriteSession {
@@ -28,6 +32,9 @@ pub struct S3WriteSession {
     key: ObjectPath,
     data: Vec<u8>,
     state: State,
+    mode: PutMode,
+    if_absent: bool,
+    control: TestControl,
 }
 enum State {
     Open,
@@ -39,24 +46,27 @@ impl S3WriteSession {
         store: Arc<dyn ObjectStore>,
         key: String,
         options: &qubit_fs::write::WriteOptions,
+        control: TestControl,
     ) -> Result<Self, FsError> {
-        if options.disposition() != qubit_fs::write::WriteDisposition::CreateNew
-            || !matches!(
-                options.precondition(),
-                WritePrecondition::None | WritePrecondition::IfAbsent
-            )
-            || options.create_parent()
+        let mode = match (options.disposition(), options.precondition()) {
+            (WriteDisposition::CreateNew, WritePrecondition::None | WritePrecondition::IfAbsent)
+            | (WriteDisposition::CreateOrReplace, WritePrecondition::IfAbsent) => PutMode::Create,
+            (WriteDisposition::CreateOrReplace, WritePrecondition::IfMatch(version)) => {
+                PutMode::Update(object_store::UpdateVersion {
+                    e_tag: Some(version.as_ref().to_owned()),
+                    version: None,
+                })
+            }
+            _ => return Err(unsupported_write_options()),
+        };
+        if options.create_parent()
             || options.atomicity() == qubit_fs::metadata::AtomicityRequirement::Required
             || options.durability() != qubit_fs::metadata::DurabilityRequirement::NotRequired
             || options.content_type().is_some()
             || options.checksum().is_some()
             || !options.user_metadata().is_empty()
         {
-            return Err(FsError::new(
-                FsErrorKind::RequirementNotMet,
-                FsOperation::OpenWriter,
-                "S3 contract writer supports only create-new, best-effort, untyped writes",
-            ));
+            return Err(unsupported_write_options());
         }
         Ok(Self {
             store,
@@ -70,6 +80,9 @@ impl S3WriteSession {
             })?,
             data: Vec::new(),
             state: State::Open,
+            mode,
+            if_absent: options.precondition() == &WritePrecondition::IfAbsent,
+            control,
         })
     }
 }
@@ -77,11 +90,17 @@ impl AsyncOutput for S3WriteSession {
     type Item = u8;
     unsafe fn poll_write_unchecked(
         mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
+        cx: &mut Context<'_>,
         input: &[u8],
         index: usize,
         count: usize,
     ) -> Poll<std::io::Result<usize>> {
+        if self.control.poll_gate(TestStage::Write, cx).is_pending() {
+            return Poll::Pending;
+        }
+        if !matches!(self.state, State::Open) {
+            return Poll::Ready(Err(std::io::Error::other("writer no longer accepts bytes")));
+        }
         if self.data.len().saturating_add(count) > 1_048_576 {
             return Poll::Ready(Err(std::io::Error::new(
                 std::io::ErrorKind::WriteZero,
@@ -89,10 +108,11 @@ impl AsyncOutput for S3WriteSession {
             )));
         }
         self.data.extend_from_slice(&input[index..index + count]);
+        self.control.record_write(count);
         Poll::Ready(Ok(count))
     }
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        Poll::Ready(Ok(()))
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        self.control.poll_gate(TestStage::Flush, cx).map(|()| Ok(()))
     }
 }
 impl AsyncFileWriteSession for S3WriteSession {
@@ -105,19 +125,26 @@ impl AsyncFileWriteSession for S3WriteSession {
                         FsOperation::CommitWriter,
                         "writer already committed",
                     ),
-                    qubit_fs::write::WriteFailureState::Published,
+                    match self.state {
+                        State::Published => WriteFailureState::Published,
+                        _ => WriteFailureState::Indeterminate,
+                    },
                 ));
             }
             let this = self.get_mut();
             let count = this.data.len() as u64;
             let payload = Bytes::copy_from_slice(&this.data);
+            this.control.wait(TestStage::BeforePut).await;
+            // Once PUT can be polled, cancellation cannot prove non-publication.
+            this.state = State::Indeterminate;
+            this.control.record_put();
             let result = this
                 .store
                 .put_opts(
                     &this.key,
                     payload.into(),
                     PutOptions {
-                        mode: PutMode::Create,
+                        mode: this.mode.clone(),
                         ..Default::default()
                     },
                 )
@@ -126,17 +153,31 @@ impl AsyncFileWriteSession for S3WriteSession {
                 Ok(_) => {
                     this.data.clear();
                     this.state = State::Published;
+                    this.control.wait(TestStage::AfterPutBeforeResult).await;
                     Ok(WriteOutcome::new(AchievedAtomicity::Atomic, PublicationMethod::Direct)
                         .with_bytes_written(count))
                 }
                 Err(e) => {
-                    this.state = if matches!(e, object_store::Error::AlreadyExists { .. }) {
+                    this.state = if matches!(
+                        e,
+                        object_store::Error::AlreadyExists { .. } | object_store::Error::Precondition { .. }
+                    ) {
                         State::Open
                     } else {
                         State::Indeterminate
                     };
+                    let error = if this.if_absent && matches!(e, object_store::Error::AlreadyExists { .. }) {
+                        FsError::with_source(
+                            FsErrorKind::PreconditionFailed,
+                            FsOperation::CommitWriter,
+                            "S3 conditional creation found an existing object",
+                            e,
+                        )
+                    } else {
+                        error_mapper::map(e, FsOperation::CommitWriter)
+                    };
                     Err(WriteFailure::new(
-                        error_mapper::map(e, FsOperation::CommitWriter),
+                        error,
                         if matches!(this.state, State::Open) {
                             qubit_fs::write::WriteFailureState::NotPublished
                         } else {
@@ -150,6 +191,15 @@ impl AsyncFileWriteSession for S3WriteSession {
     fn abort_async<'a>(self: Pin<&'a mut Self>) -> qubit_fs::spi::SpiFuture<'a, FsResult<WriteAbortOutcome>> {
         Box::pin(async move {
             let this = self.get_mut();
+            let fail = this.control.begin_abort();
+            this.control.wait(TestStage::Abort).await;
+            if fail {
+                return Err(FsError::new(
+                    FsErrorKind::Io,
+                    FsOperation::AbortWriter,
+                    "injected abort failure",
+                ));
+            }
             Ok(match this.state {
                 State::Open => {
                     this.data.clear();
@@ -160,4 +210,13 @@ impl AsyncFileWriteSession for S3WriteSession {
             })
         })
     }
+}
+
+/// Rejects options the single-PUT fixture cannot honor.
+fn unsupported_write_options() -> FsError {
+    FsError::new(
+        FsErrorKind::RequirementNotMet,
+        FsOperation::OpenWriter,
+        "S3 fixture supports create-new or ETag-conditional replacement with best-effort untyped writes",
+    )
 }

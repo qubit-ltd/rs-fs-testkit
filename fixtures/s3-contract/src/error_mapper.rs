@@ -9,6 +9,7 @@ pub fn map(error: StoreError, operation: FsOperation) -> FsError {
         StoreError::Precondition { .. } => FsErrorKind::PreconditionFailed,
         StoreError::AlreadyExists { .. } => FsErrorKind::AlreadyExists,
         StoreError::Unauthenticated { .. } => FsErrorKind::AuthenticationFailed,
+        StoreError::PermissionDenied { .. } => FsErrorKind::PermissionDenied,
         _ => FsErrorKind::Io,
     };
     FsError::with_source(kind, operation, "S3 operation failed", error)
