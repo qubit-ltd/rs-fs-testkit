@@ -249,37 +249,6 @@ that crate's environment, backend version, lockfile, and recorded run output.
 This guide records the validation boundary only and does not claim that the
 remote suite has been run.
 
-## Errors and Diagnostics
-
-Suites use assertion failures with phase-specific messages. When a capability
-is not advertised, they expect a structured `UnsupportedCapability` error with
-the relevant operation and required capability context. Failures in fixture
-mapping or hooks are surfaced as `FixtureError`/`FixtureResult` failures.
-
-## Troubleshooting
-
-| Symptom | Check |
-| --- | --- |
-| The properties phase fails | Ensure IDs are non-empty, capabilities have no missing dependencies, and fixture paths satisfy facade constraints. |
-| A core unadvertised operation fails the suite | Return the structured unsupported-capability preflight error instead of succeeding or using an unrelated error. |
-| State leaks across runs | Create an isolated fixture and ensure its resources remain alive for the suite; cleanup is only attempted when delete is available. |
-| A provider-specific assertion is impossible | Leave the relevant optional hook unsupported and add a provider-owned test for that behavior. |
-
-## Limitations and Best Practices
-
-- The contracts are capability-driven, not a claim that every provider has the
-  same feature set.
-- Platform behavior, path encoding, security boundaries, service registration,
-  and capabilities outside current suite coverage remain provider-owned tests.
-- The testkit is a development dependency; do not add it to the provider's
-  production dependency surface.
-
-## Further Reading
-
-- [README](../README.md)
-- [中文用户手册](user_guide.zh_CN.md)
-- [API documentation](https://docs.rs/qubit-fs-testkit)
-
 ## Whole-file asynchronous write recovery (0.3)
 
 `qubit-fs` 0.7 requires owned payloads for `begin_write_all`. The async Write
@@ -324,7 +293,6 @@ python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase ci
 ```
 
-
 ## Recovery ownership in core 0.7
 
 Negative writer/temp open checks retain the complete `OpenFailure<R>` when the
@@ -351,3 +319,36 @@ publication facts independent from source qualification. This suite checks the
 existing repeated lifecycle, including the publication target after a successful
 `keep`. Core and adapter regressions cover the new source states, invalid retries,
 cleanup failures, and cancellation.
+
+## Errors and Diagnostics
+
+Suites use assertion failures with phase-specific messages. When a capability
+is not advertised, they expect a structured `UnsupportedCapability` error with
+the relevant operation and required capability context. Failures in fixture
+mapping or hooks are surfaced as `FixtureError`/`FixtureResult` failures.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| The properties phase fails | Ensure IDs are non-empty, capabilities have no missing dependencies, and fixture paths satisfy facade constraints. |
+| A core unadvertised operation fails the suite | Return the structured unsupported-capability preflight error instead of succeeding or using an unrelated error. |
+| State leaks across runs | Create an isolated fixture and ensure its resources remain alive for the suite; cleanup is only attempted when delete is available. |
+| A provider-specific assertion is impossible | Leave the relevant optional hook unsupported and add a provider-owned test for that behavior. |
+
+## Limitations and Best Practices
+
+- The contracts are capability-driven, not a claim that every provider has the
+  same feature set.
+- Platform behavior, path encoding, security boundaries, service registration,
+  and capabilities outside current suite coverage remain provider-owned tests.
+- The testkit is a development dependency; do not add it to the provider's
+  production dependency surface.
+
+## Further Reading
+
+- [README](../README.md)
+- [中文用户手册](user_guide.zh_CN.md)
+- [API documentation](https://docs.rs/qubit-fs-testkit)
+- [English design](../doc/file_system_testkit_design.md)
+- [中文设计](../doc/file_system_testkit_design.zh_CN.md)

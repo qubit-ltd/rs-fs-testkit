@@ -27,7 +27,8 @@ native-copy 用例。异步 fixture 提供对应的 future 观察，以及可选
 ## 实战场景
 
 你正在新增 provider，需要确认其已声明 capability 与可观察的文件系统行为一致。成功标准是一个全新、
-隔离的 fixture 能完成套件；当支持 delete 时，套件还会清理其创建的测试资源。
+隔离的 fixture 能跑完套件，并在测试结束后回收资源——即使 provider 未声明 `Delete`，也要通过
+独立的 `teardown` 完成清理。
 
 ## 安装与最小配置
 
@@ -183,34 +184,6 @@ S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create
 任何关于 S3 兼容性的结论都必须同时记录该 crate 的环境、后端版本、lockfile 和运行输出。
 本手册只说明验证边界，不声称远程套件已经运行。
 
-## 错误与诊断
-
-套件以包含阶段信息的断言消息报告失败。当 capability 未被声明时，套件期望结构化的
-`UnsupportedCapability` 错误，其中包含对应 operation 和 required capability context。fixture 映射
-或 hook 失败会以 `FixtureError`/`FixtureResult` 失败呈现。
-
-## 排障
-
-| 现象 | 检查项 |
-| --- | --- |
-| properties 阶段失败 | 确保 ID 非空、capability 没有缺失依赖，且 fixture 路径符合门面约束。 |
-| 未声明的核心操作导致失败 | 返回结构化 unsupported-capability 预检错误，而非成功或无关错误。 |
-| 多次运行之间状态泄漏 | 创建隔离 fixture，并在套件期间保持其资源存活；仅在支持 delete 时尝试清理。 |
-| 无法完成 provider 特有断言 | 保持相应可选 hook 为 unsupported，并为该行为添加 provider 自有测试。 |
-
-## 限制与最佳实践
-
-- 契约由 capability 驱动，并不宣称每个 provider 都具备相同 feature 集。
-- 平台行为、路径编码、安全边界、服务注册和当前套件覆盖范围外的 capability，仍需由 provider
-  自己测试。
-- testkit 是开发依赖；不要将其加入 provider 的生产依赖面。
-
-## 延伸阅读
-
-- [README](../README.zh_CN.md)
-- [English user guide](user_guide.md)
-- [API 文档](https://docs.rs/qubit-fs-testkit)
-
 ## 异步整文件写入恢复（0.3）
 
 `qubit-fs` 0.7 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
@@ -244,7 +217,6 @@ python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase ci
 ```
 
-
 ## 核心 0.7 的恢复所有权
 
 writer／临时资源打开的负面检查遇到 provider 契约违例时，会完整保留 `OpenFailure<R>`。
@@ -265,3 +237,33 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 对于临时资源，0.6 版本遵循核心 0.7 将 publication 事实与源资格分开的契约。本套件
 检查既有的重复生命周期，包括成功 `keep` 后的发布目标；新增源状态、非法重试、
 cleanup 失败与取消由核心及 adapter 回归覆盖。
+
+## 错误与诊断
+
+套件以包含阶段信息的断言消息报告失败。当 capability 未被声明时，套件期望结构化的
+`UnsupportedCapability` 错误，其中包含对应 operation 和 required capability context。fixture 映射
+或 hook 失败会以 `FixtureError`/`FixtureResult` 失败呈现。
+
+## 排障
+
+| 现象 | 检查项 |
+| --- | --- |
+| properties 阶段失败 | 确保 ID 非空、capability 没有缺失依赖，且 fixture 路径符合门面约束。 |
+| 未声明的核心操作导致失败 | 返回结构化 unsupported-capability 预检错误，而非成功或无关错误。 |
+| 多次运行之间状态泄漏 | 创建隔离 fixture，并在套件期间保持其资源存活；仅在支持 delete 时尝试清理。 |
+| 无法完成 provider 特有断言 | 保持相应可选 hook 为 unsupported，并为该行为添加 provider 自有测试。 |
+
+## 限制与最佳实践
+
+- 契约由 capability 驱动，并不宣称每个 provider 都具备相同 feature 集。
+- 平台行为、路径编码、安全边界、服务注册和当前套件覆盖范围外的 capability，仍需由 provider
+  自己测试。
+- testkit 是开发依赖；不要将其加入 provider 的生产依赖面。
+
+## 延伸阅读
+
+- [README](../README.zh_CN.md)
+- [English user guide](user_guide.md)
+- [API 文档](https://docs.rs/qubit-fs-testkit)
+- [English design](../doc/file_system_testkit_design.md)
+- [中文设计](../doc/file_system_testkit_design.zh_CN.md)
