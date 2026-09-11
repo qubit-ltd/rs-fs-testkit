@@ -22,6 +22,7 @@ cargo add --dev qubit-fs-testkit@0.6
 
 ## 快速开始
 
+你正在交付新的 provider，需要用一次隔离运行证明：已声明的 capability 与可观察行为一致。
 对于能提供全新测试文件系统的 provider，请实现 `FileSystemFixture`，并注册具名同步契约：
 
 ```rust,ignore
@@ -44,7 +45,14 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝。
 不适用的检查和缺失的可选探针会在报告中明确记录。
 
-## 提供的能力
+## 为什么需要这个项目
+
+每个 `qubit-fs` provider 都要证明：已声明 capability 与真实文件系统行为一致，包括预检拒绝、
+结构化限制、发布结果和清理。在各 crate 中重复实现同一套矩阵，成本高且容易与共享契约脱节。
+`qubit-fs-testkit` 通过 fixture 与注册宏集中提供 capability 驱动的契约检查，让验证留在开发依赖中，
+不进入生产依赖图。
+
+## 核心能力
 
 - `FileSystemFixture` 和 `AsyncFileSystemFixture`：提供隔离门面与 provider 特有路径映射；可选
   hooks 可在被测操作之外执行准备和观察。
@@ -71,16 +79,7 @@ capability。
 - [API 文档](https://docs.rs/qubit-fs-testkit)
 - [English README](README.md)
 
-## 文件系统契约更新
-
-0.6 版本对应 `qubit-fs` 0.7，并遵循目标发布与源资格分离的契约。共享套件保留既有的
-重复生命周期检查，包括成功 `keep` 后保留发布目标；新增源状态和取消矩阵由
-`qubit-fs` 核心与 adapter 回归验证，不属于此可复用套件自身的覆盖范围。
-
-List 契约新增可独立执行的 `list/namespace` 和 `list/raw-root-prefix` 检查。
-平面命名空间夹具通过 SDK 或独立模型实现 `snapshot_namespace_paths`，快照必须包含
-本次检查之前已经存在的键。缺少该观察能力时，完整性标记为 **Unverified**。
-原始前缀检查区分 `folder`、`folder/a`、`folderish` 与无关键；字面过滤器在非空根范围下验证。
+0.6 版本对应 `qubit-fs` 0.7；列举、取消与恢复等细节见[用户手册](doc/user_guide.zh_CN.md)。
 
 ## 测试
 
@@ -115,5 +114,3 @@ Pull Request 前运行 `./align-ci.sh`格式化代码，运行`./ci-check.sh`对
 **Haixing Hu** - *Qubit Co. Ltd.*
 
 仓库地址：[https://github.com/qubit-ltd/rs-fs-testkit](https://github.com/qubit-ltd/rs-fs-testkit)
-
-异步 Write 契约要求通过 `prepare_write_cancellation` 提供阶段探针。缺失证据保持 `Unverified`，严格完整性检查失败，详见[用户指南](doc/user_guide.zh_CN.md)。

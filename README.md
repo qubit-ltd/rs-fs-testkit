@@ -25,7 +25,9 @@ asynchronous suite.
 
 ## Quick Start
 
-For a provider that exposes a fresh test filesystem, implement
+You are shipping a new provider and need one isolated fixture to prove that
+every advertised capability matches observable behavior. For a provider that
+exposes a fresh test filesystem, implement
 `FileSystemFixture` and register independently named synchronous contracts:
 
 ```rust,ignore
@@ -48,6 +50,15 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 The suite follows advertised capabilities. It checks supported behavior and
 structured rejection of unavailable operations. Inapplicable checks and missing
 optional instrumentation remain explicit in the report.
+
+## Why This Project Exists
+
+Each `qubit-fs` provider must show that declared capabilities match real
+filesystem behavior—preflight rejection, structured limits, publication
+outcomes, and cleanup. Rebuilding that matrix in every crate duplicates effort
+and drifts from the shared contract. `qubit-fs-testkit` centralizes
+capability-driven checks behind fixtures and registration macros so validation
+stays in development dependencies and out of production graphs.
 
 ## What It Provides
 
@@ -83,20 +94,8 @@ the suite's current coverage.
 - [API documentation](https://docs.rs/qubit-fs-testkit)
 - [中文 README](README.zh_CN.md)
 
-## Filesystem contract update
-
-Version 0.6 targets `qubit-fs` 0.7 and follows its separate target-publication
-and source-qualification contract. The shared suite retains its existing
-repeated-lifecycle checks, including the publication target after a successful
-`keep`. The new source-state and cancellation matrices are verified by
-`qubit-fs` core and adapter regressions rather than by this reusable suite.
-
-The List contract includes independently selectable `list/namespace` and
-`list/raw-root-prefix` checks. Flat fixtures implement `snapshot_namespace_paths`
-using their SDK or fixture model, including keys created before the current
-check. Without that observation, namespace completeness is **Unverified**.
-The raw-prefix check distinguishes `folder`, `folder/a`, and `folderish` from
-unrelated keys; literal filters are tested relative to a nonempty root.
+Version 0.6 targets `qubit-fs` 0.7; list, cancellation, and recovery details
+are documented in the [user guide](doc/user_guide.md).
 
 ## Testing
 
@@ -132,5 +131,3 @@ API documentation and tests current, and run `./align-ci.sh` to format code and
 **Haixing Hu** - *Qubit Co. Ltd.*
 
 Repository: [https://github.com/qubit-ltd/rs-fs-testkit](https://github.com/qubit-ltd/rs-fs-testkit)
-
-Async Write contracts require stage-aware `prepare_write_cancellation` probes. Missing evidence remains `Unverified` and fails strict completeness; see the [user guide](doc/user_guide.md).
