@@ -17,6 +17,19 @@ use std::fmt::Result as FmtResult;
 /// [`crate::ContractSource::take`] and downcast to the concrete writer type.
 /// Taking it transfers recovery responsibility to the caller. Formatting does
 /// not inspect the writer or invoke the provider's error formatter.
+///
+/// # Examples
+///
+/// Downcast the error returned from [`ContractSource::take`] to the concrete
+/// writer failure, then inspect the retained writer:
+///
+/// ```
+/// use qubit_fs_testkit::ContractWriterFailure;
+///
+/// fn inspect_writer<W>(failure: &ContractWriterFailure<W>) -> &W {
+///     failure.writer()
+/// }
+/// ```
 #[must_use]
 pub struct ContractWriterFailure<W> {
     error: Box<dyn Error + Send>,

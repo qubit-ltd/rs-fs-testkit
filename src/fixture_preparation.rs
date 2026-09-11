@@ -10,6 +10,15 @@
 /// Preparation failures use `FixtureResult::Err`. A fixture cannot turn a
 /// backend error into an inapplicability declaration. The suite validates
 /// declarations against the provider's capability guarantees.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::FixturePreparation;
+///
+/// let ready = FixturePreparation::Ready("payload");
+/// assert!(matches!(ready, FixturePreparation::Ready(_)));
+/// ```
 #[must_use]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FixturePreparation<T> {

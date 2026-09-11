@@ -11,6 +11,20 @@ use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 
 /// One named check in a contract report.
+///
+/// # Examples
+///
+/// ```
+/// # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
+/// # use support::RustdocSyncFixture;
+/// use qubit_fs_testkit::{ContractCheckOutcome, FileSystemContract, FileSystemContractSuite};
+///
+/// let fixture = RustdocSyncFixture::new();
+/// let mut suite = FileSystemContractSuite::new(&fixture);
+/// suite.run_contract(FileSystemContract::Properties);
+/// let check = &suite.run().report().checks()[0];
+/// assert!(matches!(check.outcome(), ContractCheckOutcome::Passed | ContractCheckOutcome::Failed { .. }));
+/// ```
 #[must_use]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractCheck {

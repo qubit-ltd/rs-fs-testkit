@@ -11,6 +11,15 @@
 ///
 /// The fixture prepares a path and the supplied content through an independent
 /// channel. The suite constructs the request and checks its fixed semantics.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::ReadScenario;
+///
+/// assert_eq!(ReadScenario::Basic, ReadScenario::Basic);
+/// assert_ne!(ReadScenario::Range, ReadScenario::Checksum);
+/// ```
 #[must_use]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReadScenario {

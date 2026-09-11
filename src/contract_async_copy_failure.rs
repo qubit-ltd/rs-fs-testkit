@@ -22,6 +22,17 @@ use qubit_fs::error::FsError;
 /// operation even when it has no recovery writer. Taking this value transfers
 /// any recovery responsibility to the caller; dropping it does not perform
 /// asynchronous abort. Formatting never invokes a provider formatter.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs::error::FsError;
+/// use qubit_fs_testkit::ContractAsyncCopyFailure;
+///
+/// fn inspect_error(failure: &ContractAsyncCopyFailure) -> &FsError {
+///     failure.error()
+/// }
+/// ```
 #[must_use]
 pub struct ContractAsyncCopyFailure {
     failure: AsyncCopyFailure,

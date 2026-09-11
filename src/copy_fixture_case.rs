@@ -11,6 +11,20 @@ use qubit_fs::copy::CopyOptions;
 use qubit_fs::path::Path;
 
 /// Provider-prepared case that makes one native copy method applicable.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs::copy::CopyOptions;
+/// use qubit_fs::path::Path;
+/// use qubit_fs_testkit::CopyFixtureCase;
+///
+/// let source = Path::parse("/source")?;
+/// let target = Path::parse("/target")?;
+/// let case = CopyFixtureCase::new(source, target, CopyOptions::file());
+/// assert_eq!(case.source(), &Path::parse("/source")?);
+/// # Ok::<(), qubit_fs::error::FsError>(())
+/// ```
 #[must_use]
 #[derive(Clone, Debug)]
 pub struct CopyFixtureCase {

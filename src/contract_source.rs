@@ -18,6 +18,19 @@ use std::sync::Mutex;
 /// This wrapper serializes explicit inspection and ownership transfer.
 /// Formatting never invokes provider code. Taking the source transfers any
 /// recovery responsibility; otherwise ordinary destruction still drops it.
+///
+/// # Examples
+///
+/// After downcasting a failure chain to `ContractSource`, transfer ownership of
+/// the retained provider error:
+///
+/// ```
+/// use qubit_fs_testkit::ContractSource;
+///
+/// fn transfer(source: &ContractSource) -> Option<Box<dyn std::error::Error + Send>> {
+///     source.take()
+/// }
+/// ```
 #[must_use]
 pub struct ContractSource {
     error: Mutex<Option<Box<dyn Error + Send>>>,

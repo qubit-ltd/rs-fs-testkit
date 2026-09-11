@@ -16,6 +16,8 @@ use qubit_fs::write::WriteOptions;
 /// `into_parts` transfers ownership to the driver; the probe can keep an
 /// independent clone for target observation.
 ///
+/// # Examples
+///
 /// ```
 /// use qubit_fs::path::Path;
 /// use qubit_fs::write::{WriteDisposition, WriteOptions};

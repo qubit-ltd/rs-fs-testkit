@@ -12,6 +12,16 @@
 /// # Type Parameters
 ///
 /// * `T` - Value returned when the fixture supports the probe.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::FixtureSupport;
+///
+/// let supported = FixtureSupport::Supported(7_u32);
+/// assert_eq!(supported, FixtureSupport::Supported(7));
+/// assert_eq!(FixtureSupport::<u32>::Unsupported, FixtureSupport::Unsupported);
+/// ```
 #[must_use]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FixtureSupport<T> {

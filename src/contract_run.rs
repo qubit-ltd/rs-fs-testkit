@@ -12,6 +12,21 @@ use crate::ContractReport;
 ///
 /// A completed run may fail its requirements. Completion means only that
 /// execution and its automatic cleanup attempt returned.
+///
+/// # Examples
+///
+/// ```
+/// # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
+/// # use support::RustdocSyncFixture;
+/// use qubit_fs_testkit::{FileSystemContract, FileSystemContractSuite};
+///
+/// let fixture = RustdocSyncFixture::new();
+/// let mut suite = FileSystemContractSuite::new(&fixture);
+/// suite.run_contract(FileSystemContract::Properties);
+/// let run = suite.run();
+/// assert!(!run.was_interrupted());
+/// assert!(!run.report().checks().is_empty());
+/// ```
 #[must_use]
 pub struct ContractRun {
     pub(crate) report: ContractReport,

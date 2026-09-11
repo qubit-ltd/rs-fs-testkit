@@ -6,6 +6,17 @@
 //! Outcomes recorded by filesystem contract checks.
 
 /// The observable result of one stable contract check.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::ContractCheckOutcome;
+///
+/// let outcome = ContractCheckOutcome::NotApplicable {
+///     reason: "provider does not expose server-side copy".to_owned(),
+/// };
+/// assert!(matches!(outcome, ContractCheckOutcome::NotApplicable { .. }));
+/// ```
 #[must_use]
 #[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]

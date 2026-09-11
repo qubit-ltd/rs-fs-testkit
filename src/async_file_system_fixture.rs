@@ -31,9 +31,30 @@ use crate::WriteCancellationProbe;
 ///
 /// * `'a` - Lifetime shared by the fixture and borrowed request data.
 /// * `T` - Successful value produced by the asynchronous hook.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::FixtureFuture;
+///
+/// let future: FixtureFuture<'_, i32> = Box::pin(async { Ok(42) });
+/// let _ = future;
+/// ```
 pub type FixtureFuture<'a, T> = Pin<Box<dyn Future<Output = FixtureResult<T>> + Send + 'a>>;
 
 /// Supplies an isolated asynchronous facade and optional provider observations.
+///
+/// # Examples
+///
+/// ```
+/// # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
+/// # use support::RustdocAsyncFixture;
+/// use qubit_fs_testkit::{AsyncFileSystemContractSuite, AsyncFileSystemFixture};
+///
+/// let fixture = RustdocAsyncFixture::new();
+/// let suite = AsyncFileSystemContractSuite::new(&fixture);
+/// assert!(suite.run().report().checks().is_empty());
+/// ```
 pub trait AsyncFileSystemFixture: Sync {
     /// Snapshots every logical path in the isolated configured namespace.
     ///

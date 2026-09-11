@@ -8,6 +8,15 @@
 //! Cancellation stages exercised by asynchronous copy contract probes.
 
 /// Cancellation point exercised by an asynchronous copy contract probe.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::AsyncCopyCancellationStage;
+///
+/// assert_eq!(AsyncCopyCancellationStage::Reader, AsyncCopyCancellationStage::Reader);
+/// assert_ne!(AsyncCopyCancellationStage::Writer, AsyncCopyCancellationStage::Commit);
+/// ```
 #[must_use]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AsyncCopyCancellationStage {

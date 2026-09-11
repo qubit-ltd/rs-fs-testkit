@@ -6,6 +6,15 @@
 //! Independently prepared copy request scenarios.
 
 /// The source and destination state required by a copy check.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::CopyScenario;
+///
+/// assert_eq!(CopyScenario::Basic, CopyScenario::Basic);
+/// assert_ne!(CopyScenario::Conflict, CopyScenario::ServerSide);
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CopyScenario {
     /// A file source and an absent destination.

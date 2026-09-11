@@ -19,6 +19,16 @@ use std::fmt::Result as FmtResult;
 /// resource type. Taking it transfers recovery responsibility to the caller.
 /// Formatting does not inspect the resource or invoke the provider's error
 /// formatter.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::ContractTempFailure;
+///
+/// fn inspect_resource<T>(failure: &ContractTempFailure<T>) -> &T {
+///     failure.resource()
+/// }
+/// ```
 #[must_use]
 pub struct ContractTempFailure<T> {
     error: Box<dyn Error + Send>,
