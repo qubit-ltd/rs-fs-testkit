@@ -15,6 +15,22 @@ use crate::FixtureFuture;
 use crate::FixtureResult;
 
 /// Controls one provider-owned pending stage of an owning write operation.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs::path::Path;
+/// use qubit_fs::write::{WriteDisposition, WriteOptions};
+/// use qubit_fs_testkit::AsyncWriteFixtureCase;
+///
+/// let case = AsyncWriteFixtureCase::new(
+///     Path::parse("/target")?,
+///     b"payload".to_vec(),
+///     WriteOptions::default().with_disposition(WriteDisposition::CreateNew),
+/// );
+/// assert_eq!(case.bytes(), b"payload");
+/// # Ok::<(), qubit_fs::error::FsError>(())
+/// ```
 pub trait WriteCancellationProbe: Send + Sync {
     /// Returns the isolated write request controlled by this probe.
     fn case(&self) -> &AsyncWriteFixtureCase;

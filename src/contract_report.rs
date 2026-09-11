@@ -13,6 +13,19 @@ use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 
 /// A report containing stable check identities and their outcomes.
+///
+/// # Examples
+///
+/// ```
+/// # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
+/// # use support::RustdocSyncFixture;
+/// use qubit_fs_testkit::{FileSystemContract, FileSystemContractSuite};
+///
+/// let fixture = RustdocSyncFixture::new();
+/// let mut suite = FileSystemContractSuite::new(&fixture);
+/// suite.run_contract(FileSystemContract::Properties);
+/// assert!(!suite.run().report().checks().is_empty());
+/// ```
 #[must_use]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractReport {

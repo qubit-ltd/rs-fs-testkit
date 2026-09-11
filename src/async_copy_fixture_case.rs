@@ -11,6 +11,20 @@ use qubit_fs::copy::CopyOptions;
 use qubit_fs::path::Path;
 
 /// Provider-prepared asynchronous copy request used for cancellation probing.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs::copy::CopyOptions;
+/// use qubit_fs::path::Path;
+/// use qubit_fs_testkit::AsyncCopyFixtureCase;
+///
+/// let source = Path::parse("/source")?;
+/// let target = Path::parse("/target")?;
+/// let case = AsyncCopyFixtureCase::new(source, target, CopyOptions::file());
+/// assert_eq!(case.target(), &Path::parse("/target")?);
+/// # Ok::<(), qubit_fs::error::FsError>(())
+/// ```
 #[must_use]
 #[derive(Clone, Debug)]
 pub struct AsyncCopyFixtureCase {

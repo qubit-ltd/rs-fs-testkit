@@ -14,6 +14,15 @@ use std::fmt::Formatter;
 use std::fmt::Result as FmtResult;
 
 /// Failure raised by fixture setup or out-of-band observation.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::FixtureError;
+///
+/// let error = FixtureError::new("independent read setup unavailable");
+/// assert_eq!(error.to_string(), "independent read setup unavailable");
+/// ```
 #[must_use]
 pub struct FixtureError {
     /// Human-readable context safe to expose through `Display` and `Debug`.
@@ -113,4 +122,15 @@ impl Error for FixtureError {
 /// # Type Parameters
 ///
 /// * `T` - Successful value produced by the fixture hook.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::{FixtureError, FixtureResult};
+///
+/// let ok: FixtureResult<u32> = Ok(9);
+/// let err: FixtureResult<u32> = Err(FixtureError::new("setup failed"));
+/// assert_eq!(ok.unwrap(), 9);
+/// assert!(err.is_err());
+/// ```
 pub type FixtureResult<T> = Result<T, FixtureError>;

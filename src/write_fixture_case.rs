@@ -11,6 +11,22 @@ use qubit_fs::write::WriteOptions;
 /// A write request; its expected behavior is determined by `WriteScenario`.
 ///
 /// Fixtures supply representable requests, never weaker expected results.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs::path::Path;
+/// use qubit_fs::write::{WriteDisposition, WriteOptions};
+/// use qubit_fs_testkit::WriteFixtureCase;
+///
+/// let request = WriteFixtureCase::new(
+///     Path::parse("/isolated/write")?,
+///     b"payload".to_vec(),
+///     WriteOptions::default().with_disposition(WriteDisposition::CreateNew),
+/// );
+/// assert_eq!(request.bytes(), b"payload");
+/// # Ok::<(), qubit_fs::error::FsError>(())
+/// ```
 #[must_use]
 #[derive(Clone, Debug)]
 pub struct WriteFixtureCase {

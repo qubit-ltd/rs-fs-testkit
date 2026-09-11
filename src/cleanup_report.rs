@@ -10,6 +10,19 @@ use crate::ContractFailure;
 /// Cleanup attempts and their historical failures.
 ///
 /// A later successful teardown does not erase a failed facade deletion.
+///
+/// # Examples
+///
+/// ```
+/// # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
+/// # use support::RustdocSyncFixture;
+/// use qubit_fs_testkit::{FileSystemContract, FileSystemContractSuite};
+///
+/// let fixture = RustdocSyncFixture::new();
+/// let mut suite = FileSystemContractSuite::new(&fixture);
+/// suite.run_contract(FileSystemContract::Properties);
+/// assert!(suite.run().cleanup().completed());
+/// ```
 #[must_use]
 pub struct CleanupReport {
     pub(crate) attempts: usize,

@@ -84,6 +84,19 @@ mod support;
 /// # Type Parameters
 ///
 /// * `'a` - Lifetime of the borrowed provider fixture.
+///
+/// # Examples
+///
+/// ```
+/// # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
+/// # use support::RustdocSyncFixture;
+/// use qubit_fs_testkit::{FileSystemContract, FileSystemContractSuite};
+///
+/// let fixture = RustdocSyncFixture::new();
+/// let mut suite = FileSystemContractSuite::new(&fixture);
+/// suite.run_contract(FileSystemContract::Properties);
+/// assert!(!suite.run().was_interrupted());
+/// ```
 #[must_use = "the suite must run at least one contract assertion"]
 pub struct FileSystemContractSuite<'a> {
     /// Provider-owned fixture supplying the facade and observation hooks.

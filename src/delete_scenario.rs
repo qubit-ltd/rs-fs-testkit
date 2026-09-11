@@ -6,6 +6,15 @@
 //! Independent file preparation for deletion checks.
 
 /// Identifies the file state required by a deletion check.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::DeleteScenario;
+///
+/// assert_eq!(DeleteScenario::Basic, DeleteScenario::Basic);
+/// assert_ne!(DeleteScenario::Basic, DeleteScenario::IfMatch);
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeleteScenario {
     /// An existing file whose removal can be independently observed.

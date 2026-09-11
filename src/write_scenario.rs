@@ -6,6 +6,15 @@
 //! Provider-neutral write scenarios with fixed contract expectations.
 
 /// The write behavior whose request a fixture prepares.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::WriteScenario;
+///
+/// assert_eq!(WriteScenario::Create, WriteScenario::Create);
+/// assert_ne!(WriteScenario::Replace, WriteScenario::Append);
+/// ```
 #[must_use]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WriteScenario {

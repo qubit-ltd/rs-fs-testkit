@@ -6,6 +6,15 @@
 //! Named phases shared by synchronous and asynchronous contract suites.
 
 /// One independently executable provider contract phase.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_testkit::FileSystemContract;
+///
+/// assert!(FileSystemContract::ALL.contains(&FileSystemContract::Properties));
+/// assert_eq!(FileSystemContract::ALL.len(), 12);
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FileSystemContract {
     /// Immutable facade properties and fixture path compatibility.

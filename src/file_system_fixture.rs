@@ -19,6 +19,18 @@ use crate::FixtureResult;
 use crate::FixtureSupport;
 
 /// Supplies an isolated facade and provider-specific contract observations.
+///
+/// # Examples
+///
+/// ```
+/// # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
+/// # use support::RustdocSyncFixture;
+/// use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
+///
+/// let fixture = RustdocSyncFixture::new();
+/// let suite = FileSystemContractSuite::new(&fixture);
+/// assert!(suite.run().report().checks().is_empty());
+/// ```
 pub trait FileSystemFixture {
     /// Snapshots every logical path in the isolated configured namespace.
     ///

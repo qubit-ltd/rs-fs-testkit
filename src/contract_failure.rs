@@ -19,6 +19,21 @@ use crate::ContractCheckId;
 ///
 /// Formatting never invokes the provider's arbitrary `Debug` implementation.
 /// A panic payload remains available for explicit caller inspection.
+///
+/// # Examples
+///
+/// ```
+/// # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
+/// # use support::RustdocSyncFixture;
+/// use qubit_fs_testkit::{FileSystemContract, FileSystemContractSuite};
+///
+/// let fixture = RustdocSyncFixture::new();
+/// let mut suite = FileSystemContractSuite::new(&fixture);
+/// suite.run_contract(FileSystemContract::Properties);
+/// suite.run_contract(FileSystemContract::Stat);
+/// assert!(!suite.run().failures().is_empty());
+/// assert!(suite.run().failures()[0].message().contains("session already started"));
+/// ```
 pub struct ContractFailure {
     check: Option<ContractCheckId>,
     message: String,
