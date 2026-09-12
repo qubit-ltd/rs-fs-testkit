@@ -16,7 +16,7 @@ dependency graphs.
 ## Installation
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.6
+cargo add --dev qubit-fs-testkit@0.7
 ```
 
 The synchronous contract suite is available without features. Add
@@ -94,7 +94,7 @@ the suite's current coverage.
 - [API documentation](https://docs.rs/qubit-fs-testkit)
 - [中文 README](README.zh_CN.md)
 
-Version 0.6 targets `qubit-fs` 0.7; list, cancellation, and recovery details
+Version 0.7 targets `qubit-fs` 0.8; list, cancellation, and recovery details
 are documented in the [user guide](doc/user_guide.md).
 
 ## Testing

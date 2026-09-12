@@ -14,7 +14,7 @@
 ## 安装
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.6
+cargo add --dev qubit-fs-testkit@0.7
 ```
 
 同步契约套件无需额外 feature 即可使用；使用异步套件时，请在开发依赖中加入
@@ -79,7 +79,7 @@ capability。
 - [API 文档](https://docs.rs/qubit-fs-testkit)
 - [English README](README.md)
 
-0.6 版本对应 `qubit-fs` 0.7；列举、取消与恢复等细节见[用户手册](doc/user_guide.zh_CN.md)。
+0.7 版本对应 `qubit-fs` 0.8；列举、取消与恢复等细节见[用户手册](doc/user_guide.zh_CN.md)。
 
 ## 测试
 

@@ -5,7 +5,7 @@
 ## Purpose and Audience
 
 This guide is for authors of synchronous or asynchronous `qubit-fs` providers.
-It covers the current `qubit-fs-testkit` 0.6 contract suites, which are test
+It covers the current `qubit-fs-testkit` 0.7 contract suites, which are test
 support and therefore belong in provider development dependencies.
 
 ## Conceptual Model
@@ -251,7 +251,7 @@ remote suite has been run.
 
 ## Whole-file asynchronous write recovery (0.3)
 
-`qubit-fs` 0.7 requires owned payloads for `begin_write_all`. The async Write
+`qubit-fs` 0.8 requires owned payloads for `begin_write_all`. The async Write
 phase checks `write/owning-operation` and `write/repeated-execute`, and actually
 calls `prepare_write_cancellation` for Open, Write, Flush and Commit.
 Implement `WriteCancellationProbe::poll_reached` to acknowledge that the selected
@@ -293,7 +293,7 @@ python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase ci
 ```
 
-## Recovery ownership in core 0.7
+## Recovery ownership in core 0.8
 
 Negative writer/temp open checks retain the complete `OpenFailure<R>` when the
 provider violates its contract. Inspect `OpenFailureStage` and match recovery
@@ -314,7 +314,7 @@ Recovering it never changes historical state or bytes. Missing write cancellatio
 probes are Unverified, not passed or optional evidence. Existing check IDs remain
 unchanged; range checks now include zero and EOF windows when capability permits.
 
-For temporary resources, version 0.6 follows the core 0.7 contract that keeps
+For temporary resources, version 0.7 follows the core 0.8 contract that keeps
 publication facts independent from source qualification. This suite checks the
 existing repeated lifecycle, including the publication target after a successful
 `keep`. Core and adapter regressions cover the new source states, invalid retries,
