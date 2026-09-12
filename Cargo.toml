@@ -1,6 +1,6 @@
 [package]
 name = "qubit-fs-testkit"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -34,8 +34,8 @@ default = []
 async = ["qubit-fs/async"]
 
 [dependencies]
-qubit-fs = { path = "../rs-fs", version = "0.7", default-features = false }
-qubit-io = "0.16"
+qubit-fs = { path = "../rs-fs", version = "0.8", default-features = false }
+qubit-io = "0.17"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
