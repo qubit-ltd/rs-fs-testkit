@@ -6,7 +6,7 @@ rust-version = "1.94"
 publish = false
 
 [dependencies]
-qubit-fs = { path = "../../../rs-fs", default-features = false, features = ["async"] }
+qubit-fs = { version = "0.8", path = "../../../rs-fs", default-features = false, features = ["async"] }
 qubit-io = "0.17"
 object_store = { version = "=0.14.1", features = ["aws"] }
 bytes = "1"
@@ -14,7 +14,7 @@ futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 
 [dev-dependencies]
-qubit-fs-testkit = { path = "../..", default-features = false, features = ["async"] }
+qubit-fs-testkit = { version = "0.7", path = "../..", default-features = false, features = ["async"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
