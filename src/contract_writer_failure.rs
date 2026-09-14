@@ -20,8 +20,8 @@ use std::fmt::Result as FmtResult;
 ///
 /// # Examples
 ///
-/// Downcast the error returned from [`ContractSource::take`] to the concrete
-/// writer failure, then inspect the retained writer:
+/// Downcast the error returned from [`crate::ContractSource::take`] to the
+/// concrete writer failure, then inspect the retained writer:
 ///
 /// ```
 /// use qubit_fs_testkit::ContractWriterFailure;
