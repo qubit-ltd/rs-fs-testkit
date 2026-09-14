@@ -34,7 +34,7 @@ default = []
 async = ["qubit-fs/async"]
 
 [dependencies]
-qubit-fs = { path = "../rs-fs", default-features = false }
+qubit-fs = { version = "0.8", path = "../rs-fs", default-features = false }
 qubit-io = "0.17"
 
 [lints.rust]
