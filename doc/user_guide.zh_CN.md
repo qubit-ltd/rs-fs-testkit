@@ -61,12 +61,11 @@ fast path；当 `Read` 与 `Write` 可用且请求属于 allowlist 时，仍可�
 fallback 前提缺失时才返回结构化的 unsupported-capability 错误。未声明的强化保证会被检查
 是否返回结构化的 `RequirementNotMet` 预检错误。
 
-读取预算针对本次选中的窗口，而不是整个资源。若打开时元数据提供总长度，套件会计算
-`min(max(0, total_length - offset), requested_length)`；未指定 length 时使用扣除 offset
-后的剩余长度，再将结果与 `max_bytes` 比较。例如，从 `0123456789` 读取
-`offset = 2`、`length = 3`，且 `max_bytes = 3`，必须返回 `234`；预算为 `2` 时必须返回
-`ResourceLimitExceeded`。总长度未知时不能据此预检拒绝，但实际流仍必须遵守预算。套件始终
-先打开 reader，即使窗口长度为零也如此，因此 NotFound、权限和条件错误仍会保留。
+读取预算针对本次选中窗口实际消费的字节，而不是整个资源或元数据长度。例如，从
+`0123456789` 读取 `offset = 2`、`length = 3`，且 `max_bytes = 3`，必须返回 `234`；
+预算为 `2` 时必须返回 `ResourceLimitExceeded`。元数据高估长度时，不能在读取前拒绝
+实际较短的流。套件始终先打开 reader，即使窗口长度为零也如此，因此 NotFound、权限和
+条件错误仍会保留。
 
 writer 成功 commit 后再次 commit，应返回 `InvalidState`，并将 `WriteFailureState` 报告为
 `Published`。它不得再次调用 provider commit，也不得自动 abort；已发布目标仍应可观察。

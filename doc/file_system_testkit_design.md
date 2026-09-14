@@ -19,6 +19,11 @@ must use an observation channel independent from the facade when they seed or
 inspect a premise; otherwise the same provider defect could satisfy both sides
 of a check.
 
+The `read_all` budget applies to bytes consumed from the selected window, not
+the full resource or its opened metadata length. A stale length overestimate
+cannot reject a shorter stream before reading it. The suite opens the reader
+even for a zero-length window so provider errors remain observable.
+
 ## Typed catalog and execution
 
 Every check has one `ContractCheckId`, one `FileSystemContract` phase, a

@@ -73,16 +73,13 @@ unsupported-capability failure.
 Unadvertised stronger guarantees are checked for structured `RequirementNotMet`
 preflight.
 
-The read budget applies to the selected window, rather than to the complete
-resource. If opened metadata reports a total length, the suite computes
-`min(max(0, total_length - offset), requested_length)` (or the remaining length
-when no length is requested) and compares that value with `max_bytes`. For
-example, reading `offset = 2`, `length = 3` from `0123456789` with
-`max_bytes = 3` must return `234`; a budget of `2` must return
-`ResourceLimitExceeded`. Unknown resource length cannot be preflight-rejected,
-but the actual stream is still checked against the budget. The suite always
-opens the reader first, including for a zero-length window, so not-found,
-permission, and condition errors are preserved.
+The read budget applies to bytes consumed from the selected window, rather than
+to the complete resource or its metadata length. For example, reading
+`offset = 2`, `length = 3` from `0123456789` with `max_bytes = 3` must return
+`234`; a budget of `2` must return `ResourceLimitExceeded`. An overestimated
+metadata length cannot reject a shorter stream before it is read. The suite
+always opens the reader first, including for a zero-length window, so
+not-found, permission, and condition errors are preserved.
 
 After a successful writer commit, a second commit is an `InvalidState` error
 whose `WriteFailureState` is `Published`. It must not issue another provider

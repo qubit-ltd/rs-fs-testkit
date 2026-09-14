@@ -303,12 +303,10 @@ Limit contract 至少覆盖：
 - `read_all` 同时遵守 caller limit 和 filesystem limit；
 - range、condition 与 checksum requirement。
 
-`read_all` 的 `max_bytes` 预算按本次读取窗口计算。打开元数据中的 `len` 仍表示完整资源长度；
-若已知该长度，先计算
-`selected = min(max(0, len - offset.unwrap_or(0)), length.unwrap_or(max(0, len - offset.unwrap_or(0))))`，
-再以 `selected` 做预检和预算预留。换言之，完整资源为 `0123456789` 时，
+`read_all` 的 `max_bytes` 预算按本次读取窗口实际消费的字节计算。打开元数据中的 `len`
+仍表示完整资源长度，但不用于预先拒绝读取。完整资源为 `0123456789` 时，
 `offset = 2, length = 3, max_bytes = 3` 必须成功并返回 `234`，`max_bytes = 2` 必须返回
-`ResourceLimitExceeded`。未知元数据长度时不做这项预检，实际读取仍逐块检查预算；窗口长度为零也
+`ResourceLimitExceeded`；即使元数据高估长度，实际较短的流也应成功。窗口长度为零也
 必须先执行 open，以保留 NotFound、权限和条件错误。offset 超出 EOF 是否成功属于 provider 的
 range 契约，核心只保证不会因完整资源长度而额外误拒绝已成功打开的窗口。
 
