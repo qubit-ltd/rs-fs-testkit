@@ -52,7 +52,10 @@ impl FileSystemContractSuite<'_> {
 
     /// Verifies stale rejection before current-version deletion on the same
     /// seed.
-    fn execute_delete(&mut self, id: ContractCheckId) -> Result<ContractCheckOutcome, ContractFailure> {
+    fn execute_delete(
+        &mut self,
+        id: ContractCheckId,
+    ) -> Result<ContractCheckOutcome, ContractFailure> {
         let relative = self.context.relative_name("delete-target");
         if !self.capable(FileSystemCapability::Delete) {
             if id != ContractCheckId::DeleteBasic {
@@ -60,13 +63,20 @@ impl FileSystemContractSuite<'_> {
                     reason: "Delete capability is unavailable".to_owned(),
                 });
             }
-            let path = self
+            let path = self.fixture.path(&relative).map_err(|error| {
+                ContractFailure::with_source("delete path preparation failed", error).at(id)
+            })?;
+            let error = match self
                 .fixture
-                .path(&relative)
-                .map_err(|error| ContractFailure::with_source("delete path preparation failed", error).at(id))?;
-            let error = match self.fixture.file_system().delete_file(&path, DeleteOptions::default()) {
+                .file_system()
+                .delete_file(&path, DeleteOptions::default())
+            {
                 Err(error) => error,
-                Ok(_) => return Err(ContractFailure::message_only("unavailable deletion succeeded").at(id)),
+                Ok(_) => {
+                    return Err(
+                        ContractFailure::message_only("unavailable deletion succeeded").at(id),
+                    );
+                }
             };
             verify_fs_error(
                 error,
@@ -84,7 +94,8 @@ impl FileSystemContractSuite<'_> {
                 ContractFailure::with_source("missing-delete path preparation failed", error).at(id)
             })?;
             let before = self.fixture.exists_out_of_band(&path).map_err(|error| {
-                ContractFailure::with_source("missing-delete initial observation failed", error).at(id)
+                ContractFailure::with_source("missing-delete initial observation failed", error)
+                    .at(id)
             })?;
             verify_condition(
                 matches!(before, FixtureSupport::Supported(false)),
@@ -96,14 +107,17 @@ impl FileSystemContractSuite<'_> {
                 .fixture
                 .file_system()
                 .delete_file(&path, DeleteOptions::default().with_missing_ok(true))
-                .map_err(|error| ContractFailure::with_source("missing-ok deletion failed", error).at(id))?;
+                .map_err(|error| {
+                    ContractFailure::with_source("missing-ok deletion failed", error).at(id)
+                })?;
             verify_condition(
                 outcome.already_missing(),
                 id,
                 "missing-ok outcome did not report absence",
             )?;
             let after = self.fixture.exists_out_of_band(&path).map_err(|error| {
-                ContractFailure::with_source("missing-delete final observation failed", error).at(id)
+                ContractFailure::with_source("missing-delete final observation failed", error)
+                    .at(id)
             })?;
             verify_condition(
                 matches!(after, FixtureSupport::Supported(false)),
@@ -112,15 +126,22 @@ impl FileSystemContractSuite<'_> {
             )?;
             return Ok(ContractCheckOutcome::Passed);
         }
-        if id == ContractCheckId::DeleteIfMatch && !self.capable(FileSystemCapability::ConditionalDelete) {
+        if id == ContractCheckId::DeleteIfMatch
+            && !self.capable(FileSystemCapability::ConditionalDelete)
+        {
             let path = self.fixture.path(&relative).map_err(|error| {
-                ContractFailure::with_source("conditional delete path preparation failed", error).at(id)
+                ContractFailure::with_source("conditional delete path preparation failed", error)
+                    .at(id)
             })?;
-            let options = DeleteOptions::default().with_if_match(Some(ResourceVersion::new("contract-version")));
+            let options = DeleteOptions::default()
+                .with_if_match(Some(ResourceVersion::new("contract-version")));
             let error = match self.fixture.file_system().delete_file(&path, options) {
                 Err(error) => error,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only("unavailable conditional deletion succeeded").at(id));
+                    return Err(ContractFailure::message_only(
+                        "unavailable conditional deletion succeeded",
+                    )
+                    .at(id));
                 }
             };
             verify_fs_error(
@@ -137,24 +158,30 @@ impl FileSystemContractSuite<'_> {
         let scenario = match id {
             ContractCheckId::DeleteBasic => DeleteScenario::Basic,
             ContractCheckId::DeleteIfMatch => DeleteScenario::IfMatch,
-            _ => return Err(ContractFailure::message_only("selected check is not file deletion").at(id)),
+            _ => {
+                return Err(
+                    ContractFailure::message_only("selected check is not file deletion").at(id),
+                );
+            }
         };
         let bytes = b"delete evidence";
         let prepared = self
             .fixture
             .prepare_delete(scenario, &relative, bytes)
-            .map_err(|error| ContractFailure::with_source("delete scenario preparation failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_source("delete scenario preparation failed", error).at(id)
+            })?;
         let path = match prepared {
             FixturePreparation::Ready(path) => path,
-            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason }
+            | FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified { reason });
             }
         };
         self.context.record_created(path.clone());
-        let initial = self
-            .fixture
-            .read_file(&path)
-            .map_err(|error| ContractFailure::with_source("delete initial observation failed", error).at(id))?;
+        let initial = self.fixture.read_file(&path).map_err(|error| {
+            ContractFailure::with_source("delete initial observation failed", error).at(id)
+        })?;
         verify_condition(
             matches!(initial, FixtureSupport::Supported(actual) if actual == bytes),
             id,
@@ -163,17 +190,28 @@ impl FileSystemContractSuite<'_> {
         let mut options = DeleteOptions::default();
         if id == ContractCheckId::DeleteIfMatch {
             let current = self.fixture.resource_version(&path).map_err(|error| {
-                ContractFailure::with_source("delete current version observation failed", error).at(id)
+                ContractFailure::with_source("delete current version observation failed", error)
+                    .at(id)
             })?;
-            let stale = self.fixture.stale_resource_version(&path).map_err(|error| {
-                ContractFailure::with_source("delete stale version observation failed", error).at(id)
-            })?;
-            let (FixtureSupport::Supported(current), FixtureSupport::Supported(stale)) = (current, stale) else {
+            let stale = self
+                .fixture
+                .stale_resource_version(&path)
+                .map_err(|error| {
+                    ContractFailure::with_source("delete stale version observation failed", error)
+                        .at(id)
+                })?;
+            let (FixtureSupport::Supported(current), FixtureSupport::Supported(stale)) =
+                (current, stale)
+            else {
                 return Ok(ContractCheckOutcome::Unverified {
                     reason: "conditional delete needs current and stale versions".to_owned(),
                 });
             };
-            verify_condition(current != stale, id, "stale delete version equals the current version")?;
+            verify_condition(
+                current != stale,
+                id,
+                "stale delete version equals the current version",
+            )?;
             let error = match self
                 .fixture
                 .file_system()
@@ -181,7 +219,10 @@ impl FileSystemContractSuite<'_> {
             {
                 Err(error) => error,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only("delete/if-match: stale version was accepted").at(id));
+                    return Err(ContractFailure::message_only(
+                        "delete/if-match: stale version was accepted",
+                    )
+                    .at(id));
                 }
             };
             verify_fs_error(
@@ -194,7 +235,8 @@ impl FileSystemContractSuite<'_> {
                 id,
             )?;
             let retained = self.fixture.read_file(&path).map_err(|error| {
-                ContractFailure::with_source("stale delete content observation failed", error).at(id)
+                ContractFailure::with_source("stale delete content observation failed", error)
+                    .at(id)
             })?;
             verify_condition(
                 matches!(retained, FixtureSupport::Supported(actual) if actual == bytes),
@@ -207,7 +249,9 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .file_system()
             .delete_file(&path, options)
-            .map_err(|error| ContractFailure::with_source("delete/basic: deletion failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_source("delete/basic: deletion failed", error).at(id)
+            })?;
         verify_condition(
             !outcome.already_missing(),
             id,
@@ -218,10 +262,9 @@ impl FileSystemContractSuite<'_> {
             id,
             "delete/basic: deleted count is zero",
         )?;
-        let after = self
-            .fixture
-            .exists_out_of_band(&path)
-            .map_err(|error| ContractFailure::with_source("delete publication observation failed", error).at(id))?;
+        let after = self.fixture.exists_out_of_band(&path).map_err(|error| {
+            ContractFailure::with_source("delete publication observation failed", error).at(id)
+        })?;
         verify_condition(
             matches!(after, FixtureSupport::Supported(false)),
             id,

@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -45,7 +44,11 @@ fn test_failed_cancellation_abort_retains_writer() {
                 .downcast::<ContractWriterFailure<AsyncFileWriter>>()
                 .expect("writer failure");
             assert_eq!(
-                retained.writer_mut().abort_async().await.expect("retry abort"),
+                retained
+                    .writer_mut()
+                    .abort_async()
+                    .await
+                    .expect("retry abort"),
                 WriteAbortOutcome::NotPublished
             );
             assert!(source.take().is_none());
@@ -79,7 +82,12 @@ fn test_copy_error_before_requested_stage_retains_operation() {
                 .downcast::<ContractAsyncCopyFailure>()
                 .expect("copy failure");
             assert_eq!(retained.failure().partial_stats().bytes, 0);
-            assert!(retained.operation().expect("admitted operation").has_recovery());
+            assert!(
+                retained
+                    .operation()
+                    .expect("admitted operation")
+                    .has_recovery()
+            );
             let mut writer = retained
                 .operation_mut()
                 .expect("admitted operation")
@@ -123,14 +131,21 @@ fn test_write_error_before_requested_stage_retains_operation() {
             .downcast::<testkit::ContractAsyncWriteFailure>()
             .expect("copy failure");
         assert_eq!(retained.failure().written_bytes(), 0);
-        assert!(retained.operation().expect("admitted operation").has_recovery());
+        assert!(
+            retained
+                .operation()
+                .expect("admitted operation")
+                .has_recovery()
+        );
         let mut writer = retained
             .operation_mut()
             .expect("admitted operation")
             .take_recovery()
             .map(|recovery| match recovery {
                 AsyncWriterRecovery::Opened(writer) => writer,
-                AsyncWriterRecovery::Rejected(_) => panic!("fixture must return a validated identity"),
+                AsyncWriterRecovery::Rejected(_) => {
+                    panic!("fixture must return a validated identity")
+                }
             })
             .expect("retained writer");
         assert_eq!(

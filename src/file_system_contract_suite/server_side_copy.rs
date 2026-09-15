@@ -43,20 +43,21 @@ impl FileSystemContractSuite<'_> {
         let source_relative = self.context.relative_name("server-side-source");
         let target_relative = self.context.relative_name("server-side-target");
         if !self.capable(capability) {
-            let source = self
-                .fixture
-                .path(&source_relative)
-                .map_err(|error| ContractFailure::with_source("server-side source path failed", error).at(id))?;
-            let target = self
-                .fixture
-                .path(&target_relative)
-                .map_err(|error| ContractFailure::with_source("server-side target path failed", error).at(id))?;
+            let source = self.fixture.path(&source_relative).map_err(|error| {
+                ContractFailure::with_source("server-side source path failed", error).at(id)
+            })?;
+            let target = self.fixture.path(&target_relative).map_err(|error| {
+                ContractFailure::with_source("server-side target path failed", error).at(id)
+            })?;
             self.context.record_created(target.clone());
             let options = CopyOptions::file().with_server_side(ServerSidePreference::Require);
             let failure = match self.fixture.file_system().copy(&source, &target, options) {
                 Err(failure) => failure,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only("unavailable server-side requirement succeeded").at(id));
+                    return Err(ContractFailure::message_only(
+                        "unavailable server-side requirement succeeded",
+                    )
+                    .at(id));
                 }
             };
             let error = failure.error();
@@ -68,26 +69,39 @@ impl FileSystemContractSuite<'_> {
                 || error.provider() != Some(self.context.properties().info().provider_id())
                 || failure.state() != CopyFailureState::Unchanged
             {
-                return Err(
-                    ContractFailure::with_owned_source("server-side rejection context differs", failure).at(id),
-                );
+                return Err(ContractFailure::with_owned_source(
+                    "server-side rejection context differs",
+                    failure,
+                )
+                .at(id));
             }
-            self.context
-                .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
+            self.context.record_check(
+                id,
+                Some(capability),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return Ok(());
         }
         let scenario = crate::internal::check_catalog::specification(id)
             .copy_scenario
-            .ok_or_else(|| ContractFailure::message_only("server-side scenario absent from catalog").at(id))?;
+            .ok_or_else(|| {
+                ContractFailure::message_only("server-side scenario absent from catalog").at(id)
+            })?;
         let prepared = self
             .fixture
             .prepare_copy(scenario, &source_relative, &target_relative, b"server-side")
-            .map_err(|error| ContractFailure::with_source("server-side preparation failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_source("server-side preparation failed", error).at(id)
+            })?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
-                self.context
-                    .record_check(id, Some(capability), ContractCheckOutcome::Unverified { reason });
+            FixturePreparation::Unavailable { reason }
+            | FixturePreparation::NotApplicable { reason } => {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::Unverified { reason },
+                );
                 return Ok(());
             }
         };
@@ -103,7 +117,8 @@ impl FileSystemContractSuite<'_> {
             "server-side preparation changed required request semantics",
         )?;
         let snapshot = match self.fixture.read_file(&source).map_err(|error| {
-            ContractFailure::with_source("server-side initial source observation failed", error).at(id)
+            ContractFailure::with_source("server-side initial source observation failed", error)
+                .at(id)
         })? {
             FixtureSupport::Supported(bytes) => bytes,
             FixtureSupport::Unsupported => {
@@ -123,14 +138,19 @@ impl FileSystemContractSuite<'_> {
             "server-side fixture source exceeds 64 KiB probe budget",
         )?;
         let before = self.fixture.exists_out_of_band(&target).map_err(|error| {
-            ContractFailure::with_source("server-side destination absence observation failed", error).at(id)
+            ContractFailure::with_source(
+                "server-side destination absence observation failed",
+                error,
+            )
+            .at(id)
         })?;
         let FixtureSupport::Supported(exists) = before else {
             self.context.record_check(
                 id,
                 Some(capability),
                 ContractCheckOutcome::Unverified {
-                    reason: "independent server-side destination absence observation unavailable".to_owned(),
+                    reason: "independent server-side destination absence observation unavailable"
+                        .to_owned(),
                 },
             );
             return Ok(());
@@ -140,20 +160,24 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .file_system()
             .copy(&source, &target, options)
-            .map_err(|error| ContractFailure::with_owned_source("server-side execution failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_owned_source("server-side execution failed", error).at(id)
+            })?;
         verify_condition(
             outcome.method() == CopyMethod::ServerSide && !outcome.used_fallback(),
             id,
             "copy did not provide the required server-side method",
         )?;
         verify_condition(
-            outcome.stats().bytes == snapshot.len() as u64 && outcome.stats().files + outcome.stats().objects == 1,
+            outcome.stats().bytes == snapshot.len() as u64
+                && outcome.stats().files + outcome.stats().objects == 1,
             id,
             "server-side copy statistics differ",
         )?;
         for path in [&source, &target] {
             let observed = self.fixture.read_file(path).map_err(|error| {
-                ContractFailure::with_source("server-side final contents observation failed", error).at(id)
+                ContractFailure::with_source("server-side final contents observation failed", error)
+                    .at(id)
             })?;
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(actual) if actual == snapshot),

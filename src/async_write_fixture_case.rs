@@ -51,7 +51,11 @@ pub struct AsyncWriteFixtureCase {
 impl AsyncWriteFixtureCase {
     /// Creates a prepared write request.
     pub fn new(path: Path, bytes: Vec<u8>, options: WriteOptions) -> Self {
-        Self { path, bytes, options }
+        Self {
+            path,
+            bytes,
+            options,
+        }
     }
 
     /// Returns the destination path.

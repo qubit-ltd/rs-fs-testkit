@@ -25,7 +25,10 @@ impl AsyncFileSystemContractSuite<'_> {
     /// fails.
     pub(super) async fn check_abort(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::WriteAbort;
-        let outcome = self.execute_abort().await.map_err(|failure| failure.at(id))?;
+        let outcome = self
+            .execute_abort()
+            .await
+            .map_err(|failure| failure.at(id))?;
         self.context
             .record_check(id, Some(FileSystemCapability::Write), outcome);
         Ok(())
@@ -39,8 +42,11 @@ impl AsyncFileSystemContractSuite<'_> {
                 reason: "Write capability is unavailable".to_owned(),
             });
         }
-        let bytes =
-            super::write::bounded_payload(self.context.properties().limits().max_write_bytes(), b"aborted", b'a');
+        let bytes = super::write::bounded_payload(
+            self.context.properties().limits().max_write_bytes(),
+            b"aborted",
+            b'a',
+        );
         let relative = self.context.relative_name("write-aborted");
         let prepared = self
             .fixture
@@ -55,7 +61,8 @@ impl AsyncFileSystemContractSuite<'_> {
             .map_err(|error| ContractFailure::with_source("abort preparation failed", error))?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason }
+            | FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified { reason });
             }
         };
@@ -70,7 +77,9 @@ impl AsyncFileSystemContractSuite<'_> {
             .fixture
             .exists_out_of_band(&path)
             .await
-            .map_err(|error| ContractFailure::with_source("abort initial observation failed", error))?;
+            .map_err(|error| {
+                ContractFailure::with_source("abort initial observation failed", error)
+            })?;
         let FixtureSupport::Supported(before) = before else {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "abort initial existence evidence unavailable".to_owned(),
@@ -82,7 +91,9 @@ impl AsyncFileSystemContractSuite<'_> {
             .file_system()
             .open_writer(&path, case.options().clone())
             .await
-            .map_err(|error| ContractFailure::with_owned_source("abort writer opening failed", error))?;
+            .map_err(|error| {
+                ContractFailure::with_owned_source("abort writer opening failed", error)
+            })?;
         if let Err(error) = writer.write_fully_async(&bytes).await {
             return Err(ContractFailure::with_owned_source(
                 "abort writer rejected bytes",
@@ -112,19 +123,25 @@ impl AsyncFileSystemContractSuite<'_> {
             .fixture
             .exists_out_of_band(&path)
             .await
-            .map_err(|error| ContractFailure::with_source("abort final observation failed", error))?;
+            .map_err(|error| {
+                ContractFailure::with_source("abort final observation failed", error)
+            })?;
         let FixtureSupport::Supported(after) = after else {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "abort final existence evidence unavailable".to_owned(),
             });
         };
         match outcome {
-            WriteAbortOutcome::NotPublished => {
-                verify_condition(!after, id, "abort claimed NotPublished but created the destination")?
-            }
-            WriteAbortOutcome::Published => {
-                verify_condition(after, id, "abort claimed Published but destination is absent")?
-            }
+            WriteAbortOutcome::NotPublished => verify_condition(
+                !after,
+                id,
+                "abort claimed NotPublished but created the destination",
+            )?,
+            WriteAbortOutcome::Published => verify_condition(
+                after,
+                id,
+                "abort claimed Published but destination is absent",
+            )?,
             WriteAbortOutcome::Indeterminate => {}
         }
         Ok(ContractCheckOutcome::Passed)

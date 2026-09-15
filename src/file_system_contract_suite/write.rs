@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -21,14 +20,23 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Executes exactly one write check with its own applicability decision.
-    pub(super) fn check_write_item(&mut self, id: ContractCheckId) -> Result<(), crate::ContractFailure> {
+    pub(super) fn check_write_item(
+        &mut self,
+        id: ContractCheckId,
+    ) -> Result<(), crate::ContractFailure> {
         self.context.begin(id.as_str());
         let spec = crate::internal::check_catalog::specification(id);
         if spec.contract != FileSystemContract::Write {
-            return Err(crate::ContractFailure::message_only("selected entry is not a write check").at(id));
+            return Err(crate::ContractFailure::message_only(
+                "selected entry is not a write check",
+            )
+            .at(id));
         }
         if !self.capable(FileSystemCapability::Write)
-            && !matches!(id, ContractCheckId::WriteBasic | ContractCheckId::WriteOwningOperation)
+            && !matches!(
+                id,
+                ContractCheckId::WriteBasic | ContractCheckId::WriteOwningOperation
+            )
         {
             self.context.record_check(
                 id,
@@ -51,7 +59,10 @@ impl<'a> FileSystemContractSuite<'a> {
             ContractCheckId::WriteAtomicReplaceExisting | ContractCheckId::WriteDurable => {
                 self.check_write_guarantee(id)
             }
-            _ => Err(crate::ContractFailure::message_only("write check is unavailable in this execution mode").at(id)),
+            _ => Err(crate::ContractFailure::message_only(
+                "write check is unavailable in this execution mode",
+            )
+            .at(id)),
         }
     }
 
@@ -61,11 +72,19 @@ impl<'a> FileSystemContractSuite<'a> {
         if !self.capable(FileSystemCapability::Write) {
             let relative = self.context.relative_name("write-unavailable");
             let path = self.fixture.path(&relative).map_err(|error| {
-                crate::ContractFailure::with_source("write/basic: path preparation failed", error).at(id)
+                crate::ContractFailure::with_source("write/basic: path preparation failed", error)
+                    .at(id)
             })?;
-            let error = match self.fixture.file_system().open_writer(&path, Default::default()) {
+            let error = match self
+                .fixture
+                .file_system()
+                .open_writer(&path, Default::default())
+            {
                 Ok(_) => {
-                    return Err(crate::ContractFailure::message_only("write/basic: unavailable writer opened").at(id));
+                    return Err(crate::ContractFailure::message_only(
+                        "write/basic: unavailable writer opened",
+                    )
+                    .at(id));
                 }
                 Err(error) => error,
             };
@@ -98,11 +117,16 @@ impl<'a> FileSystemContractSuite<'a> {
                 &initial,
             )
             .map_err(|error| {
-                crate::ContractFailure::with_source("write/basic: scenario preparation failed", error).at(id)
+                crate::ContractFailure::with_source(
+                    "write/basic: scenario preparation failed",
+                    error,
+                )
+                .at(id)
             })?;
         let case = match prepared {
             crate::FixturePreparation::Ready(case) => case,
-            crate::FixturePreparation::NotApplicable { reason } | crate::FixturePreparation::Unavailable { reason } => {
+            crate::FixturePreparation::NotApplicable { reason }
+            | crate::FixturePreparation::Unavailable { reason } => {
                 self.context.record_check(
                     ContractCheckId::WriteBasic,
                     Some(FileSystemCapability::Write),
@@ -130,15 +154,21 @@ impl<'a> FileSystemContractSuite<'a> {
             .fixture
             .file_system()
             .write_all(&path, &initial, case.options().clone())
-            .map_err(|error| crate::ContractFailure::with_owned_source("write/basic: write failed", error).at(id))?;
+            .map_err(|error| {
+                crate::ContractFailure::with_owned_source("write/basic: write failed", error).at(id)
+            })?;
         if outcome
             .bytes_written()
             .is_some_and(|count| count != initial.len() as u64)
         {
-            return Err(crate::ContractFailure::message_only("write/basic: published byte count mismatch").at(id));
+            return Err(crate::ContractFailure::message_only(
+                "write/basic: published byte count mismatch",
+            )
+            .at(id));
         }
         let observed = self.fixture.read_file(&path).map_err(|error| {
-            crate::ContractFailure::with_source("write/basic: fixture observation failed", error).at(id)
+            crate::ContractFailure::with_source("write/basic: fixture observation failed", error)
+                .at(id)
         })?;
         match observed {
             FixtureSupport::Supported(bytes) if bytes == initial => {}
@@ -149,9 +179,10 @@ impl<'a> FileSystemContractSuite<'a> {
                 .at(id));
             }
             FixtureSupport::Unsupported => {
-                return Err(
-                    crate::ContractFailure::message_only("write/basic: fixture.read_file support is required").at(id),
-                );
+                return Err(crate::ContractFailure::message_only(
+                    "write/basic: fixture.read_file support is required",
+                )
+                .at(id));
             }
         }
         self.context.record_check(
@@ -169,9 +200,9 @@ impl<'a> FileSystemContractSuite<'a> {
 /// A finite limit truncates the payload without ever allocating beyond the
 /// preferred test vector; zero permits an empty publication probe.
 pub(super) fn bounded_payload(limit: FileSystemLimit, preferred: &[u8], fill: u8) -> Vec<u8> {
-    let length = limit
-        .maximum()
-        .map_or(preferred.len() as u64, |maximum| maximum.min(preferred.len() as u64)) as usize;
+    let length = limit.maximum().map_or(preferred.len() as u64, |maximum| {
+        maximum.min(preferred.len() as u64)
+    }) as usize;
     if length == preferred.len() {
         preferred.to_vec()
     } else {

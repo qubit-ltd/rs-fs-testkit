@@ -19,7 +19,11 @@ use crate::ReadScenario;
 pub(crate) const CONTENT: &[u8] = b"read contract bytes";
 
 /// Builds requests without accepting weaker expectations from a fixture.
-pub(crate) fn options(scenario: ReadScenario, limit: FileSystemLimit, version: ResourceVersion) -> ReadOptions {
+pub(crate) fn options(
+    scenario: ReadScenario,
+    limit: FileSystemLimit,
+    version: ResourceVersion,
+) -> ReadOptions {
     match scenario {
         ReadScenario::Basic | ReadScenario::RangeLimit => ReadOptions::default(),
         ReadScenario::Range => {
@@ -53,7 +57,9 @@ pub(crate) fn bytes(scenario: ReadScenario, limit: FileSystemLimit) -> &'static 
 /// Distinguishes deliberate rejection scenarios from successful reads.
 pub(crate) const fn rejection(scenario: ReadScenario) -> Option<FsErrorKind> {
     match scenario {
-        ReadScenario::IfMatchStale | ReadScenario::IfNoneMatchCurrent => Some(FsErrorKind::PreconditionFailed),
+        ReadScenario::IfMatchStale | ReadScenario::IfNoneMatchCurrent => {
+            Some(FsErrorKind::PreconditionFailed)
+        }
         ReadScenario::ChecksumCorruption => Some(FsErrorKind::DataCorruption),
         _ => None,
     }
@@ -73,7 +79,10 @@ pub(crate) const fn uses_version(scenario: ReadScenario) -> bool {
 /// Reports whether the request excludes or requires a deliberately stale
 /// version.
 pub(crate) const fn uses_stale(scenario: ReadScenario) -> bool {
-    matches!(scenario, ReadScenario::IfMatchStale | ReadScenario::IfNoneMatchStale)
+    matches!(
+        scenario,
+        ReadScenario::IfMatchStale | ReadScenario::IfNoneMatchStale
+    )
 }
 
 /// Bounds the range by both provider limits and the known seed length.

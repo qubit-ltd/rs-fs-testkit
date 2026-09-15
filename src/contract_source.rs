@@ -40,8 +40,14 @@ impl ContractSource {
     /// Inspects the original concrete error while it remains owned by the run.
     ///
     /// Returns None after a caller has taken ownership of the source.
-    pub fn inspect<T>(&self, inspect: impl FnOnce(&(dyn Error + Send + 'static)) -> T) -> Option<T> {
-        let guard = self.error.lock().unwrap_or_else(|poison| poison.into_inner());
+    pub fn inspect<T>(
+        &self,
+        inspect: impl FnOnce(&(dyn Error + Send + 'static)) -> T,
+    ) -> Option<T> {
+        let guard = self
+            .error
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         guard.as_deref().map(inspect)
     }
 
@@ -49,7 +55,10 @@ impl ContractSource {
     ///
     /// The caller becomes responsible for its explicit recovery or disposal.
     pub fn take(&self) -> Option<Box<dyn Error + Send>> {
-        self.error.lock().unwrap_or_else(|poison| poison.into_inner()).take()
+        self.error
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .take()
     }
 
     /// Retains an original typed error without formatting provider internals.

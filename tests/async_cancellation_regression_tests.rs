@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -38,7 +37,10 @@ fn test_async_copy_cancellation_waits_for_each_stage() {
     let fixture = AsyncMemoryFixture::new();
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        suite.run_contract(FileSystemContract::Copy).await.assert_satisfied();
+        suite
+            .run_contract(FileSystemContract::Copy)
+            .await
+            .assert_satisfied();
     });
     assert!(fixture.is_empty(), "cancellation probes must be cleaned");
 }
@@ -51,11 +53,17 @@ fn test_async_copy_cancellation_drop_leaves_explicit_teardown_responsibility() {
     let mut assertion = Box::pin(suite.run_contract(FileSystemContract::Copy));
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Pending));
+    assert!(matches!(
+        assertion.as_mut().poll(&mut context),
+        Poll::Pending
+    ));
     drop(assertion);
 
     run_controlled(fixture.teardown()).expect("explicit fixture teardown must succeed");
-    assert!(fixture.is_empty(), "explicit fixture teardown must reclaim data");
+    assert!(
+        fixture.is_empty(),
+        "explicit fixture teardown must reclaim data"
+    );
 }
 
 /// Four stage gates report independently counted accepted bytes.
@@ -64,9 +72,15 @@ fn test_async_write_cancellation_verifies_every_stage() {
     let fixture = AsyncMemoryFixture::new();
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        suite.run_contract(FileSystemContract::Write).await.assert_satisfied();
+        suite
+            .run_contract(FileSystemContract::Write)
+            .await
+            .assert_satisfied();
     });
-    assert!(fixture.is_empty(), "write cancellation must release all resources");
+    assert!(
+        fixture.is_empty(),
+        "write cancellation must release all resources"
+    );
     assert_eq!(
         fixture.write_cancellation_stages(),
         [
@@ -88,7 +102,9 @@ fn test_run_can_require_optional_cancellation_evidence() {
         let run = suite.run_contract(testkit::FileSystemContract::Copy).await;
         assert!(run.requirements_satisfied());
         assert!(!run.all_applicable_checks_verified());
-        assert!(!run.requirements_satisfied_with(&[testkit::ContractCheckId::AsyncCopyCancelReader]));
+        assert!(
+            !run.requirements_satisfied_with(&[testkit::ContractCheckId::AsyncCopyCancelReader])
+        );
     });
 }
 
@@ -96,16 +112,23 @@ fn test_run_can_require_optional_cancellation_evidence() {
 /// evidence.
 #[test]
 fn test_write_cancellation_rejects_abort_that_publishes() {
-    let fixture =
-        AsyncMemoryFixture::with_fault(self::common::async_memory_file_system::AsyncMemoryFault::WriteAbortPublishes);
+    let fixture = AsyncMemoryFixture::with_fault(
+        self::common::async_memory_file_system::AsyncMemoryFault::WriteAbortPublishes,
+    );
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         run_controlled(async {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-            suite.run_contract(FileSystemContract::Write).await.assert_satisfied();
+            suite
+                .run_contract(FileSystemContract::Write)
+                .await
+                .assert_satisfied();
         });
     }));
     run_controlled(fixture.teardown()).expect("explicit cleanup after faulty abort");
-    assert!(result.is_err(), "cancellation accepted a false NotPublished claim");
+    assert!(
+        result.is_err(),
+        "cancellation accepted a false NotPublished claim"
+    );
 }
 
 /// Preparing a probe must not request a payload that the facade must reject.
@@ -126,8 +149,9 @@ fn test_write_cancellation_probe_respects_declared_write_limits() {
             AsyncWriteCancellationStage::Flush,
             AsyncWriteCancellationStage::Commit,
         ] {
-            let prepared = run_controlled(fixture.prepare_write_cancellation(stage, "bounded-probe"))
-                .expect("preparation must succeed");
+            let prepared =
+                run_controlled(fixture.prepare_write_cancellation(stage, "bounded-probe"))
+                    .expect("preparation must succeed");
             match prepared {
                 FixtureSupport::Supported(probe) => {
                     assert!(
@@ -179,20 +203,27 @@ fn test_failed_optional_write_probe_invalidates_run() {
     use qubit_fs_testkit::ContractCheckOutcome;
     use qubit_fs_testkit::FileSystemContract;
 
-    let fixture =
-        AsyncMemoryFixture::with_fault(self::common::async_memory_file_system::AsyncMemoryFault::WriteAbortPublishes);
+    let fixture = AsyncMemoryFixture::with_fault(
+        self::common::async_memory_file_system::AsyncMemoryFault::WriteAbortPublishes,
+    );
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_contract(FileSystemContract::Write).await;
         assert!(!run.requirements_satisfied());
-        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteCancelWrite));
+        assert_eq!(
+            run.failures()[0].check(),
+            Some(ContractCheckId::WriteCancelWrite)
+        );
         let failed = run
             .report()
             .checks()
             .iter()
             .find(|check| check.id() == ContractCheckId::WriteCancelWrite)
             .expect("registered optional probe");
-        assert!(matches!(failed.outcome(), ContractCheckOutcome::Failed { .. }));
+        assert!(matches!(
+            failed.outcome(),
+            ContractCheckOutcome::Failed { .. }
+        ));
         assert!(
             run.report()
                 .checks()
@@ -200,7 +231,10 @@ fn test_failed_optional_write_probe_invalidates_run() {
                 .any(|check| check.id() == ContractCheckId::WriteCancelFlush
                     && matches!(check.outcome(), ContractCheckOutcome::NotRun { .. }))
         );
-        assert!(fixture.is_empty(), "failure must still invoke independent teardown");
+        assert!(
+            fixture.is_empty(),
+            "failure must still invoke independent teardown"
+        );
     });
 }
 
@@ -211,13 +245,20 @@ fn test_failed_optional_copy_probe_invalidates_run() {
     use qubit_fs_testkit::ContractCheckOutcome;
     use qubit_fs_testkit::FileSystemContract;
 
-    let fixture =
-        AsyncMemoryFixture::with_fault(self::common::async_memory_file_system::AsyncMemoryFault::CopyAbortPublishes);
+    let fixture = AsyncMemoryFixture::with_fault(
+        self::common::async_memory_file_system::AsyncMemoryFault::CopyAbortPublishes,
+    );
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_contract(FileSystemContract::Copy).await;
-        assert!(!run.requirements_satisfied(), "copy probe accepted false NotPublished");
-        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::AsyncCopyCancelWriter));
+        assert!(
+            !run.requirements_satisfied(),
+            "copy probe accepted false NotPublished"
+        );
+        assert_eq!(
+            run.failures()[0].check(),
+            Some(ContractCheckId::AsyncCopyCancelWriter)
+        );
         assert!(
             run.report()
                 .checks()

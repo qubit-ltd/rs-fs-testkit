@@ -37,7 +37,10 @@ impl AsyncFileSystemContractSuite<'_> {
 
     /// Records only the selected requirement and retains original rename
     /// errors.
-    pub(super) async fn check_rename_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+    pub(super) async fn check_rename_item(
+        &mut self,
+        id: ContractCheckId,
+    ) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let (capability, mut options) = match id {
             ContractCheckId::RenameBasic | ContractCheckId::RenameConflict => {
@@ -51,7 +54,11 @@ impl AsyncFileSystemContractSuite<'_> {
                 FileSystemCapability::DurableRename,
                 RenameOptions::default().with_durability(DurabilityRequirement::Required),
             ),
-            _ => return Err(ContractFailure::message_only("selected entry is not a rename check").at(id)),
+            _ => {
+                return Err(
+                    ContractFailure::message_only("selected entry is not a rename check").at(id),
+                );
+            }
         };
         if id == ContractCheckId::RenameConflict && !self.capable(capability) {
             self.context.record_check(
@@ -66,17 +73,25 @@ impl AsyncFileSystemContractSuite<'_> {
         let source_relative = self.context.relative_name("rename-source");
         let target_relative = self.context.relative_name("rename-target");
         if !self.capable(capability) {
-            let source = self
+            let source = self.fixture.path(&source_relative).map_err(|error| {
+                ContractFailure::with_source("rename source path preparation failed", error).at(id)
+            })?;
+            let target = self.fixture.path(&target_relative).map_err(|error| {
+                ContractFailure::with_source("rename target path preparation failed", error).at(id)
+            })?;
+            let failure = match self
                 .fixture
-                .path(&source_relative)
-                .map_err(|error| ContractFailure::with_source("rename source path preparation failed", error).at(id))?;
-            let target = self
-                .fixture
-                .path(&target_relative)
-                .map_err(|error| ContractFailure::with_source("rename target path preparation failed", error).at(id))?;
-            let failure = match self.fixture.file_system().rename(&source, &target, options).await {
+                .file_system()
+                .rename(&source, &target, options)
+                .await
+            {
                 Err(failure) => failure,
-                Ok(_) => return Err(ContractFailure::message_only("unavailable rename requirement succeeded").at(id)),
+                Ok(_) => {
+                    return Err(ContractFailure::message_only(
+                        "unavailable rename requirement succeeded",
+                    )
+                    .at(id));
+                }
             };
             let kind = if capability == FileSystemCapability::Rename {
                 FsErrorKind::UnsupportedCapability
@@ -92,10 +107,17 @@ impl AsyncFileSystemContractSuite<'_> {
                 || error.required_capability() != Some(capability)
                 || failure.state() != RenameFailureState::Unchanged
             {
-                return Err(ContractFailure::with_source("rename preflight rejection differs", failure).at(id));
+                return Err(ContractFailure::with_source(
+                    "rename preflight rejection differs",
+                    failure,
+                )
+                .at(id));
             }
-            self.context
-                .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
+            self.context.record_check(
+                id,
+                Some(capability),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return Ok(());
         }
         let bytes = b"rename source";
@@ -103,7 +125,9 @@ impl AsyncFileSystemContractSuite<'_> {
             .fixture
             .seed_file(&source_relative, bytes)
             .await
-            .map_err(|error| ContractFailure::with_source("rename source preparation failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_source("rename source preparation failed", error).at(id)
+            })?;
         let FixtureSupport::Supported(source) = prepared else {
             self.context.record_check(
                 id,
@@ -121,7 +145,8 @@ impl AsyncFileSystemContractSuite<'_> {
                 .seed_file(&target_relative, b"old target")
                 .await
                 .map_err(|error| {
-                    ContractFailure::with_source("rename conflict target preparation failed", error).at(id)
+                    ContractFailure::with_source("rename conflict target preparation failed", error)
+                        .at(id)
                 })?;
             let FixtureSupport::Supported(target) = prepared else {
                 self.context.record_check(
@@ -135,16 +160,19 @@ impl AsyncFileSystemContractSuite<'_> {
             };
             target
         } else {
-            self.fixture
-                .path(&target_relative)
-                .map_err(|error| ContractFailure::with_source("rename target preparation failed", error).at(id))?
+            self.fixture.path(&target_relative).map_err(|error| {
+                ContractFailure::with_source("rename target preparation failed", error).at(id)
+            })?
         };
         self.context.record_created(target.clone());
-        verify_condition(source != target, id, "rename fixture requires distinct paths")?;
-        let initial =
-            self.fixture.read_file(&source).await.map_err(|error| {
-                ContractFailure::with_source("rename initial source observation failed", error).at(id)
-            })?;
+        verify_condition(
+            source != target,
+            id,
+            "rename fixture requires distinct paths",
+        )?;
+        let initial = self.fixture.read_file(&source).await.map_err(|error| {
+            ContractFailure::with_source("rename initial source observation failed", error).at(id)
+        })?;
         verify_condition(
             matches!(initial, FixtureSupport::Supported(actual) if actual == bytes),
             id,
@@ -152,7 +180,8 @@ impl AsyncFileSystemContractSuite<'_> {
         )?;
         if id == ContractCheckId::RenameConflict {
             let initial_target = self.fixture.read_file(&target).await.map_err(|error| {
-                ContractFailure::with_source("rename initial target observation failed", error).at(id)
+                ContractFailure::with_source("rename initial target observation failed", error)
+                    .at(id)
             })?;
             verify_condition(
                 matches!(initial_target, FixtureSupport::Supported(actual) if actual == b"old target"),
@@ -167,9 +196,10 @@ impl AsyncFileSystemContractSuite<'_> {
             {
                 Err(failure) => failure,
                 Ok(_) => {
-                    return Err(
-                        ContractFailure::message_only("rename contract: default conflict replaced target").at(id),
-                    );
+                    return Err(ContractFailure::message_only(
+                        "rename contract: default conflict replaced target",
+                    )
+                    .at(id));
                 }
             };
             let error = failure.error();
@@ -180,9 +210,16 @@ impl AsyncFileSystemContractSuite<'_> {
                 || error.target() != Some(&target)
                 || error.provider() != Some(self.context.properties().info().provider_id())
             {
-                return Err(ContractFailure::with_source("rename conflict rejection differs", failure).at(id));
+                return Err(ContractFailure::with_source(
+                    "rename conflict rejection differs",
+                    failure,
+                )
+                .at(id));
             }
-            for (path, expected) in [(&source, bytes.as_slice()), (&target, b"old target".as_slice())] {
+            for (path, expected) in [
+                (&source, bytes.as_slice()),
+                (&target, b"old target".as_slice()),
+            ] {
                 let observed = self.fixture.read_file(path).await.map_err(|error| {
                     ContractFailure::with_source("rename conflict observation failed", error).at(id)
                 })?;
@@ -194,9 +231,14 @@ impl AsyncFileSystemContractSuite<'_> {
             }
             options = options.with_overwrite(true);
         } else {
-            let before = self.fixture.exists_out_of_band(&target).await.map_err(|error| {
-                ContractFailure::with_source("rename initial target observation failed", error).at(id)
-            })?;
+            let before = self
+                .fixture
+                .exists_out_of_band(&target)
+                .await
+                .map_err(|error| {
+                    ContractFailure::with_source("rename initial target observation failed", error)
+                        .at(id)
+                })?;
             verify_condition(
                 matches!(before, FixtureSupport::Supported(false)),
                 id,
@@ -208,7 +250,9 @@ impl AsyncFileSystemContractSuite<'_> {
             .file_system()
             .rename(&source, &target, options)
             .await
-            .map_err(|error| ContractFailure::with_source("rename/basic: rename failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_source("rename/basic: rename failed", error).at(id)
+            })?;
         verify_condition(
             outcome.source() == &source && outcome.target() == &target,
             id,
@@ -228,19 +272,22 @@ impl AsyncFileSystemContractSuite<'_> {
                 "rename/durable: required operation reported non-durable publication",
             )?;
         }
-        let exists =
-            self.fixture.exists_out_of_band(&source).await.map_err(|error| {
-                ContractFailure::with_source("rename source removal observation failed", error).at(id)
+        let exists = self
+            .fixture
+            .exists_out_of_band(&source)
+            .await
+            .map_err(|error| {
+                ContractFailure::with_source("rename source removal observation failed", error)
+                    .at(id)
             })?;
         verify_condition(
             matches!(exists, FixtureSupport::Supported(false)),
             id,
             "rename/basic: source remained after success",
         )?;
-        let observed =
-            self.fixture.read_file(&target).await.map_err(|error| {
-                ContractFailure::with_source("rename target content observation failed", error).at(id)
-            })?;
+        let observed = self.fixture.read_file(&target).await.map_err(|error| {
+            ContractFailure::with_source("rename target content observation failed", error).at(id)
+        })?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
             id,

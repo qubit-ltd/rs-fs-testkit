@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -38,7 +37,10 @@ fn test_async_owning_failure_retains_operation() {
             AsyncMemoryFault::OwningCommitFails,
             ContractCheckId::WriteOwningOperation,
         ),
-        (AsyncMemoryFault::ReplaceCommitFails, ContractCheckId::WriteReplace),
+        (
+            AsyncMemoryFault::ReplaceCommitFails,
+            ContractCheckId::WriteReplace,
+        ),
     ] {
         let fixture = AsyncMemoryFixture::with_fault(fault);
         run_controlled(async {
@@ -61,7 +63,12 @@ fn test_async_owning_failure_retains_operation() {
                 qfs::write::WriteFailureState::RetryableNotPublished
             );
             assert!(original.failure().written_bytes() > 0);
-            assert!(original.operation().expect("retained operation").has_recovery());
+            assert!(
+                original
+                    .operation()
+                    .expect("retained operation")
+                    .has_recovery()
+            );
             let operation = original.operation_mut().expect("execution started");
             let mut writer = operation
                 .take_recovery()
@@ -121,7 +128,11 @@ fn test_async_basic_commit_failure_retains_writer() {
             FsErrorKind::PermissionDenied
         );
         assert_eq!(
-            original.writer_mut().abort_async().await.expect("explicit abort"),
+            original
+                .writer_mut()
+                .abort_async()
+                .await
+                .expect("explicit abort"),
             WriteAbortOutcome::NotPublished
         );
         assert!(!run.requirements_satisfied());
@@ -203,7 +214,11 @@ fn test_async_failed_abort_retains_writer_for_explicit_retry() {
             FsErrorKind::PermissionDenied
         );
         assert_eq!(
-            original.writer_mut().abort_async().await.expect("retry abort"),
+            original
+                .writer_mut()
+                .abort_async()
+                .await
+                .expect("retry abort"),
             WriteAbortOutcome::NotPublished
         );
         assert!(retained.take().is_none());

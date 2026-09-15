@@ -38,7 +38,10 @@ fn test_sync_temp_failure_retains_cleanup_handle() {
         .expect("resource ownership")
         .downcast::<ContractTempFailure<TempFile>>()
         .expect("temporary file failure");
-    assert_eq!(retained.resource().state(), TempResourceState::CleanupRequired);
+    assert_eq!(
+        retained.resource().state(),
+        TempResourceState::CleanupRequired
+    );
     assert_eq!(
         retained
             .error()
@@ -47,7 +50,10 @@ fn test_sync_temp_failure_retains_cleanup_handle() {
             .state(),
         PersistFailureState::PublishedSourceRetained
     );
-    retained.resource_mut().cleanup().expect("explicit recovery cleanup");
+    retained
+        .resource_mut()
+        .cleanup()
+        .expect("explicit recovery cleanup");
     let (error, resource) = retained.into_parts();
     assert!(error.downcast_ref::<PersistFailure>().is_some());
     assert_eq!(resource.state(), TempResourceState::Cleaned);
@@ -81,7 +87,10 @@ fn test_async_temp_failure_retains_cleanup_handle() {
             .expect("resource ownership")
             .downcast::<ContractTempFailure<AsyncTempFile>>()
             .expect("temporary file failure");
-        assert_eq!(retained.resource().state(), TempResourceState::CleanupRequired);
+        assert_eq!(
+            retained.resource().state(),
+            TempResourceState::CleanupRequired
+        );
         assert_eq!(
             retained
                 .error()

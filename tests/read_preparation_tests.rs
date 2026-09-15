@@ -80,7 +80,10 @@ fn test_stale_read_failure_retains_check_identity() {
     let fixture = MemoryFixture::with_fault(MemoryFault::IgnoreReadIfMatch);
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_contract(FileSystemContract::Read);
-    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::ReadIfMatchStale));
+    assert_eq!(
+        run.failures()[0].check(),
+        Some(ContractCheckId::ReadIfMatchStale)
+    );
     assert!(
         run.report()
             .checks()
@@ -110,9 +113,13 @@ fn test_read_checks_prepare_their_own_scenarios() {
             .any(|check| check.id() == ContractCheckId::ReadBasic
                 && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }))
     );
-    assert!(run.report().checks().iter().any(
-        |check| check.id() == ContractCheckId::ReadRange && matches!(check.outcome(), ContractCheckOutcome::Passed)
-    ));
+    assert!(
+        run.report()
+            .checks()
+            .iter()
+            .any(|check| check.id() == ContractCheckId::ReadRange
+                && matches!(check.outcome(), ContractCheckOutcome::Passed))
+    );
     assert!(run.cleanup().completed());
 }
 
@@ -129,7 +136,10 @@ fn test_async_stale_read_failure_retains_check_identity() {
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_contract(FileSystemContract::Read).await;
-        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::ReadIfMatchStale));
+        assert_eq!(
+            run.failures()[0].check(),
+            Some(ContractCheckId::ReadIfMatchStale)
+        );
         assert!(
             run.report()
                 .checks()

@@ -25,7 +25,10 @@ impl AsyncFileSystemContractSuite<'_> {
     pub(super) async fn check_append(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::AppendBasic;
         self.context.begin("append");
-        let outcome = self.execute_append().await.map_err(|failure| failure.at(id))?;
+        let outcome = self
+            .execute_append()
+            .await
+            .map_err(|failure| failure.at(id))?;
         self.context
             .record_check(id, Some(FileSystemCapability::Append), outcome);
         Ok(())
@@ -36,14 +39,17 @@ impl AsyncFileSystemContractSuite<'_> {
         let id = ContractCheckId::AppendBasic;
         let relative = self.context.relative_name("append-target");
         if !self.capable(FileSystemCapability::Append) {
-            let path = self
-                .fixture
-                .path(&relative)
-                .map_err(|error| ContractFailure::with_source("append path preparation failed", error))?;
+            let path = self.fixture.path(&relative).map_err(|error| {
+                ContractFailure::with_source("append path preparation failed", error)
+            })?;
             let options = WriteOptions::default().with_disposition(WriteDisposition::Append);
             let error = match self.fixture.file_system().open_writer(&path, options).await {
                 Err(error) => error,
-                Ok(_) => return Err(ContractFailure::message_only("unavailable append request succeeded")),
+                Ok(_) => {
+                    return Err(ContractFailure::message_only(
+                        "unavailable append request succeeded",
+                    ));
+                }
             };
             verify_open_failure(
                 error,
@@ -56,8 +62,11 @@ impl AsyncFileSystemContractSuite<'_> {
             )?;
             return Ok(ContractCheckOutcome::RejectedAsExpected);
         }
-        let bytes =
-            super::write::bounded_payload(self.context.properties().limits().max_write_bytes(), b"-after", b'a');
+        let bytes = super::write::bounded_payload(
+            self.context.properties().limits().max_write_bytes(),
+            b"-after",
+            b'a',
+        );
         let prepared = self
             .fixture
             .prepare_write(
@@ -68,10 +77,13 @@ impl AsyncFileSystemContractSuite<'_> {
                 &bytes,
             )
             .await
-            .map_err(|error| ContractFailure::with_source("append scenario preparation failed", error))?;
+            .map_err(|error| {
+                ContractFailure::with_source("append scenario preparation failed", error)
+            })?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason }
+            | FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified { reason });
             }
         };
@@ -82,11 +94,9 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "append fixture changed request semantics",
         )?;
-        let before = self
-            .fixture
-            .read_file(&path)
-            .await
-            .map_err(|error| ContractFailure::with_source("append initial observation failed", error))?;
+        let before = self.fixture.read_file(&path).await.map_err(|error| {
+            ContractFailure::with_source("append initial observation failed", error)
+        })?;
         let FixtureSupport::Supported(mut expected) = before else {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "append initial content unavailable".to_owned(),
@@ -105,18 +115,19 @@ impl AsyncFileSystemContractSuite<'_> {
             case.options().clone(),
         )
         .await;
-        let outcome =
-            publication.map_err(|error| ContractFailure::with_owned_source("append publication failed", error))?;
+        let outcome = publication.map_err(|error| {
+            ContractFailure::with_owned_source("append publication failed", error)
+        })?;
         verify_condition(
-            outcome.bytes_written().is_none_or(|count| count == bytes.len() as u64),
+            outcome
+                .bytes_written()
+                .is_none_or(|count| count == bytes.len() as u64),
             id,
             "append byte count must describe only the appended payload",
         )?;
-        let observed = self
-            .fixture
-            .read_file(&path)
-            .await
-            .map_err(|error| ContractFailure::with_source("append publication observation failed", error))?;
+        let observed = self.fixture.read_file(&path).await.map_err(|error| {
+            ContractFailure::with_source("append publication observation failed", error)
+        })?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
             id,

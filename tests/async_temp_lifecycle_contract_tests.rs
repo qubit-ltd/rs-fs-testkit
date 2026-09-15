@@ -31,21 +31,32 @@ fn assert_fixture_file(fixture: &AsyncMemoryFixture, path: &Path, expected: &[u8
 fn test_async_temp_keep_transfers_identity_and_payload() {
     let fixture = AsyncMemoryFixture::new();
     let file_system = fixture.file_system();
-    let mut temporary =
-        run_controlled(file_system.create_temp_file(TempOptions::default())).expect("temporary file should open");
+    let mut temporary = run_controlled(file_system.create_temp_file(TempOptions::default()))
+        .expect("temporary file should open");
     let source = temporary.path().clone();
     assert_eq!(TempResourceState::Owned, temporary.state());
 
     let mut operation = file_system
-        .begin_write_all(source.clone(), b"kept-payload".to_vec(), WriteOptions::default())
+        .begin_write_all(
+            source.clone(),
+            b"kept-payload".to_vec(),
+            WriteOptions::default(),
+        )
         .expect("temporary source write preflight should succeed");
     run_controlled(operation.execute()).expect("temporary source should accept fixture payload");
     let outcome = run_controlled(temporary.keep()).expect("keep should publish the source");
 
     assert_eq!(TempResourceState::Kept, temporary.state());
-    assert_ne!(&source, outcome.target(), "keep must publish a distinct identity");
+    assert_ne!(
+        &source,
+        outcome.target(),
+        "keep must publish a distinct identity"
+    );
     assert!(!run_controlled(file_system.exists(&source)).expect("source observation must succeed"));
-    assert!(run_controlled(file_system.exists(outcome.target())).expect("kept target observation must succeed"));
+    assert!(
+        run_controlled(file_system.exists(outcome.target()))
+            .expect("kept target observation must succeed")
+    );
     assert_fixture_file(&fixture, outcome.target(), b"kept-payload");
     assert_eq!(outcome.target(), temporary.path());
     assert!(
@@ -65,11 +76,15 @@ fn test_async_temp_keep_transfers_identity_and_payload() {
 fn test_async_temp_failed_atomic_persist_remains_cleanup_recoverable() {
     let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::AtomicTempPersistNonAtomic);
     let file_system = fixture.file_system();
-    let mut temporary =
-        run_controlled(file_system.create_temp_file(TempOptions::default())).expect("temporary file should open");
+    let mut temporary = run_controlled(file_system.create_temp_file(TempOptions::default()))
+        .expect("temporary file should open");
     let source = temporary.path().clone();
     let mut operation = file_system
-        .begin_write_all(source.clone(), b"retry-payload".to_vec(), WriteOptions::default())
+        .begin_write_all(
+            source.clone(),
+            b"retry-payload".to_vec(),
+            WriteOptions::default(),
+        )
         .expect("temporary source write preflight should succeed");
     run_controlled(operation.execute()).expect("temporary source should accept fixture payload");
     let target = Path::parse("/contract/async-retry-persist-target").expect("target should parse");
@@ -79,7 +94,10 @@ fn test_async_temp_failed_atomic_persist_remains_cleanup_recoverable() {
         PersistOptions::default().with_atomicity(AtomicityRequirement::Required),
     ))
     .expect_err("non-atomic publication must fail a required persist");
-    assert_eq!(PersistFailureState::PublishedSourceRetained, failure.state());
+    assert_eq!(
+        PersistFailureState::PublishedSourceRetained,
+        failure.state()
+    );
     assert_eq!(TempResourceState::CleanupRequired, temporary.state());
     assert!(run_controlled(file_system.exists(&target)).expect("target observation must succeed"));
     assert_fixture_file(&fixture, &target, b"retry-payload");
@@ -92,5 +110,8 @@ fn test_async_temp_failed_atomic_persist_remains_cleanup_recoverable() {
     );
 
     run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
-    assert!(fixture.is_empty(), "teardown must release the published target");
+    assert!(
+        fixture.is_empty(),
+        "teardown must release the published target"
+    );
 }

@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -290,7 +289,9 @@ impl CopyGate {
     /// Releases the gate and wakes the operation owner, without doing I/O.
     fn disarm(&mut self) -> FixtureResult<()> {
         if self.execution_live {
-            return Err(FixtureError::new("probe was disarmed before dropping execute future"));
+            return Err(FixtureError::new(
+                "probe was disarmed before dropping execute future",
+            ));
         }
         self.armed = false;
         self.target_reached = false;
@@ -325,7 +326,10 @@ impl CopyCancellationProbe for AsyncMemoryCopyCancellationProbe {
 
     /// Releases the gate without starting an asynchronous operation.
     fn disarm(&self) -> FixtureResult<()> {
-        self.gate.lock().expect("async copy gate lock must succeed").disarm()
+        self.gate
+            .lock()
+            .expect("async copy gate lock must succeed")
+            .disarm()
     }
 }
 
@@ -600,7 +604,11 @@ impl AsyncMemoryFixture {
 
     /// Creates an asynchronous fixture with exactly one provider fault.
     pub fn with_fault(fault: AsyncMemoryFault) -> Self {
-        Self::with_copy_behavior(fault, true, fault == AsyncMemoryFault::AtomicFileCopyNonAtomic)
+        Self::with_copy_behavior(
+            fault,
+            true,
+            fault == AsyncMemoryFault::AtomicFileCopyNonAtomic,
+        )
     }
 
     /// Creates a conforming fixture without optional cancellation probes.
@@ -722,7 +730,11 @@ impl AsyncMemoryFixture {
     }
 
     /// Creates a fixture with selected copy and fault behavior.
-    fn with_copy_behavior(fault: AsyncMemoryFault, supports_cancellation_cases: bool, native_copy: bool) -> Self {
+    fn with_copy_behavior(
+        fault: AsyncMemoryFault,
+        supports_cancellation_cases: bool,
+        native_copy: bool,
+    ) -> Self {
         Self::with_configuration(
             fault,
             supports_cancellation_cases,
@@ -814,7 +826,11 @@ impl AsyncMemoryFixture {
 
     /// Returns stages acknowledged by the provider's actual write gate.
     pub fn write_cancellation_stages(&self) -> Vec<AsyncWriteCancellationStage> {
-        self.write_gate.lock().expect("write gate lock").observed.clone()
+        self.write_gate
+            .lock()
+            .expect("write gate lock")
+            .observed
+            .clone()
     }
 
     /// Returns whether the fixture namespace contains no resources.
@@ -839,7 +855,10 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             let entries = self.entries.lock().expect("async memory state lock");
             let paths = entries
                 .keys()
-                .map(|key| Path::parse(key).map_err(|error| FixtureError::with_source("invalid stored path", error)))
+                .map(|key| {
+                    Path::parse(key)
+                        .map_err(|error| FixtureError::with_source("invalid stored path", error))
+                })
                 .collect::<FixtureResult<Vec<_>>>()?;
             Ok(FixtureSupport::Supported(paths))
         })
@@ -857,7 +876,8 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 testkit::ReadScenario::IfMatchCurrent | testkit::ReadScenario::IfMatchStale => {
                     unavailable == Some(UnavailableScenario::ReadIfMatch)
                 }
-                testkit::ReadScenario::IfNoneMatchCurrent | testkit::ReadScenario::IfNoneMatchStale => {
+                testkit::ReadScenario::IfNoneMatchCurrent
+                | testkit::ReadScenario::IfNoneMatchStale => {
                     unavailable == Some(UnavailableScenario::ReadIfNoneMatch)
                 }
                 _ => false,
@@ -891,7 +911,10 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
         self.path_calls.fetch_add(1, Ordering::Relaxed);
-        if self.invalid_probe_path.is_some_and(|suffix| relative.ends_with(suffix)) {
+        if self
+            .invalid_probe_path
+            .is_some_and(|suffix| relative.ends_with(suffix))
+        {
             return Path::parse_literal("/invalid-probe-path")
                 .map_err(|error| FixtureError::with_source("probe path", error));
         }
@@ -916,14 +939,20 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 });
             }
             if scenario == testkit::CopyScenario::ServerSide {
-                if self.unavailable_case == Some(UnavailableScenario::Capability(FileSystemCapability::ServerSideCopy))
+                if self.unavailable_case
+                    == Some(UnavailableScenario::Capability(
+                        FileSystemCapability::ServerSideCopy,
+                    ))
                 {
                     return Ok(testkit::FixturePreparation::Unavailable {
                         reason: "server-side copy setup unavailable".to_owned(),
                     });
                 }
                 return Ok(
-                    match self.copy_fast_path_case(qfs::copy::CopyMethod::ServerSide).await? {
+                    match self
+                        .copy_fast_path_case(qfs::copy::CopyMethod::ServerSide)
+                        .await?
+                    {
                         FixtureSupport::Supported(case) => testkit::FixturePreparation::Ready(case),
                         FixtureSupport::Unsupported => testkit::FixturePreparation::Unavailable {
                             reason: "fixture has no server-side copy case".to_owned(),
@@ -938,9 +967,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 testkit::CopyScenario::DurableFile => Some(FileSystemCapability::DurableFileCopy),
                 _ => None,
             };
-            if required
-                .is_some_and(|capability| self.unavailable_case == Some(UnavailableScenario::Capability(capability)))
-            {
+            if required.is_some_and(|capability| {
+                self.unavailable_case == Some(UnavailableScenario::Capability(capability))
+            }) {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "strong file-copy setup unavailable".to_owned(),
                 });
@@ -954,7 +983,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                         reason: "tree copy setup unavailable".to_owned(),
                     });
                 }
-                let FixtureSupport::Supported(source) = self.seed_empty_directory(source_relative).await? else {
+                let FixtureSupport::Supported(source) =
+                    self.seed_empty_directory(source_relative).await?
+                else {
                     return Ok(testkit::FixturePreparation::Unavailable {
                         reason: "tree root setup unavailable".to_owned(),
                     });
@@ -979,21 +1010,26 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 }
                 let target = self.path(target_relative)?;
                 let options = if scenario == testkit::CopyScenario::AtomicTree {
-                    qfs::copy::CopyOptions::tree().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+                    qfs::copy::CopyOptions::tree()
+                        .with_atomicity(qfs::metadata::AtomicityRequirement::Required)
                 } else {
-                    qfs::copy::CopyOptions::tree().with_durability(qfs::metadata::DurabilityRequirement::Required)
+                    qfs::copy::CopyOptions::tree()
+                        .with_durability(qfs::metadata::DurabilityRequirement::Required)
                 };
-                return Ok(testkit::FixturePreparation::Ready(testkit::CopyFixtureCase::new(
-                    source, target, options,
-                )));
+                return Ok(testkit::FixturePreparation::Ready(
+                    testkit::CopyFixtureCase::new(source, target, options),
+                ));
             }
-            let FixtureSupport::Supported(source) = self.seed_file(source_relative, bytes).await? else {
+            let FixtureSupport::Supported(source) = self.seed_file(source_relative, bytes).await?
+            else {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "copy source seed unavailable".to_owned(),
                 });
             };
             let target = if scenario == testkit::CopyScenario::Conflict {
-                let FixtureSupport::Supported(target) = self.seed_file(target_relative, b"existing").await? else {
+                let FixtureSupport::Supported(target) =
+                    self.seed_file(target_relative, b"existing").await?
+                else {
                     return Ok(testkit::FixturePreparation::Unavailable {
                         reason: "copy conflict target seed unavailable".to_owned(),
                     });
@@ -1003,17 +1039,15 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 self.path(target_relative)?
             };
             let options = match scenario {
-                testkit::CopyScenario::AtomicFile => {
-                    qfs::copy::CopyOptions::file().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
-                }
-                testkit::CopyScenario::DurableFile => {
-                    qfs::copy::CopyOptions::file().with_durability(qfs::metadata::DurabilityRequirement::Required)
-                }
+                testkit::CopyScenario::AtomicFile => qfs::copy::CopyOptions::file()
+                    .with_atomicity(qfs::metadata::AtomicityRequirement::Required),
+                testkit::CopyScenario::DurableFile => qfs::copy::CopyOptions::file()
+                    .with_durability(qfs::metadata::DurabilityRequirement::Required),
                 _ => qfs::copy::CopyOptions::file(),
             };
-            Ok(testkit::FixturePreparation::Ready(testkit::CopyFixtureCase::new(
-                source, target, options,
-            )))
+            Ok(testkit::FixturePreparation::Ready(
+                testkit::CopyFixtureCase::new(source, target, options),
+            ))
         })
     }
 
@@ -1048,7 +1082,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
     ) -> FixtureFuture<'a, testkit::FixturePreparation<testkit::WriteFixtureCase>> {
         Box::pin(async move {
             let unavailable = self.unavailable_case;
-            if scenario == testkit::WriteScenario::IfAbsent && unavailable == Some(UnavailableScenario::WriteIfAbsent) {
+            if scenario == testkit::WriteScenario::IfAbsent
+                && unavailable == Some(UnavailableScenario::WriteIfAbsent)
+            {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "fixture cannot prepare If-Absent case".to_owned(),
                 });
@@ -1069,23 +1105,30 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                         reason: "conditional version unavailable".to_owned(),
                     });
                 };
-                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    WriteOptions::default().with_precondition(WritePrecondition::IfMatch(version)),
-                )));
+                return Ok(testkit::FixturePreparation::Ready(
+                    testkit::WriteFixtureCase::new(
+                        path,
+                        bytes.to_vec(),
+                        WriteOptions::default()
+                            .with_precondition(WritePrecondition::IfMatch(version)),
+                    ),
+                ));
             }
             if scenario == testkit::WriteScenario::Replace {
-                let FixtureSupport::Supported(path) = self.seed_file(relative, b"previous contents").await? else {
+                let FixtureSupport::Supported(path) =
+                    self.seed_file(relative, b"previous contents").await?
+                else {
                     return Ok(testkit::FixturePreparation::Unavailable {
                         reason: "replacement seed unavailable".to_owned(),
                     });
                 };
-                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default(),
-                )));
+                return Ok(testkit::FixturePreparation::Ready(
+                    testkit::WriteFixtureCase::new(
+                        path,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default(),
+                    ),
+                ));
             }
             if scenario == testkit::WriteScenario::CreateConflict {
                 let FixtureSupport::Supported(path) = self.seed_file(relative, b"a").await? else {
@@ -1093,23 +1136,30 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                         reason: "creation conflict seed unavailable".to_owned(),
                     });
                 };
-                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::CreateNew),
-                )));
+                return Ok(testkit::FixturePreparation::Ready(
+                    testkit::WriteFixtureCase::new(
+                        path,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default()
+                            .with_disposition(qfs::write::WriteDisposition::CreateNew),
+                    ),
+                ));
             }
             if scenario == testkit::WriteScenario::Append {
-                let FixtureSupport::Supported(path) = self.seed_file(relative, b"before").await? else {
+                let FixtureSupport::Supported(path) = self.seed_file(relative, b"before").await?
+                else {
                     return Ok(testkit::FixturePreparation::Unavailable {
                         reason: "append seed unavailable".to_owned(),
                     });
                 };
-                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::Append),
-                )));
+                return Ok(testkit::FixturePreparation::Ready(
+                    testkit::WriteFixtureCase::new(
+                        path,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default()
+                            .with_disposition(qfs::write::WriteDisposition::Append),
+                    ),
+                ));
             }
             if scenario == testkit::WriteScenario::AtomicReplace {
                 let FixtureSupport::Supported(path) = self.seed_file(relative, b"a").await? else {
@@ -1117,20 +1167,25 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                         reason: "atomic replacement seed unavailable".to_owned(),
                     });
                 };
-                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default().with_atomicity(qfs::metadata::AtomicityRequirement::Required),
-                )));
+                return Ok(testkit::FixturePreparation::Ready(
+                    testkit::WriteFixtureCase::new(
+                        path,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default()
+                            .with_atomicity(qfs::metadata::AtomicityRequirement::Required),
+                    ),
+                ));
             }
             if scenario == testkit::WriteScenario::Durable {
-                return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
-                    self.path(relative)?,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default()
-                        .with_disposition(qfs::write::WriteDisposition::CreateNew)
-                        .with_durability(qfs::metadata::DurabilityRequirement::Required),
-                )));
+                return Ok(testkit::FixturePreparation::Ready(
+                    testkit::WriteFixtureCase::new(
+                        self.path(relative)?,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default()
+                            .with_disposition(qfs::write::WriteDisposition::CreateNew)
+                            .with_durability(qfs::metadata::DurabilityRequirement::Required),
+                    ),
+                ));
             }
             let options = match scenario {
                 testkit::WriteScenario::Create | testkit::WriteScenario::Abort => {
@@ -1145,15 +1200,17 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                     });
                 }
             };
-            Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
-                self.path(relative)?,
-                bytes.to_vec(),
-                options,
-            )))
+            Ok(testkit::FixturePreparation::Ready(
+                testkit::WriteFixtureCase::new(self.path(relative)?, bytes.to_vec(), options),
+            ))
         })
     }
 
-    fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_file<'a>(
+        &'a self,
+        relative: &'a str,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
             let path = self.path(relative)?;
             self.entries
@@ -1191,7 +1248,11 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
-    fn write_file_out_of_band<'a>(&'a self, path: &'a Path, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<()>> {
+    fn write_file_out_of_band<'a>(
+        &'a self,
+        path: &'a Path,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, FixtureSupport<()>> {
         Box::pin(async move {
             self.entries
                 .lock()
@@ -1202,7 +1263,10 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
-    fn resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+    fn resource_version<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         Box::pin(async move {
             let version = self
                 .entries
@@ -1217,7 +1281,10 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
-    fn stale_resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         Box::pin(async move {
             let exists = self
                 .entries
@@ -1232,13 +1299,19 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
-    fn checksum_failure_case<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn checksum_failure_case<'a>(
+        &'a self,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
             let path = self.path(relative)?;
             self.entries
                 .lock()
                 .expect("async memory state lock must succeed")
-                .insert(path.as_str().to_owned(), Entry::File(b"checksum bytes".to_vec()));
+                .insert(
+                    path.as_str().to_owned(),
+                    Entry::File(b"checksum bytes".to_vec()),
+                );
             bump_version(&self.versions, &path);
             Ok(FixtureSupport::Supported(path))
         })
@@ -1254,7 +1327,10 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
-    fn seed_empty_directory<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_empty_directory<'a>(
+        &'a self,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
             let path = self.path(relative)?;
             self.entries
@@ -1276,7 +1352,10 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         })
     }
 
-    fn copy_fast_path_case<'a>(&'a self, method: CopyMethod) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
+    fn copy_fast_path_case<'a>(
+        &'a self,
+        method: CopyMethod,
+    ) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
         Box::pin(async move {
             if method != CopyMethod::ServerSide {
                 return Ok(FixtureSupport::Unsupported);
@@ -1286,7 +1365,10 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             self.entries
                 .lock()
                 .expect("async memory state lock must succeed")
-                .insert(source.as_str().to_owned(), Entry::File(b"server-side".to_vec()));
+                .insert(
+                    source.as_str().to_owned(),
+                    Entry::File(b"server-side".to_vec()),
+                );
             Ok(FixtureSupport::Supported(CopyFixtureCase::new(
                 source,
                 target,
@@ -1311,11 +1393,12 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 bytes.truncate(maximum.min(bytes.len() as u64) as usize);
             }
             let case = AsyncWriteFixtureCase::new(path, bytes, Default::default());
-            let probe: Box<dyn WriteCancellationProbe> = Box::new(AsyncMemoryWriteCancellationProbe {
-                case,
-                gate: Arc::clone(&self.write_gate),
-                entries: Arc::clone(&self.entries),
-            });
+            let probe: Box<dyn WriteCancellationProbe> =
+                Box::new(AsyncMemoryWriteCancellationProbe {
+                    case,
+                    gate: Arc::clone(&self.write_gate),
+                    entries: Arc::clone(&self.entries),
+                });
             Ok(FixtureSupport::Supported(probe))
         })
     }
@@ -1341,11 +1424,15 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             self.entries
                 .lock()
                 .expect("async memory state lock must succeed")
-                .insert(source.as_str().to_owned(), Entry::File(b"copy bytes".to_vec()));
-            let probe: Box<dyn CopyCancellationProbe> = Box::new(AsyncMemoryCopyCancellationProbe {
-                case: AsyncCopyFixtureCase::new(source, target, CopyOptions::default()),
-                gate: Arc::clone(&self.copy_gate),
-            });
+                .insert(
+                    source.as_str().to_owned(),
+                    Entry::File(b"copy bytes".to_vec()),
+                );
+            let probe: Box<dyn CopyCancellationProbe> =
+                Box::new(AsyncMemoryCopyCancellationProbe {
+                    case: AsyncCopyFixtureCase::new(source, target, CopyOptions::default()),
+                    gate: Arc::clone(&self.copy_gate),
+                });
             Ok(FixtureSupport::Supported(probe))
         })
     }
@@ -1353,7 +1440,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
 #[cfg(feature = "async")]
 fn bump_version(versions: &Arc<Mutex<HashMap<String, u64>>>, path: &Path) {
-    let mut versions = versions.lock().expect("async memory version lock must succeed");
+    let mut versions = versions
+        .lock()
+        .expect("async memory version lock must succeed");
     let version = versions.entry(path.as_str().to_owned()).or_insert(0);
     *version = version.saturating_add(1);
 }
@@ -1487,7 +1576,8 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         provider_properties(
             FileSystemProperties::new(
                 FileSystemInfo::new(
-                    FileSystemId::new("async-memory-contract").expect("async provider id must be valid"),
+                    FileSystemId::new("async-memory-contract")
+                        .expect("async provider id must be valid"),
                     self.provider_id,
                     PathSemantics::Hierarchical,
                 ),
@@ -1519,11 +1609,12 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             }
             match entry {
                 Some(Entry::File(bytes)) => {
-                    let mut metadata = FileMetadata::new(if fault == AsyncMemoryFault::ObjectKinds {
-                        FileKind::Object
-                    } else {
-                        FileKind::File
-                    });
+                    let mut metadata =
+                        FileMetadata::new(if fault == AsyncMemoryFault::ObjectKinds {
+                            FileKind::Object
+                        } else {
+                            FileKind::File
+                        });
                     metadata = metadata.with_len(Some(bytes.len() as u64));
                     if fault == AsyncMemoryFault::WrongStatMetadata {
                         metadata = metadata.with_kind(FileKind::Directory).with_len(None);
@@ -1538,7 +1629,10 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                         FileKind::Directory
                     }),
                 )),
-                Some(Entry::Symlink) => Ok(StatResponse::new(path, FileMetadata::new(FileKind::Symlink))),
+                Some(Entry::Symlink) => Ok(StatResponse::new(
+                    path,
+                    FileMetadata::new(FileKind::Symlink),
+                )),
                 None if fault == AsyncMemoryFault::MissingPathExists => {
                     Ok(StatResponse::new(path, FileMetadata::new(FileKind::File)))
                 }
@@ -1551,7 +1645,10 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         })
     }
 
-    fn list<'a>(&'a self, request: ListRequest<'a>) -> SpiFuture<'a, FsResult<OpenedAsyncDirectoryStream>> {
+    fn list<'a>(
+        &'a self,
+        request: ListRequest<'a>,
+    ) -> SpiFuture<'a, FsResult<OpenedAsyncDirectoryStream>> {
         let entries = if self.fault == AsyncMemoryFault::ListEscapesNamespace {
             vec![DirEntry::new(
                 Path::parse("/outside-list-root").expect("fixed list entry path must be valid"),
@@ -1561,23 +1658,33 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             Vec::new()
         } else {
             listed_entries(
-                &self.entries.lock().expect("async memory state lock must succeed"),
+                &self
+                    .entries
+                    .lock()
+                    .expect("async memory state lock must succeed"),
                 request.scope().path().expect("hierarchical fixture scope"),
                 request.options().options(),
                 self.fault != AsyncMemoryFault::ListDropsMetadata,
             )
         };
         Box::pin(async move {
-            Ok(OpenedAsyncDirectoryStream::new(Box::new(AsyncMemoryDirectoryStream {
-                entries: entries.into_iter(),
-            })))
+            Ok(OpenedAsyncDirectoryStream::new(Box::new(
+                AsyncMemoryDirectoryStream {
+                    entries: entries.into_iter(),
+                },
+            )))
         })
     }
 
-    fn open_reader<'a>(&'a self, request: OpenReaderRequest<'a>) -> SpiFuture<'a, FsResult<OpenedAsyncReader>> {
+    fn open_reader<'a>(
+        &'a self,
+        request: OpenReaderRequest<'a>,
+    ) -> SpiFuture<'a, FsResult<OpenedAsyncReader>> {
         if self.gate_controls(AsyncCopyCancellationStage::Reader) {
             let gate = Arc::clone(&self.copy_gate);
-            return Box::pin(async move { wait_copy_gate(gate, AsyncCopyCancellationStage::Reader).await });
+            return Box::pin(async move {
+                wait_copy_gate(gate, AsyncCopyCancellationStage::Reader).await
+            });
         }
         let path = request.path().clone();
         let info = Self::info(&path);
@@ -1645,7 +1752,10 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         })
     }
 
-    fn open_writer<'a>(&'a self, request: OpenWriterRequest<'a>) -> SpiFuture<'a, FsResult<OpenedAsyncWriter>> {
+    fn open_writer<'a>(
+        &'a self,
+        request: OpenWriterRequest<'a>,
+    ) -> SpiFuture<'a, FsResult<OpenedAsyncWriter>> {
         let selected_stage = self.stage();
         let stage = if self.gate_controls(AsyncCopyCancellationStage::Writer)
             || self.gate_controls(AsyncCopyCancellationStage::Commit)
@@ -1702,20 +1812,31 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
         Box::pin(async move {
-            let mut entries = entries.lock().expect("async memory state lock must succeed");
+            let mut entries = entries
+                .lock()
+                .expect("async memory state lock must succeed");
             if recursive && fault != AsyncMemoryFault::RecursiveCreateLeavesParentsMissing {
-                for (index, _) in path.as_str().match_indices('/').filter(|(index, _)| *index > 0) {
+                for (index, _) in path
+                    .as_str()
+                    .match_indices('/')
+                    .filter(|(index, _)| *index > 0)
+                {
                     entries
                         .entry(path.as_str()[..index].to_owned())
                         .or_insert(Entry::Directory);
                 }
             }
-            let already_existed = entries.insert(path.as_str().to_owned(), Entry::Directory).is_some();
+            let already_existed = entries
+                .insert(path.as_str().to_owned(), Entry::Directory)
+                .is_some();
             Ok(CreateDirectoryOutcome::new(already_existed))
         })
     }
 
-    fn delete_file<'a>(&'a self, request: DeleteFileRequest<'a>) -> SpiFuture<'a, FsResult<DeleteOutcome>> {
+    fn delete_file<'a>(
+        &'a self,
+        request: DeleteFileRequest<'a>,
+    ) -> SpiFuture<'a, FsResult<DeleteOutcome>> {
         let path = request.path().clone();
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
@@ -1759,7 +1880,10 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         })
     }
 
-    fn delete_directory<'a>(&'a self, request: DeleteDirectoryRequest<'a>) -> SpiFuture<'a, FsResult<DeleteOutcome>> {
+    fn delete_directory<'a>(
+        &'a self,
+        request: DeleteDirectoryRequest<'a>,
+    ) -> SpiFuture<'a, FsResult<DeleteOutcome>> {
         let path = request.path().clone();
         let entries = Arc::clone(&self.entries);
         let recursive = request.options().options().recursive();
@@ -1778,7 +1902,9 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             let missing = if fault == AsyncMemoryFault::DeleteNoOp {
                 true
             } else {
-                let mut entries = entries.lock().expect("async memory state lock must succeed");
+                let mut entries = entries
+                    .lock()
+                    .expect("async memory state lock must succeed");
                 let removed = entries.remove(path.as_str());
                 let mut removed_descendant = false;
                 if recursive && fault != AsyncMemoryFault::RecursiveDeleteLeavesChildren {
@@ -1793,10 +1919,15 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         })
     }
 
-    fn try_copy<'a>(&'a self, request: CopyRequest<'a>) -> SpiFuture<'a, Result<CopyAttempt, SpiCopyFailure>> {
+    fn try_copy<'a>(
+        &'a self,
+        request: CopyRequest<'a>,
+    ) -> SpiFuture<'a, Result<CopyAttempt, SpiCopyFailure>> {
         if self.gate_controls(AsyncCopyCancellationStage::NativeAttempt) {
             let gate = Arc::clone(&self.copy_gate);
-            return Box::pin(async move { wait_copy_gate(gate, AsyncCopyCancellationStage::NativeAttempt).await });
+            return Box::pin(async move {
+                wait_copy_gate(gate, AsyncCopyCancellationStage::NativeAttempt).await
+            });
         }
         let options = request.options().options();
         let mode = options.mode();
@@ -1817,7 +1948,9 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             let entries = Arc::clone(&self.entries);
             let fault = self.fault;
             return Box::pin(async move {
-                let mut entries = entries.lock().expect("async memory state lock must succeed");
+                let mut entries = entries
+                    .lock()
+                    .expect("async memory state lock must succeed");
                 let Some(entry) = entries.get(source.as_str()).cloned() else {
                     return Err(SpiCopyFailure::new(
                         FsError::new(
@@ -1871,7 +2004,8 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     },
                 };
                 let directory = matches!(&entry, Entry::Directory);
-                let overwritten = entries.contains_key(target.as_str()) && conflict == CopyConflictPolicy::Overwrite;
+                let overwritten = entries.contains_key(target.as_str())
+                    && conflict == CopyConflictPolicy::Overwrite;
                 stats.overwritten = u64::from(overwritten);
                 if !(overwritten && fault == AsyncMemoryFault::CopyOverwriteKeepsTarget) {
                     entries.insert(target.as_str().to_owned(), entry);
@@ -1882,8 +2016,9 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     let descendants = entries
                         .iter()
                         .filter_map(|(path, entry)| {
-                            path.strip_prefix(&source_prefix)
-                                .map(|relative| (format!("{target_prefix}{relative}"), entry.clone()))
+                            path.strip_prefix(&source_prefix).map(|relative| {
+                                (format!("{target_prefix}{relative}"), entry.clone())
+                            })
                         })
                         .collect::<Vec<_>>();
                     for (path, entry) in descendants {
@@ -1910,8 +2045,10 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                             CopyMethod::Native
                         },
                         if atomicity == AtomicityRequirement::Required
-                            && !(mode == CopyMode::File && fault == AsyncMemoryFault::AtomicFileCopyNonAtomic)
-                            && !(mode == CopyMode::Tree && fault == AsyncMemoryFault::AtomicTreeCopyNonAtomic)
+                            && !(mode == CopyMode::File
+                                && fault == AsyncMemoryFault::AtomicFileCopyNonAtomic)
+                            && !(mode == CopyMode::Tree
+                                && fault == AsyncMemoryFault::AtomicTreeCopyNonAtomic)
                         {
                             AchievedAtomicity::Atomic
                         } else {
@@ -1920,8 +2057,10 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     )
                     .with_durable(
                         durable
-                            && !(mode == CopyMode::File && fault == AsyncMemoryFault::DurableFileCopyNonDurable)
-                            && !(mode == CopyMode::Tree && fault == AsyncMemoryFault::DurableTreeCopyNonDurable),
+                            && !(mode == CopyMode::File
+                                && fault == AsyncMemoryFault::DurableFileCopyNonDurable)
+                            && !(mode == CopyMode::Tree
+                                && fault == AsyncMemoryFault::DurableTreeCopyNonDurable),
                     ),
                 ))
             });
@@ -1929,7 +2068,10 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         Box::pin(async { Ok(CopyAttempt::Declined(CopyDeclineReason::NotApplicable)) })
     }
 
-    fn rename<'a>(&'a self, request: RenameRequest<'a>) -> SpiFuture<'a, Result<RenameOutcome, SpiRenameFailure>> {
+    fn rename<'a>(
+        &'a self,
+        request: RenameRequest<'a>,
+    ) -> SpiFuture<'a, Result<RenameOutcome, SpiRenameFailure>> {
         let source = request.source().clone();
         let target = request.target().clone();
         let entries = Arc::clone(&self.entries);
@@ -1938,7 +2080,9 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let durability = request.options().options().durability();
         let overwrite = request.options().options().overwrite();
         Box::pin(async move {
-            let mut entries = entries.lock().expect("async memory state lock must succeed");
+            let mut entries = entries
+                .lock()
+                .expect("async memory state lock must succeed");
             if !overwrite && entries.contains_key(target.as_str()) {
                 return Err(SpiRenameFailure::new(
                     FsError::new(
@@ -1952,25 +2096,34 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             if fault != AsyncMemoryFault::RenameNoOp {
                 let Some(entry) = entries.remove(source.as_str()) else {
                     return Err(SpiRenameFailure::new(
-                        FsError::new(FsErrorKind::NotFound, FsOperation::Rename, "async memory entry absent"),
+                        FsError::new(
+                            FsErrorKind::NotFound,
+                            FsOperation::Rename,
+                            "async memory entry absent",
+                        ),
                         RenameFailureState::Unchanged,
                     ));
                 };
                 entries.insert(target.as_str().to_owned(), entry);
             }
             drop(entries);
-            let (reported_source, reported_target) = if fault == AsyncMemoryFault::RenameWrongOutcome {
-                (
-                    Path::parse("/contract/async-wrong-rename-source").expect("generated path must be valid"),
-                    Path::parse("/contract/async-wrong-rename-target").expect("generated path must be valid"),
-                )
-            } else {
-                (source, target)
-            };
+            let (reported_source, reported_target) =
+                if fault == AsyncMemoryFault::RenameWrongOutcome {
+                    (
+                        Path::parse("/contract/async-wrong-rename-source")
+                            .expect("generated path must be valid"),
+                        Path::parse("/contract/async-wrong-rename-target")
+                            .expect("generated path must be valid"),
+                    )
+                } else {
+                    (source, target)
+                };
             Ok(RenameOutcome::new(
                 reported_source,
                 reported_target,
-                if atomicity == AtomicityRequirement::Required && fault != AsyncMemoryFault::AtomicRenameNonAtomic {
+                if atomicity == AtomicityRequirement::Required
+                    && fault != AsyncMemoryFault::AtomicRenameNonAtomic
+                {
                     AchievedAtomicity::Atomic
                 } else {
                     AchievedAtomicity::NonAtomic
@@ -1978,12 +2131,16 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 PublicationMethod::Direct,
             )
             .with_durable(
-                durability == DurabilityRequirement::Required && fault != AsyncMemoryFault::DurableRenameNonDurable,
+                durability == DurabilityRequirement::Required
+                    && fault != AsyncMemoryFault::DurableRenameNonDurable,
             ))
         })
     }
 
-    fn create_temp_file<'a>(&'a self, request: CreateTempFileRequest) -> SpiFuture<'a, FsResult<OpenedAsyncTempFile>> {
+    fn create_temp_file<'a>(
+        &'a self,
+        request: CreateTempFileRequest,
+    ) -> SpiFuture<'a, FsResult<OpenedAsyncTempFile>> {
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
         let options = request.options().clone();
@@ -1998,7 +2155,11 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             );
             Ok(OpenedAsyncTempFile::new(
                 Self::info(&path).with_metadata(FileMetadata::new(FileKind::File)),
-                Box::new(AsyncTempSession { entries, path, fault }),
+                Box::new(AsyncTempSession {
+                    entries,
+                    path,
+                    fault,
+                }),
             ))
         })
     }
@@ -2021,7 +2182,11 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             );
             Ok(OpenedAsyncTempDirectory::new(
                 Self::info(&path).with_metadata(FileMetadata::new(FileKind::Directory)),
-                Box::new(AsyncTempSession { entries, path, fault }),
+                Box::new(AsyncTempSession {
+                    entries,
+                    path,
+                    fault,
+                }),
             ))
         })
     }
@@ -2061,7 +2226,8 @@ impl AsyncInput for AsyncMemoryReader {
             Poll::Ready(Ok(0))
         } else {
             let length = count.min(this.bytes.len() - this.offset);
-            output[index..index + length].copy_from_slice(&this.bytes[this.offset..this.offset + length]);
+            output[index..index + length]
+                .copy_from_slice(&this.bytes[this.offset..this.offset + length]);
             this.offset += length;
             Poll::Ready(Ok(length))
         }
@@ -2140,10 +2306,14 @@ impl AsyncOutput for AsyncMemoryWriter {
 
 #[cfg(feature = "async")]
 impl AsyncFileWriteSession for AsyncMemoryWriter {
-    fn commit_async<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, Result<WriteOutcome, WriteFailure>> {
+    fn commit_async<'a>(
+        self: Pin<&'a mut Self>,
+    ) -> SpiFuture<'a, Result<WriteOutcome, WriteFailure>> {
         if self.as_ref().get_ref().stage == AsyncCopyCancellationStage::Commit {
             let gate = Arc::clone(&self.as_ref().get_ref().copy_gate);
-            return Box::pin(async move { wait_copy_gate(gate, AsyncCopyCancellationStage::Commit).await });
+            return Box::pin(async move {
+                wait_copy_gate(gate, AsyncCopyCancellationStage::Commit).await
+            });
         }
         let this = self.get_mut();
         let state = Arc::clone(&this.state);
@@ -2169,9 +2339,12 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                 .lock()
                 .expect("async memory state lock must succeed")
                 .contains_key(path.as_str());
-            if (fault == AsyncMemoryFault::BasicCommitFails && path.as_str().ends_with("write-create"))
-                || (fault == AsyncMemoryFault::OwningCommitFails && path.as_str().ends_with("owning-write"))
-                || (fault == AsyncMemoryFault::ReplaceCommitFails && path.as_str().ends_with("write-replace"))
+            if (fault == AsyncMemoryFault::BasicCommitFails
+                && path.as_str().ends_with("write-create"))
+                || (fault == AsyncMemoryFault::OwningCommitFails
+                    && path.as_str().ends_with("owning-write"))
+                || (fault == AsyncMemoryFault::ReplaceCommitFails
+                    && path.as_str().ends_with("write-replace"))
             {
                 return Err(WriteFailure::new(
                     FsError::new(
@@ -2220,7 +2393,8 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                 ));
             }
             if fault != AsyncMemoryFault::WriteDropsBytes
-                && !(fault == AsyncMemoryFault::DurableWriteDropsBytes && durability == DurabilityRequirement::Required)
+                && !(fault == AsyncMemoryFault::DurableWriteDropsBytes
+                    && durability == DurabilityRequirement::Required)
                 && !(fault == AsyncMemoryFault::AtomicReplaceKeepsOldBytes
                     && atomicity == AtomicityRequirement::Required
                     && destination_exists)
@@ -2237,7 +2411,9 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                         combined.extend_from_slice(existing.get(bytes.len()..).unwrap_or_default());
                     }
                     combined
-                } else if disposition == WriteDisposition::Append && fault != AsyncMemoryFault::AppendOverwrites {
+                } else if disposition == WriteDisposition::Append
+                    && fault != AsyncMemoryFault::AppendOverwrites
+                {
                     let mut combined = match state.get(path.as_str()) {
                         Some(Entry::File(existing)) => existing.clone(),
                         Some(Entry::Directory | Entry::Symlink) | None => Vec::new(),
@@ -2252,7 +2428,9 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                 bump_version(&versions, &path);
             }
             Ok(WriteOutcome::new(
-                if atomicity == AtomicityRequirement::Required && fault != AsyncMemoryFault::AtomicReplaceNonAtomic {
+                if atomicity == AtomicityRequirement::Required
+                    && fault != AsyncMemoryFault::AtomicReplaceNonAtomic
+                {
                     AchievedAtomicity::Atomic
                 } else {
                     AchievedAtomicity::NonAtomic
@@ -2261,7 +2439,8 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
             )
             .with_bytes_written(bytes_written)
             .with_durable(
-                durability == DurabilityRequirement::Required && fault != AsyncMemoryFault::DurableWriteDropsBytes,
+                durability == DurabilityRequirement::Required
+                    && fault != AsyncMemoryFault::DurableWriteDropsBytes,
             ))
         })
     }
@@ -2271,7 +2450,12 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
         Box::pin(async move {
             if this.fault == AsyncMemoryFault::RecoveryAbortFailsOnce
                 && (this.copy_gate.lock().expect("copy gate lock").ever_reached
-                    || !this.write_gate.lock().expect("write gate lock").observed.is_empty())
+                    || !this
+                        .write_gate
+                        .lock()
+                        .expect("write gate lock")
+                        .observed
+                        .is_empty())
             {
                 this.fault = AsyncMemoryFault::None;
                 return Err(FsError::new(
@@ -2290,21 +2474,26 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                     ));
                 }
                 if this.fault == AsyncMemoryFault::AbortLies {
-                    this.state
-                        .lock()
-                        .expect("async memory state lock")
-                        .insert(this.path.as_str().to_owned(), Entry::File(this.bytes.clone()));
+                    this.state.lock().expect("async memory state lock").insert(
+                        this.path.as_str().to_owned(),
+                        Entry::File(this.bytes.clone()),
+                    );
                 }
             }
             if (this.fault == AsyncMemoryFault::CopyAbortPublishes
                 && this.copy_gate.lock().expect("copy gate lock").ever_reached)
                 || (this.fault == AsyncMemoryFault::WriteAbortPublishes
-                    && !this.write_gate.lock().expect("write gate lock").observed.is_empty())
+                    && !this
+                        .write_gate
+                        .lock()
+                        .expect("write gate lock")
+                        .observed
+                        .is_empty())
             {
-                this.state
-                    .lock()
-                    .expect("async memory state lock")
-                    .insert(this.path.as_str().to_owned(), Entry::File(this.bytes.clone()));
+                this.state.lock().expect("async memory state lock").insert(
+                    this.path.as_str().to_owned(),
+                    Entry::File(this.bytes.clone()),
+                );
             }
             Ok(WriteAbortOutcome::NotPublished)
         })
@@ -2336,7 +2525,9 @@ fn allocate_async_temp(
     suffix: &str,
     fault: AsyncMemoryFault,
 ) -> Path {
-    let mut entries = entries.lock().expect("async memory state lock must succeed");
+    let mut entries = entries
+        .lock()
+        .expect("async memory state lock must succeed");
     let parent = if fault == AsyncMemoryFault::TempIgnoresOptions {
         "/contract"
     } else {
@@ -2348,8 +2539,11 @@ fn allocate_async_temp(
         (prefix, suffix)
     };
     let separator = if parent == "/" { "" } else { "/" };
-    let path = Path::parse(&format!("{parent}{separator}{prefix}{}{suffix}", entries.len()))
-        .expect("generated temporary path must be valid");
+    let path = Path::parse(&format!(
+        "{parent}{separator}{prefix}{}{suffix}",
+        entries.len()
+    ))
+    .expect("generated temporary path must be valid");
     entries.insert(
         path.as_str().to_owned(),
         if directory {
@@ -2390,14 +2584,20 @@ impl AsyncTempResourceSpi for AsyncTempSession {
         })
     }
 
-    fn keep<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, Result<PersistOutcome, SpiPersistFailure>> {
+    fn keep<'a>(
+        self: Pin<&'a mut Self>,
+    ) -> SpiFuture<'a, Result<PersistOutcome, SpiPersistFailure>> {
         let this = self.get_mut();
         let entries = Arc::clone(&this.entries);
         let source = this.path.clone();
         Box::pin(async move {
             let target = keep_target(&source);
-            let mut entries = entries.lock().expect("async memory state lock must succeed");
-            let entry = entries.remove(source.as_str()).expect("temporary entry must exist");
+            let mut entries = entries
+                .lock()
+                .expect("async memory state lock must succeed");
+            let entry = entries
+                .remove(source.as_str())
+                .expect("temporary entry must exist");
             entries.insert(target.as_str().to_owned(), entry);
             Ok(PersistOutcome::new(
                 target,
@@ -2418,17 +2618,23 @@ impl AsyncTempResourceSpi for AsyncTempSession {
         let atomicity = request.options().atomicity();
         let fault = this.fault;
         Box::pin(async move {
-            let mut entries = entries.lock().expect("async memory state lock must succeed");
-            let entry = entries.remove(source.as_str()).expect("temporary entry must exist");
+            let mut entries = entries
+                .lock()
+                .expect("async memory state lock must succeed");
+            let entry = entries
+                .remove(source.as_str())
+                .expect("temporary entry must exist");
             entries.insert(target.as_str().to_owned(), entry);
             let reported_target = if fault == AsyncMemoryFault::TempPersistWrongTarget {
-                Path::parse("/contract/async-wrong-persist-target").expect("generated path must be valid")
+                Path::parse("/contract/async-wrong-persist-target")
+                    .expect("generated path must be valid")
             } else {
                 target
             };
             Ok(PersistOutcome::new(
                 reported_target,
-                if atomicity == AtomicityRequirement::Required && fault != AsyncMemoryFault::AtomicTempPersistNonAtomic
+                if atomicity == AtomicityRequirement::Required
+                    && fault != AsyncMemoryFault::AtomicTempPersistNonAtomic
                 {
                     AchievedAtomicity::Atomic
                 } else {

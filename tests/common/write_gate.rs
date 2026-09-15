@@ -39,7 +39,11 @@ impl WriteGate {
         self.accepted = 0;
     }
 
-    pub(crate) fn poll(&mut self, stage: AsyncWriteCancellationStage, context: &Context<'_>) -> Poll<()> {
+    pub(crate) fn poll(
+        &mut self,
+        stage: AsyncWriteCancellationStage,
+        context: &Context<'_>,
+    ) -> Poll<()> {
         if self.stage != Some(stage) {
             return Poll::Ready(());
         }
@@ -55,7 +59,9 @@ impl WriteGate {
 
     pub(crate) fn poll_reached(&self) -> Poll<FixtureResult<()>> {
         if self.stage.is_none() {
-            return Poll::Ready(Err(FixtureError::new("write gate disarmed before acknowledgement")));
+            return Poll::Ready(Err(FixtureError::new(
+                "write gate disarmed before acknowledgement",
+            )));
         }
         if self.reached {
             Poll::Ready(Ok(()))

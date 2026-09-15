@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -28,12 +27,15 @@ use crate::internal::verify_condition;
 impl FileSystemContractSuite<'_> {
     /// Verifies exactly one required guarantee against independently observed
     /// bytes.
-    pub(super) fn check_strong_tree_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+    pub(super) fn check_strong_tree_copy(
+        &mut self,
+        id: ContractCheckId,
+    ) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let spec = crate::internal::check_catalog::specification(id);
-        let scenario = spec
-            .copy_scenario
-            .ok_or_else(|| ContractFailure::message_only("strong copy scenario absent from catalog").at(id))?;
+        let scenario = spec.copy_scenario.ok_or_else(|| {
+            ContractFailure::message_only("strong copy scenario absent from catalog").at(id)
+        })?;
         let (capability, options) = match scenario {
             CopyScenario::AtomicTree => (
                 FileSystemCapability::AtomicTreeCopy,
@@ -43,7 +45,12 @@ impl FileSystemContractSuite<'_> {
                 FileSystemCapability::DurableTreeCopy,
                 CopyOptions::tree().with_durability(DurabilityRequirement::Required),
             ),
-            _ => return Err(ContractFailure::message_only("selected check is not a tree-copy guarantee").at(id)),
+            _ => {
+                return Err(ContractFailure::message_only(
+                    "selected check is not a tree-copy guarantee",
+                )
+                .at(id));
+            }
         };
         if !self.capable(FileSystemCapability::Copy) {
             self.context.record_check(
@@ -58,18 +65,21 @@ impl FileSystemContractSuite<'_> {
         let source_relative = self.context.relative_name("strong-copy-source");
         let target_relative = self.context.relative_name("strong-copy-target");
         if !self.capable(capability) {
-            let source = self
-                .fixture
-                .path(&source_relative)
-                .map_err(|error| ContractFailure::with_source("strong copy source path failed", error).at(id))?;
-            let target = self
-                .fixture
-                .path(&target_relative)
-                .map_err(|error| ContractFailure::with_source("strong copy target path failed", error).at(id))?;
+            let source = self.fixture.path(&source_relative).map_err(|error| {
+                ContractFailure::with_source("strong copy source path failed", error).at(id)
+            })?;
+            let target = self.fixture.path(&target_relative).map_err(|error| {
+                ContractFailure::with_source("strong copy target path failed", error).at(id)
+            })?;
             self.context.record_created(target.clone());
             let failure = match self.fixture.file_system().copy(&source, &target, options) {
                 Err(failure) => failure,
-                Ok(_) => return Err(ContractFailure::message_only("unavailable copy guarantee succeeded").at(id)),
+                Ok(_) => {
+                    return Err(ContractFailure::message_only(
+                        "unavailable copy guarantee succeeded",
+                    )
+                    .at(id));
+                }
             };
             let error = failure.error();
             if error.kind() != FsErrorKind::RequirementNotMet
@@ -80,22 +90,35 @@ impl FileSystemContractSuite<'_> {
                 || error.provider() != Some(self.context.properties().info().provider_id())
                 || failure.state() != CopyFailureState::Unchanged
             {
-                return Err(ContractFailure::with_owned_source("strong copy rejection differs", failure).at(id));
+                return Err(ContractFailure::with_owned_source(
+                    "strong copy rejection differs",
+                    failure,
+                )
+                .at(id));
             }
-            self.context
-                .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
+            self.context.record_check(
+                id,
+                Some(capability),
+                ContractCheckOutcome::RejectedAsExpected,
+            );
             return Ok(());
         }
         let bytes = b"strong copy contents";
         let prepared = self
             .fixture
             .prepare_copy(scenario, &source_relative, &target_relative, bytes)
-            .map_err(|error| ContractFailure::with_source("strong copy preparation failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_source("strong copy preparation failed", error).at(id)
+            })?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
-                self.context
-                    .record_check(id, Some(capability), ContractCheckOutcome::Unverified { reason });
+            FixturePreparation::Unavailable { reason }
+            | FixturePreparation::NotApplicable { reason } => {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::Unverified { reason },
+                );
                 return Ok(());
             }
         };
@@ -107,10 +130,12 @@ impl FileSystemContractSuite<'_> {
             id,
             "strong copy preparation changed required request semantics",
         )?;
-        let sub = qfs::path::RelativePath::parse("sub")
-            .map_err(|error| ContractFailure::with_source("tree subdirectory path failed", error).at(id))?;
-        let child = qfs::path::RelativePath::parse("sub/child")
-            .map_err(|error| ContractFailure::with_source("tree child path failed", error).at(id))?;
+        let sub = qfs::path::RelativePath::parse("sub").map_err(|error| {
+            ContractFailure::with_source("tree subdirectory path failed", error).at(id)
+        })?;
+        let child = qfs::path::RelativePath::parse("sub/child").map_err(|error| {
+            ContractFailure::with_source("tree child path failed", error).at(id)
+        })?;
         let source_sub = source.join(&sub);
         let source_child = source.join(&child);
         let target_sub = target.join(&sub);
@@ -120,7 +145,8 @@ impl FileSystemContractSuite<'_> {
         }
         for path in [&source, &source_sub] {
             let observed = self.fixture.exists_out_of_band(path).map_err(|error| {
-                ContractFailure::with_source("tree initial directory observation failed", error).at(id)
+                ContractFailure::with_source("tree initial directory observation failed", error)
+                    .at(id)
             })?;
             let FixtureSupport::Supported(exists) = observed else {
                 self.context.record_check(
@@ -134,36 +160,47 @@ impl FileSystemContractSuite<'_> {
             };
             verify_condition(exists, id, "tree source directory was not prepared")?;
         }
-        let source_before = self
-            .fixture
-            .read_file(&source_child)
-            .map_err(|error| ContractFailure::with_source("strong copy source observation failed", error).at(id))?;
+        let source_before = self.fixture.read_file(&source_child).map_err(|error| {
+            ContractFailure::with_source("strong copy source observation failed", error).at(id)
+        })?;
         let target_before = self.fixture.exists_out_of_band(&target).map_err(|error| {
             ContractFailure::with_source("strong copy destination observation failed", error).at(id)
         })?;
-        let (FixtureSupport::Supported(actual), FixtureSupport::Supported(exists)) = (source_before, target_before)
+        let (FixtureSupport::Supported(actual), FixtureSupport::Supported(exists)) =
+            (source_before, target_before)
         else {
             self.context.record_check(
                 id,
                 Some(capability),
                 ContractCheckOutcome::Unverified {
-                    reason: "strong copy requires independent source bytes and target absence".to_owned(),
+                    reason: "strong copy requires independent source bytes and target absence"
+                        .to_owned(),
                 },
             );
             return Ok(());
         };
-        verify_condition(actual == bytes && !exists, id, "strong copy initial state differs")?;
+        verify_condition(
+            actual == bytes && !exists,
+            id,
+            "strong copy initial state differs",
+        )?;
         let outcome = self
             .fixture
             .file_system()
             .copy(&source, &target, options)
-            .map_err(|error| ContractFailure::with_owned_source("strong copy execution failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_owned_source("strong copy execution failed", error).at(id)
+            })?;
         let achieved = match scenario {
             CopyScenario::AtomicTree => outcome.atomicity() == AchievedAtomicity::Atomic,
             CopyScenario::DurableTree => outcome.durable(),
             _ => false,
         };
-        verify_condition(achieved, id, "copy did not achieve its required publication guarantee")?;
+        verify_condition(
+            achieved,
+            id,
+            "copy did not achieve its required publication guarantee",
+        )?;
         verify_condition(
             outcome.stats().bytes == bytes.len() as u64
                 && outcome.stats().files + outcome.stats().objects == 1
@@ -176,7 +213,8 @@ impl FileSystemContractSuite<'_> {
         )?;
         for path in [&source, &source_sub, &target, &target_sub] {
             let observed = self.fixture.exists_out_of_band(path).map_err(|error| {
-                ContractFailure::with_source("tree final directory observation failed", error).at(id)
+                ContractFailure::with_source("tree final directory observation failed", error)
+                    .at(id)
             })?;
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(true)),
@@ -185,10 +223,9 @@ impl FileSystemContractSuite<'_> {
             )?;
         }
         for path in [&source_child, &target_child] {
-            let observed = self
-                .fixture
-                .read_file(path)
-                .map_err(|error| ContractFailure::with_source("strong copy final observation failed", error).at(id))?;
+            let observed = self.fixture.read_file(path).map_err(|error| {
+                ContractFailure::with_source("strong copy final observation failed", error).at(id)
+            })?;
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
                 id,

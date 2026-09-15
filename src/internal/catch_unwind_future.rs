@@ -5,7 +5,6 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-// qubit-style: allow source-test-pair
 //! Runtime-neutral panic capture for asynchronous contract execution.
 
 use std::any::Any;
