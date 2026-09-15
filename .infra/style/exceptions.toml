@@ -1,0 +1,191 @@
+format = 1
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/async_file_system_contract_suite.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/async_file_system_contract_suite/basic_copy.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/async_file_system_contract_suite/owning_write.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/async_file_system_contract_suite/strong_tree_copy.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/async_file_system_contract_suite/support.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/async_file_system_contract_suite/temp.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/async_file_system_contract_suite/write.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/async_file_system_fixture.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/contract_report.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/file_system_contract_suite.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/file_system_contract_suite/strong_tree_copy.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/file_system_contract_suite/support.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/file_system_contract_suite/temp.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/file_system_contract_suite/write.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/file_system_fixture.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/internal/limit_probe_plan.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "src/internal/property_expectations.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/async_cancellation_regression_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/async_cleanup_cancellation_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/async_file_system_contract_suite_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/async_file_system_fixture_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/async_io_contract_regression_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/cancellation_recovery_failure_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/cleanup_contract_regression_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/common/async_memory_file_system.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/common/memory_file_system.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/common/mod.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/contract_registration_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/contract_run_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/contract_writer_failure_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/file_system_contract_suite_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/fixture_defaults_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/focused_contract_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/write_preparation_tests.rs"
+reason = "This file intentionally uses a legacy import shape required by its module boundary."
+
+[[exceptions]]
+rule = "test-redirect"
+path = "tests/common/fs_rustdoc_support.rs"
+reason = "Rustdoc integration tests include the shared filesystem fixture implementation in a scoped module."
+
+[[exceptions]]
+rule = "test-redirect"
+path = "tests/common/rustdoc_support.rs"
+reason = "Rustdoc integration tests include the shared provider fixture implementation in a scoped module."
+
+[[exceptions]]
+rule = "test-redirect"
+path = "tests/namespace_listing_tests.rs"
+reason = "This namespace listing suite imports shared fixtures with path attributes."
+
+[[exceptions]]
+rule = "test-redirect"
+path = "tests/read_preparation_tests.rs"
+reason = "This read preparation suite imports shared fixture modules by path."

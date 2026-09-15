@@ -67,7 +67,7 @@ def owned_files(root: Path, filename: str):
     for directory in PACKAGES:
         for current, directories, files in os.walk(root / directory):
             directories[:] = [name for name in directories if name not in
-                              {"target", ".git", ".rs-ci", ".worktrees", ".cargo-home"}]
+                              {"target", ".git", ".infra", ".worktrees", ".cargo-home"}]
             if filename in files:
                 yield Path(current) / filename
 
