@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -24,14 +23,16 @@ use crate::internal::verify_condition;
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes one basic copy requirement with independently prepared
     /// contents.
-    pub(super) async fn check_basic_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+    pub(super) async fn check_basic_copy(
+        &mut self,
+        id: ContractCheckId,
+    ) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let source_relative = self.context.relative_name("copy-source");
         let target_relative = self.context.relative_name("copy-target");
-        let target = self
-            .fixture
-            .path(&target_relative)
-            .map_err(|error| ContractFailure::with_source("copy target preparation failed", error).at(id))?;
+        let target = self.fixture.path(&target_relative).map_err(|error| {
+            ContractFailure::with_source("copy target preparation failed", error).at(id)
+        })?;
         self.context.record_created(target.clone());
         let missing = [
             FileSystemCapability::Read,
@@ -51,22 +52,24 @@ impl AsyncFileSystemContractSuite<'_> {
                 );
                 return Ok(());
             }
-            let source = self
-                .fixture
-                .path(&source_relative)
-                .map_err(|error| ContractFailure::with_source("copy source path preparation failed", error).at(id))?;
-            let (failure, retained_operation) =
-                match self
-                    .fixture
-                    .file_system()
-                    .begin_copy(source.clone(), target.clone(), CopyOptions::file())
-                {
-                    Err(error) => (error, None),
-                    Ok(mut operation) => match operation.execute().await {
-                        Err(error) => (error, Some(operation)),
-                        Ok(_) => return Err(ContractFailure::message_only("unsupported copy succeeded").at(id)),
-                    },
-                };
+            let source = self.fixture.path(&source_relative).map_err(|error| {
+                ContractFailure::with_source("copy source path preparation failed", error).at(id)
+            })?;
+            let (failure, retained_operation) = match self.fixture.file_system().begin_copy(
+                source.clone(),
+                target.clone(),
+                CopyOptions::file(),
+            ) {
+                Err(error) => (error, None),
+                Ok(mut operation) => match operation.execute().await {
+                    Err(error) => (error, Some(operation)),
+                    Ok(_) => {
+                        return Err(
+                            ContractFailure::message_only("unsupported copy succeeded").at(id)
+                        );
+                    }
+                },
+            };
             let path = if required == FileSystemCapability::Write {
                 &target
             } else {
@@ -97,15 +100,20 @@ impl AsyncFileSystemContractSuite<'_> {
         let bytes = b"copy bytes";
         let scenario = crate::internal::check_catalog::specification(id)
             .copy_scenario
-            .ok_or_else(|| ContractFailure::message_only("copy preparation missing from catalog").at(id))?;
+            .ok_or_else(|| {
+                ContractFailure::message_only("copy preparation missing from catalog").at(id)
+            })?;
         let prepared = self
             .fixture
             .prepare_copy(scenario, &source_relative, &target_relative, bytes)
             .await
-            .map_err(|error| ContractFailure::with_source("copy source preparation failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_source("copy source preparation failed", error).at(id)
+            })?;
         let case = match prepared {
             crate::FixturePreparation::Ready(case) => case,
-            crate::FixturePreparation::Unavailable { reason } | crate::FixturePreparation::NotApplicable { reason } => {
+            crate::FixturePreparation::Unavailable { reason }
+            | crate::FixturePreparation::NotApplicable { reason } => {
                 self.context.record_check(
                     id,
                     Some(FileSystemCapability::Copy),
@@ -123,11 +131,9 @@ impl AsyncFileSystemContractSuite<'_> {
         )?;
         self.context.record_created(source.clone());
         verify_condition(source != target, id, "copy source and target alias")?;
-        let before = self
-            .fixture
-            .read_file(&source)
-            .await
-            .map_err(|error| ContractFailure::with_source("copy source observation failed", error).at(id))?;
+        let before = self.fixture.read_file(&source).await.map_err(|error| {
+            ContractFailure::with_source("copy source observation failed", error).at(id)
+        })?;
         verify_condition(
             matches!(before, FixtureSupport::Supported(actual) if actual == bytes),
             id,
@@ -146,7 +152,8 @@ impl AsyncFileSystemContractSuite<'_> {
             })?;
         drop(operation.execute());
         verify_condition(
-            operation.state() == qfs::copy::AsyncCopyOperationState::Ready && !operation.has_recovery(),
+            operation.state() == qfs::copy::AsyncCopyOperationState::Ready
+                && !operation.has_recovery(),
             id,
             "unpolled copy changed operation state",
         )?;
@@ -161,7 +168,8 @@ impl AsyncFileSystemContractSuite<'_> {
             }
         };
         verify_condition(
-            outcome.stats().bytes == bytes.len() as u64 && outcome.stats().files + outcome.stats().objects == 1,
+            outcome.stats().bytes == bytes.len() as u64
+                && outcome.stats().files + outcome.stats().objects == 1,
             id,
             "copy statistics differ",
         )?;
@@ -182,10 +190,9 @@ impl AsyncFileSystemContractSuite<'_> {
         )?;
         if id == ContractCheckId::CopyRepeatedExecute {
             for path in [&source, &target] {
-                let observed =
-                    self.fixture.read_file(path).await.map_err(|error| {
-                        ContractFailure::with_source("initial copy observation failed", error).at(id)
-                    })?;
+                let observed = self.fixture.read_file(path).await.map_err(|error| {
+                    ContractFailure::with_source("initial copy observation failed", error).at(id)
+                })?;
                 verify_condition(
                     matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
                     id,
@@ -214,19 +221,20 @@ impl AsyncFileSystemContractSuite<'_> {
             )?;
         }
         for path in [&source, &target] {
-            let observed = self
-                .fixture
-                .read_file(path)
-                .await
-                .map_err(|error| ContractFailure::with_source("copy contents observation failed", error).at(id))?;
+            let observed = self.fixture.read_file(path).await.map_err(|error| {
+                ContractFailure::with_source("copy contents observation failed", error).at(id)
+            })?;
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
                 id,
                 "copy source or target contents differ or evidence is unavailable",
             )?;
         }
-        self.context
-            .record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Passed);
+        self.context.record_check(
+            id,
+            Some(FileSystemCapability::Copy),
+            ContractCheckOutcome::Passed,
+        );
         Ok(())
     }
 }

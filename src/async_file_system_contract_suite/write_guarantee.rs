@@ -26,7 +26,10 @@ use crate::internal::verify_open_failure;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes one strong guarantee check and retains its exact identity.
-    pub(super) async fn check_write_guarantee(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+    pub(super) async fn check_write_guarantee(
+        &mut self,
+        id: ContractCheckId,
+    ) -> Result<(), ContractFailure> {
         let (scenario, capability, name, options) = match id {
             ContractCheckId::WriteAtomicReplaceExisting => (
                 WriteScenario::AtomicReplace,
@@ -42,7 +45,12 @@ impl AsyncFileSystemContractSuite<'_> {
                     .with_disposition(WriteDisposition::CreateNew)
                     .with_durability(DurabilityRequirement::Required),
             ),
-            _ => return Err(ContractFailure::message_only("selected check is not a write guarantee").at(id)),
+            _ => {
+                return Err(ContractFailure::message_only(
+                    "selected check is not a write guarantee",
+                )
+                .at(id));
+            }
         };
         let outcome = if !self.capable(FileSystemCapability::Write) {
             ContractCheckOutcome::NotApplicable {
@@ -50,13 +58,17 @@ impl AsyncFileSystemContractSuite<'_> {
             }
         } else if !self.capable(capability) {
             let relative = self.context.relative_name(name);
-            let path = self
-                .fixture
-                .path(&relative)
-                .map_err(|error| ContractFailure::with_source("write guarantee request path failed", error).at(id))?;
+            let path = self.fixture.path(&relative).map_err(|error| {
+                ContractFailure::with_source("write guarantee request path failed", error).at(id)
+            })?;
             let error = match self.fixture.file_system().open_writer(&path, options).await {
                 Err(error) => error,
-                Ok(_) => return Err(ContractFailure::message_only("unavailable write guarantee succeeded").at(id)),
+                Ok(_) => {
+                    return Err(ContractFailure::message_only(
+                        "unavailable write guarantee succeeded",
+                    )
+                    .at(id));
+                }
             };
             verify_open_failure(
                 error,
@@ -89,16 +101,23 @@ impl AsyncFileSystemContractSuite<'_> {
             .fixture
             .prepare_write(scenario, &relative, bytes)
             .await
-            .map_err(|error| ContractFailure::with_source("write guarantee preparation failed", error))?;
+            .map_err(|error| {
+                ContractFailure::with_source("write guarantee preparation failed", error)
+            })?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason }
+            | FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified { reason });
             }
         };
         let path = case.path().clone();
         self.context.record_created(path.clone());
-        verify_condition(case.bytes() == bytes, id, "write guarantee fixture changed payload")?;
+        verify_condition(
+            case.bytes() == bytes,
+            id,
+            "write guarantee fixture changed payload",
+        )?;
         if scenario == WriteScenario::AtomicReplace {
             verify_condition(
                 case.options().atomicity() == AtomicityRequirement::Required
@@ -129,8 +148,9 @@ impl AsyncFileSystemContractSuite<'_> {
             case.options().clone(),
         )
         .await;
-        let outcome = publication
-            .map_err(|error| ContractFailure::with_owned_source("write guarantee publication failed", error))?;
+        let outcome = publication.map_err(|error| {
+            ContractFailure::with_owned_source("write guarantee publication failed", error)
+        })?;
         verify_condition(
             if scenario == WriteScenario::AtomicReplace {
                 outcome.atomicity() == AchievedAtomicity::Atomic
@@ -141,14 +161,15 @@ impl AsyncFileSystemContractSuite<'_> {
             "write guarantee outcome does not satisfy the requirement",
         )?;
         verify_condition(
-            outcome.bytes_written().is_none_or(|count| count == bytes.len() as u64),
+            outcome
+                .bytes_written()
+                .is_none_or(|count| count == bytes.len() as u64),
             id,
             "write guarantee published byte count differs",
         )?;
-        let observed =
-            self.fixture.read_file(&path).await.map_err(|error| {
-                ContractFailure::with_source("write guarantee publication observation failed", error)
-            })?;
+        let observed = self.fixture.read_file(&path).await.map_err(|error| {
+            ContractFailure::with_source("write guarantee publication observation failed", error)
+        })?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
             id,

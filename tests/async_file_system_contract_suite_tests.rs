@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 
 #![cfg(feature = "async")]
@@ -33,10 +32,18 @@ use crate::common::UnavailableScenario;
 /// Polls one copy contract that is expected to complete without suspension.
 fn assert_copy_contract(fixture: &AsyncMemoryFixture) {
     let mut suite = AsyncFileSystemContractSuite::new(fixture);
-    let mut assertion = Box::pin(async { suite.run_contract(FileSystemContract::Copy).await.assert_satisfied() });
+    let mut assertion = Box::pin(async {
+        suite
+            .run_contract(FileSystemContract::Copy)
+            .await
+            .assert_satisfied()
+    });
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
+    assert!(matches!(
+        assertion.as_mut().poll(&mut context),
+        Poll::Ready(())
+    ));
 }
 
 /// A conforming asynchronous provider satisfies every suite phase.
@@ -84,7 +91,10 @@ fn test_async_phase_matrix_exercises_declared_profiles() {
                         .assert_satisfied()
                 });
             }));
-            assert!(result.is_ok(), "async profile {profile} panicked in {contract:?}");
+            assert!(
+                result.is_ok(),
+                "async profile {profile} panicked in {contract:?}"
+            );
         }
     }
 }
@@ -106,9 +116,13 @@ fn test_async_fallback_copy_rejects_native_conflicts() {
             && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
     }));
     assert!(report.checks().iter().any(|check| {
-        check.id().as_str() == "copy/atomic-tree" && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
+        check.id().as_str() == "copy/atomic-tree"
+            && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
     }));
-    assert!(fixture.is_empty(), "fallback copy contract leaked resources");
+    assert!(
+        fixture.is_empty(),
+        "fallback copy contract leaked resources"
+    );
 }
 
 #[test]
@@ -199,7 +213,10 @@ fn test_async_cleanup_retains_resources_for_failures() {
                     .assert_satisfied()
             });
         }));
-        assert!(result.is_err(), "async cleanup fault must be reported: {fault:?}");
+        assert!(
+            result.is_err(),
+            "async cleanup fault must be reported: {fault:?}"
+        );
     }
 }
 
@@ -252,9 +269,15 @@ fn test_async_copy_cancellation_contract_is_independently_executable() {
     let fixture = AsyncMemoryFixture::new();
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        suite.run_contract(FileSystemContract::Copy).await.assert_satisfied();
+        suite
+            .run_contract(FileSystemContract::Copy)
+            .await
+            .assert_satisfied();
     });
-    assert!(fixture.is_empty(), "cancellation contract must clean resources");
+    assert!(
+        fixture.is_empty(),
+        "cancellation contract must clean resources"
+    );
 }
 
 /// A successful provider-native copy is a valid advertised Copy implementation.
@@ -269,7 +292,10 @@ fn test_async_copy_accepts_native_outcome() {
 #[test]
 fn test_async_suite_accepts_object_and_prefix_kinds() {
     run_controlled(async {
-        for phase in [FileSystemContract::Stat, FileSystemContract::CreateDirectory] {
+        for phase in [
+            FileSystemContract::Stat,
+            FileSystemContract::CreateDirectory,
+        ] {
             let fixture = AsyncMemoryFixture::with_object_kinds();
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             suite.run_contract(phase).await.assert_satisfied();
@@ -291,8 +317,14 @@ fn test_async_recursive_delete_does_not_require_create_directory() {
     });
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    assert!(matches!(assertion.as_mut().poll(&mut context), Poll::Ready(())));
-    assert!(fixture.is_empty(), "recursive deletion must remove the prefix");
+    assert!(matches!(
+        assertion.as_mut().poll(&mut context),
+        Poll::Ready(())
+    ));
+    assert!(
+        fixture.is_empty(),
+        "recursive deletion must remove the prefix"
+    );
 }
 
 /// An asynchronous assertion panic is resumed only after cleanup completes.
@@ -311,7 +343,10 @@ fn test_async_suite_cleans_resources_before_resuming_panic() {
         let _ = assertion.as_mut().poll(&mut context);
     }));
     assert!(result.is_err(), "injected write fault must fail the suite");
-    assert!(fixture.is_empty(), "failed suite must clean published paths");
+    assert!(
+        fixture.is_empty(),
+        "failed suite must clean published paths"
+    );
 }
 
 /// Unadvertised async core operations still exercise facade preflight errors.
@@ -339,7 +374,10 @@ fn test_async_core_capability_negative_branches_are_exercised() {
                 .find(|check| check.id() == id)
                 .unwrap_or_else(|| panic!("{id}: core negative check must execute"));
             assert!(
-                matches!(check.outcome(), testkit::ContractCheckOutcome::RejectedAsExpected),
+                matches!(
+                    check.outcome(),
+                    testkit::ContractCheckOutcome::RejectedAsExpected
+                ),
                 "{id}: expected an actual facade rejection, got {:?}",
                 check.outcome()
             );
@@ -369,7 +407,10 @@ fn test_async_contract_entry_points_run_individually() {
             let fixture = AsyncMemoryFixture::new();
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             suite.run_contract(phase).await.assert_satisfied();
-            assert!(fixture.is_empty(), "{phase:?}: phase must clean its own resources");
+            assert!(
+                fixture.is_empty(),
+                "{phase:?}: phase must clean its own resources"
+            );
         }
     });
 }

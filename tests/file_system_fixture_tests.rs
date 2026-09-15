@@ -31,7 +31,8 @@ impl FileSystemFixture for DefaultSyncFixture<'_> {
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/defaults/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
+        Path::parse(&format!("/defaults/{relative}"))
+            .map_err(|error| FixtureError::new(error.to_string()))
     }
 }
 
@@ -54,7 +55,10 @@ fn test_file_system_fixture_defaults_are_unsupported() {
         fixture.seed_file("entry", b"bytes"),
         Ok(FixtureSupport::Unsupported)
     ));
-    assert!(matches!(fixture.read_file(&path), Ok(FixtureSupport::Unsupported)));
+    assert!(matches!(
+        fixture.read_file(&path),
+        Ok(FixtureSupport::Unsupported)
+    ));
     assert!(matches!(
         fixture.resource_version(&path),
         Ok(FixtureSupport::Unsupported)
@@ -63,7 +67,10 @@ fn test_file_system_fixture_defaults_are_unsupported() {
         fixture.seed_empty_directory("directory"),
         Ok(FixtureSupport::Unsupported)
     ));
-    assert!(matches!(fixture.seed_symlink("link"), Ok(FixtureSupport::Unsupported)));
+    assert!(matches!(
+        fixture.seed_symlink("link"),
+        Ok(FixtureSupport::Unsupported)
+    ));
     assert!(matches!(
         fixture.copy_fast_path_case(CopyMethod::Native),
         Ok(FixtureSupport::Unsupported)

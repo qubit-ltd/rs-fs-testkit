@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -32,14 +31,16 @@ fn test_failed_run_returns_evidence_without_unwinding() {
     let run = suite.run_contract(FileSystemContract::Read);
     assert!(!run.requirements_satisfied());
     assert!(!run.failures().is_empty());
-    assert_eq!(run.failures()[0].check(), Some(testkit::ContractCheckId::ReadBasic));
-    assert!(
-        run.report()
-            .checks()
-            .iter()
-            .any(|check| check.id() == testkit::ContractCheckId::ReadBasic
-                && matches!(check.outcome(), testkit::ContractCheckOutcome::Failed { .. }))
+    assert_eq!(
+        run.failures()[0].check(),
+        Some(testkit::ContractCheckId::ReadBasic)
     );
+    assert!(run.report().checks().iter().any(|check| check.id()
+        == testkit::ContractCheckId::ReadBasic
+        && matches!(
+            check.outcome(),
+            testkit::ContractCheckOutcome::Failed { .. }
+        )));
 }
 
 #[test]
@@ -86,7 +87,10 @@ fn test_repeated_temp_lifecycle_requires_real_evidence() {
         .iter()
         .find(|check| check.id() == testkit::ContractCheckId::TempRepeatedLifecycle)
         .expect("registered lifecycle");
-    assert!(matches!(check.outcome(), testkit::ContractCheckOutcome::Passed));
+    assert!(matches!(
+        check.outcome(),
+        testkit::ContractCheckOutcome::Passed
+    ));
 }
 
 /// Whole-file write errors retain their non-Sync recovery handle without
@@ -109,7 +113,10 @@ fn test_write_failure_preserves_owned_recovery_source() {
             let write = error
                 .downcast_ref::<qfs::write::WriteAllFailure>()
                 .expect("typed whole-write failure");
-            assert!(write.recovery().is_some(), "recovery writer must be retained");
+            assert!(
+                write.recovery().is_some(),
+                "recovery writer must be retained"
+            );
         })
         .expect("source has not been taken");
     let mut original = retained
@@ -127,7 +134,10 @@ fn test_write_failure_preserves_owned_recovery_source() {
         .abort()
         .expect("explicit recovery");
     assert_eq!(outcome, qfs::write::WriteAbortOutcome::NotPublished);
-    assert!(retained.inspect(|_| ()).is_none(), "source ownership transfers once");
+    assert!(
+        retained.inspect(|_| ()).is_none(),
+        "source ownership transfers once"
+    );
     assert!(
         !run.requirements_satisfied(),
         "recovery must not erase the contract failure"
@@ -148,7 +158,10 @@ fn test_async_owning_write_failure_is_structured() {
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_contract(FileSystemContract::Write).await;
-        let failure = run.failures().first().expect("invalid owning request must fail");
+        let failure = run
+            .failures()
+            .first()
+            .expect("invalid owning request must fail");
         assert_eq!(failure.check(), Some(ContractCheckId::WriteOwningOperation));
         assert!(
             std::error::Error::source(failure).is_some(),
@@ -166,6 +179,9 @@ fn test_async_owning_write_failure_is_structured() {
             !run.cleanup().failures().is_empty(),
             "invalid path cleanup failure must also survive"
         );
-        assert!(fixture.is_empty(), "independent teardown must reclaim valid resources");
+        assert!(
+            fixture.is_empty(),
+            "independent teardown must reclaim valid resources"
+        );
     });
 }

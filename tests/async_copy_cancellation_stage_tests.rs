@@ -22,7 +22,10 @@ fn test_async_copy_cancellation_stages_are_distinct() {
 
     for (index, stage) in stages.iter().enumerate() {
         assert_eq!(
-            stages.iter().filter(|candidate| *candidate == stage).count(),
+            stages
+                .iter()
+                .filter(|candidate| *candidate == stage)
+                .count(),
             1,
             "stage at index {index} must be unique",
         );

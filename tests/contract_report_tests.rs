@@ -47,7 +47,10 @@ fn test_sync_write_catalog_excludes_async_checks() {
         "write/cancel-commit",
     ] {
         assert!(
-            !report.checks().iter().any(|check| check.id().as_str() == id),
+            !report
+                .checks()
+                .iter()
+                .any(|check| check.id().as_str() == id),
             "sync catalog included {id}"
         );
     }

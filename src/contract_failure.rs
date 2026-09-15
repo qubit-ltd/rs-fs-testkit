@@ -60,7 +60,10 @@ impl ContractFailure {
     /// the failure was not a panic or another caller already took its payload.
     /// Taking the payload does not remove the failure from the run's history.
     pub fn take_panic_payload(&self) -> Option<Box<dyn Any + Send>> {
-        self.panic.lock().unwrap_or_else(|poison| poison.into_inner()).take()
+        self.panic
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .take()
     }
 
     /// Attributes a preserved failure to its typed execution entry.
@@ -80,7 +83,10 @@ impl ContractFailure {
     }
 
     /// Retains the typed source separately from safe diagnostic context.
-    pub(crate) fn with_source(message: impl Into<String>, source: impl Error + Send + Sync + 'static) -> Self {
+    pub(crate) fn with_source(
+        message: impl Into<String>,
+        source: impl Error + Send + Sync + 'static,
+    ) -> Self {
         Self {
             check: None,
             message: message.into(),
@@ -91,7 +97,10 @@ impl ContractFailure {
 
     /// Retains errors that own a non-Sync recovery handle without discarding
     /// it.
-    pub(crate) fn with_owned_source(message: impl Into<String>, source: impl Error + Send + 'static) -> Self {
+    pub(crate) fn with_owned_source(
+        message: impl Into<String>,
+        source: impl Error + Send + 'static,
+    ) -> Self {
         Self::with_source(message, crate::ContractSource::new(source))
     }
 
@@ -135,6 +144,8 @@ impl Display for ContractFailure {
 
 impl Error for ContractFailure {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.source.as_deref().map(|source| source as &(dyn Error + 'static))
+        self.source
+            .as_deref()
+            .map(|source| source as &(dyn Error + 'static))
     }
 }

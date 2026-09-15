@@ -22,7 +22,10 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Executes one independently prepared conflict and records its evidence.
     pub(super) async fn check_create_conflict(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::WriteCreateConflict;
-        let outcome = self.execute_create_conflict().await.map_err(|failure| failure.at(id))?;
+        let outcome = self
+            .execute_create_conflict()
+            .await
+            .map_err(|failure| failure.at(id))?;
         self.context
             .record_check(id, Some(FileSystemCapability::Write), outcome);
         Ok(())
@@ -53,10 +56,13 @@ impl AsyncFileSystemContractSuite<'_> {
                 &bytes,
             )
             .await
-            .map_err(|error| ContractFailure::with_source("creation conflict preparation failed", error))?;
+            .map_err(|error| {
+                ContractFailure::with_source("creation conflict preparation failed", error)
+            })?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason }
+            | FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified { reason });
             }
         };
@@ -67,11 +73,9 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "creation conflict fixture changed request semantics",
         )?;
-        let before = self
-            .fixture
-            .read_file(&path)
-            .await
-            .map_err(|error| ContractFailure::with_source("creation conflict initial observation failed", error))?;
+        let before = self.fixture.read_file(&path).await.map_err(|error| {
+            ContractFailure::with_source("creation conflict initial observation failed", error)
+        })?;
         let FixtureSupport::Supported(before) = before else {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "creation conflict initial content unavailable".to_owned(),
@@ -91,11 +95,18 @@ impl AsyncFileSystemContractSuite<'_> {
         .await;
         let failure = match result {
             Err(failure) => failure,
-            Ok(_) => return Err(ContractFailure::message_only("CreateNew accepted an existing target")),
+            Ok(_) => {
+                return Err(ContractFailure::message_only(
+                    "CreateNew accepted an existing target",
+                ));
+            }
         };
         let error = failure.error();
         if error.kind() != FsErrorKind::AlreadyExists
-            || !matches!(error.operation(), FsOperation::OpenWriter | FsOperation::CommitWriter)
+            || !matches!(
+                error.operation(),
+                FsOperation::OpenWriter | FsOperation::CommitWriter
+            )
             || error.path() != Some(&path)
             || error.provider() != Some(self.context.properties().info().provider_id())
         {
@@ -110,11 +121,9 @@ impl AsyncFileSystemContractSuite<'_> {
             &mut self.context.run.failures,
         )
         .await?;
-        let observed = self
-            .fixture
-            .read_file(&path)
-            .await
-            .map_err(|error| ContractFailure::with_source("creation conflict final observation failed", error))?;
+        let observed = self.fixture.read_file(&path).await.map_err(|error| {
+            ContractFailure::with_source("creation conflict final observation failed", error)
+        })?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == before),
             id,

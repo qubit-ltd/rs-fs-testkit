@@ -47,14 +47,19 @@ impl FileSystemContractSuite<'_> {
         let bytes = b"copy bytes";
         let scenario = crate::internal::check_catalog::specification(id)
             .copy_scenario
-            .ok_or_else(|| ContractFailure::message_only("copy preparation missing from catalog").at(id))?;
+            .ok_or_else(|| {
+                ContractFailure::message_only("copy preparation missing from catalog").at(id)
+            })?;
         let prepared = self
             .fixture
             .prepare_copy(scenario, &source_relative, &target_relative, bytes)
-            .map_err(|error| ContractFailure::with_source("copy conflict preparation failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_source("copy conflict preparation failed", error).at(id)
+            })?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason }
+            | FixturePreparation::NotApplicable { reason } => {
                 self.context.record_check(
                     id,
                     Some(FileSystemCapability::Copy),
@@ -71,9 +76,13 @@ impl FileSystemContractSuite<'_> {
             id,
             "copy conflict preparation changed required paths or options",
         )?;
-        for (path, expected) in [(&source, bytes.as_slice()), (&target, b"existing".as_slice())] {
+        for (path, expected) in [
+            (&source, bytes.as_slice()),
+            (&target, b"existing".as_slice()),
+        ] {
             let observed = self.fixture.read_file(path).map_err(|error| {
-                ContractFailure::with_source("copy conflict initial observation failed", error).at(id)
+                ContractFailure::with_source("copy conflict initial observation failed", error)
+                    .at(id)
             })?;
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
@@ -97,7 +106,12 @@ impl FileSystemContractSuite<'_> {
             if let Some(kind) = rejected_kind {
                 let failure = match result {
                     Err(failure) => failure,
-                    Ok(_) => return Err(ContractFailure::message_only("copy conflict unexpectedly succeeded").at(id)),
+                    Ok(_) => {
+                        return Err(ContractFailure::message_only(
+                            "copy conflict unexpectedly succeeded",
+                        )
+                        .at(id));
+                    }
                 };
                 let error = failure.error();
                 if error.kind() != kind
@@ -107,18 +121,26 @@ impl FileSystemContractSuite<'_> {
                     || error.provider() != Some(self.context.properties().info().provider_id())
                     || failure.state() != CopyFailureState::Unchanged
                 {
-                    return Err(ContractFailure::with_owned_source("copy conflict rejection differs", failure).at(id));
+                    return Err(ContractFailure::with_owned_source(
+                        "copy conflict rejection differs",
+                        failure,
+                    )
+                    .at(id));
                 }
             } else {
                 let outcome = result.map_err(|error| {
-                    ContractFailure::with_owned_source("copy conflict execution failed", error).at(id)
+                    ContractFailure::with_owned_source("copy conflict execution failed", error)
+                        .at(id)
                 })?;
                 match policy {
-                    CopyConflictPolicy::Skip => {
-                        verify_condition(outcome.stats().skipped == 1, id, "copy skip statistics differ")?
-                    }
+                    CopyConflictPolicy::Skip => verify_condition(
+                        outcome.stats().skipped == 1,
+                        id,
+                        "copy skip statistics differ",
+                    )?,
                     CopyConflictPolicy::Overwrite => verify_condition(
-                        outcome.stats().overwritten == 1 && outcome.stats().bytes == bytes.len() as u64,
+                        outcome.stats().overwritten == 1
+                            && outcome.stats().bytes == bytes.len() as u64,
                         id,
                         "copy overwrite statistics differ",
                     )?,
@@ -132,7 +154,8 @@ impl FileSystemContractSuite<'_> {
             };
             for (path, expected) in [(&source, bytes.as_slice()), (&target, expected_target)] {
                 let observed = self.fixture.read_file(path).map_err(|error| {
-                    ContractFailure::with_source("copy conflict result observation failed", error).at(id)
+                    ContractFailure::with_source("copy conflict result observation failed", error)
+                        .at(id)
                 })?;
                 verify_condition(
                     matches!(observed, FixtureSupport::Supported(actual) if actual == expected),

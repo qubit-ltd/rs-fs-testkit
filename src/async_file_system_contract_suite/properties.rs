@@ -28,20 +28,25 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 
     /// Records one selected property check without preparing sibling checks.
-    pub(super) async fn check_properties_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+    pub(super) async fn check_properties_item(
+        &mut self,
+        id: ContractCheckId,
+    ) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let expected = self.context.properties();
         let actual = self.fixture.file_system().properties();
         let outcome = match id {
             ContractCheckId::PropertiesPathConstraints => {
-                let path = self
-                    .fixture
-                    .path("contract-properties")
-                    .map_err(|error| ContractFailure::with_source("properties fixture path failed", error).at(id))?;
+                let path = self.fixture.path("contract-properties").map_err(|error| {
+                    ContractFailure::with_source("properties fixture path failed", error).at(id)
+                })?;
                 expected
                     .path_constraints()
                     .validate(&path)
-                    .map_err(|error| ContractFailure::with_source("fixture path violates constraints", error).at(id))?;
+                    .map_err(|error| {
+                        ContractFailure::with_source("fixture path violates constraints", error)
+                            .at(id)
+                    })?;
                 verify_condition(
                     expected.path_constraints() == actual.path_constraints(),
                     id,
@@ -49,16 +54,18 @@ impl AsyncFileSystemContractSuite<'_> {
                 )?;
                 ContractCheckOutcome::Passed
             }
-            ContractCheckId::PropertiesLimitPathAdmission | ContractCheckId::PropertiesLimitComponentAdmission => {
+            ContractCheckId::PropertiesLimitPathAdmission
+            | ContractCheckId::PropertiesLimitComponentAdmission => {
                 match property_expectations::admission_path(id, expected)? {
                     Err(outcome) => outcome,
                     Ok(path) => {
                         let error = match self.fixture.file_system().stat(&path).await {
                             Err(error) => error,
                             Ok(_) => {
-                                return Err(
-                                    ContractFailure::message_only("path limit admitted an oversized request").at(id),
-                                );
+                                return Err(ContractFailure::message_only(
+                                    "path limit admitted an oversized request",
+                                )
+                                .at(id));
                             }
                         };
                         verify_fs_error(

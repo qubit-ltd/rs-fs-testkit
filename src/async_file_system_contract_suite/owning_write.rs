@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -23,7 +22,10 @@ use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Exercises publication, unpolled drop, and repeated execution.
-    pub(super) async fn check_owning_write(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+    pub(super) async fn check_owning_write(
+        &mut self,
+        id: ContractCheckId,
+    ) -> Result<(), ContractFailure> {
         let relative = self
             .context
             .relative_name(if id == ContractCheckId::WriteRepeatedExecute {
@@ -37,10 +39,9 @@ impl AsyncFileSystemContractSuite<'_> {
             b'o',
         );
         if !self.capable(FileSystemCapability::Write) {
-            let path = self
-                .fixture
-                .path(&relative)
-                .map_err(|error| ContractFailure::with_source("owning write path preparation failed", error).at(id))?;
+            let path = self.fixture.path(&relative).map_err(|error| {
+                ContractFailure::with_source("owning write path preparation failed", error).at(id)
+            })?;
             let failure = match crate::internal::execute_write::execute_write(
                 self.fixture.file_system(),
                 path,
@@ -50,10 +51,19 @@ impl AsyncFileSystemContractSuite<'_> {
             .await
             {
                 Err(failure) => failure,
-                Ok(_) => return Err(ContractFailure::message_only("unsupported owning write succeeded").at(id)),
+                Ok(_) => {
+                    return Err(ContractFailure::message_only(
+                        "unsupported owning write succeeded",
+                    )
+                    .at(id));
+                }
             };
             if failure.error().kind() != FsErrorKind::UnsupportedCapability {
-                return Err(ContractFailure::with_owned_source("owning write rejection kind differs", failure).at(id));
+                return Err(ContractFailure::with_owned_source(
+                    "owning write rejection kind differs",
+                    failure,
+                )
+                .at(id));
             }
             self.context.record_check(
                 id,
@@ -64,15 +74,21 @@ impl AsyncFileSystemContractSuite<'_> {
         }
         let scenario = crate::internal::check_catalog::specification(id)
             .write_scenario
-            .ok_or_else(|| ContractFailure::message_only("owning write lacks a preparation scenario").at(id))?;
+            .ok_or_else(|| {
+                ContractFailure::message_only("owning write lacks a preparation scenario").at(id)
+            })?;
         let prepared = self
             .fixture
             .prepare_write(scenario, &relative, &bytes)
             .await
-            .map_err(|error| ContractFailure::with_source("owning write scenario preparation failed", error).at(id))?;
+            .map_err(|error| {
+                ContractFailure::with_source("owning write scenario preparation failed", error)
+                    .at(id)
+            })?;
         let case = match prepared {
             crate::FixturePreparation::Ready(case) => case,
-            crate::FixturePreparation::Unavailable { reason } | crate::FixturePreparation::NotApplicable { reason } => {
+            crate::FixturePreparation::Unavailable { reason }
+            | crate::FixturePreparation::NotApplicable { reason } => {
                 self.context.record_check(
                     id,
                     Some(FileSystemCapability::Write),
@@ -85,7 +101,8 @@ impl AsyncFileSystemContractSuite<'_> {
             case.bytes() == bytes
                 && matches!(
                     case.options().disposition(),
-                    qfs::write::WriteDisposition::CreateNew | qfs::write::WriteDisposition::CreateOrReplace
+                    qfs::write::WriteDisposition::CreateNew
+                        | qfs::write::WriteDisposition::CreateOrReplace
                 ),
             id,
             "owning write fixture changed creation semantics",
@@ -109,7 +126,11 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "unpolled future changed state",
         )?;
-        verify_condition(!operation.has_recovery(), id, "unpolled future acquired a writer")?;
+        verify_condition(
+            !operation.has_recovery(),
+            id,
+            "unpolled future acquired a writer",
+        )?;
         if let Err(error) = operation.execute().await {
             return Err(ContractFailure::with_owned_source(
                 "owning write execution failed",
@@ -127,24 +148,27 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "accepted byte count mismatch",
         )?;
-        let observed = self
-            .fixture
-            .read_file(&path)
-            .await
-            .map_err(|error| ContractFailure::with_source("owning write observation failed", error).at(id))?;
+        let observed = self.fixture.read_file(&path).await.map_err(|error| {
+            ContractFailure::with_source("owning write observation failed", error).at(id)
+        })?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
             id,
             "independent publication evidence is missing or differs",
         )?;
         if id == ContractCheckId::WriteOwningOperation {
-            self.context
-                .record_check(id, Some(FileSystemCapability::Write), ContractCheckOutcome::Passed);
+            self.context.record_check(
+                id,
+                Some(FileSystemCapability::Write),
+                ContractCheckOutcome::Passed,
+            );
             return Ok(());
         }
         let repeated = match operation.execute().await {
             Err(failure) => failure,
-            Ok(_) => return Err(ContractFailure::message_only("owning write executed twice").at(id)),
+            Ok(_) => {
+                return Err(ContractFailure::message_only("owning write executed twice").at(id));
+            }
         };
         if repeated.error().kind() != FsErrorKind::InvalidState
             || repeated.state() != WriteFailureState::Published
@@ -161,17 +185,19 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "repeat changed completed state",
         )?;
-        let observed =
-            self.fixture.read_file(&path).await.map_err(|error| {
-                ContractFailure::with_source("repeated owning write observation failed", error).at(id)
-            })?;
+        let observed = self.fixture.read_file(&path).await.map_err(|error| {
+            ContractFailure::with_source("repeated owning write observation failed", error).at(id)
+        })?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
             id,
             "repeat changed published bytes or evidence is missing",
         )?;
-        self.context
-            .record_check(id, Some(FileSystemCapability::Write), ContractCheckOutcome::Passed);
+        self.context.record_check(
+            id,
+            Some(FileSystemCapability::Write),
+            ContractCheckOutcome::Passed,
+        );
         Ok(())
     }
 }

@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -43,7 +42,10 @@ impl FileSystemFixture for MissingCreationFixture {
     fn read_file(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<Vec<u8>>> {
         self.0.read_file(path)
     }
-    fn resource_version(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<qfs::metadata::ResourceVersion>> {
+    fn resource_version(
+        &self,
+        path: &Path,
+    ) -> FixtureResult<testkit::FixtureSupport<qfs::metadata::ResourceVersion>> {
         self.0.resource_version(path)
     }
     fn stale_resource_version(
@@ -109,7 +111,10 @@ fn test_creation_conflict_has_independent_rejection_evidence() {
         .iter()
         .find(|check| check.id().as_str() == "write/create-conflict")
         .expect("creation conflict must have its own registered check");
-    assert!(matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected));
+    assert!(matches!(
+        check.outcome(),
+        ContractCheckOutcome::RejectedAsExpected
+    ));
     assert!(fixture.0.is_empty());
 }
 
@@ -169,7 +174,10 @@ fn test_write_guarantee_failures_have_precise_identities() {
             self::common::MemoryFault::ReplaceKeepsSuffix,
             ContractCheckId::WriteReplace,
         ),
-        (self::common::MemoryFault::AbortLies, ContractCheckId::WriteAbort),
+        (
+            self::common::MemoryFault::AbortLies,
+            ContractCheckId::WriteAbort,
+        ),
     ] {
         let fixture = MemoryFixture::with_fault(fault);
         let mut suite = FileSystemContractSuite::new(&fixture);
@@ -193,13 +201,22 @@ fn test_async_write_guarantee_failures_have_precise_identities() {
             AsyncMemoryFault::AtomicReplaceKeepsOldBytes,
             ContractCheckId::WriteAtomicReplaceExisting,
         ),
-        (AsyncMemoryFault::DurableWriteDropsBytes, ContractCheckId::WriteDurable),
-        (AsyncMemoryFault::AppendOverwrites, ContractCheckId::AppendBasic),
+        (
+            AsyncMemoryFault::DurableWriteDropsBytes,
+            ContractCheckId::WriteDurable,
+        ),
+        (
+            AsyncMemoryFault::AppendOverwrites,
+            ContractCheckId::AppendBasic,
+        ),
         (
             AsyncMemoryFault::CreateNewOverwrites,
             ContractCheckId::WriteCreateConflict,
         ),
-        (AsyncMemoryFault::ReplaceKeepsSuffix, ContractCheckId::WriteReplace),
+        (
+            AsyncMemoryFault::ReplaceKeepsSuffix,
+            ContractCheckId::WriteReplace,
+        ),
         (AsyncMemoryFault::AbortLies, ContractCheckId::WriteAbort),
     ] {
         let fixture = AsyncMemoryFixture::with_fault(fault);
@@ -218,7 +235,10 @@ fn test_if_match_violation_has_its_own_identity() {
     let fixture = MemoryFixture::with_fault(self::common::MemoryFault::IgnoreWriteIfMatch);
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_contract(FileSystemContract::Write);
-    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteIfMatch));
+    assert_eq!(
+        run.failures()[0].check(),
+        Some(ContractCheckId::WriteIfMatch)
+    );
     assert!(fixture.is_empty());
 }
 
@@ -235,7 +255,10 @@ fn test_async_if_match_violation_has_its_own_identity() {
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_contract(FileSystemContract::Write).await;
-        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteIfMatch));
+        assert_eq!(
+            run.failures()[0].check(),
+            Some(ContractCheckId::WriteIfMatch)
+        );
         assert!(fixture.is_empty());
     });
 }
@@ -297,10 +320,15 @@ impl testkit::AsyncFileSystemFixture for BoundaryObservationFixture {
     fn teardown(&self) -> testkit::FixtureFuture<'_, ()> {
         self.0.teardown()
     }
-    fn read_file<'a>(&'a self, path: &'a Path) -> testkit::FixtureFuture<'a, testkit::FixtureSupport<Vec<u8>>> {
+    fn read_file<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> testkit::FixtureFuture<'a, testkit::FixtureSupport<Vec<u8>>> {
         Box::pin(async move {
             if path.as_str().contains("write-limit-at") {
-                Ok(testkit::FixtureSupport::Supported(b"corrupt boundary".to_vec()))
+                Ok(testkit::FixtureSupport::Supported(
+                    b"corrupt boundary".to_vec(),
+                ))
             } else {
                 self.0.read_file(path).await
             }
@@ -403,14 +431,20 @@ fn test_guaranteed_write_cannot_skip_positive_evidence() {
         .iter()
         .find(|check| check.id() == ContractCheckId::WriteBasic)
         .expect("basic registered");
-    assert!(matches!(basic.outcome(), ContractCheckOutcome::Unverified { .. }));
+    assert!(matches!(
+        basic.outcome(),
+        ContractCheckOutcome::Unverified { .. }
+    ));
     let append = run
         .report()
         .checks()
         .iter()
         .find(|check| check.id() == ContractCheckId::AppendBasic)
         .expect("append registered");
-    assert!(matches!(append.outcome(), ContractCheckOutcome::Unverified { .. }));
+    assert!(matches!(
+        append.outcome(),
+        ContractCheckOutcome::Unverified { .. }
+    ));
     for id in [
         ContractCheckId::WriteCreateConflict,
         ContractCheckId::WriteReplace,
@@ -424,7 +458,10 @@ fn test_guaranteed_write_cannot_skip_positive_evidence() {
             .iter()
             .find(|check| check.id() == id)
             .expect("guarantee registered");
-        assert!(matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }));
+        assert!(matches!(
+            check.outcome(),
+            ContractCheckOutcome::Unverified { .. }
+        ));
     }
 }
 
@@ -452,7 +489,10 @@ fn test_fixture_error_is_preserved_without_assertion_panic() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_contract(FileSystemContract::ErrorContext);
     assert_eq!(run.failures().len(), 1);
-    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::ErrorContext));
+    assert_eq!(
+        run.failures()[0].check(),
+        Some(ContractCheckId::ErrorContext)
+    );
     assert!(std::error::Error::source(&run.failures()[0]).is_some());
     assert!(matches!(
         run.report().checks()[0].outcome(),

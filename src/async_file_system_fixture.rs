@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -83,7 +82,10 @@ pub trait AsyncFileSystemFixture: Sync {
         Box::pin(async move {
             if scenario == crate::CopyScenario::ServerSide {
                 return Ok(
-                    match self.copy_fast_path_case(qfs::copy::CopyMethod::ServerSide).await? {
+                    match self
+                        .copy_fast_path_case(qfs::copy::CopyMethod::ServerSide)
+                        .await?
+                    {
                         FixtureSupport::Supported(case) => crate::FixturePreparation::Ready(case),
                         FixtureSupport::Unsupported => crate::FixturePreparation::Unavailable {
                             reason: "fixture has no server-side copy case".to_owned(),
@@ -95,7 +97,9 @@ pub trait AsyncFileSystemFixture: Sync {
                 scenario,
                 crate::CopyScenario::AtomicTree | crate::CopyScenario::DurableTree
             ) {
-                let FixtureSupport::Supported(source) = self.seed_empty_directory(source_relative).await? else {
+                let FixtureSupport::Supported(source) =
+                    self.seed_empty_directory(source_relative).await?
+                else {
                     return Ok(crate::FixturePreparation::Unavailable {
                         reason: "tree root setup unavailable".to_owned(),
                     });
@@ -120,21 +124,26 @@ pub trait AsyncFileSystemFixture: Sync {
                 }
                 let target = self.path(target_relative)?;
                 let options = if scenario == crate::CopyScenario::AtomicTree {
-                    qfs::copy::CopyOptions::tree().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+                    qfs::copy::CopyOptions::tree()
+                        .with_atomicity(qfs::metadata::AtomicityRequirement::Required)
                 } else {
-                    qfs::copy::CopyOptions::tree().with_durability(qfs::metadata::DurabilityRequirement::Required)
+                    qfs::copy::CopyOptions::tree()
+                        .with_durability(qfs::metadata::DurabilityRequirement::Required)
                 };
-                return Ok(crate::FixturePreparation::Ready(crate::CopyFixtureCase::new(
-                    source, target, options,
-                )));
+                return Ok(crate::FixturePreparation::Ready(
+                    crate::CopyFixtureCase::new(source, target, options),
+                ));
             }
-            let FixtureSupport::Supported(source) = self.seed_file(source_relative, bytes).await? else {
+            let FixtureSupport::Supported(source) = self.seed_file(source_relative, bytes).await?
+            else {
                 return Ok(crate::FixturePreparation::Unavailable {
                     reason: "copy source seed unavailable".to_owned(),
                 });
             };
             let target = if scenario == crate::CopyScenario::Conflict {
-                let FixtureSupport::Supported(target) = self.seed_file(target_relative, b"existing").await? else {
+                let FixtureSupport::Supported(target) =
+                    self.seed_file(target_relative, b"existing").await?
+                else {
                     return Ok(crate::FixturePreparation::Unavailable {
                         reason: "copy conflict target seed unavailable".to_owned(),
                     });
@@ -144,17 +153,15 @@ pub trait AsyncFileSystemFixture: Sync {
                 self.path(target_relative)?
             };
             let options = match scenario {
-                crate::CopyScenario::AtomicFile => {
-                    qfs::copy::CopyOptions::file().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
-                }
-                crate::CopyScenario::DurableFile => {
-                    qfs::copy::CopyOptions::file().with_durability(qfs::metadata::DurabilityRequirement::Required)
-                }
+                crate::CopyScenario::AtomicFile => qfs::copy::CopyOptions::file()
+                    .with_atomicity(qfs::metadata::AtomicityRequirement::Required),
+                crate::CopyScenario::DurableFile => qfs::copy::CopyOptions::file()
+                    .with_durability(qfs::metadata::DurabilityRequirement::Required),
                 _ => qfs::copy::CopyOptions::file(),
             };
-            Ok(crate::FixturePreparation::Ready(crate::CopyFixtureCase::new(
-                source, target, options,
-            )))
+            Ok(crate::FixturePreparation::Ready(
+                crate::CopyFixtureCase::new(source, target, options),
+            ))
         })
     }
 
@@ -217,16 +224,20 @@ pub trait AsyncFileSystemFixture: Sync {
     ) -> FixtureFuture<'a, crate::FixturePreparation<crate::WriteFixtureCase>> {
         Box::pin(async move {
             if scenario == crate::WriteScenario::Replace {
-                let FixtureSupport::Supported(path) = self.seed_file(relative, b"previous contents").await? else {
+                let FixtureSupport::Supported(path) =
+                    self.seed_file(relative, b"previous contents").await?
+                else {
                     return Ok(crate::FixturePreparation::Unavailable {
                         reason: "replacement seed unavailable".to_owned(),
                     });
                 };
-                return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default(),
-                )));
+                return Ok(crate::FixturePreparation::Ready(
+                    crate::WriteFixtureCase::new(
+                        path,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default(),
+                    ),
+                ));
             }
             if scenario == crate::WriteScenario::CreateConflict {
                 let FixtureSupport::Supported(path) = self.seed_file(relative, b"a").await? else {
@@ -234,23 +245,30 @@ pub trait AsyncFileSystemFixture: Sync {
                         reason: "creation conflict seed unavailable".to_owned(),
                     });
                 };
-                return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::CreateNew),
-                )));
+                return Ok(crate::FixturePreparation::Ready(
+                    crate::WriteFixtureCase::new(
+                        path,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default()
+                            .with_disposition(qfs::write::WriteDisposition::CreateNew),
+                    ),
+                ));
             }
             if scenario == crate::WriteScenario::Append {
-                let FixtureSupport::Supported(path) = self.seed_file(relative, b"before").await? else {
+                let FixtureSupport::Supported(path) = self.seed_file(relative, b"before").await?
+                else {
                     return Ok(crate::FixturePreparation::Unavailable {
                         reason: "append seed unavailable".to_owned(),
                     });
                 };
-                return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::Append),
-                )));
+                return Ok(crate::FixturePreparation::Ready(
+                    crate::WriteFixtureCase::new(
+                        path,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default()
+                            .with_disposition(qfs::write::WriteDisposition::Append),
+                    ),
+                ));
             }
             if scenario == crate::WriteScenario::AtomicReplace {
                 let FixtureSupport::Supported(path) = self.seed_file(relative, b"a").await? else {
@@ -258,31 +276,42 @@ pub trait AsyncFileSystemFixture: Sync {
                         reason: "atomic replacement seed unavailable".to_owned(),
                     });
                 };
-                return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default().with_atomicity(qfs::metadata::AtomicityRequirement::Required),
-                )));
+                return Ok(crate::FixturePreparation::Ready(
+                    crate::WriteFixtureCase::new(
+                        path,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default()
+                            .with_atomicity(qfs::metadata::AtomicityRequirement::Required),
+                    ),
+                ));
             }
             if scenario == crate::WriteScenario::Durable {
-                return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
-                    self.path(relative)?,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default()
-                        .with_disposition(qfs::write::WriteDisposition::CreateNew)
-                        .with_durability(qfs::metadata::DurabilityRequirement::Required),
-                )));
+                return Ok(crate::FixturePreparation::Ready(
+                    crate::WriteFixtureCase::new(
+                        self.path(relative)?,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default()
+                            .with_disposition(qfs::write::WriteDisposition::CreateNew)
+                            .with_durability(qfs::metadata::DurabilityRequirement::Required),
+                    ),
+                ));
             }
-            if !matches!(scenario, crate::WriteScenario::Create | crate::WriteScenario::Abort) {
+            if !matches!(
+                scenario,
+                crate::WriteScenario::Create | crate::WriteScenario::Abort
+            ) {
                 return Ok(crate::FixturePreparation::Unavailable {
                     reason: "fixture does not prepare this write scenario".to_owned(),
                 });
             }
-            Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
-                self.path(relative)?,
-                bytes.to_vec(),
-                qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::CreateNew),
-            )))
+            Ok(crate::FixturePreparation::Ready(
+                crate::WriteFixtureCase::new(
+                    self.path(relative)?,
+                    bytes.to_vec(),
+                    qfs::write::WriteOptions::default()
+                        .with_disposition(qfs::write::WriteDisposition::CreateNew),
+                ),
+            ))
         })
     }
 
@@ -353,7 +382,11 @@ pub trait AsyncFileSystemFixture: Sync {
     /// The future returns [`FixtureError`](crate::FixtureError) when
     /// provider-specific setup fails.
     #[inline]
-    fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_file<'a>(
+        &'a self,
+        relative: &'a str,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = (relative, bytes);
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
@@ -389,28 +422,41 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Asynchronously writes a complete resource through fixture setup.
     #[inline]
-    fn write_file_out_of_band<'a>(&'a self, path: &'a Path, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<()>> {
+    fn write_file_out_of_band<'a>(
+        &'a self,
+        path: &'a Path,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, FixtureSupport<()>> {
         let _ = (path, bytes);
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
     /// Asynchronously observes the current provider resource version.
     #[inline]
-    fn resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+    fn resource_version<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         let _ = path;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
     /// Asynchronously returns a valid version that cannot match the resource.
     #[inline]
-    fn stale_resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         let _ = path;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
     /// Asynchronously supplies a resource whose checksum is invalid.
     #[inline]
-    fn checksum_failure_case<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn checksum_failure_case<'a>(
+        &'a self,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = relative;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
@@ -426,7 +472,10 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Asynchronously seeds an empty directory or prefix.
     #[inline]
-    fn seed_empty_directory<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_empty_directory<'a>(
+        &'a self,
+        relative: &'a str,
+    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = relative;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
@@ -440,7 +489,10 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Supplies an asynchronously prepared native copy fast-path case.
     #[inline]
-    fn copy_fast_path_case<'a>(&'a self, method: CopyMethod) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
+    fn copy_fast_path_case<'a>(
+        &'a self,
+        method: CopyMethod,
+    ) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
         let _ = method;
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }

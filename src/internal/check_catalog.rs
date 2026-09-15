@@ -227,18 +227,18 @@ pub(crate) const fn specification(id: ContractCheckId) -> CheckSpec {
             asynchronous_only: false,
             optional: false,
         },
-        ContractCheckId::ListLiteralPrefix | ContractCheckId::ListNamespace | ContractCheckId::ListRawRootPrefix => {
-            CheckSpec {
-                id,
-                copy_scenario: None,
-                write_scenario: None,
-                read_scenario: None,
-                contract: FileSystemContract::List,
-                capability: Some(FileSystemCapability::List),
-                asynchronous_only: false,
-                optional: false,
-            }
-        }
+        ContractCheckId::ListLiteralPrefix
+        | ContractCheckId::ListNamespace
+        | ContractCheckId::ListRawRootPrefix => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::List,
+            capability: Some(FileSystemCapability::List),
+            asynchronous_only: false,
+            optional: false,
+        },
         ContractCheckId::ListPagination => CheckSpec {
             id,
             copy_scenario: None,

@@ -5,7 +5,6 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-// qubit-style: allow source-test-pair
 //! Structured filesystem error assertions.
 
 use qubit_fs::error::FsError;
@@ -40,7 +39,11 @@ pub(crate) fn assert_error(
     capability: Option<FileSystemCapability>,
 ) {
     assert_eq!(kind, error.kind(), "filesystem error kind must match");
-    assert_eq!(operation, error.operation(), "filesystem error operation must match",);
+    assert_eq!(
+        operation,
+        error.operation(),
+        "filesystem error operation must match",
+    );
     assert_eq!(path, error.path(), "filesystem error path must match");
     assert!(
         error.provider().is_none() || error.provider() == provider,
@@ -101,12 +104,20 @@ pub(crate) fn assert_error_with_source_or_target(
     capability: Option<FileSystemCapability>,
 ) {
     assert_eq!(kind, error.kind(), "filesystem error kind must match");
-    assert_eq!(operation, error.operation(), "filesystem error operation must match");
+    assert_eq!(
+        operation,
+        error.operation(),
+        "filesystem error operation must match"
+    );
     assert!(
         matches!(error.path(), Some(path) if path == source || path == target),
         "filesystem error path must identify the source or target failure location",
     );
-    assert_eq!(Some(target), error.target(), "filesystem error target must match");
+    assert_eq!(
+        Some(target),
+        error.target(),
+        "filesystem error target must match"
+    );
     assert!(
         error.provider().is_none() || error.provider() == provider,
         "filesystem error provider must be absent or match the configured provider",
@@ -145,7 +156,11 @@ pub(crate) fn assert_unsupported_error(
     capability: Option<FileSystemCapability>,
 ) {
     assert_eq!(kind, error.kind(), "filesystem error kind must match");
-    assert_eq!(operation, error.operation(), "filesystem error operation must match",);
+    assert_eq!(
+        operation,
+        error.operation(),
+        "filesystem error operation must match",
+    );
     assert_eq!(path, error.path(), "filesystem error path must match");
     assert_eq!(
         capability,
@@ -174,10 +189,11 @@ pub(crate) fn verify_missing_error(
     if valid {
         Ok(())
     } else {
-        Err(
-            crate::ContractFailure::with_source("missing-resource error context differs from the contract", error)
-                .at(check),
+        Err(crate::ContractFailure::with_source(
+            "missing-resource error context differs from the contract",
+            error,
         )
+        .at(check))
     }
 }
 
@@ -199,7 +215,11 @@ pub(crate) fn verify_fs_error(
     if valid {
         Ok(())
     } else {
-        Err(crate::ContractFailure::with_source(format!("{check}: filesystem error context mismatch"), error).at(check))
+        Err(crate::ContractFailure::with_source(
+            format!("{check}: filesystem error context mismatch"),
+            error,
+        )
+        .at(check))
     }
 }
 

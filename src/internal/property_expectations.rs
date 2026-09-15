@@ -1,4 +1,3 @@
-// qubit-style: allow explicit-imports
 // =============================================================================
 //    Copyright (c) 2026 Haixing Hu.
 //
@@ -27,8 +26,16 @@ pub(crate) fn check_snapshot(
 ) -> Result<ContractCheckOutcome, ContractFailure> {
     match id {
         ContractCheckId::PropertiesSnapshot => {
-            verify_condition(!expected.info().id().as_str().is_empty(), id, "filesystem id is empty")?;
-            verify_condition(!expected.info().provider_id().is_empty(), id, "provider id is empty")?;
+            verify_condition(
+                !expected.info().id().as_str().is_empty(),
+                id,
+                "filesystem id is empty",
+            )?;
+            verify_condition(
+                !expected.info().provider_id().is_empty(),
+                id,
+                "provider id is empty",
+            )?;
             verify_condition(
                 expected.info() == actual.info(),
                 id,
@@ -48,7 +55,11 @@ pub(crate) fn check_snapshot(
             )?;
         }
         ContractCheckId::PropertiesLimits => {
-            verify_condition(expected.limits() == actual.limits(), id, "limits snapshot changed")?;
+            verify_condition(
+                expected.limits() == actual.limits(),
+                id,
+                "limits snapshot changed",
+            )?;
         }
         ContractCheckId::PropertiesSymlinkPolicy => {
             verify_condition(
@@ -58,14 +69,17 @@ pub(crate) fn check_snapshot(
             )?;
         }
         ContractCheckId::PropertiesLimitListPage => {
-            let Some((maximum, over)) = finite_probe(expected.limits().max_list_page_entries(), MAX_PROBE_ENTRIES)
+            let Some((maximum, over)) =
+                finite_probe(expected.limits().max_list_page_entries(), MAX_PROBE_ENTRIES)
             else {
                 return Ok(ContractCheckOutcome::SkippedOptional {
-                    reason: "list page limit has no finite successor within the probe budget".to_owned(),
+                    reason: "list page limit has no finite successor within the probe budget"
+                        .to_owned(),
                 });
             };
             let requested = usize::try_from(over).map_err(|error| {
-                ContractFailure::with_source("list page boundary is not representable", error).at(id)
+                ContractFailure::with_source("list page boundary is not representable", error)
+                    .at(id)
             })?;
             let effective = expected.limits().clamp_list_page_size(Some(requested));
             verify_condition(
@@ -74,7 +88,12 @@ pub(crate) fn check_snapshot(
                 "list page clamp omitted or exceeded the declared maximum",
             )?;
         }
-        _ => return Err(ContractFailure::message_only("selected check requires a different property driver").at(id)),
+        _ => {
+            return Err(ContractFailure::message_only(
+                "selected check requires a different property driver",
+            )
+            .at(id));
+        }
     }
     Ok(ContractCheckOutcome::Passed)
 }
@@ -130,11 +149,13 @@ pub(crate) fn admission_path(
             reason: "another path limit would mask this boundary's rejection".to_owned(),
         }));
     }
-    let length = usize::try_from(component_bytes)
-        .map_err(|error| ContractFailure::with_source("path boundary is not representable", error).at(id))?;
+    let length = usize::try_from(component_bytes).map_err(|error| {
+        ContractFailure::with_source("path boundary is not representable", error).at(id)
+    })?;
     let text = format!("{}{}", if absolute { "/" } else { "" }, "x".repeat(length));
-    let path = Path::parse_with_semantics(&text, semantics)
-        .map_err(|error| ContractFailure::with_source("path boundary could not be parsed", error).at(id))?;
+    let path = Path::parse_with_semantics(&text, semantics).map_err(|error| {
+        ContractFailure::with_source("path boundary could not be parsed", error).at(id)
+    })?;
     if properties.path_constraints().validate(&path).is_err() {
         return Ok(Err(ContractCheckOutcome::SkippedOptional {
             reason: "path constraints would mask the limit boundary rejection".to_owned(),
