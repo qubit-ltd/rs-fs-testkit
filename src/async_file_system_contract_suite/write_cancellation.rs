@@ -60,7 +60,7 @@ impl AsyncFileSystemContractSuite<'_> {
             FixtureSupport::Unsupported => self.context.record_check(
                 id,
                 Some(FileSystemCapability::Write),
-                ContractCheckOutcome::Unverified {
+                ContractCheckOutcome::SkippedOptional {
                     reason: "fixture has no stage acknowledgement probe".to_owned(),
                 },
             ),
