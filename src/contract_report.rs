@@ -227,7 +227,9 @@ impl ContractReport {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::ContractCheckId;
+    use super::ContractCheckOutcome;
+    use super::ContractReport;
 
     #[test]
     fn missing_catalog_entry_is_incomplete() {

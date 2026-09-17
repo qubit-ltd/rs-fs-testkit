@@ -246,7 +246,7 @@ that crate's environment, backend version, lockfile, and recorded run output.
 This guide records the validation boundary only and does not claim that the
 remote suite has been run.
 
-## Whole-file asynchronous write recovery (0.3)
+## Whole-file asynchronous write recovery
 
 `qubit-fs` 0.2 requires owned payloads for `begin_write_all`. The async Write
 phase checks `write/owning-operation` and `write/repeated-execute`, and actually
@@ -257,11 +257,14 @@ provider stage is pending; provide a wake while waiting and release the gate in
 future, preserves its operation, verifies confirmed progress and recovers any
 writer after releasing the gate.
 
-An advertised Write capability without a probe yields `Unverified` for the
-corresponding `write/cancel-*` check; `report.assert_complete()` then fails.
-Request-only cases do not prove a pending stage was reached. Missing a single
-stage is enough to make the report incomplete. Providers without Write are
-checked for preflight rejection; asynchronous cancellation does not apply.
+An advertised Write capability without a probe records `SkippedOptional` with a
+reason for the corresponding `write/cancel-*` check. The normal
+`run.assert_satisfied()` accepts that explicit optional skip, while
+`run.all_applicable_checks_verified()` or
+`run.assert_satisfied_with(&[ContractCheckId::WriteCancelOpen])` requires the
+selected evidence. Request-only cases do not prove a pending stage was reached.
+Providers without Write are checked for preflight rejection; asynchronous
+cancellation does not apply.
 The synchronous Write catalog contains none of these async requirements.
 
 The memory fixture self-tests count all four probe preparations and deliberately
@@ -290,7 +293,7 @@ python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase ci
 ```
 
-## Recovery ownership in core 0.8
+## Recovery ownership
 
 Negative writer/temp open checks retain the complete `OpenFailure<R>` when the
 provider violates its contract. Inspect `OpenFailureStage` and match recovery
@@ -307,11 +310,12 @@ is checked through independent observation. Failed cleanup retains
 `ContractWriterFailure<WriteAllFailure>` or
 `ContractWriterFailure<ContractAsyncWriteFailure>`: `error()` describes cleanup,
 while `writer()` owns the original failure and its recovery responsibility.
-Recovering it never changes historical state or bytes. Missing write cancellation
-probes are Unverified, not passed or optional evidence. Existing check IDs remain
-unchanged; range checks now include zero and EOF windows when capability permits.
+Recovering it never changes historical state or bytes. Missing optional write
+cancellation probes are explicit skips; executed probe failures remain failures.
+Existing check IDs remain unchanged; range checks include zero and EOF windows
+when capability permits.
 
-For temporary resources, version 0.7 follows the core 0.8 contract that keeps
+For temporary resources, testkit 0.7 follows the qubit-fs 0.2 contract that keeps
 publication facts independent from source qualification. This suite checks the
 existing repeated lifecycle, including the publication target after a successful
 `keep`. Core and adapter regressions cover the new source states, invalid retries,
