@@ -609,6 +609,14 @@ impl AsyncMemoryFixture {
         fixture
     }
 
+    /// Creates a fixture whose selected write cancellation stage is
+    /// unavailable.
+    pub fn without_write_cancellation_stage(stage: AsyncWriteCancellationStage) -> Self {
+        let mut fixture = Self::new();
+        fixture.unavailable_write_stage = Some(stage);
+        fixture
+    }
+
     /// Creates a fixture whose provider completes copy through its native path.
     pub fn with_native_copy() -> Self {
         Self::with_copy_behavior(AsyncMemoryFault::None, false, true)
@@ -1300,7 +1308,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         relative: &'a str,
     ) -> FixtureFuture<'a, FixtureSupport<Box<dyn WriteCancellationProbe>>> {
         Box::pin(async move {
-            if !self.supports_write_cancellation {
+            if !self.supports_write_cancellation || self.unavailable_write_stage == Some(stage) {
                 return Ok(FixtureSupport::Unsupported);
             }
             let path = self.path(relative)?;

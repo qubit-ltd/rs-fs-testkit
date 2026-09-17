@@ -91,6 +91,98 @@ fn test_run_can_require_optional_cancellation_evidence() {
     });
 }
 
+/// Missing write cancellation instrumentation is optional by default but can
+/// be required explicitly for each stage.
+#[test]
+fn test_unavailable_write_cancellation_stages_are_optional() {
+    use qubit_fs_testkit::ContractCheckOutcome;
+
+    let fixture = AsyncMemoryFixture::without_cancellation_cases();
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_contract(FileSystemContract::Write).await;
+        for id in [
+            testkit::ContractCheckId::WriteCancelOpen,
+            testkit::ContractCheckId::WriteCancelWrite,
+            testkit::ContractCheckId::WriteCancelFlush,
+            testkit::ContractCheckId::WriteCancelCommit,
+        ] {
+            let check = run
+                .report()
+                .checks()
+                .iter()
+                .find(|check| check.id() == id)
+                .expect("write cancellation check must be recorded");
+            assert!(matches!(check.outcome(), ContractCheckOutcome::SkippedOptional { reason } if !reason.is_empty()));
+        }
+        assert!(run.requirements_satisfied());
+        assert!(!run.all_applicable_checks_verified());
+        assert!(!run.requirements_satisfied_with(&[
+            testkit::ContractCheckId::WriteCancelOpen,
+            testkit::ContractCheckId::WriteCancelWrite,
+            testkit::ContractCheckId::WriteCancelFlush,
+            testkit::ContractCheckId::WriteCancelCommit,
+        ]));
+    });
+}
+
+/// One missing stage does not suppress the other three write probes.
+#[test]
+fn test_single_unavailable_write_cancellation_stage_is_independent() {
+    use qubit_fs_testkit::ContractCheckOutcome;
+
+    for missing in [
+        testkit::AsyncWriteCancellationStage::Open,
+        testkit::AsyncWriteCancellationStage::Write,
+        testkit::AsyncWriteCancellationStage::Flush,
+        testkit::AsyncWriteCancellationStage::Commit,
+    ] {
+        let fixture = AsyncMemoryFixture::without_write_cancellation_stage(missing);
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_contract(FileSystemContract::Write).await;
+            for (id, stage) in [
+                (
+                    testkit::ContractCheckId::WriteCancelOpen,
+                    testkit::AsyncWriteCancellationStage::Open,
+                ),
+                (
+                    testkit::ContractCheckId::WriteCancelWrite,
+                    testkit::AsyncWriteCancellationStage::Write,
+                ),
+                (
+                    testkit::ContractCheckId::WriteCancelFlush,
+                    testkit::AsyncWriteCancellationStage::Flush,
+                ),
+                (
+                    testkit::ContractCheckId::WriteCancelCommit,
+                    testkit::AsyncWriteCancellationStage::Commit,
+                ),
+            ] {
+                let check = run
+                    .report()
+                    .checks()
+                    .iter()
+                    .find(|check| check.id() == id)
+                    .expect("stage check");
+                if stage == missing {
+                    assert!(matches!(check.outcome(), ContractCheckOutcome::SkippedOptional { .. }));
+                } else {
+                    assert!(matches!(check.outcome(), ContractCheckOutcome::Passed));
+                }
+            }
+            assert!(run.requirements_satisfied());
+            assert!(!run.requirements_satisfied_with(&[match missing {
+                testkit::AsyncWriteCancellationStage::Open => testkit::ContractCheckId::WriteCancelOpen,
+                testkit::AsyncWriteCancellationStage::Write => testkit::ContractCheckId::WriteCancelWrite,
+                testkit::AsyncWriteCancellationStage::Flush => testkit::ContractCheckId::WriteCancelFlush,
+                testkit::AsyncWriteCancellationStage::Commit => testkit::ContractCheckId::WriteCancelCommit,
+            }]));
+        });
+        assert!(fixture.is_empty(), "independent stage probes must be cleaned");
+    }
+}
+
 /// A false NotPublished abort must be rejected using independent target
 /// evidence.
 #[test]
