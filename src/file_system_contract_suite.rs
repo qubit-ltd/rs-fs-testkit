@@ -144,6 +144,10 @@ impl<'a> FileSystemContractSuite<'a> {
         self.run_selected(&[id.contract()], Some(id))
     }
 
+    /// Runs the selected contract phases once and records cleanup evidence.
+    ///
+    /// A focused check is registered before provider I/O begins so interrupted
+    /// execution remains distinguishable from an omitted check.
     fn run_selected(
         &mut self,
         contracts: &[FileSystemContract],
@@ -224,6 +228,7 @@ impl<'a> FileSystemContractSuite<'a> {
         }
     }
 
+    /// Dispatches one complete contract phase to its synchronous checks.
     fn dispatch_contract(&mut self, contract: FileSystemContract) -> Result<(), crate::ContractFailure> {
         match contract {
             FileSystemContract::Properties => self.check_properties()?,
