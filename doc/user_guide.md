@@ -40,7 +40,7 @@ including when deletion is unavailable.
 Add the testkit as a development dependency in the provider crate:
 
 ```bash
-cargo add --dev qubit-fs-testkit
+cargo add --dev qubit-fs-testkit@0.7
 ```
 
 Implement `FileSystemFixture` for a fixture that owns or otherwise retains the
@@ -60,6 +60,21 @@ qubit_fs_testkit::register_file_system_contract_tests! {
     fixture: super::TestFixture::new,
 }
 ```
+
+For manual control, keep the suite and fixture alive for the entire run, then
+assert both the contract result and independent cleanup:
+
+```rust,ignore
+use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
+
+let fixture = TestFixture::new();
+let mut suite = FileSystemContractSuite::new(&fixture);
+let run = suite.run_all();
+run.assert_satisfied();
+assert!(run.cleanup().completed());
+```
+
+The registration macro applies the same assertion policy for generated tests.
 
 Both suites check properties, `stat`, read, write, list, directory creation,
 delete, copy, rename, append, recursive deletion, required-atomic
@@ -334,7 +349,7 @@ mapping or hooks are surfaced as `FixtureError`/`FixtureResult` failures.
 | --- | --- |
 | The properties phase fails | Ensure IDs are non-empty, capabilities have no missing dependencies, and fixture paths satisfy facade constraints. |
 | A core unadvertised operation fails the suite | Return the structured unsupported-capability preflight error instead of succeeding or using an unrelated error. |
-| State leaks across runs | Create an isolated fixture and ensure its resources remain alive for the suite; cleanup is only attempted when delete is available. |
+| State leaks across runs | Create an isolated fixture, keep its resources alive for the suite, and make independent `teardown` reclaim all resources even when `Delete` is unavailable. |
 | A provider-specific assertion is impossible | Leave the relevant optional hook unsupported and add a provider-owned test for that behavior. |
 
 ## Limitations and Best Practices
