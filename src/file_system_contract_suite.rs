@@ -17,11 +17,9 @@ pub(crate) use qubit_fs::metadata::FileSystemCapability;
 pub(crate) use qubit_fs::path::Path;
 pub(crate) use qubit_fs::write::WriteDisposition;
 
-use crate::ContractCheckOutcome;
 use crate::ContractReport;
 use crate::FileSystemContract;
 use crate::FileSystemFixture;
-use crate::FixtureSupport;
 use crate::contract_context::ContractContext;
 pub(crate) use crate::internal::assert_error_with_source_or_target;
 pub(crate) use crate::internal::assert_error_with_target;

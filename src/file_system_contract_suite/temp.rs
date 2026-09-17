@@ -5,8 +5,10 @@
 // =============================================================================
 //! Dispatches temporary-resource checks through the typed catalog.
 
-use super::*;
+use super::FileSystemCapability;
+use super::FileSystemContractSuite;
 use crate::ContractCheckId;
+use crate::ContractCheckOutcome;
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Executes all synchronous temporary-resource checks in catalog order.
