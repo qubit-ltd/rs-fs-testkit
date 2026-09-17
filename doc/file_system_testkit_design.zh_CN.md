@@ -529,7 +529,7 @@ src/
 native capability 与失败组合；确定性矩阵和聚焦回归测试仍是这些分支的可执行覆盖。
 
 
-## 核心 0.8 的恢复所有权
+## 恢复所有权
 
 writer／临时资源打开的负面检查遇到 provider 契约违例时，会完整保留 `OpenFailure<R>`。
 应检查 `OpenFailureStage`，并区分恢复类型；隔离会话只允许显式清理。
@@ -543,9 +543,9 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 `ContractWriterFailure<WriteAllFailure>` 或
 `ContractWriterFailure<ContractAsyncWriteFailure>`：`error()` 表示清理错误，
 `writer()` 持有原始失败及恢复责任。恢复不会改变历史状态和字节数。
-缺少写取消探针时保持 Unverified，不能按通过或可选证据处理。既有检查 ID 不变，
+缺少的可选写取消探针会明确记录为跳过；已执行探针失败仍然失败。既有检查 ID 不变，
 范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
 
-临时资源检查保留既有的重复生命周期覆盖，包括成功 `keep` 后的发布目标。0.7 版本遵循
-核心 0.8 将本次 publication 与源资格分开的契约。三个新增源状态、cleanup 错误、非法
+临时资源检查保留既有的重复生命周期覆盖，包括成功 `keep` 后的发布目标。testkit 0.7 遵循
+qubit-fs 0.2 将本次 publication 与源资格分开的契约。三个新增源状态、cleanup 错误、非法
 重试和取消的确定性覆盖属于 `qubit-fs` 核心与 adapter 回归，不属于此可复用套件自身。

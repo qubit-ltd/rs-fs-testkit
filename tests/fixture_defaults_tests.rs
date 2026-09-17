@@ -78,12 +78,16 @@ mod asynchronous_defaults {
     use std::task::Waker;
 
     use qubit_fs::AsyncFileSystem;
+    use qubit_fs::copy::CopyMethod;
+    use qubit_fs::path::Path;
     use qubit_fs_testkit as testkit;
     use qubit_fs_testkit::AsyncFileSystemFixture;
     use qubit_fs_testkit::FixtureFuture;
 
-    use self::common::AsyncMemoryFixture;
-    use super::*;
+    use crate::FixtureError;
+    use crate::FixtureResult;
+    use crate::FixtureSupport;
+    use crate::common::AsyncMemoryFixture;
     struct DefaultAsyncFixture<'a> {
         file_system: &'a AsyncFileSystem,
     }

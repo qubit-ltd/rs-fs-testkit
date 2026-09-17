@@ -42,11 +42,6 @@ reason = "This file intentionally uses a legacy import shape required by its mod
 
 [[exceptions]]
 rule = "explicit-imports"
-path = "src/contract_report.rs"
-reason = "This file intentionally uses a legacy import shape required by its module boundary."
-
-[[exceptions]]
-rule = "explicit-imports"
 path = "src/file_system_contract_suite.rs"
 reason = "This file intentionally uses a legacy import shape required by its module boundary."
 
@@ -153,11 +148,6 @@ reason = "This file intentionally uses a legacy import shape required by its mod
 [[exceptions]]
 rule = "explicit-imports"
 path = "tests/file_system_contract_suite_tests.rs"
-reason = "This file intentionally uses a legacy import shape required by its module boundary."
-
-[[exceptions]]
-rule = "explicit-imports"
-path = "tests/fixture_defaults_tests.rs"
 reason = "This file intentionally uses a legacy import shape required by its module boundary."
 
 [[exceptions]]

@@ -9,6 +9,7 @@ repository = "https://github.com/qubit-ltd/rs-fs-testkit"
 description = "Reusable provider contract checks for qubit-fs implementations"
 homepage = "https://github.com/qubit-ltd/rs-fs-testkit"
 documentation = "https://docs.rs/qubit-fs-testkit"
+metadata.docs.rs.all-features = true
 readme = "README.md"
 include = [
   "/Cargo.toml",

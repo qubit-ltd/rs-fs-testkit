@@ -12,6 +12,12 @@
       "commands": ["check", "test", "doc"],
       "defaultFeatures": false,
       "features": []
+    },
+    {
+      "name": "async",
+      "commands": ["check", "test", "doc"],
+      "defaultFeatures": false,
+      "features": ["async"]
     }
   ]
 }

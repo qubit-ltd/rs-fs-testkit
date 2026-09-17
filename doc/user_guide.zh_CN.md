@@ -183,7 +183,7 @@ S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create
 任何关于 S3 兼容性的结论都必须同时记录该 crate 的环境、后端版本、lockfile 和运行输出。
 本手册只说明验证边界，不声称远程套件已经运行。
 
-## 异步整文件写入恢复（0.3）
+## 异步整文件写入恢复
 
 `qubit-fs` 0.2 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
 `write/owning-operation`、`write/repeated-execute`，并真实调用 Open、Write、Flush、Commit
@@ -191,9 +191,11 @@ S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create
 提供者已经在指定阶段 Pending，等待时按需唤醒调用方；`disarm` 只释放 gate，不启动文件系统
 I/O。suite 仅取消执行 future，保留 operation，检查确认进度，再释放 gate 并恢复 writer。
 
-声明 Write 能力却缺少探针时，对应 `write/cancel-*` 为 `Unverified`，
-`report.assert_complete()` 失败。只有请求参数的 case 不能证明阶段到达；缺失一个阶段就
-足以使报告不完整。不支持 Write 的提供者会验证调用前拒绝，异步取消检查不适用。
+声明 Write 能力却缺少探针时，对应 `write/cancel-*` 会记录带原因的 `SkippedOptional`。
+普通 `run.assert_satisfied()` 接受这个明确的可选跳过；
+`run.all_applicable_checks_verified()` 或
+`run.assert_satisfied_with(&[ContractCheckId::WriteCancelOpen])` 会要求指定证据。
+只有请求参数的 case 不能证明阶段到达。不支持 Write 的提供者会验证调用前拒绝，异步取消检查不适用。
 同步 Write 目录不包含这些异步要求。
 
 内存 fixture 自测记录四阶段探针调用，并故意遗漏一个阶段检查严格完整性。gate 使用确定性
@@ -216,7 +218,7 @@ python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase ci
 ```
 
-## 核心 0.8 的恢复所有权
+## 恢复所有权
 
 writer／临时资源打开的负面检查遇到 provider 契约违例时，会完整保留 `OpenFailure<R>`。
 应检查 `OpenFailureStage`，并区分恢复类型；隔离会话只允许显式清理。
@@ -230,10 +232,10 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 `ContractWriterFailure<WriteAllFailure>` 或
 `ContractWriterFailure<ContractAsyncWriteFailure>`：`error()` 表示清理错误，
 `writer()` 持有原始失败及恢复责任。恢复不会改变历史状态和字节数。
-缺少写取消探针时保持 Unverified，不能按通过或可选证据处理。既有检查 ID 不变，
+缺少的可选写取消探针会明确记录为跳过；已执行探针失败仍然失败。既有检查 ID 不变，
 范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
 
-对于临时资源，0.7 版本遵循核心 0.8 将 publication 事实与源资格分开的契约。本套件
+对于临时资源，testkit 0.7 遵循 qubit-fs 0.2 将 publication 事实与源资格分开的契约。本套件
 检查既有的重复生命周期，包括成功 `keep` 后的发布目标；新增源状态、非法重试、
 cleanup 失败与取消由核心及 adapter 回归覆盖。
 
