@@ -10,10 +10,18 @@
 use std::any::Any;
 use std::panic::resume_unwind;
 
-use super::*;
+use super::AsyncFileSystemContractSuite;
+use super::FileSystemCapability;
+use super::FsError;
+use super::FsErrorKind;
+use super::FsOperation;
+use super::Path;
+use super::assert_error_with_target;
+use super::assert_unsupported_error;
 use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 use crate::FixtureError;
+use crate::FixtureSupport;
 
 impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Cleans resources created by individually executed asynchronous phases.

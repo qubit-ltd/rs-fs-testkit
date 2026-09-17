@@ -16,10 +16,8 @@ pub(crate) use qubit_fs::write::WriteDisposition;
 pub(crate) use qubit_io::AsyncOutput;
 
 use crate::AsyncFileSystemFixture;
-use crate::ContractCheckOutcome;
 use crate::ContractReport;
 use crate::FileSystemContract;
-use crate::FixtureSupport;
 use crate::contract_context::ContractContext;
 pub(crate) use crate::internal::assert_error_with_target;
 pub(crate) use crate::internal::assert_unsupported_error;
