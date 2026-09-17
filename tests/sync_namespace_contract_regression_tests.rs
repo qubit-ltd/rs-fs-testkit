@@ -19,10 +19,7 @@ fn test_sync_accepts_fallback_only_copy() {
         check.id().as_str() == "copy/fallback-overwrite-rejected"
             && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
     }));
-    assert!(
-        fixture.is_empty(),
-        "fallback copy contract leaked resources"
-    );
+    assert!(fixture.is_empty(), "fallback copy contract leaked resources");
 }
 
 /// Copy reports the missing write capability for a read-only provider.

@@ -21,19 +21,10 @@ fn test_contract_context_tracks_unique_names_and_cleanup() {
         first.requirements_satisfied(),
         "write run should clean its resources automatically"
     );
-    assert!(
-        fixture.is_empty(),
-        "completed runs must drain tracked resources"
-    );
+    assert!(fixture.is_empty(), "completed runs must drain tracked resources");
     let run = suite.run_contract(FileSystemContract::Write);
-    assert!(
-        !run.requirements_satisfied(),
-        "a second run must be rejected"
-    );
-    assert!(
-        fixture.is_empty(),
-        "a rejected second run must not execute writes"
-    );
+    assert!(!run.requirements_satisfied(), "a second run must be rejected");
+    assert!(fixture.is_empty(), "a rejected second run must not execute writes");
 
     suite.finish();
     assert!(

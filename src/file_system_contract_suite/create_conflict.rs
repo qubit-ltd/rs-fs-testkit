@@ -22,9 +22,7 @@ impl FileSystemContractSuite<'_> {
     /// Executes one independently prepared conflict and records its evidence.
     pub(super) fn check_create_conflict(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::WriteCreateConflict;
-        let outcome = self
-            .execute_create_conflict()
-            .map_err(|failure| failure.at(id))?;
+        let outcome = self.execute_create_conflict().map_err(|failure| failure.at(id))?;
         self.context
             .record_check(id, Some(FileSystemCapability::Write), outcome);
         Ok(())
@@ -54,13 +52,10 @@ impl FileSystemContractSuite<'_> {
                 &relative,
                 &bytes,
             )
-            .map_err(|error| {
-                ContractFailure::with_source("creation conflict preparation failed", error)
-            })?;
+            .map_err(|error| ContractFailure::with_source("creation conflict preparation failed", error))?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason }
-            | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified { reason });
             }
         };
@@ -71,9 +66,10 @@ impl FileSystemContractSuite<'_> {
             id,
             "creation conflict fixture changed request semantics",
         )?;
-        let before = self.fixture.read_file(&path).map_err(|error| {
-            ContractFailure::with_source("creation conflict initial observation failed", error)
-        })?;
+        let before = self
+            .fixture
+            .read_file(&path)
+            .map_err(|error| ContractFailure::with_source("creation conflict initial observation failed", error))?;
         let FixtureSupport::Supported(before) = before else {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "creation conflict initial content unavailable".to_owned(),
@@ -84,25 +80,19 @@ impl FileSystemContractSuite<'_> {
             id,
             "creation conflict seed must differ from requested bytes",
         )?;
-        let failure =
-            match self
-                .fixture
-                .file_system()
-                .write_all(&path, &bytes, case.options().clone())
-            {
-                Err(failure) => failure,
-                Ok(_) => {
-                    return Err(ContractFailure::message_only(
-                        "CreateNew accepted an existing target",
-                    ));
-                }
-            };
+        let failure = match self
+            .fixture
+            .file_system()
+            .write_all(&path, &bytes, case.options().clone())
+        {
+            Err(failure) => failure,
+            Ok(_) => {
+                return Err(ContractFailure::message_only("CreateNew accepted an existing target"));
+            }
+        };
         let error = failure.error();
         if error.kind() != FsErrorKind::AlreadyExists
-            || !matches!(
-                error.operation(),
-                FsOperation::OpenWriter | FsOperation::CommitWriter
-            )
+            || !matches!(error.operation(), FsOperation::OpenWriter | FsOperation::CommitWriter)
             || error.path() != Some(&path)
             || error.provider() != Some(self.context.properties().info().provider_id())
         {
@@ -112,9 +102,10 @@ impl FileSystemContractSuite<'_> {
             ));
         }
         crate::internal::finish_expected_write_failure::finish_expected_write_failure(failure, id)?;
-        let observed = self.fixture.read_file(&path).map_err(|error| {
-            ContractFailure::with_source("creation conflict final observation failed", error)
-        })?;
+        let observed = self
+            .fixture
+            .read_file(&path)
+            .map_err(|error| ContractFailure::with_source("creation conflict final observation failed", error))?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == before),
             id,

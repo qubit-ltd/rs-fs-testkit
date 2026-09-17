@@ -29,20 +29,14 @@ use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes only the selected stage, including its own probe preparation.
-    pub(super) async fn check_write_cancellation_item(
-        &mut self,
-        id: ContractCheckId,
-    ) -> Result<(), ContractFailure> {
+    pub(super) async fn check_write_cancellation_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let stage = match id {
             ContractCheckId::WriteCancelOpen => AsyncWriteCancellationStage::Open,
             ContractCheckId::WriteCancelWrite => AsyncWriteCancellationStage::Write,
             ContractCheckId::WriteCancelFlush => AsyncWriteCancellationStage::Flush,
             ContractCheckId::WriteCancelCommit => AsyncWriteCancellationStage::Commit,
             _ => {
-                return Err(ContractFailure::message_only(
-                    "selected entry is not write cancellation",
-                )
-                .at(id));
+                return Err(ContractFailure::message_only("selected entry is not write cancellation").at(id));
             }
         };
         if !self.capable(FileSystemCapability::Write) {
@@ -55,20 +49,14 @@ impl AsyncFileSystemContractSuite<'_> {
             );
             return Ok(());
         }
-        let relative = self
-            .context
-            .relative_name(&format!("write-cancel-{stage:?}"));
+        let relative = self.context.relative_name(&format!("write-cancel-{stage:?}"));
         let prepared = self
             .fixture
             .prepare_write_cancellation(stage, &relative)
             .await
-            .map_err(|error| {
-                ContractFailure::with_source("write cancellation preparation failed", error).at(id)
-            })?;
+            .map_err(|error| ContractFailure::with_source("write cancellation preparation failed", error).at(id))?;
         match prepared {
-            FixtureSupport::Supported(probe) => {
-                self.run_write_cancellation_probe(stage, id, probe).await?
-            }
+            FixtureSupport::Supported(probe) => self.run_write_cancellation_probe(stage, id, probe).await?,
             FixtureSupport::Unsupported => self.context.record_check(
                 id,
                 Some(FileSystemCapability::Write),
@@ -90,11 +78,9 @@ impl AsyncFileSystemContractSuite<'_> {
         self.context.record_created(path.clone());
         // The observation can suspend too: own the disarm obligation before it.
         // Later locals drop first, so execution always stops before disarming.
-        let mut guard =
-            ProbeDisarmGuard::new(|| probe.disarm(), &mut self.context.run.cleanup.failures);
+        let mut guard = ProbeDisarmGuard::new(|| probe.disarm(), &mut self.context.run.cleanup.failures);
         let before = probe.observe_target().await.map_err(|error| {
-            ContractFailure::with_source("write cancellation initial observation failed", error)
-                .at(id)
+            ContractFailure::with_source("write cancellation initial observation failed", error).at(id)
         })?;
         let mut operation = self
             .fixture
@@ -118,11 +104,7 @@ impl AsyncFileSystemContractSuite<'_> {
         let reached = poll_fn(|context| match execution.as_mut().poll(context) {
             Poll::Pending => probe.poll_reached(context).map(|result| {
                 result.map_err(|error| {
-                    ContractFailure::with_source(
-                        "write cancellation stage acknowledgement failed",
-                        error,
-                    )
-                    .at(id)
+                    ContractFailure::with_source("write cancellation stage acknowledgement failed", error).at(id)
                 })
             }),
             Poll::Ready(Ok(_)) => Poll::Ready(Err(ContractFailure::message_only(
@@ -163,8 +145,7 @@ impl AsyncFileSystemContractSuite<'_> {
             "observed accepted bytes exceed the request",
         )?;
         verify_condition(
-            operation.state()
-                == AsyncWriteAllOperationState::Failed(WriteFailureState::Indeterminate),
+            operation.state() == AsyncWriteAllOperationState::Failed(WriteFailureState::Indeterminate),
             id,
             "cancellation state mismatch",
         )?;
@@ -204,9 +185,7 @@ impl AsyncFileSystemContractSuite<'_> {
                     return Err(ContractFailure::with_owned_source(
                         "cancellation probe retained a rejected provider identity",
                         crate::ContractWriterFailure::new(
-                            ContractFailure::message_only(
-                                "validated writer required by this stage probe",
-                            ),
+                            ContractFailure::message_only("validated writer required by this stage probe"),
                             recovery,
                         ),
                     )
@@ -231,18 +210,12 @@ impl AsyncFileSystemContractSuite<'_> {
             verify_condition(writer.state() == expected, id, "recovery state mismatch")?;
             if outcome != WriteAbortOutcome::Indeterminate {
                 let after = probe.observe_target().await.map_err(|error| {
-                    ContractFailure::with_source(
-                        "write cancellation recovery observation failed",
-                        error,
-                    )
-                    .at(id)
+                    ContractFailure::with_source("write cancellation recovery observation failed", error).at(id)
                 })?;
                 match outcome {
-                    WriteAbortOutcome::NotPublished => verify_condition(
-                        after == before,
-                        id,
-                        "NotPublished recovery changed the target",
-                    )?,
+                    WriteAbortOutcome::NotPublished => {
+                        verify_condition(after == before, id, "NotPublished recovery changed the target")?
+                    }
                     WriteAbortOutcome::Published => verify_condition(
                         after.as_deref() == Some(bytes.as_slice()),
                         id,
@@ -252,11 +225,8 @@ impl AsyncFileSystemContractSuite<'_> {
                 }
             }
         }
-        self.context.record_check(
-            id,
-            Some(FileSystemCapability::Write),
-            ContractCheckOutcome::Passed,
-        );
+        self.context
+            .record_check(id, Some(FileSystemCapability::Write), ContractCheckOutcome::Passed);
         Ok(())
     }
 }

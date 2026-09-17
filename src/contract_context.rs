@@ -147,16 +147,13 @@ impl ContractContext {
 
     /// Saves an observed failure before any later I/O can suspend.
     fn record_cleanup_failure(&mut self, failure: CleanupFailure) {
-        self.run
-            .cleanup
-            .failures
-            .push(crate::ContractFailure::with_source(
-                format!(
-                    "[fs-testkit:cleanup/{}] owner={} path={:?}: {}",
-                    failure.operation, failure.owner_check, failure.path, failure.cause
-                ),
-                failure.cause,
-            ));
+        self.run.cleanup.failures.push(crate::ContractFailure::with_source(
+            format!(
+                "[fs-testkit:cleanup/{}] owner={} path={:?}: {}",
+                failure.operation, failure.owner_check, failure.path, failure.cause
+            ),
+            failure.cause,
+        ));
     }
 
     /// Attempts every recorded synchronous resource and collects failures.
@@ -164,11 +161,7 @@ impl ContractContext {
     /// Missing paths count as already cleaned. Failed resources remain in the
     /// ledger so a later explicit `finish` can retry them.
     pub(crate) fn cleanup(&mut self, file_system: &FileSystem) {
-        if !self
-            .properties
-            .capabilities()
-            .supports(FileSystemCapability::Delete)
-        {
+        if !self.properties.capabilities().supports(FileSystemCapability::Delete) {
             return;
         }
         let mut pending = std::mem::take(&mut self.resources);
@@ -227,9 +220,7 @@ impl ContractContext {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
-                                cause: FixtureError::new(
-                                    "delete reported success but the resource still exists",
-                                ),
+                                cause: FixtureError::new("delete reported success but the resource still exists"),
                             });
                             retained.push(resource);
                         }
@@ -238,10 +229,7 @@ impl ContractContext {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
-                                cause: FixtureError::with_source(
-                                    "delete outcome could not be verified",
-                                    error,
-                                ),
+                                cause: FixtureError::with_source("delete outcome could not be verified", error),
                             });
                             retained.push(resource);
                         }
@@ -289,11 +277,7 @@ impl ContractContext {
     /// Failed entries remain in creation order and are retried by `finish`.
     #[cfg(feature = "async")]
     pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) {
-        if !self
-            .properties
-            .capabilities()
-            .supports(FileSystemCapability::Delete)
-        {
+        if !self.properties.capabilities().supports(FileSystemCapability::Delete) {
             return;
         }
         for index in (0..self.resources.len()).rev() {
@@ -336,18 +320,13 @@ impl ContractContext {
                 } else {
                     DeleteOptions::default()
                 };
-                crate::internal::catch_unwind_future(file_system.delete_directory(&path, options))
-                    .await
+                crate::internal::catch_unwind_future(file_system.delete_directory(&path, options)).await
             } else {
-                crate::internal::catch_unwind_future(
-                    file_system.delete_file(&path, Default::default()),
-                )
-                .await
+                crate::internal::catch_unwind_future(file_system.delete_file(&path, Default::default())).await
             };
             match deleted {
                 Ok(Ok(_outcome)) => {
-                    let verified =
-                        crate::internal::catch_unwind_future(file_system.stat(&path)).await;
+                    let verified = crate::internal::catch_unwind_future(file_system.stat(&path)).await;
                     match verified {
                         Ok(Err(error)) if error.kind() == FsErrorKind::NotFound => {
                             self.resources.remove(index);
@@ -357,9 +336,7 @@ impl ContractContext {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
-                                cause: FixtureError::new(
-                                    "delete reported success but the resource still exists",
-                                ),
+                                cause: FixtureError::new("delete reported success but the resource still exists"),
                             });
                         }
                         Ok(Err(error)) => {
@@ -367,10 +344,7 @@ impl ContractContext {
                                 owner_check: owner,
                                 operation: "delete",
                                 path: Some(path),
-                                cause: FixtureError::with_source(
-                                    "delete outcome could not be verified",
-                                    error,
-                                ),
+                                cause: FixtureError::with_source("delete outcome could not be verified", error),
                             });
                         }
                         Err(payload) => {

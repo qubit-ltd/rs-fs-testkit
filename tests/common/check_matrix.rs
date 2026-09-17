@@ -323,11 +323,7 @@ pub fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
         .unwrap_or_else(|| "<non-string panic payload>".to_owned())
 }
 

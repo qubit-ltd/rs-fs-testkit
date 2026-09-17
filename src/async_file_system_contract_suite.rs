@@ -159,12 +159,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         selected: Option<crate::ContractCheckId>,
     ) -> &crate::ContractRun {
         if self.context.run.started {
-            self.context
-                .run
-                .failures
-                .push(crate::ContractFailure::message_only(
-                    "session already started; create a fresh fixture for another run",
-                ));
+            self.context.run.failures.push(crate::ContractFailure::message_only(
+                "session already started; create a fresh fixture for another run",
+            ));
             return &self.context.run;
         }
         self.context.run.started = true;
@@ -192,8 +189,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     break;
                 }
                 Err(payload) => {
-                    let mut failure =
-                        crate::ContractFailure::panicked("contract execution panicked", payload);
+                    let mut failure = crate::ContractFailure::panicked("contract execution panicked", payload);
                     if let Some(id) = selected {
                         failure = failure.at(id);
                     }
@@ -219,10 +215,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Resolves focused execution without running sibling checks.
-    async fn dispatch_check(
-        &mut self,
-        id: crate::ContractCheckId,
-    ) -> Result<(), crate::ContractFailure> {
+    async fn dispatch_check(&mut self, id: crate::ContractCheckId) -> Result<(), crate::ContractFailure> {
         match id.contract() {
             FileSystemContract::Copy => self.check_copy_item(id).await,
             FileSystemContract::TempResources => self.check_temp_item(id).await,
@@ -239,10 +232,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         }
     }
 
-    async fn dispatch_contract(
-        &mut self,
-        contract: FileSystemContract,
-    ) -> Result<(), crate::ContractFailure> {
+    async fn dispatch_contract(&mut self, contract: FileSystemContract) -> Result<(), crate::ContractFailure> {
         match contract {
             FileSystemContract::Properties => self.check_properties().await?,
             FileSystemContract::Stat => self.check_stat().await?,

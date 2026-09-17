@@ -28,20 +28,12 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Requires a real seeded representation for every advertised capability.
-    pub(super) fn check_representation_item(
-        &mut self,
-        id: ContractCheckId,
-    ) -> Result<(), ContractFailure> {
+    pub(super) fn check_representation_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let (capability, name) = match id {
-            ContractCheckId::RepresentationEmpty => {
-                (FileSystemCapability::EmptyDirectory, "empty-directory")
-            }
+            ContractCheckId::RepresentationEmpty => (FileSystemCapability::EmptyDirectory, "empty-directory"),
             ContractCheckId::RepresentationSymlink => (FileSystemCapability::Symlink, "symlink"),
             _ => {
-                return Err(ContractFailure::message_only(
-                    "selected entry is not a representation check",
-                )
-                .at(id));
+                return Err(ContractFailure::message_only("selected entry is not a representation check").at(id));
             }
         };
         self.context.begin(id.as_str());
@@ -61,9 +53,7 @@ impl FileSystemContractSuite<'_> {
         } else {
             self.fixture.seed_symlink(&relative)
         }
-        .map_err(|error| {
-            ContractFailure::with_source("representation preparation failed", error).at(id)
-        })?;
+        .map_err(|error| ContractFailure::with_source("representation preparation failed", error).at(id))?;
         let path = match prepared {
             FixtureSupport::Supported(path) => path,
             FixtureSupport::Unsupported => {
@@ -71,9 +61,7 @@ impl FileSystemContractSuite<'_> {
                     id,
                     Some(capability),
                     ContractCheckOutcome::Unverified {
-                        reason:
-                            "advertised representation requires independent fixture preparation"
-                                .to_owned(),
+                        reason: "advertised representation requires independent fixture preparation".to_owned(),
                     },
                 );
                 return Ok(());

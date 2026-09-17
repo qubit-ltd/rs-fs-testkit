@@ -63,20 +63,12 @@ impl ContractAsyncWriteFailure {
     }
 
     /// Transfers the failure snapshot and optional operation to the caller.
-    pub fn into_parts(
-        self,
-    ) -> (
-        AsyncWriteAllOperationFailure,
-        Option<AsyncWriteAllOperation>,
-    ) {
+    pub fn into_parts(self) -> (AsyncWriteAllOperationFailure, Option<AsyncWriteAllOperation>) {
         (self.failure, self.operation)
     }
 
     /// Pairs a failure with the operation that owns its recovery session.
-    pub(crate) fn new(
-        failure: AsyncWriteAllOperationFailure,
-        operation: Option<AsyncWriteAllOperation>,
-    ) -> Self {
+    pub(crate) fn new(failure: AsyncWriteAllOperationFailure, operation: Option<AsyncWriteAllOperation>) -> Self {
         Self { failure, operation }
     }
 }
@@ -92,8 +84,7 @@ impl Debug for ContractAsyncWriteFailure {
 
 impl Display for ContractAsyncWriteFailure {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        formatter
-            .write_str("whole-file write failed; original failure and available operation retained")
+        formatter.write_str("whole-file write failed; original failure and available operation retained")
     }
 }
 

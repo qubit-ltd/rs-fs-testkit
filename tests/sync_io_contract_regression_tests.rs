@@ -23,11 +23,7 @@ where
     let message = payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&str>().map(|value| (*value).to_owned()))
         .unwrap_or_default();
     assert!(
         message.contains(check_id),
@@ -184,8 +180,7 @@ fn test_sync_property_limit_boundaries_are_reported() {
 
 #[test]
 fn test_sync_conditional_case_unavailability_remains_unverified() {
-    let fixture =
-        MemoryFixture::with_conditional_case_unavailable(UnavailableScenario::ReadIfMatch);
+    let fixture = MemoryFixture::with_conditional_case_unavailable(UnavailableScenario::ReadIfMatch);
     let report = FileSystemContractSuite::new(&fixture)
         .run_contract(FileSystemContract::Read)
         .report()
@@ -198,15 +193,13 @@ fn test_sync_conditional_case_unavailability_remains_unverified() {
 
 #[test]
 fn test_sync_conditional_delete_case_unavailability_is_unverified() {
-    let fixture =
-        MemoryFixture::with_conditional_case_unavailable(UnavailableScenario::DeleteIfMatch);
+    let fixture = MemoryFixture::with_conditional_case_unavailable(UnavailableScenario::DeleteIfMatch);
     let report = FileSystemContractSuite::new(&fixture)
         .run_contract(FileSystemContract::Delete)
         .report()
         .clone();
     assert!(report.checks().iter().any(|check| {
-        check.id().as_str() == "delete/if-match"
-            && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
+        check.id().as_str() == "delete/if-match" && matches!(check.outcome(), ContractCheckOutcome::Unverified { .. })
     }));
 }
 

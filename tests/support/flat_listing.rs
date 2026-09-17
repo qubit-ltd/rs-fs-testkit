@@ -102,8 +102,7 @@ impl FlatFixture {
 
     /// Maps one key without involving the facade.
     fn key(relative: &str) -> FixtureResult<Path> {
-        Path::parse_literal(relative)
-            .map_err(|error| FixtureError::with_source("invalid fixture key", error))
+        Path::parse_literal(relative).map_err(|error| FixtureError::with_source("invalid fixture key", error))
     }
 
     /// Seeds the independent model directly.
@@ -181,11 +180,7 @@ impl AsyncFileSystemFixture for FlatFixture {
         Self::key(relative)
     }
     /// Prepares test data independently when polled.
-    fn seed_file<'a>(
-        &'a self,
-        relative: &'a str,
-        _: &'a [u8],
-    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_file<'a>(&'a self, relative: &'a str, _: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move { self.seed(relative) })
     }
     /// Reads the independent complete model when polled.
@@ -297,9 +292,7 @@ impl FileSystemSpi for Provider {
     }
     /// Opens a fixed set of provider results.
     fn list(&self, request: ListRequest<'_>) -> FsResult<OpenedDirectoryStream> {
-        Ok(OpenedDirectoryStream::new(Box::new(
-            self.list_entries(request)?,
-        )))
+        Ok(OpenedDirectoryStream::new(Box::new(self.list_entries(request)?)))
     }
 }
 
@@ -320,15 +313,8 @@ impl AsyncFileSystemSpi for Provider {
         })
     }
     /// Opens the fixed result set only when polled.
-    fn list<'a>(
-        &'a self,
-        request: ListRequest<'a>,
-    ) -> SpiFuture<'a, FsResult<OpenedAsyncDirectoryStream>> {
-        Box::pin(async move {
-            Ok(OpenedAsyncDirectoryStream::new(Box::new(
-                self.list_entries(request)?,
-            )))
-        })
+    fn list<'a>(&'a self, request: ListRequest<'a>) -> SpiFuture<'a, FsResult<OpenedAsyncDirectoryStream>> {
+        Box::pin(async move { Ok(OpenedAsyncDirectoryStream::new(Box::new(self.list_entries(request)?))) })
     }
 }
 

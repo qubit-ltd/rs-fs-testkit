@@ -33,22 +33,14 @@ use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes only the selected stage and records no sibling outcomes.
-    pub(super) async fn check_copy_cancellation_item(
-        &mut self,
-        id: ContractCheckId,
-    ) -> Result<(), ContractFailure> {
+    pub(super) async fn check_copy_cancellation_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let stage = match id {
-            ContractCheckId::AsyncCopyCancelNativeAttempt => {
-                AsyncCopyCancellationStage::NativeAttempt
-            }
+            ContractCheckId::AsyncCopyCancelNativeAttempt => AsyncCopyCancellationStage::NativeAttempt,
             ContractCheckId::AsyncCopyCancelReader => AsyncCopyCancellationStage::Reader,
             ContractCheckId::AsyncCopyCancelWriter => AsyncCopyCancellationStage::Writer,
             ContractCheckId::AsyncCopyCancelCommit => AsyncCopyCancellationStage::Commit,
             _ => {
-                return Err(ContractFailure::message_only(
-                    "selected check is not copy cancellation",
-                )
-                .at(id));
+                return Err(ContractFailure::message_only("selected check is not copy cancellation").at(id));
             }
         };
         self.context.begin(id.as_str());
@@ -62,16 +54,12 @@ impl AsyncFileSystemContractSuite<'_> {
             );
             return Ok(());
         }
-        let relative = self
-            .context
-            .relative_name(&format!("async-copy-cancel-{stage:?}"));
+        let relative = self.context.relative_name(&format!("async-copy-cancel-{stage:?}"));
         let prepared = self
             .fixture
             .prepare_copy_cancellation(stage, &relative)
             .await
-            .map_err(|error| {
-                ContractFailure::with_source("copy cancellation preparation failed", error).at(id)
-            })?;
+            .map_err(|error| ContractFailure::with_source("copy cancellation preparation failed", error).at(id))?;
         match prepared {
             FixtureSupport::Supported(probe) => self.run_cancellation_probe(stage, probe).await?,
             FixtureSupport::Unsupported => self.context.record_check(
@@ -96,13 +84,10 @@ impl AsyncFileSystemContractSuite<'_> {
         let (source, target, options) = probe.case().clone().into_parts();
         self.context.record_created(source.clone());
         self.context.record_created(target.clone());
-        let mut guard =
-            ProbeDisarmGuard::new(|| probe.disarm(), &mut self.context.run.cleanup.failures);
+        let mut guard = ProbeDisarmGuard::new(|| probe.disarm(), &mut self.context.run.cleanup.failures);
         let source_before = observe_file(self.fixture, &source, id)
             .await?
-            .ok_or_else(|| {
-                ContractFailure::message_only("copy cancellation source is absent").at(id)
-            })?;
+            .ok_or_else(|| ContractFailure::message_only("copy cancellation source is absent").at(id))?;
         let target_before = observe_file(self.fixture, &target, id).await?;
         let mut operation = self
             .fixture
@@ -121,18 +106,12 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "unpolled copy execution changed state",
         )?;
-        verify_condition(
-            !operation.has_recovery(),
-            id,
-            "unpolled copy acquired a writer",
-        )?;
+        verify_condition(!operation.has_recovery(), id, "unpolled copy acquired a writer")?;
         let mut execution_failure = None;
         let mut execution = Box::pin(operation.execute());
         let reached = poll_fn(|context| match execution.as_mut().poll(context) {
             Poll::Pending => probe.poll_reached(context).map(|result| {
-                result.map_err(|error| {
-                    ContractFailure::with_source("copy stage acknowledgement failed", error).at(id)
-                })
+                result.map_err(|error| ContractFailure::with_source("copy stage acknowledgement failed", error).at(id))
             }),
             Poll::Ready(Ok(_)) => Poll::Ready(Err(ContractFailure::message_only(
                 "copy completed before requested stage acknowledgement",
@@ -183,9 +162,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 return Err(ContractFailure::message_only("cancelled copy executed twice").at(id));
             }
         };
-        if repeated.error().kind() != FsErrorKind::InvalidState
-            || repeated.state() != CopyFailureState::Indeterminate
-        {
+        if repeated.error().kind() != FsErrorKind::InvalidState || repeated.state() != CopyFailureState::Indeterminate {
             return Err(ContractFailure::with_owned_source(
                 "repeated copy lost cancellation facts",
                 crate::ContractAsyncCopyFailure::new(repeated, Some(operation)),
@@ -200,9 +177,7 @@ impl AsyncFileSystemContractSuite<'_> {
         let repeated_again = match operation.execute().await {
             Err(error) => error,
             Ok(_) => {
-                return Err(
-                    ContractFailure::message_only("cancelled copy executed a third time").at(id),
-                );
+                return Err(ContractFailure::message_only("cancelled copy executed a third time").at(id));
             }
         };
         if repeated_again.error().kind() != FsErrorKind::InvalidState
@@ -232,9 +207,7 @@ impl AsyncFileSystemContractSuite<'_> {
                     return Err(ContractFailure::with_owned_source(
                         "cancellation probe retained a rejected provider identity",
                         crate::ContractWriterFailure::new(
-                            ContractFailure::message_only(
-                                "validated writer required by this stage probe",
-                            ),
+                            ContractFailure::message_only("validated writer required by this stage probe"),
                             recovery,
                         ),
                     )
@@ -282,11 +255,8 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "cancelled copy changed source",
         )?;
-        self.context.record_check(
-            id,
-            Some(FileSystemCapability::Copy),
-            ContractCheckOutcome::Passed,
-        );
+        self.context
+            .record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Passed);
         Ok(())
     }
 }
@@ -307,21 +277,22 @@ async fn observe_file(
     path: &Path,
     id: ContractCheckId,
 ) -> Result<Option<Vec<u8>>, ContractFailure> {
-    match fixture.exists_out_of_band(path).await.map_err(|error| {
-        ContractFailure::with_source("copy independent existence observation failed", error).at(id)
-    })? {
+    match fixture
+        .exists_out_of_band(path)
+        .await
+        .map_err(|error| ContractFailure::with_source("copy independent existence observation failed", error).at(id))?
+    {
         FixtureSupport::Supported(false) => return Ok(None),
         FixtureSupport::Supported(true) => {}
         FixtureSupport::Unsupported => {
-            return Err(ContractFailure::message_only(
-                "copy probe has no independent existence evidence",
-            )
-            .at(id));
+            return Err(ContractFailure::message_only("copy probe has no independent existence evidence").at(id));
         }
     }
-    match fixture.read_file(path).await.map_err(|error| {
-        ContractFailure::with_source("copy independent byte observation failed", error).at(id)
-    })? {
+    match fixture
+        .read_file(path)
+        .await
+        .map_err(|error| ContractFailure::with_source("copy independent byte observation failed", error).at(id))?
+    {
         FixtureSupport::Supported(bytes) => Ok(Some(bytes)),
         FixtureSupport::Unsupported => {
             Err(ContractFailure::message_only("copy probe has no independent byte evidence").at(id))

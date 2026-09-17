@@ -37,48 +37,35 @@ impl FileSystemContractSuite<'_> {
                 _ => Path::parse("/temp-invalid-parent"),
             }
             .map_err(|error| {
-                ContractFailure::with_source(
-                    "temporary invalid-parent request preparation failed",
-                    error,
-                )
-                .at(id)
+                ContractFailure::with_source("temporary invalid-parent request preparation failed", error).at(id)
             })?;
-            let error = match filesystem
-                .create_temp_file(TempOptions::default().with_parent(Some(incompatible.clone())))
-            {
-                Err(error) => error,
-                Ok(resource) => {
-                    return Err(ContractFailure::with_owned_source(
-                        "invalid temporary parent succeeded",
-                        ContractTempFailure::new(
-                            ContractFailure::message_only("invalid temporary parent was accepted"),
-                            resource,
-                        ),
-                    )
-                    .at(id));
-                }
-            };
+            let error =
+                match filesystem.create_temp_file(TempOptions::default().with_parent(Some(incompatible.clone()))) {
+                    Err(error) => error,
+                    Ok(resource) => {
+                        return Err(ContractFailure::with_owned_source(
+                            "invalid temporary parent succeeded",
+                            ContractTempFailure::new(
+                                ContractFailure::message_only("invalid temporary parent was accepted"),
+                                resource,
+                            ),
+                        )
+                        .at(id));
+                    }
+                };
             if error.recovery().is_some()
                 || error.stage() != OpenFailureStage::Preflight
                 || error.error().kind() != FsErrorKind::InvalidPath
                 || error.error().operation() != FsOperation::CreateTemp
                 || error.error().path() != Some(&incompatible)
             {
-                return Err(ContractFailure::with_owned_source(
-                    "temporary parent validation differs",
-                    error,
-                )
-                .at(id));
+                return Err(ContractFailure::with_owned_source("temporary parent validation differs", error).at(id));
             }
             if self.capable(FileSystemCapability::CreateDirectory) {
                 let relative = self.context.relative_name("temp-file-parent");
-                let parent = self
-                    .fixture
-                    .seed_empty_directory(&relative)
-                    .map_err(|error| {
-                        ContractFailure::with_source("temporary parent preparation failed", error)
-                            .at(id)
-                    })?;
+                let parent = self.fixture.seed_empty_directory(&relative).map_err(|error| {
+                    ContractFailure::with_source("temporary parent preparation failed", error).at(id)
+                })?;
                 let FixtureSupport::Supported(parent) = parent else {
                     return Err(ContractFailure::message_only(
                         "temporary parent needs independent fixture preparation",
@@ -102,20 +89,14 @@ impl FileSystemContractSuite<'_> {
                     || error.error().operation() != FsOperation::CreateTemp
                     || error.error().required_capability() != Some(FileSystemCapability::TempFile)
                 {
-                    return Err(ContractFailure::with_owned_source(
-                        "temporary creation rejection differs",
-                        error,
-                    )
-                    .at(id));
+                    return Err(
+                        ContractFailure::with_owned_source("temporary creation rejection differs", error).at(id),
+                    );
                 }
                 return Ok(());
             }
             Err(error) => {
-                return Err(ContractFailure::with_owned_source(
-                    "temporary resource creation failed",
-                    error,
-                )
-                .at(id));
+                return Err(ContractFailure::with_owned_source("temporary resource creation failed", error).at(id));
             }
         };
         let source = temporary.path().clone();
@@ -147,20 +128,18 @@ impl FileSystemContractSuite<'_> {
                 )
                 .at(id));
             }
-            let after = self.fixture.exists_out_of_band(&source).map_err(|error| {
-                ContractFailure::with_source("temporary cleanup observation failed", error).at(id)
-            })?;
+            let after = self
+                .fixture
+                .exists_out_of_band(&source)
+                .map_err(|error| ContractFailure::with_source("temporary cleanup observation failed", error).at(id))?;
             verify_condition(
                 matches!(after, FixtureSupport::Supported(false)),
                 id,
                 "temp/file: cleanup retained source",
             )?;
-            temporary = filesystem
-                .create_temp_file(TempOptions::default())
-                .map_err(|error| {
-                    ContractFailure::with_owned_source("temporary keep preparation failed", error)
-                        .at(id)
-                })?;
+            temporary = filesystem.create_temp_file(TempOptions::default()).map_err(|error| {
+                ContractFailure::with_owned_source("temporary keep preparation failed", error).at(id)
+            })?;
             self.context.record_created(temporary.path().clone());
         }
         if id != ContractCheckId::TempAtomic {
@@ -182,9 +161,10 @@ impl FileSystemContractSuite<'_> {
                 "temporary keep state or publication identity differs",
             )?;
             for (path, expected) in [(&kept_source, false), (kept.target(), true)] {
-                let observed = self.fixture.exists_out_of_band(path).map_err(|error| {
-                    ContractFailure::with_source("temporary keep observation failed", error).at(id)
-                })?;
+                let observed = self
+                    .fixture
+                    .exists_out_of_band(path)
+                    .map_err(|error| ContractFailure::with_source("temporary keep observation failed", error).at(id))?;
                 verify_condition(
                     matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
                     id,
@@ -195,10 +175,9 @@ impl FileSystemContractSuite<'_> {
                 let failure = match temporary.keep() {
                     Err(failure) => failure,
                     Ok(_) => {
-                        return Err(ContractFailure::message_only(
-                            "temp/repeated-lifecycle: second keep succeeded",
-                        )
-                        .at(id));
+                        return Err(
+                            ContractFailure::message_only("temp/repeated-lifecycle: second keep succeeded").at(id),
+                        );
                     }
                 };
                 if failure.error().kind() != FsErrorKind::InvalidState
@@ -214,10 +193,9 @@ impl FileSystemContractSuite<'_> {
                 let error = match temporary.cleanup() {
                     Err(error) => error,
                     Ok(_) => {
-                        return Err(ContractFailure::message_only(
-                            "temp/repeated-lifecycle: kept target reclaimed",
-                        )
-                        .at(id));
+                        return Err(
+                            ContractFailure::message_only("temp/repeated-lifecycle: kept target reclaimed").at(id),
+                        );
                     }
                 };
                 if error.kind() != FsErrorKind::InvalidState {
@@ -227,35 +205,18 @@ impl FileSystemContractSuite<'_> {
                     )
                     .at(id));
                 }
-                verify_condition(
-                    temporary.state() == TempResourceState::Kept,
-                    id,
-                    "kept state changed",
-                )?;
-                let after = self
-                    .fixture
-                    .exists_out_of_band(kept.target())
-                    .map_err(|error| {
-                        ContractFailure::with_source(
-                            "repeated keep publication observation failed",
-                            error,
-                        )
-                        .at(id)
-                    })?;
+                verify_condition(temporary.state() == TempResourceState::Kept, id, "kept state changed")?;
+                let after = self.fixture.exists_out_of_band(kept.target()).map_err(|error| {
+                    ContractFailure::with_source("repeated keep publication observation failed", error).at(id)
+                })?;
                 verify_condition(
                     matches!(after, FixtureSupport::Supported(true)),
                     id,
                     "kept publication disappeared",
                 )?;
-                let mut cleaned = filesystem
-                    .create_temp_file(TempOptions::default())
-                    .map_err(|error| {
-                        ContractFailure::with_owned_source(
-                            "repeated cleanup preparation failed",
-                            error,
-                        )
-                        .at(id)
-                    })?;
+                let mut cleaned = filesystem.create_temp_file(TempOptions::default()).map_err(|error| {
+                    ContractFailure::with_owned_source("repeated cleanup preparation failed", error).at(id)
+                })?;
                 let cleaned_source = cleaned.path().clone();
                 self.context.record_created(cleaned_source.clone());
                 if let Err(error) = cleaned.cleanup() {
@@ -265,13 +226,9 @@ impl FileSystemContractSuite<'_> {
                     )
                     .at(id));
                 }
-                let after = self
-                    .fixture
-                    .exists_out_of_band(&cleaned_source)
-                    .map_err(|error| {
-                        ContractFailure::with_source("repeated cleanup observation failed", error)
-                            .at(id)
-                    })?;
+                let after = self.fixture.exists_out_of_band(&cleaned_source).map_err(|error| {
+                    ContractFailure::with_source("repeated cleanup observation failed", error).at(id)
+                })?;
                 verify_condition(
                     matches!(after, FixtureSupport::Supported(false)),
                     id,
@@ -280,15 +237,12 @@ impl FileSystemContractSuite<'_> {
                 let error = match cleaned.cleanup() {
                     Err(error) => error,
                     Ok(_) => {
-                        return Err(ContractFailure::message_only(
-                            "temp/repeated-lifecycle: cleaned resource reused",
-                        )
-                        .at(id));
+                        return Err(
+                            ContractFailure::message_only("temp/repeated-lifecycle: cleaned resource reused").at(id),
+                        );
                     }
                 };
-                if error.kind() != FsErrorKind::InvalidState
-                    || cleaned.state() != TempResourceState::Cleaned
-                {
+                if error.kind() != FsErrorKind::InvalidState || cleaned.state() != TempResourceState::Cleaned {
                     return Err(ContractFailure::with_owned_source(
                         "repeated cleanup state differs",
                         ContractTempFailure::new(error, cleaned),
@@ -297,15 +251,9 @@ impl FileSystemContractSuite<'_> {
                 }
                 return Ok(());
             }
-            temporary = filesystem
-                .create_temp_file(TempOptions::default())
-                .map_err(|error| {
-                    ContractFailure::with_owned_source(
-                        "temporary persistence preparation failed",
-                        error,
-                    )
-                    .at(id)
-                })?;
+            temporary = filesystem.create_temp_file(TempOptions::default()).map_err(|error| {
+                ContractFailure::with_owned_source("temporary persistence preparation failed", error).at(id)
+            })?;
             self.context.record_created(temporary.path().clone());
         }
         let source = temporary.path().clone();
@@ -313,11 +261,7 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .path(&self.context.relative_name("persisted-file"))
             .map_err(|error| {
-                ContractFailure::with_source(
-                    "temporary publication target preparation failed",
-                    error,
-                )
-                .at(id)
+                ContractFailure::with_source("temporary publication target preparation failed", error).at(id)
             })?;
         self.context.record_created(target.clone());
         let atomic = id == ContractCheckId::TempAtomic;
@@ -331,10 +275,7 @@ impl FileSystemContractSuite<'_> {
             let failure = match publication {
                 Err(failure) => failure,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only(
-                        "unsupported atomic persistence succeeded",
-                    )
-                    .at(id));
+                    return Err(ContractFailure::message_only("unsupported atomic persistence succeeded").at(id));
                 }
             };
             let error = failure.error();
@@ -353,8 +294,7 @@ impl FileSystemContractSuite<'_> {
                 .at(id));
             }
             let before = self.fixture.exists_out_of_band(&source).map_err(|error| {
-                ContractFailure::with_source("atomic rejection source observation failed", error)
-                    .at(id)
+                ContractFailure::with_source("atomic rejection source observation failed", error).at(id)
             })?;
             verify_condition(
                 matches!(before, FixtureSupport::Supported(true)),
@@ -367,8 +307,7 @@ impl FileSystemContractSuite<'_> {
                 "atomic preflight changed resource ownership",
             )?;
             let target_after = self.fixture.exists_out_of_band(&target).map_err(|error| {
-                ContractFailure::with_source("atomic rejection target observation failed", error)
-                    .at(id)
+                ContractFailure::with_source("atomic rejection target observation failed", error).at(id)
             })?;
             verify_condition(
                 matches!(target_after, FixtureSupport::Supported(false)),
@@ -383,8 +322,7 @@ impl FileSystemContractSuite<'_> {
                 .at(id));
             }
             let after = self.fixture.exists_out_of_band(&source).map_err(|error| {
-                ContractFailure::with_source("atomic rejection cleanup observation failed", error)
-                    .at(id)
+                ContractFailure::with_source("atomic rejection cleanup observation failed", error).at(id)
             })?;
             verify_condition(
                 matches!(after, FixtureSupport::Supported(false)),
@@ -403,11 +341,7 @@ impl FileSystemContractSuite<'_> {
                 .at(id));
             }
         };
-        verify_condition(
-            outcome.target() == &target,
-            id,
-            "temporary persist target mismatch",
-        )?;
+        verify_condition(outcome.target() == &target, id, "temporary persist target mismatch")?;
         if atomic {
             verify_condition(
                 outcome.atomicity() == AchievedAtomicity::Atomic,
@@ -416,9 +350,10 @@ impl FileSystemContractSuite<'_> {
             )?;
         }
         for (path, expected) in [(&source, false), (&target, true)] {
-            let observed = self.fixture.exists_out_of_band(path).map_err(|error| {
-                ContractFailure::with_source("temporary persist observation failed", error).at(id)
-            })?;
+            let observed = self
+                .fixture
+                .exists_out_of_band(path)
+                .map_err(|error| ContractFailure::with_source("temporary persist observation failed", error).at(id))?;
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
                 id,

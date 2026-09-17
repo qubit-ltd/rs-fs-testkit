@@ -40,19 +40,16 @@ impl AsyncFileSystemContractSuite<'_> {
         let id = ContractCheckId::WriteIfMatch;
         let relative = self.context.relative_name("write-if-match");
         if !self.capable(FileSystemCapability::ConditionalWrite) {
-            let path = self.fixture.path(&relative).map_err(|error| {
-                ContractFailure::with_source("conditional write path failed", error).at(id)
-            })?;
-            let options = WriteOptions::default().with_precondition(WritePrecondition::IfMatch(
-                ResourceVersion::new("missing-capability"),
-            ));
+            let path = self
+                .fixture
+                .path(&relative)
+                .map_err(|error| ContractFailure::with_source("conditional write path failed", error).at(id))?;
+            let options = WriteOptions::default()
+                .with_precondition(WritePrecondition::IfMatch(ResourceVersion::new("missing-capability")));
             let error = match self.fixture.file_system().open_writer(&path, options).await {
                 Err(error) => error,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only(
-                        "unavailable conditional write succeeded",
-                    )
-                    .at(id));
+                    return Err(ContractFailure::message_only("unavailable conditional write succeeded").at(id));
                 }
             };
             verify_open_failure(
@@ -78,26 +75,18 @@ impl AsyncFileSystemContractSuite<'_> {
                 &bytes,
             )
             .await
-            .map_err(|error| {
-                ContractFailure::with_source("If-Match preparation failed", error).at(id)
-            })?;
+            .map_err(|error| ContractFailure::with_source("If-Match preparation failed", error).at(id))?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason }
-            | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified { reason });
             }
         };
         let path = case.path().clone();
         self.context.record_created(path.clone());
-        let current = self
-            .fixture
-            .resource_version(&path)
-            .await
-            .map_err(|error| {
-                ContractFailure::with_source("If-Match current version observation failed", error)
-                    .at(id)
-            })?;
+        let current = self.fixture.resource_version(&path).await.map_err(|error| {
+            ContractFailure::with_source("If-Match current version observation failed", error).at(id)
+        })?;
         let FixtureSupport::Supported(current) = current else {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "fixture current version unavailable".to_owned(),
@@ -118,45 +107,29 @@ impl AsyncFileSystemContractSuite<'_> {
         )
         .await;
         first.map_err(|error| {
-            ContractFailure::with_owned_source("conditional write first publication failed", error)
-                .at(id)
+            ContractFailure::with_owned_source("conditional write first publication failed", error).at(id)
         })?;
         let observed = self.fixture.read_file(&path).await.map_err(|error| {
-            ContractFailure::with_source("conditional write initial observation failed", error)
-                .at(id)
+            ContractFailure::with_source("conditional write initial observation failed", error).at(id)
         })?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
             id,
             "conditional write first publication differs or evidence is unavailable",
         )?;
-        let stale = self
-            .fixture
-            .stale_resource_version(&path)
-            .await
-            .map_err(|error| {
-                ContractFailure::with_source("If-Match stale version observation failed", error)
-                    .at(id)
+        let stale =
+            self.fixture.stale_resource_version(&path).await.map_err(|error| {
+                ContractFailure::with_source("If-Match stale version observation failed", error).at(id)
             })?;
-        let now = self
-            .fixture
-            .resource_version(&path)
-            .await
-            .map_err(|error| {
-                ContractFailure::with_source("If-Match published version observation failed", error)
-                    .at(id)
-            })?;
-        let (FixtureSupport::Supported(stale), FixtureSupport::Supported(now)) = (stale, now)
-        else {
+        let now = self.fixture.resource_version(&path).await.map_err(|error| {
+            ContractFailure::with_source("If-Match published version observation failed", error).at(id)
+        })?;
+        let (FixtureSupport::Supported(stale), FixtureSupport::Supported(now)) = (stale, now) else {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "fixture stale or published version unavailable".to_owned(),
             });
         };
-        verify_condition(
-            stale != now,
-            id,
-            "fixture stale version equals published version",
-        )?;
+        verify_condition(stale != now, id, "fixture stale version equals published version")?;
         let retry_options = case
             .options()
             .clone()
@@ -172,26 +145,16 @@ impl AsyncFileSystemContractSuite<'_> {
         let failure = match retry {
             Err(failure) => failure,
             Ok(_) => {
-                return Err(ContractFailure::message_only(
-                    "write/if-match: stale If-Match succeeded",
-                )
-                .at(id));
+                return Err(ContractFailure::message_only("write/if-match: stale If-Match succeeded").at(id));
             }
         };
         let error = failure.error();
         if error.kind() != FsErrorKind::PreconditionFailed
-            || !matches!(
-                error.operation(),
-                FsOperation::OpenWriter | FsOperation::CommitWriter
-            )
+            || !matches!(error.operation(), FsOperation::OpenWriter | FsOperation::CommitWriter)
             || error.path() != Some(&path)
             || error.provider() != Some(self.context.properties().info().provider_id())
         {
-            return Err(ContractFailure::with_owned_source(
-                "conditional write rejection differs",
-                failure,
-            )
-            .at(id));
+            return Err(ContractFailure::with_owned_source("conditional write rejection differs", failure).at(id));
         }
         crate::internal::finish_expected_write_failure::finish_expected_async_write_failure(
             failure,
@@ -200,8 +163,7 @@ impl AsyncFileSystemContractSuite<'_> {
         )
         .await?;
         let observed = self.fixture.read_file(&path).await.map_err(|error| {
-            ContractFailure::with_source("conditional write rejection observation failed", error)
-                .at(id)
+            ContractFailure::with_source("conditional write rejection observation failed", error).at(id)
         })?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),

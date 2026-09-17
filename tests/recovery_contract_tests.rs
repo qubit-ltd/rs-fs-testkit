@@ -88,10 +88,7 @@ fn test_conditional_cleanup_failure_preserves_sync_recovery() {
     use qubit_fs::error::FsErrorKind;
     use qubit_fs::write::WriteAbortOutcome;
     use qubit_fs_testkit::ContractWriterFailure;
-    for id in [
-        ContractCheckId::WriteIfAbsent,
-        ContractCheckId::WriteIfMatch,
-    ] {
+    for id in [ContractCheckId::WriteIfAbsent, ContractCheckId::WriteIfMatch] {
         let fixture = MemoryFixture::with_fault(MemoryFault::ConditionalAbortFailsOnce);
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(id);
@@ -105,19 +102,13 @@ fn test_conditional_cleanup_failure_preserves_sync_recovery() {
             .expect("owned failure")
             .downcast::<ContractWriterFailure<WriteAllFailure>>()
             .expect("original failure and cleanup error");
-        assert_eq!(
-            retained.writer().error().kind(),
-            FsErrorKind::PreconditionFailed
-        );
+        assert_eq!(retained.writer().error().kind(), FsErrorKind::PreconditionFailed);
         let state = retained.writer().state();
         let bytes = retained.writer().written_bytes();
         let Some(WriterRecovery::Opened(writer)) = retained.writer_mut().recovery_mut() else {
             panic!("retained writer")
         };
-        assert_eq!(
-            writer.abort().expect("explicit retry"),
-            WriteAbortOutcome::NotPublished
-        );
+        assert_eq!(writer.abort().expect("explicit retry"), WriteAbortOutcome::NotPublished);
         assert_eq!(retained.writer().state(), state);
         assert_eq!(retained.writer().written_bytes(), bytes);
     }

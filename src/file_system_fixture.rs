@@ -56,54 +56,43 @@ pub trait FileSystemFixture {
         bytes: &[u8],
     ) -> FixtureResult<crate::FixturePreparation<crate::CopyFixtureCase>> {
         if scenario == crate::CopyScenario::ServerSide {
-            return Ok(
-                match self.copy_fast_path_case(qfs::copy::CopyMethod::ServerSide)? {
-                    FixtureSupport::Supported(case) => crate::FixturePreparation::Ready(case),
-                    FixtureSupport::Unsupported => crate::FixturePreparation::Unavailable {
-                        reason: "fixture has no server-side copy case".to_owned(),
-                    },
+            return Ok(match self.copy_fast_path_case(qfs::copy::CopyMethod::ServerSide)? {
+                FixtureSupport::Supported(case) => crate::FixturePreparation::Ready(case),
+                FixtureSupport::Unsupported => crate::FixturePreparation::Unavailable {
+                    reason: "fixture has no server-side copy case".to_owned(),
                 },
-            );
+            });
         }
         if matches!(
             scenario,
             crate::CopyScenario::AtomicTree | crate::CopyScenario::DurableTree
         ) {
-            let FixtureSupport::Supported(source) = self.seed_empty_directory(source_relative)?
-            else {
+            let FixtureSupport::Supported(source) = self.seed_empty_directory(source_relative)? else {
                 return Ok(crate::FixturePreparation::Unavailable {
                     reason: "tree root setup unavailable".to_owned(),
                 });
             };
             let sub_relative = format!("{source_relative}/sub");
-            if matches!(
-                self.seed_empty_directory(&sub_relative)?,
-                FixtureSupport::Unsupported
-            ) {
+            if matches!(self.seed_empty_directory(&sub_relative)?, FixtureSupport::Unsupported) {
                 return Ok(crate::FixturePreparation::Unavailable {
                     reason: "tree subdirectory setup unavailable".to_owned(),
                 });
             }
             let child_relative = format!("{source_relative}/sub/child");
-            if matches!(
-                self.seed_file(&child_relative, bytes)?,
-                FixtureSupport::Unsupported
-            ) {
+            if matches!(self.seed_file(&child_relative, bytes)?, FixtureSupport::Unsupported) {
                 return Ok(crate::FixturePreparation::Unavailable {
                     reason: "tree child setup unavailable".to_owned(),
                 });
             }
             let target = self.path(target_relative)?;
             let options = if scenario == crate::CopyScenario::AtomicTree {
-                qfs::copy::CopyOptions::tree()
-                    .with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+                qfs::copy::CopyOptions::tree().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
             } else {
-                qfs::copy::CopyOptions::tree()
-                    .with_durability(qfs::metadata::DurabilityRequirement::Required)
+                qfs::copy::CopyOptions::tree().with_durability(qfs::metadata::DurabilityRequirement::Required)
             };
-            return Ok(crate::FixturePreparation::Ready(
-                crate::CopyFixtureCase::new(source, target, options),
-            ));
+            return Ok(crate::FixturePreparation::Ready(crate::CopyFixtureCase::new(
+                source, target, options,
+            )));
         }
         let FixtureSupport::Supported(source) = self.seed_file(source_relative, bytes)? else {
             return Ok(crate::FixturePreparation::Unavailable {
@@ -111,8 +100,7 @@ pub trait FileSystemFixture {
             });
         };
         let target = if scenario == crate::CopyScenario::Conflict {
-            let FixtureSupport::Supported(target) = self.seed_file(target_relative, b"existing")?
-            else {
+            let FixtureSupport::Supported(target) = self.seed_file(target_relative, b"existing")? else {
                 return Ok(crate::FixturePreparation::Unavailable {
                     reason: "copy conflict target seed unavailable".to_owned(),
                 });
@@ -122,15 +110,17 @@ pub trait FileSystemFixture {
             self.path(target_relative)?
         };
         let options = match scenario {
-            crate::CopyScenario::AtomicFile => qfs::copy::CopyOptions::file()
-                .with_atomicity(qfs::metadata::AtomicityRequirement::Required),
-            crate::CopyScenario::DurableFile => qfs::copy::CopyOptions::file()
-                .with_durability(qfs::metadata::DurabilityRequirement::Required),
+            crate::CopyScenario::AtomicFile => {
+                qfs::copy::CopyOptions::file().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+            }
+            crate::CopyScenario::DurableFile => {
+                qfs::copy::CopyOptions::file().with_durability(qfs::metadata::DurabilityRequirement::Required)
+            }
             _ => qfs::copy::CopyOptions::file(),
         };
-        Ok(crate::FixturePreparation::Ready(
-            crate::CopyFixtureCase::new(source, target, options),
-        ))
+        Ok(crate::FixturePreparation::Ready(crate::CopyFixtureCase::new(
+            source, target, options,
+        )))
     }
 
     /// Independently prepares an existing file for a selected deletion
@@ -186,19 +176,16 @@ pub trait FileSystemFixture {
         bytes: &[u8],
     ) -> FixtureResult<crate::FixturePreparation<crate::WriteFixtureCase>> {
         if scenario == crate::WriteScenario::Replace {
-            let FixtureSupport::Supported(path) = self.seed_file(relative, b"previous contents")?
-            else {
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"previous contents")? else {
                 return Ok(crate::FixturePreparation::Unavailable {
                     reason: "replacement seed unavailable".to_owned(),
                 });
             };
-            return Ok(crate::FixturePreparation::Ready(
-                crate::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default(),
-                ),
-            ));
+            return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default(),
+            )));
         }
         if scenario == crate::WriteScenario::CreateConflict {
             let FixtureSupport::Supported(path) = self.seed_file(relative, b"a")? else {
@@ -206,14 +193,11 @@ pub trait FileSystemFixture {
                     reason: "creation conflict seed unavailable".to_owned(),
                 });
             };
-            return Ok(crate::FixturePreparation::Ready(
-                crate::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default()
-                        .with_disposition(qfs::write::WriteDisposition::CreateNew),
-                ),
-            ));
+            return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::CreateNew),
+            )));
         }
         if scenario == crate::WriteScenario::Append {
             let FixtureSupport::Supported(path) = self.seed_file(relative, b"before")? else {
@@ -221,14 +205,11 @@ pub trait FileSystemFixture {
                     reason: "append seed unavailable".to_owned(),
                 });
             };
-            return Ok(crate::FixturePreparation::Ready(
-                crate::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default()
-                        .with_disposition(qfs::write::WriteDisposition::Append),
-                ),
-            ));
+            return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::Append),
+            )));
         }
         if scenario == crate::WriteScenario::AtomicReplace {
             let FixtureSupport::Supported(path) = self.seed_file(relative, b"a")? else {
@@ -236,42 +217,31 @@ pub trait FileSystemFixture {
                     reason: "atomic replacement seed unavailable".to_owned(),
                 });
             };
-            return Ok(crate::FixturePreparation::Ready(
-                crate::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default()
-                        .with_atomicity(qfs::metadata::AtomicityRequirement::Required),
-                ),
-            ));
+            return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_atomicity(qfs::metadata::AtomicityRequirement::Required),
+            )));
         }
         if scenario == crate::WriteScenario::Durable {
-            return Ok(crate::FixturePreparation::Ready(
-                crate::WriteFixtureCase::new(
-                    self.path(relative)?,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default()
-                        .with_disposition(qfs::write::WriteDisposition::CreateNew)
-                        .with_durability(qfs::metadata::DurabilityRequirement::Required),
-                ),
-            ));
+            return Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+                self.path(relative)?,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default()
+                    .with_disposition(qfs::write::WriteDisposition::CreateNew)
+                    .with_durability(qfs::metadata::DurabilityRequirement::Required),
+            )));
         }
-        if !matches!(
-            scenario,
-            crate::WriteScenario::Create | crate::WriteScenario::Abort
-        ) {
+        if !matches!(scenario, crate::WriteScenario::Create | crate::WriteScenario::Abort) {
             return Ok(crate::FixturePreparation::Unavailable {
                 reason: "fixture does not prepare this write scenario".to_owned(),
             });
         }
-        Ok(crate::FixturePreparation::Ready(
-            crate::WriteFixtureCase::new(
-                self.path(relative)?,
-                bytes.to_vec(),
-                qfs::write::WriteOptions::default()
-                    .with_disposition(qfs::write::WriteDisposition::CreateNew),
-            ),
-        ))
+        Ok(crate::FixturePreparation::Ready(crate::WriteFixtureCase::new(
+            self.path(relative)?,
+            bytes.to_vec(),
+            qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::CreateNew),
+        )))
     }
 
     /// Returns the concrete synchronous filesystem facade under test.
@@ -376,11 +346,7 @@ pub trait FileSystemFixture {
 
     /// Writes a complete resource through fixture-owned setup facilities.
     #[inline]
-    fn write_file_out_of_band(
-        &self,
-        path: &Path,
-        bytes: &[u8],
-    ) -> FixtureResult<FixtureSupport<()>> {
+    fn write_file_out_of_band(&self, path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
         let _ = (path, bytes);
         Ok(FixtureSupport::Unsupported)
     }
@@ -394,10 +360,7 @@ pub trait FileSystemFixture {
 
     /// Returns a valid version that does not match the current resource.
     #[inline]
-    fn stale_resource_version(
-        &self,
-        path: &Path,
-    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let _ = path;
         Ok(FixtureSupport::Unsupported)
     }
@@ -448,10 +411,7 @@ pub trait FileSystemFixture {
     /// Returns [`FixtureError`](crate::FixtureError) when provider-specific
     /// case preparation fails.
     #[inline]
-    fn copy_fast_path_case(
-        &self,
-        method: CopyMethod,
-    ) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
+    fn copy_fast_path_case(&self, method: CopyMethod) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
         let _ = method;
         Ok(FixtureSupport::Unsupported)
     }

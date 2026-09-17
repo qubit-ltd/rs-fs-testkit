@@ -75,9 +75,7 @@ fn test_all_capabilities_execute_sync_contracts() {
             .collect::<Vec<_>>(),
         FileSystemCapability::ALL.to_vec()
     );
-    FileSystemContractSuite::new(&fixture)
-        .run_all()
-        .assert_satisfied();
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
     assert!(fixture.is_empty(), "all-capability suite must clean up");
 }
 
@@ -96,17 +94,9 @@ fn test_conforming_memory_provider_satisfies_sync_suite() {
         FileSystemCapability::TempFile,
         FileSystemCapability::TempDirectory,
     ] {
-        assert!(
-            fixture
-                .file_system()
-                .properties()
-                .capabilities()
-                .supports(capability)
-        );
+        assert!(fixture.file_system().properties().capabilities().supports(capability));
     }
-    FileSystemContractSuite::new(&fixture)
-        .run_all()
-        .assert_satisfied();
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
     assert!(fixture.is_empty(), "suite must clean up created resources");
 }
 
@@ -126,10 +116,7 @@ fn test_sync_phase_matrix_exercises_declared_profiles() {
                     .run_contract(contract)
                     .assert_satisfied();
             }));
-            assert!(
-                result.is_ok(),
-                "sync profile {profile} panicked in {contract:?}"
-            );
+            assert!(result.is_ok(), "sync profile {profile} panicked in {contract:?}");
         }
     }
 }
@@ -191,9 +178,7 @@ fn test_sync_unavailable_fixture_cases_are_exercised() {
     for case in cases {
         let fixture = MemoryFixture::with_conditional_case_unavailable(case);
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture)
-                .run_all()
-                .assert_satisfied();
+            FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
         }));
     }
 }
@@ -202,18 +187,14 @@ fn test_sync_unavailable_fixture_cases_are_exercised() {
 #[test]
 fn test_sync_suite_allows_matching_filesystem_and_provider_ids() {
     let fixture = MemoryFixture::with_matching_ids();
-    FileSystemContractSuite::new(&fixture)
-        .run_all()
-        .assert_satisfied();
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
 }
 
 /// A suite must not attempt end-of-run deletion when the facade lacks it.
 #[test]
 fn test_sync_suite_skips_cleanup_without_delete_capability() {
     let fixture = MemoryFixture::without_delete();
-    FileSystemContractSuite::new(&fixture)
-        .run_all()
-        .assert_satisfied();
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
 }
 
 /// Unadvertised optional operations do not prevent core contracts from
@@ -221,13 +202,8 @@ fn test_sync_suite_skips_cleanup_without_delete_capability() {
 #[test]
 fn test_sync_suite_skips_unadvertised_optional_capabilities() {
     let fixture = MemoryFixture::without_optional_capabilities();
-    FileSystemContractSuite::new(&fixture)
-        .run_all()
-        .assert_satisfied();
-    assert!(
-        fixture.is_empty(),
-        "core contract resources must be cleaned"
-    );
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
+    assert!(fixture.is_empty(), "core contract resources must be cleaned");
 }
 
 /// Each injected provider defect must be rejected by the matching suite phase.
@@ -251,19 +227,14 @@ fn test_single_faults_are_rejected_by_sync_suite() {
 fn test_sync_copy_accepts_native_outcome() {
     let fixture = MemoryFixture::with_native_copy();
     let mut suite = FileSystemContractSuite::new(&fixture);
-    suite
-        .run_contract(FileSystemContract::Copy)
-        .assert_satisfied();
+    suite.run_contract(FileSystemContract::Copy).assert_satisfied();
 }
 
 /// Object and prefix metadata kinds satisfy provider-neutral file and cleanup
 /// contracts.
 #[test]
 fn test_sync_suite_accepts_object_and_prefix_kinds() {
-    for phase in [
-        FileSystemContract::Stat,
-        FileSystemContract::CreateDirectory,
-    ] {
+    for phase in [FileSystemContract::Stat, FileSystemContract::CreateDirectory] {
         let fixture = MemoryFixture::with_object_kinds();
         let mut suite = FileSystemContractSuite::new(&fixture);
         suite.run_contract(phase).assert_satisfied();
@@ -276,13 +247,8 @@ fn test_sync_suite_accepts_object_and_prefix_kinds() {
 fn test_sync_recursive_delete_does_not_require_create_directory() {
     let fixture = MemoryFixture::recursive_delete_without_create_directory();
     let mut suite = FileSystemContractSuite::new(&fixture);
-    suite
-        .run_check(testkit::ContractCheckId::DeleteTree)
-        .assert_satisfied();
-    assert!(
-        fixture.is_empty(),
-        "recursive deletion must remove the prefix"
-    );
+    suite.run_check(testkit::ContractCheckId::DeleteTree).assert_satisfied();
+    assert!(fixture.is_empty(), "recursive deletion must remove the prefix");
 }
 
 /// A failed assertion still cleans paths that may have been published.
@@ -290,15 +256,10 @@ fn test_sync_recursive_delete_does_not_require_create_directory() {
 fn test_sync_suite_cleans_resources_before_resuming_panic() {
     let fixture = MemoryFixture::with_fault(MemoryFault::WriteDropsBytes);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        FileSystemContractSuite::new(&fixture)
-            .run_all()
-            .assert_satisfied();
+        FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
     }));
     assert!(result.is_err(), "injected write fault must fail the suite");
-    assert!(
-        fixture.is_empty(),
-        "failed suite must clean published paths"
-    );
+    assert!(fixture.is_empty(), "failed suite must clean published paths");
 }
 
 /// Unadvertised core operations still exercise the facade's structured
@@ -326,10 +287,7 @@ fn test_core_capability_negative_branches_are_exercised() {
             .find(|check| check.id() == id)
             .unwrap_or_else(|| panic!("{id}: core negative check must execute"));
         assert!(
-            matches!(
-                check.outcome(),
-                testkit::ContractCheckOutcome::RejectedAsExpected
-            ),
+            matches!(check.outcome(), testkit::ContractCheckOutcome::RejectedAsExpected),
             "{id}: expected an actual facade rejection, got {:?}",
             check.outcome()
         );

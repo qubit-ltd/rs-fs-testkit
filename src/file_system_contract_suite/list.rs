@@ -40,10 +40,7 @@ impl FileSystemContractSuite<'_> {
     /// Fixes expected entries from fixture preparation before reading the
     /// stream.
     pub(super) fn check_list_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        if matches!(
-            id,
-            ContractCheckId::ListNamespace | ContractCheckId::ListRawRootPrefix
-        ) {
+        if matches!(id, ContractCheckId::ListNamespace | ContractCheckId::ListRawRootPrefix) {
             return self.check_flat_scope_item(id);
         }
         if !matches!(
@@ -56,8 +53,7 @@ impl FileSystemContractSuite<'_> {
             return Err(ContractFailure::message_only("selected entry is not listing").at(id));
         }
         self.context.begin(id.as_str());
-        let hierarchical =
-            self.context.properties().info().path_semantics() == PathSemantics::Hierarchical;
+        let hierarchical = self.context.properties().info().path_semantics() == PathSemantics::Hierarchical;
         let relative = self.context.relative_name("list-root");
         let root = self
             .fixture
@@ -66,17 +62,14 @@ impl FileSystemContractSuite<'_> {
             } else {
                 format!("{relative}/")
             })
-            .map_err(|error| {
-                ContractFailure::with_source("list root preparation failed", error).at(id)
-            })?;
+            .map_err(|error| ContractFailure::with_source("list root preparation failed", error).at(id))?;
         let mut options = if hierarchical {
             ListOptions::default()
         } else {
             ListOptions::object_keys()
         };
         if id == ContractCheckId::ListLiteralPrefix {
-            options = ListOptions::object_keys()
-                .with_filter(Some(ListFilter::LiteralPrefix("literal[1]".to_owned())));
+            options = ListOptions::object_keys().with_filter(Some(ListFilter::LiteralPrefix("literal[1]".to_owned())));
         } else if id == ContractCheckId::ListPrefix {
             options = ListOptions::default()
                 .with_recursive(true)
@@ -86,17 +79,10 @@ impl FileSystemContractSuite<'_> {
             || (!hierarchical && id == ContractCheckId::ListPrefix);
         let capability = FileSystemCapability::List;
         if incompatible || !self.capable(capability) {
-            let error = match self
-                .fixture
-                .file_system()
-                .list(&ListScope::Path(root.clone()), options)
-            {
+            let error = match self.fixture.file_system().list(&ListScope::Path(root.clone()), options) {
                 Err(error) => error,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only(
-                        "unsupported list request succeeded",
-                    )
-                    .at(id));
+                    return Err(ContractFailure::message_only("unsupported list request succeeded").at(id));
                 }
             };
             let kind = if incompatible {
@@ -114,11 +100,8 @@ impl FileSystemContractSuite<'_> {
                 required,
                 id,
             )?;
-            self.context.record_check(
-                id,
-                Some(capability),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
+            self.context
+                .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
             return Ok(());
         }
         let mut expected = Vec::new();
@@ -127,16 +110,13 @@ impl FileSystemContractSuite<'_> {
             let prepared = self
                 .fixture
                 .seed_empty_directory(&prefix)
-                .map_err(|error| {
-                    ContractFailure::with_source("list subtree preparation failed", error).at(id)
-                })?;
+                .map_err(|error| ContractFailure::with_source("list subtree preparation failed", error).at(id))?;
             let FixtureSupport::Supported(path) = prepared else {
                 self.context.record_check(
                     id,
                     Some(capability),
                     ContractCheckOutcome::Unverified {
-                        reason: "subtree listing needs an independently prepared directory"
-                            .to_owned(),
+                        reason: "subtree listing needs an independently prepared directory".to_owned(),
                     },
                 );
                 return Ok(());
@@ -155,9 +135,7 @@ impl FileSystemContractSuite<'_> {
             let prepared = self
                 .fixture
                 .seed_file(&format!("{relative}/{name}"), b"list entry")
-                .map_err(|error| {
-                    ContractFailure::with_source("list entry preparation failed", error).at(id)
-                })?;
+                .map_err(|error| ContractFailure::with_source("list entry preparation failed", error).at(id))?;
             let FixtureSupport::Supported(path) = prepared else {
                 self.context.record_check(
                     id,
@@ -178,10 +156,7 @@ impl FileSystemContractSuite<'_> {
                 expected.push(path);
             }
         }
-        let metadata = matches!(
-            id,
-            ContractCheckId::ListPrefix | ContractCheckId::ListPagination
-        );
+        let metadata = matches!(id, ContractCheckId::ListPrefix | ContractCheckId::ListPagination);
         options = options
             .with_include_metadata(metadata)
             .with_max_entries(Some(expected.len() + 1));

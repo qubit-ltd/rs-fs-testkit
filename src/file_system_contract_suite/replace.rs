@@ -37,11 +37,7 @@ impl FileSystemContractSuite<'_> {
                 reason: "Write capability is unavailable".to_owned(),
             });
         }
-        let bytes = super::write::bounded_payload(
-            self.context.properties().limits().max_write_bytes(),
-            b"new",
-            b'n',
-        );
+        let bytes = super::write::bounded_payload(self.context.properties().limits().max_write_bytes(), b"new", b'n');
         let prepared = self
             .fixture
             .prepare_write(
@@ -51,27 +47,24 @@ impl FileSystemContractSuite<'_> {
                 &relative,
                 &bytes,
             )
-            .map_err(|error| {
-                ContractFailure::with_source("replacement scenario preparation failed", error)
-            })?;
+            .map_err(|error| ContractFailure::with_source("replacement scenario preparation failed", error))?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason }
-            | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified { reason });
             }
         };
         let path = case.path().clone();
         self.context.record_created(path.clone());
         verify_condition(
-            case.bytes() == bytes
-                && case.options().disposition() == WriteDisposition::CreateOrReplace,
+            case.bytes() == bytes && case.options().disposition() == WriteDisposition::CreateOrReplace,
             id,
             "replacement fixture changed request semantics",
         )?;
-        let before = self.fixture.read_file(&path).map_err(|error| {
-            ContractFailure::with_source("replacement initial observation failed", error)
-        })?;
+        let before = self
+            .fixture
+            .read_file(&path)
+            .map_err(|error| ContractFailure::with_source("replacement initial observation failed", error))?;
         let FixtureSupport::Supported(expected) = before else {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "replacement initial content unavailable".to_owned(),
@@ -86,19 +79,16 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .file_system()
             .write_all(&path, &bytes, case.options().clone())
-            .map_err(|error| {
-                ContractFailure::with_owned_source("replacement publication failed", error)
-            })?;
+            .map_err(|error| ContractFailure::with_owned_source("replacement publication failed", error))?;
         verify_condition(
-            outcome
-                .bytes_written()
-                .is_none_or(|count| count == bytes.len() as u64),
+            outcome.bytes_written().is_none_or(|count| count == bytes.len() as u64),
             id,
             "replacement byte count must describe only the replacement payload",
         )?;
-        let observed = self.fixture.read_file(&path).map_err(|error| {
-            ContractFailure::with_source("replacement publication observation failed", error)
-        })?;
+        let observed = self
+            .fixture
+            .read_file(&path)
+            .map_err(|error| ContractFailure::with_source("replacement publication observation failed", error))?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
             id,

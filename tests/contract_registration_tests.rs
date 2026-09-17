@@ -31,9 +31,7 @@ register_async_file_system_contract_tests! {
 /// Uses a missing-evidence fixture only in the isolated harness child.
 fn registration_fixture() -> MemoryFixture {
     if std::env::var_os("FS_TESTKIT_REGISTRATION_MISSING_EVIDENCE").is_some() {
-        MemoryFixture::with_conditional_case_unavailable(
-            crate::common::UnavailableScenario::ReadIfMatch,
-        )
+        MemoryFixture::with_conditional_case_unavailable(crate::common::UnavailableScenario::ReadIfMatch)
     } else {
         MemoryFixture::new()
     }

@@ -74,8 +74,7 @@ impl<T> Debug for ContractTempFailure<T> {
 
 impl<T> Display for ContractTempFailure<T> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        formatter
-            .write_str("temporary lifecycle failed; original error and recovery resource retained")
+        formatter.write_str("temporary lifecycle failed; original error and recovery resource retained")
     }
 }
 
