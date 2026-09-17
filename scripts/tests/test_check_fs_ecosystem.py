@@ -55,27 +55,44 @@ class InputTests(unittest.TestCase):
         (self.root / "rs-mime/Cargo.toml").write_text('[package]\nname = "wrong"\n')
         with self.assertRaises(ValueError): module.validate_root(self.root)
 
-    def test_metadata_requires_one_local_core(self):
-        core = {"name": "qubit-fs", "source": None, "manifest_path": str(self.root / "rs-fs/Cargo.toml"), "version": "0.5.0"}
+    def test_metadata_requires_expected_core_source_and_version(self):
+        core = {"name": "qubit-fs", "source": module.REGISTRY_SOURCE, "manifest_path": str(self.root / "registry/Cargo.toml"), "version": "0.5.0"}
         with patch.object(module.subprocess, "run") as execute:
             execute.return_value.stdout = json.dumps({"packages": [core]})
             module.validate_core_graph(self.root, "rs-mime")
-            for packages in [[], [core, core], [{**core, "source": "registry+https://example.invalid"}], [{**core, "version": "0.4.0"}], [{**core, "manifest_path": str(self.root / "other/Cargo.toml")}]]:
+            for packages in [[], [core, core], [{**core, "source": "registry+https://example.invalid"}], [{**core, "version": "0.4.0"}]]:
                 execute.return_value.stdout = json.dumps({"packages": packages})
                 with self.assertRaises(ValueError): module.validate_core_graph(self.root, "rs-mime")
 
-    def test_all_nested_manifests_are_validated(self):
+    def test_metadata_requires_local_core_for_rs_fs(self):
+        core = {"name": "qubit-fs", "source": None, "manifest_path": str(self.root / "rs-fs/Cargo.toml"), "version": "0.5.0"}
+        with patch.object(module.subprocess, "run") as execute:
+            execute.return_value.stdout = json.dumps({"packages": [core]})
+            module.validate_core_graph(self.root, "rs-fs")
+            execute.return_value.stdout = json.dumps({"packages": [{**core, "source": module.REGISTRY_SOURCE}]})
+            with self.assertRaises(ValueError): module.validate_core_graph(self.root, "rs-fs")
+
+    def test_only_explicit_release_manifests_are_validated(self):
         nested = self.root / "rs-fs/fuzz/Cargo.toml"
         nested.parent.mkdir()
         nested.write_text('[package]\nname = "fuzz"\nversion = "0.0.0"\n')
         with patch.object(module, "validate_core_graph") as validate, patch.object(module, "run_tests"):
             module.main(["--sibling-root", str(self.root)])
-        self.assertEqual(validate.call_count, 7)
-        validate.assert_any_call(self.root, "rs-fs/fuzz")
+        self.assertEqual(validate.call_count, 6)
+        validate.assert_any_call(self.root, module.S3_FIXTURE)
+        self.assertFalse(any(call.args[1] == "rs-fs/fuzz" for call in validate.call_args_list))
 
     def test_lock_drift_is_rejected(self):
         lock = self.root / "rs-fs/Cargo.lock"
         lock.write_text("before")
         with patch.object(module, "validate_core_graph"), patch.object(module, "run_tests", side_effect=lambda _: lock.write_text("after")):
+            with self.assertRaisesRegex(ValueError, "changed Cargo.lock"):
+                module.main(["--sibling-root", str(self.root)])
+
+    def test_new_selected_lockfile_is_rejected(self):
+        fixture_lock = self.root / module.S3_FIXTURE / "Cargo.lock"
+        with patch.object(module, "validate_core_graph"), patch.object(
+            module, "run_tests", side_effect=lambda _: fixture_lock.write_text("after")
+        ):
             with self.assertRaisesRegex(ValueError, "changed Cargo.lock"):
                 module.main(["--sibling-root", str(self.root)])

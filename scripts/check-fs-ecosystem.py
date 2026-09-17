@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Validate the local filesystem crate ecosystem without rewriting inputs."""
+"""Validate the released filesystem crate dependency graph without rewriting inputs."""
 
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +16,8 @@ PACKAGES = {
     "rs-fs-registry": "qubit-fs-registry",
     "rs-mime": "qubit-mime",
 }
+REGISTRY_SOURCE = "registry+https://github.com/rust-lang/crates.io-index"
+S3_FIXTURE = "rs-fs-testkit/fixtures/s3-contract"
 MATRIX = [
     ("rs-fs", []), ("rs-fs", ["--features", "async"]),
     ("rs-fs-local", []), ("rs-fs-local", ["--features", "registry"]),
@@ -26,13 +27,17 @@ MATRIX = [
 ]
 
 
+def selected_directories() -> tuple[str, ...]:
+    return (*PACKAGES, S3_FIXTURE)
+
+
 def validate_root(root: Path) -> None:
     for directory, expected in PACKAGES.items():
         manifest = root / directory / "Cargo.toml"
         data = tomllib.loads(manifest.read_text(encoding="utf-8"))
         if data["package"]["name"] != expected:
             raise ValueError(f"wrong package at {manifest}")
-    fixture = root / "rs-fs-testkit/fixtures/s3-contract/Cargo.toml"
+    fixture = root / S3_FIXTURE / "Cargo.toml"
     if not fixture.is_file():
         raise ValueError(f"missing fixture manifest: {fixture}")
 
@@ -44,11 +49,14 @@ def run(command: list[str], cwd: Path) -> None:
 
 def validate_core_graph(root: Path, directory: str) -> None:
     manifest = root / directory / "Cargo.toml"
-    result = subprocess.run(
-        ["cargo", "metadata", "--manifest-path", str(manifest),
-         "--locked", "--all-features", "--format-version", "1"],
-        cwd=root / directory, check=True, capture_output=True, text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["cargo", "metadata", "--manifest-path", str(manifest),
+             "--locked", "--all-features", "--format-version", "1"],
+            cwd=root / directory, check=True, capture_output=True, text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"{directory}: cargo metadata failed for {manifest}") from error
     packages = json.loads(result.stdout)["packages"]
     cores = [package for package in packages if package["name"] == "qubit-fs"]
     expected = (root / "rs-fs/Cargo.toml").resolve()
@@ -56,25 +64,34 @@ def validate_core_graph(root: Path, directory: str) -> None:
     if len(cores) != 1:
         raise ValueError(f"{directory}: expected exactly one qubit-fs, got {len(cores)}")
     core = cores[0]
-    if (core["source"] is not None
-            or Path(core["manifest_path"]).resolve() != expected
-            or core["version"] != version):
-        raise ValueError(f"{directory}: qubit-fs must resolve to the selected sibling source")
+    if directory == "rs-fs":
+        valid = (core["source"] is None
+                 and Path(core["manifest_path"]).resolve() == expected
+                 and core["version"] == version)
+        expected_description = f"local sibling {expected} at {version}"
+    else:
+        valid = core["source"] == REGISTRY_SOURCE and core["version"] == version
+        expected_description = f"crates.io {version} ({REGISTRY_SOURCE})"
+    if not valid:
+        raise ValueError(
+            f"{directory}: qubit-fs must resolve to {expected_description}; "
+            f"got source={core['source']!r}, version={core['version']!r}, "
+            f"manifest={core['manifest_path']}"
+        )
 
 
-def owned_files(root: Path, filename: str):
-    """Walk repository-owned files while pruning build and dependency trees."""
-    for directory in PACKAGES:
-        for current, directories, files in os.walk(root / directory):
-            directories[:] = [name for name in directories if name not in
-                              {"target", ".git", ".infra", ".worktrees", ".cargo-home"}]
-            if filename in files:
-                yield Path(current) / filename
+def selected_files(root: Path, filename: str):
+    """Return files belonging to the explicit release validation matrix."""
+    for directory in selected_directories():
+        path = root / directory / filename
+        if path.is_file() or filename == "Cargo.lock":
+            yield path
 
 
 def lock_snapshot(root: Path) -> dict[str, str]:
-    return {str(path): hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in owned_files(root, "Cargo.lock")}
+    return {str(path): (hashlib.sha256(path.read_bytes()).hexdigest()
+                        if path.is_file() else "<missing>")
+            for path in selected_files(root, "Cargo.lock")}
 
 
 def run_tests(root: Path) -> None:
@@ -104,8 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     validate_root(root)
     before = lock_snapshot(root)
     try:
-        for manifest in owned_files(root, "Cargo.toml"):
-            validate_core_graph(root, str(manifest.parent.relative_to(root)))
+        for directory in selected_directories():
+            validate_core_graph(root, directory)
         if args.phase == "tests":
             run_tests(root)
         else:
