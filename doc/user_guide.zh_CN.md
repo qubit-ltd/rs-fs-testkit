@@ -35,7 +35,7 @@ native-copy 用例。异步 fixture 提供对应的 future 观察，以及可选
 在 provider crate 中将 testkit 添加为开发依赖：
 
 ```bash
-cargo add --dev qubit-fs-testkit
+cargo add --dev qubit-fs-testkit@0.7
 ```
 
 为拥有或保留隔离文件系统资源的 fixture 实现 `FileSystemFixture`。至少实现 `file_system`、`path` 和独立的 `teardown`；
@@ -52,6 +52,20 @@ qubit_fs_testkit::register_file_system_contract_tests! {
     fixture: super::TestFixture::new,
 }
 ```
+
+如果需要手动选择执行范围，应让 fixture 和 suite 覆盖整个运行周期，并同时断言契约结果与独立清理结果：
+
+```rust,ignore
+use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
+
+let fixture = TestFixture::new();
+let mut suite = FileSystemContractSuite::new(&fixture);
+let run = suite.run_all();
+run.assert_satisfied();
+assert!(run.cleanup().completed());
+```
+
+注册宏生成的测试也使用相同的断言策略。
 
 同步与异步套件都会依次检查 properties、`stat`、read、write、list、创建目录、delete、copy、
 rename、追加写、递归删除、必需原子 rename/replace、必需持久 copy、包括原子持久化在内的临时
@@ -251,7 +265,7 @@ cleanup 失败与取消由核心及 adapter 回归覆盖。
 | --- | --- |
 | properties 阶段失败 | 确保 ID 非空、capability 没有缺失依赖，且 fixture 路径符合门面约束。 |
 | 未声明的核心操作导致失败 | 返回结构化 unsupported-capability 预检错误，而非成功或无关错误。 |
-| 多次运行之间状态泄漏 | 创建隔离 fixture，并在套件期间保持其资源存活；仅在支持 delete 时尝试清理。 |
+| 多次运行之间状态泄漏 | 创建隔离 fixture，在套件期间保持资源存活，并确保独立的 `teardown` 在没有 `Delete` 能力时也能回收全部资源。 |
 | 无法完成 provider 特有断言 | 保持相应可选 hook 为 unsupported，并为该行为添加 provider 自有测试。 |
 
 ## 限制与最佳实践
