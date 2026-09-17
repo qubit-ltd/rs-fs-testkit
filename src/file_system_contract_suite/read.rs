@@ -42,9 +42,9 @@ impl FileSystemContractSuite<'_> {
     pub(super) fn check_read_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let spec = check_catalog::specification(id);
-        let scenario = spec.read_scenario.ok_or_else(|| {
-            ContractFailure::message_only("selected entry is not a read check").at(id)
-        })?;
+        let scenario = spec
+            .read_scenario
+            .ok_or_else(|| ContractFailure::message_only("selected entry is not a read check").at(id))?;
         let outcome = self.execute_read_scenario(id, scenario)?;
         self.context.record_check(id, spec.capability, outcome);
         Ok(())
@@ -57,9 +57,9 @@ impl FileSystemContractSuite<'_> {
         scenario: ReadScenario,
     ) -> Result<ContractCheckOutcome, ContractFailure> {
         let spec = check_catalog::specification(id);
-        let capability = spec.capability.ok_or_else(|| {
-            ContractFailure::message_only("read catalog entry lacks a capability").at(id)
-        })?;
+        let capability = spec
+            .capability
+            .ok_or_else(|| ContractFailure::message_only("read catalog entry lacks a capability").at(id))?;
         let limit = self.context.properties().limits().max_read_range_bytes();
         let name = if scenario == ReadScenario::ChecksumCorruption {
             "checksum-failure".to_owned()
@@ -79,21 +79,18 @@ impl FileSystemContractSuite<'_> {
                     reason: format!("{capability:?} capability is unavailable"),
                 });
             }
-            let path = self.fixture.path(&relative).map_err(|error| {
-                ContractFailure::with_source("read request path preparation failed", error).at(id)
-            })?;
-            let options = read_expectations::options(
-                scenario,
-                limit,
-                ResourceVersion::new("missing-capability-version"),
-            );
+            let path = self
+                .fixture
+                .path(&relative)
+                .map_err(|error| ContractFailure::with_source("read request path preparation failed", error).at(id))?;
+            let options =
+                read_expectations::options(scenario, limit, ResourceVersion::new("missing-capability-version"));
             let error = match self.fixture.file_system().open_reader(&path, options) {
                 Err(error) => error,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only(format!(
-                        "{id}: unavailable read request succeeded"
-                    ))
-                    .at(id));
+                    return Err(
+                        ContractFailure::message_only(format!("{id}: unavailable read request succeeded")).at(id),
+                    );
                 }
             };
             verify_fs_error(
@@ -121,16 +118,12 @@ impl FileSystemContractSuite<'_> {
         let prepared = self
             .fixture
             .prepare_read(scenario, &relative, read_expectations::CONTENT)
-            .map_err(|error| {
-                ContractFailure::with_source("read scenario preparation failed", error).at(id)
-            })?;
+            .map_err(|error| ContractFailure::with_source("read scenario preparation failed", error).at(id))?;
         let path = match prepared {
             FixturePreparation::Ready(path) => path,
             FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified {
-                    reason: format!(
-                        "declared read capability requires scenario evidence: {reason}"
-                    ),
+                    reason: format!("declared read capability requires scenario evidence: {reason}"),
                 });
             }
             FixturePreparation::Unavailable { reason } => {
@@ -145,8 +138,7 @@ impl FileSystemContractSuite<'_> {
         let mut version = ResourceVersion::new("version-unused-by-request");
         if read_expectations::uses_version(scenario) {
             let current = self.fixture.resource_version(&path).map_err(|error| {
-                ContractFailure::with_source("read current version observation failed", error)
-                    .at(id)
+                ContractFailure::with_source("read current version observation failed", error).at(id)
             })?;
             let FixtureSupport::Supported(current) = current else {
                 return Ok(ContractCheckOutcome::Unverified {
@@ -155,30 +147,21 @@ impl FileSystemContractSuite<'_> {
             };
             version = current.clone();
             if read_expectations::uses_stale(scenario) {
-                let stale = self
-                    .fixture
-                    .stale_resource_version(&path)
-                    .map_err(|error| {
-                        ContractFailure::with_source("read stale version observation failed", error)
-                            .at(id)
-                    })?;
+                let stale = self.fixture.stale_resource_version(&path).map_err(|error| {
+                    ContractFailure::with_source("read stale version observation failed", error).at(id)
+                })?;
                 let FixtureSupport::Supported(stale) = stale else {
                     return Ok(ContractCheckOutcome::Unverified {
                         reason: "fixture stale version unavailable".to_owned(),
                     });
                 };
-                verify_condition(
-                    stale != current,
-                    id,
-                    "fixture stale version equals current version",
-                )?;
+                verify_condition(stale != current, id, "fixture stale version equals current version")?;
                 version = stale;
             }
         }
         if scenario == ReadScenario::RangeLimit {
-            let (maximum, over) = boundary.ok_or_else(|| {
-                ContractFailure::message_only("bounded range check has no boundary").at(id)
-            })?;
+            let (maximum, over) =
+                boundary.ok_or_else(|| ContractFailure::message_only("bounded range check has no boundary").at(id))?;
             let actual = self
                 .fixture
                 .file_system()
@@ -188,11 +171,9 @@ impl FileSystemContractSuite<'_> {
                     maximum as usize,
                 )
                 .map_err(|error| {
-                    ContractFailure::with_source("read at declared range boundary failed", error)
-                        .at(id)
+                    ContractFailure::with_source("read at declared range boundary failed", error).at(id)
                 })?;
-            let expected = &read_expectations::CONTENT
-                [..(maximum as usize).min(read_expectations::CONTENT.len())];
+            let expected = &read_expectations::CONTENT[..(maximum as usize).min(read_expectations::CONTENT.len())];
             verify_condition(
                 actual == expected,
                 id,
@@ -205,9 +186,7 @@ impl FileSystemContractSuite<'_> {
             {
                 Err(error) => error,
                 Ok(_) => {
-                    return Err(
-                        ContractFailure::message_only("read range limit was ignored").at(id),
-                    );
+                    return Err(ContractFailure::message_only("read range limit was ignored").at(id));
                 }
             };
             verify_fs_error(
@@ -233,12 +212,11 @@ impl FileSystemContractSuite<'_> {
                     .at(id));
                 }
             };
-            let operation =
-                if kind == FsErrorKind::DataCorruption && error.operation() == FsOperation::Read {
-                    FsOperation::Read
-                } else {
-                    FsOperation::OpenReader
-                };
+            let operation = if kind == FsErrorKind::DataCorruption && error.operation() == FsOperation::Read {
+                FsOperation::Read
+            } else {
+                FsOperation::OpenReader
+            };
             verify_fs_error(
                 error,
                 kind,
@@ -250,9 +228,8 @@ impl FileSystemContractSuite<'_> {
             )?;
             return Ok(ContractCheckOutcome::RejectedAsExpected);
         } else {
-            let actual = result.map_err(|error| {
-                ContractFailure::with_source(format!("{id}: read request failed"), error).at(id)
-            })?;
+            let actual = result
+                .map_err(|error| ContractFailure::with_source(format!("{id}: read request failed"), error).at(id))?;
             verify_condition(
                 actual == read_expectations::bytes(scenario, limit),
                 id,
@@ -264,9 +241,7 @@ impl FileSystemContractSuite<'_> {
             let length = limit.maximum().unwrap_or(1).min(1);
             for options in [
                 ReadOptions::default().with_length(Some(0)),
-                ReadOptions::default()
-                    .with_offset(Some(eof))
-                    .with_length(Some(length)),
+                ReadOptions::default().with_offset(Some(eof)).with_length(Some(length)),
                 ReadOptions::default()
                     .with_offset(Some(eof + 1))
                     .with_length(Some(length)),
@@ -275,28 +250,15 @@ impl FileSystemContractSuite<'_> {
                     .fixture
                     .file_system()
                     .read_all(&path, options, 64)
-                    .map_err(|error| {
-                        ContractFailure::with_source("empty range observation failed", error).at(id)
-                    })?;
-                verify_condition(
-                    actual.is_empty(),
-                    id,
-                    "empty or beyond-EOF range returned bytes",
-                )?;
+                    .map_err(|error| ContractFailure::with_source("empty range observation failed", error).at(id))?;
+                verify_condition(actual.is_empty(), id, "empty or beyond-EOF range returned bytes")?;
             }
         }
         if scenario == ReadScenario::Basic {
-            let error = match self
-                .fixture
-                .file_system()
-                .read_all(&path, ReadOptions::default(), 4)
-            {
+            let error = match self.fixture.file_system().read_all(&path, ReadOptions::default(), 4) {
                 Err(error) => error,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only(
-                        "read caller byte limit was ignored",
-                    )
-                    .at(id));
+                    return Err(ContractFailure::message_only("read caller byte limit was ignored").at(id));
                 }
             };
             verify_fs_error(

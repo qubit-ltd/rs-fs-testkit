@@ -47,22 +47,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                         .run
                         .cleanup
                         .failures
-                        .push(crate::ContractFailure::with_source(
-                            "fixture teardown failed",
-                            error,
-                        ));
+                        .push(crate::ContractFailure::with_source("fixture teardown failed", error));
                 }
                 Err(payload) => {
                     self.context
                         .run
                         .cleanup
                         .failures
-                        .push(crate::ContractFailure::panicked(
-                            "fixture teardown panicked",
-                            payload,
-                        ));
-                    teardown_failure =
-                        Some("[fs-testkit:cleanup/teardown] fixture teardown panicked".to_owned());
+                        .push(crate::ContractFailure::panicked("fixture teardown panicked", payload));
+                    teardown_failure = Some("[fs-testkit:cleanup/teardown] fixture teardown panicked".to_owned());
                 }
             }
         }
@@ -86,26 +79,18 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.context.begin("error_context");
         let relative = self.context.relative_name("missing");
         let path = self.fixture.path(&relative).map_err(|error| {
-            crate::ContractFailure::with_source("error/context: path preparation failed", error)
-                .at(id)
+            crate::ContractFailure::with_source("error/context: path preparation failed", error).at(id)
         })?;
         let error = match self.fixture.file_system().stat(&path).await {
             Ok(_) => {
-                return Err(crate::ContractFailure::message_only(
-                    "error/context: missing path unexpectedly exists",
-                )
-                .at(id));
+                return Err(
+                    crate::ContractFailure::message_only("error/context: missing path unexpectedly exists").at(id),
+                );
             }
             Err(error) => error,
         };
-        crate::internal::verify_missing_error(
-            error,
-            &path,
-            self.context.properties().info().provider_id(),
-            id,
-        )?;
-        self.context
-            .record_check(id, None, ContractCheckOutcome::Passed);
+        crate::internal::verify_missing_error(error, &path, self.context.properties().info().provider_id(), id)?;
+        self.context.record_check(id, None, ContractCheckOutcome::Passed);
         Ok(())
     }
 
@@ -142,10 +127,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// `true` when the provider advertises the capability.
     #[inline(always)]
     pub fn capable(&self, capability: FileSystemCapability) -> bool {
-        self.context
-            .properties()
-            .capabilities()
-            .supports(capability)
+        self.context.properties().capabilities().supports(capability)
     }
 
     /// Seeds a resource and makes fixture support mandatory for the contract.
@@ -177,9 +159,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 path
             }
             FixtureSupport::Unsupported => {
-                panic!(
-                    "{contract} contract: advertised capability requires fixture.seed_file support"
-                )
+                panic!("{contract} contract: advertised capability requires fixture.seed_file support")
             }
         }
     }
@@ -226,13 +206,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Panics when any expected structured field differs.
     #[allow(dead_code)]
-    pub(super) fn assert_error(
-        &self,
-        error: &FsError,
-        kind: FsErrorKind,
-        operation: FsOperation,
-        path: &Path,
-    ) {
+    pub(super) fn assert_error(&self, error: &FsError, kind: FsErrorKind, operation: FsOperation, path: &Path) {
         let provider = Some(self.context.properties().info().provider_id());
         if kind == FsErrorKind::UnsupportedCapability {
             assert_unsupported_error(
@@ -258,12 +232,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
     /// Validates an asynchronous operation error with no logical input path.
     #[allow(dead_code)]
-    pub(super) fn assert_pathless_error(
-        &self,
-        error: &FsError,
-        kind: FsErrorKind,
-        operation: FsOperation,
-    ) {
+    pub(super) fn assert_pathless_error(&self, error: &FsError, kind: FsErrorKind, operation: FsOperation) {
         assert_unsupported_error(
             error,
             kind,

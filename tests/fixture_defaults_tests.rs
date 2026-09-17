@@ -30,8 +30,7 @@ impl FileSystemFixture for DefaultSyncFixture<'_> {
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/defaults/{relative}"))
-            .map_err(|error| FixtureError::new(error.to_string()))
+        Path::parse(&format!("/defaults/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
     }
 }
 
@@ -44,11 +43,7 @@ fn synchronous_fixture_defaults_report_optional_probes_as_unsupported() {
     let path = fixture.path("entry").expect("build default path");
 
     assert!(matches!(
-        fixture.prepare_read(
-            testkit::ReadScenario::IfMatchCurrent,
-            "conditional",
-            b"bytes"
-        ),
+        fixture.prepare_read(testkit::ReadScenario::IfMatchCurrent, "conditional", b"bytes"),
         Ok(testkit::FixturePreparation::Unavailable { .. })
     ));
     assert!(!fixture.copy_fallback_only());
@@ -103,8 +98,7 @@ mod asynchronous_defaults {
         }
 
         fn path(&self, relative: &str) -> FixtureResult<Path> {
-            Path::parse(&format!("/defaults/{relative}"))
-                .map_err(|error| FixtureError::new(error.to_string()))
+            Path::parse(&format!("/defaults/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
         }
     }
 
@@ -127,11 +121,7 @@ mod asynchronous_defaults {
         let path = fixture.path("entry").expect("build default path");
 
         assert!(matches!(
-            poll_fixture_future(fixture.prepare_read(
-                testkit::ReadScenario::IfMatchCurrent,
-                "conditional",
-                b"bytes"
-            )),
+            poll_fixture_future(fixture.prepare_read(testkit::ReadScenario::IfMatchCurrent, "conditional", b"bytes")),
             Ok(testkit::FixturePreparation::Unavailable { .. })
         ));
         assert!(!fixture.copy_fallback_only());

@@ -38,11 +38,7 @@ pub struct WriteFixtureCase {
 impl WriteFixtureCase {
     /// Creates an owned request for the selected scenario.
     pub fn new(path: Path, bytes: Vec<u8>, options: WriteOptions) -> Self {
-        Self {
-            path,
-            bytes,
-            options,
-        }
+        Self { path, bytes, options }
     }
     /// Returns the destination mapped into the fixture's isolated namespace.
     pub const fn path(&self) -> &Path {

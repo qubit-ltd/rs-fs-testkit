@@ -55,9 +55,7 @@ impl AsyncFileSystemContractSuite<'_> {
                     &bytes,
                 )
                 .await
-                .map_err(|error| {
-                    ContractFailure::with_source("write limit preparation failed", error).at(id)
-                })?;
+                .map_err(|error| ContractFailure::with_source("write limit preparation failed", error).at(id))?;
             let case = match prepared {
                 FixturePreparation::Ready(case) => case,
                 FixturePreparation::Unavailable { reason } => {
@@ -65,9 +63,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 }
                 FixturePreparation::NotApplicable { reason } => {
                     return Ok(ContractCheckOutcome::Unverified {
-                        reason: format!(
-                            "finite Write capability requires boundary evidence: {reason}"
-                        ),
+                        reason: format!("finite Write capability requires boundary evidence: {reason}"),
                     });
                 }
             };
@@ -93,10 +89,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 let failure = match result {
                     Err(failure) => failure,
                     Ok(_) => {
-                        return Err(ContractFailure::message_only(
-                            "write limit successor was accepted",
-                        )
-                        .at(id));
+                        return Err(ContractFailure::message_only("write limit successor was accepted").at(id));
                     }
                 };
                 let error = failure.error();
@@ -104,11 +97,7 @@ impl AsyncFileSystemContractSuite<'_> {
                     || error.path() != Some(&path)
                     || error.provider() != Some(self.context.properties().info().provider_id())
                 {
-                    return Err(ContractFailure::with_owned_source(
-                        "write limit rejection differs",
-                        failure,
-                    )
-                    .at(id));
+                    return Err(ContractFailure::with_owned_source("write limit rejection differs", failure).at(id));
                 }
                 crate::internal::finish_expected_write_failure::finish_expected_async_write_failure(
                     failure,
@@ -118,17 +107,17 @@ impl AsyncFileSystemContractSuite<'_> {
                 .await?;
             } else {
                 let outcome = result.map_err(|error| {
-                    ContractFailure::with_owned_source("write boundary request failed", error)
-                        .at(id)
+                    ContractFailure::with_owned_source("write boundary request failed", error).at(id)
                 })?;
                 verify_condition(
                     outcome.bytes_written().is_none_or(|count| count == maximum),
                     id,
                     "write boundary byte count differs",
                 )?;
-                let observed = self.fixture.read_file(&path).await.map_err(|error| {
-                    ContractFailure::with_source("write boundary observation failed", error).at(id)
-                })?;
+                let observed =
+                    self.fixture.read_file(&path).await.map_err(|error| {
+                        ContractFailure::with_source("write boundary observation failed", error).at(id)
+                    })?;
                 verify_condition(
                     matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
                     id,

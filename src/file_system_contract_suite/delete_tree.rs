@@ -29,16 +29,12 @@ impl FileSystemContractSuite<'_> {
         let options = DeleteOptions::default().with_recursive(true);
         if !self.capable(capability) {
             let root = self.fixture.path(&relative).map_err(|error| {
-                ContractFailure::with_source("recursive delete path preparation failed", error)
-                    .at(id)
+                ContractFailure::with_source("recursive delete path preparation failed", error).at(id)
             })?;
             let error = match self.fixture.file_system().delete_directory(&root, options) {
                 Err(error) => error,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only(
-                        "unavailable recursive deletion succeeded",
-                    )
-                    .at(id));
+                    return Err(ContractFailure::message_only("unavailable recursive deletion succeeded").at(id));
                 }
             };
             verify_fs_error(
@@ -50,32 +46,21 @@ impl FileSystemContractSuite<'_> {
                 Some(capability),
                 id,
             )?;
-            self.context.record_check(
-                id,
-                Some(capability),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
+            self.context
+                .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
             return Ok(());
         }
         let mut paths = Vec::new();
         for directory in [relative.clone(), format!("{relative}/nested")] {
-            let prepared = self
-                .fixture
-                .seed_empty_directory(&directory)
-                .map_err(|error| {
-                    ContractFailure::with_source(
-                        "recursive-delete directory preparation failed",
-                        error,
-                    )
-                    .at(id)
-                })?;
+            let prepared = self.fixture.seed_empty_directory(&directory).map_err(|error| {
+                ContractFailure::with_source("recursive-delete directory preparation failed", error).at(id)
+            })?;
             let FixtureSupport::Supported(path) = prepared else {
                 self.context.record_check(
                     id,
                     Some(capability),
                     ContractCheckOutcome::Unverified {
-                        reason: "recursive deletion requires independently prepared directories"
-                            .to_owned(),
+                        reason: "recursive deletion requires independently prepared directories".to_owned(),
                     },
                 );
                 return Ok(());
@@ -83,21 +68,16 @@ impl FileSystemContractSuite<'_> {
             self.context.record_created(path.clone());
             paths.push(path);
         }
-        for file in [
-            format!("{relative}/child"),
-            format!("{relative}/nested/child"),
-        ] {
+        for file in [format!("{relative}/child"), format!("{relative}/nested/child")] {
             let prepared = self.fixture.seed_file(&file, b"child").map_err(|error| {
-                ContractFailure::with_source("recursive-delete child preparation failed", error)
-                    .at(id)
+                ContractFailure::with_source("recursive-delete child preparation failed", error).at(id)
             })?;
             let FixtureSupport::Supported(path) = prepared else {
                 self.context.record_check(
                     id,
                     Some(capability),
                     ContractCheckOutcome::Unverified {
-                        reason: "recursive deletion requires independently prepared children"
-                            .to_owned(),
+                        reason: "recursive deletion requires independently prepared children".to_owned(),
                     },
                 );
                 return Ok(());
@@ -107,8 +87,7 @@ impl FileSystemContractSuite<'_> {
         }
         for path in &paths {
             let before = self.fixture.exists_out_of_band(path).map_err(|error| {
-                ContractFailure::with_source("recursive-delete initial observation failed", error)
-                    .at(id)
+                ContractFailure::with_source("recursive-delete initial observation failed", error).at(id)
             })?;
             verify_condition(
                 matches!(before, FixtureSupport::Supported(true)),
@@ -120,9 +99,7 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .file_system()
             .delete_directory(&paths[0], options)
-            .map_err(|error| {
-                ContractFailure::with_source("recursive removal failed", error).at(id)
-            })?;
+            .map_err(|error| ContractFailure::with_source("recursive removal failed", error).at(id))?;
         verify_condition(
             !outcome.already_missing(),
             id,
@@ -130,8 +107,7 @@ impl FileSystemContractSuite<'_> {
         )?;
         for path in &paths {
             let after = self.fixture.exists_out_of_band(path).map_err(|error| {
-                ContractFailure::with_source("recursive-delete final observation failed", error)
-                    .at(id)
+                ContractFailure::with_source("recursive-delete final observation failed", error).at(id)
             })?;
             verify_condition(
                 matches!(after, FixtureSupport::Supported(false)),

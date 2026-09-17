@@ -115,10 +115,7 @@ impl ContractRun {
 
     /// Keeps cleanup and lifecycle requirements identical for every policy.
     fn execution_satisfied(&self) -> bool {
-        self.completed
-            && self.failures.is_empty()
-            && self.cleanup.completed()
-            && self.cleanup.failures().is_empty()
+        self.completed && self.failures.is_empty() && self.cleanup.completed() && self.cleanup.failures().is_empty()
     }
 
     /// Creates the evidence container before any provider operation runs.

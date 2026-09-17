@@ -26,10 +26,7 @@ use crate::internal::verify_open_failure;
 
 impl FileSystemContractSuite<'_> {
     /// Executes one strong guarantee check and retains its exact identity.
-    pub(super) fn check_write_guarantee(
-        &mut self,
-        id: ContractCheckId,
-    ) -> Result<(), ContractFailure> {
+    pub(super) fn check_write_guarantee(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let (scenario, capability, name, options) = match id {
             ContractCheckId::WriteAtomicReplaceExisting => (
                 WriteScenario::AtomicReplace,
@@ -46,10 +43,7 @@ impl FileSystemContractSuite<'_> {
                     .with_durability(DurabilityRequirement::Required),
             ),
             _ => {
-                return Err(ContractFailure::message_only(
-                    "selected check is not a write guarantee",
-                )
-                .at(id));
+                return Err(ContractFailure::message_only("selected check is not a write guarantee").at(id));
             }
         };
         let outcome = if !self.capable(FileSystemCapability::Write) {
@@ -58,16 +52,14 @@ impl FileSystemContractSuite<'_> {
             }
         } else if !self.capable(capability) {
             let relative = self.context.relative_name(name);
-            let path = self.fixture.path(&relative).map_err(|error| {
-                ContractFailure::with_source("write guarantee request path failed", error).at(id)
-            })?;
+            let path = self
+                .fixture
+                .path(&relative)
+                .map_err(|error| ContractFailure::with_source("write guarantee request path failed", error).at(id))?;
             let error = match self.fixture.file_system().open_writer(&path, options) {
                 Err(error) => error,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only(
-                        "unavailable write guarantee succeeded",
-                    )
-                    .at(id));
+                    return Err(ContractFailure::message_only("unavailable write guarantee succeeded").at(id));
                 }
             };
             verify_open_failure(
@@ -99,23 +91,16 @@ impl FileSystemContractSuite<'_> {
         let prepared = self
             .fixture
             .prepare_write(scenario, &relative, bytes)
-            .map_err(|error| {
-                ContractFailure::with_source("write guarantee preparation failed", error)
-            })?;
+            .map_err(|error| ContractFailure::with_source("write guarantee preparation failed", error))?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason }
-            | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified { reason });
             }
         };
         let path = case.path().clone();
         self.context.record_created(path.clone());
-        verify_condition(
-            case.bytes() == bytes,
-            id,
-            "write guarantee fixture changed payload",
-        )?;
+        verify_condition(case.bytes() == bytes, id, "write guarantee fixture changed payload")?;
         if scenario == WriteScenario::AtomicReplace {
             verify_condition(
                 case.options().atomicity() == AtomicityRequirement::Required
@@ -143,9 +128,7 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .file_system()
             .write_all(&path, bytes, case.options().clone())
-            .map_err(|error| {
-                ContractFailure::with_owned_source("write guarantee publication failed", error)
-            })?;
+            .map_err(|error| ContractFailure::with_owned_source("write guarantee publication failed", error))?;
         verify_condition(
             if scenario == WriteScenario::AtomicReplace {
                 outcome.atomicity() == AchievedAtomicity::Atomic
@@ -156,15 +139,14 @@ impl FileSystemContractSuite<'_> {
             "write guarantee outcome does not satisfy the requirement",
         )?;
         verify_condition(
-            outcome
-                .bytes_written()
-                .is_none_or(|count| count == bytes.len() as u64),
+            outcome.bytes_written().is_none_or(|count| count == bytes.len() as u64),
             id,
             "write guarantee published byte count differs",
         )?;
-        let observed = self.fixture.read_file(&path).map_err(|error| {
-            ContractFailure::with_source("write guarantee publication observation failed", error)
-        })?;
+        let observed = self
+            .fixture
+            .read_file(&path)
+            .map_err(|error| ContractFailure::with_source("write guarantee publication observation failed", error))?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
             id,

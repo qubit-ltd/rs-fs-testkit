@@ -23,10 +23,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Executes exactly one temporary-resource catalog entry.
-    pub(super) async fn check_temp_item(
-        &mut self,
-        id: ContractCheckId,
-    ) -> Result<(), crate::ContractFailure> {
+    pub(super) async fn check_temp_item(&mut self, id: ContractCheckId) -> Result<(), crate::ContractFailure> {
         self.context.begin(id.as_str());
         let file = self.capable(FileSystemCapability::TempFile);
         let directory = self.capable(FileSystemCapability::TempDirectory);
@@ -58,19 +55,14 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                     ContractCheckOutcome::NotApplicable {
                         reason: "no temporary resource capability".to_owned(),
                     }
-                } else if id == ContractCheckId::TempAtomic
-                    && !self.capable(FileSystemCapability::AtomicTempPersist)
-                {
+                } else if id == ContractCheckId::TempAtomic && !self.capable(FileSystemCapability::AtomicTempPersist) {
                     ContractCheckOutcome::RejectedAsExpected
                 } else {
                     ContractCheckOutcome::Passed
                 }
             }
             _ => {
-                return Err(crate::ContractFailure::message_only(
-                    "selected entry is not temporary lifecycle",
-                )
-                .at(id));
+                return Err(crate::ContractFailure::message_only("selected entry is not temporary lifecycle").at(id));
             }
         };
         self.context.record_check(

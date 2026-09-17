@@ -127,10 +127,7 @@ pub(crate) fn provider_properties(properties: FileSystemProperties) -> ProviderP
     provider_properties_with_copy(properties, true)
 }
 
-fn provider_properties_with_copy(
-    properties: FileSystemProperties,
-    try_copy: bool,
-) -> ProviderProperties {
+fn provider_properties_with_copy(properties: FileSystemProperties, try_copy: bool) -> ProviderProperties {
     let mut operations = ProviderOperations::new()
         .with(ProviderOperation::Stat)
         .with(ProviderOperation::List)
@@ -161,12 +158,7 @@ fn keep_target(source: &Path) -> Path {
 }
 
 fn publish_entry(state: &mut State, path: &str, entry: Entry) {
-    let version = state
-        .versions
-        .get(path)
-        .copied()
-        .unwrap_or(0)
-        .saturating_add(1);
+    let version = state.versions.get(path).copied().unwrap_or(0).saturating_add(1);
     state.entries.insert(path.to_owned(), entry);
     state.versions.insert(path.to_owned(), version);
 }
@@ -335,15 +327,7 @@ impl MemoryFixture {
                 | MemoryFault::IgnoreDeleteIfMatch
                 | MemoryFault::ChecksumIgnoresCorruption
         );
-        let fixture = Self::with_configuration(
-            fault,
-            true,
-            true,
-            true,
-            true,
-            extended,
-            "memory-contract-provider",
-        );
+        let fixture = Self::with_configuration(fault, true, true, true, true, extended, "memory-contract-provider");
         if matches!(
             fault,
             MemoryFault::DirectoryCopyDropsChildren
@@ -450,15 +434,7 @@ impl MemoryFixture {
     /// Creates a conforming fixture whose filesystem and provider identifiers
     /// are identical.
     pub fn with_matching_ids() -> Self {
-        Self::with_configuration(
-            MemoryFault::None,
-            true,
-            true,
-            true,
-            true,
-            false,
-            "memory-contract",
-        )
+        Self::with_configuration(MemoryFault::None, true, true, true, true, false, "memory-contract")
     }
 
     /// Creates a fixture using object and prefix metadata kinds.
@@ -490,15 +466,7 @@ impl MemoryFixture {
 
     /// Creates a fixture advertising every capability contract.
     pub fn tree_copy_without_directory_creation() -> Self {
-        Self::with_configuration(
-            MemoryFault::None,
-            true,
-            true,
-            true,
-            false,
-            true,
-            "memory-tree-provider",
-        )
+        Self::with_configuration(MemoryFault::None, true, true, true, false, true, "memory-tree-provider")
     }
 
     pub fn with_all_capabilities() -> Self {
@@ -517,11 +485,7 @@ impl MemoryFixture {
     ///
     /// `fault` selects the provider defect; `delete_capability` controls the
     /// facade property snapshot returned to the suite.
-    fn with_capabilities(
-        fault: MemoryFault,
-        delete_capability: bool,
-        core_capabilities: bool,
-    ) -> Self {
+    fn with_capabilities(fault: MemoryFault, delete_capability: bool, core_capabilities: bool) -> Self {
         Self::with_configuration(
             fault,
             delete_capability,
@@ -598,8 +562,7 @@ impl MemoryFixture {
 
     /// Builds one absolute logical path for the fixture namespace.
     pub(super) fn path_for(relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/contract/{relative}"))
-            .map_err(|error| FixtureError::new(error.to_string()))
+        Path::parse(&format!("/contract/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
     }
 
     /// Returns whether the fixture namespace contains no resources.
@@ -609,19 +572,12 @@ impl MemoryFixture {
 
     /// Returns the number of resources retained by the fixture namespace.
     pub fn entry_count(&self) -> usize {
-        self.state
-            .lock()
-            .expect("memory state lock must succeed")
-            .entries
-            .len()
+        self.state.lock().expect("memory state lock must succeed").entries.len()
     }
 
     /// Changes the injected provider fault for subsequent operations.
     pub fn set_fault(&self, fault: MemoryFault) {
-        self.state
-            .lock()
-            .expect("memory state lock must succeed")
-            .fault = fault;
+        self.state.lock().expect("memory state lock must succeed").fault = fault;
     }
 
     /// Returns how many facade deletion attempts the provider has received.
@@ -650,10 +606,7 @@ impl FileSystemFixture for MemoryFixture {
         let paths = state
             .entries
             .keys()
-            .map(|key| {
-                Path::parse(key)
-                    .map_err(|error| FixtureError::with_source("invalid stored path", error))
-            })
+            .map(|key| Path::parse(key).map_err(|error| FixtureError::with_source("invalid stored path", error)))
             .collect::<FixtureResult<Vec<_>>>()?;
         Ok(FixtureSupport::Supported(paths))
     }
@@ -664,11 +617,7 @@ impl FileSystemFixture for MemoryFixture {
         relative: &str,
         bytes: &[u8],
     ) -> FixtureResult<testkit::FixturePreparation<Path>> {
-        let unavailable = self
-            .state
-            .lock()
-            .expect("memory state lock")
-            .unavailable_case;
+        let unavailable = self.state.lock().expect("memory state lock").unavailable_case;
         let excluded = match scenario {
             testkit::ReadScenario::IfMatchCurrent | testkit::ReadScenario::IfMatchStale => {
                 unavailable == Some(UnavailableScenario::ReadIfMatch)
@@ -715,11 +664,7 @@ impl FileSystemFixture for MemoryFixture {
         bytes: &[u8],
     ) -> FixtureResult<testkit::FixturePreparation<testkit::CopyFixtureCase>> {
         if scenario == testkit::CopyScenario::Conflict
-            && self
-                .state
-                .lock()
-                .expect("memory state lock")
-                .unavailable_case
+            && self.state.lock().expect("memory state lock").unavailable_case
                 == Some(UnavailableScenario::CopyOverwrite)
         {
             return Ok(testkit::FixturePreparation::Unavailable {
@@ -727,27 +672,19 @@ impl FileSystemFixture for MemoryFixture {
             });
         }
         if scenario == testkit::CopyScenario::ServerSide {
-            if self
-                .state
-                .lock()
-                .expect("memory state lock")
-                .unavailable_case
-                == Some(UnavailableScenario::Capability(
-                    FileSystemCapability::ServerSideCopy,
-                ))
+            if self.state.lock().expect("memory state lock").unavailable_case
+                == Some(UnavailableScenario::Capability(FileSystemCapability::ServerSideCopy))
             {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "server-side copy setup unavailable".to_owned(),
                 });
             }
-            return Ok(
-                match self.copy_fast_path_case(qfs::copy::CopyMethod::ServerSide)? {
-                    FixtureSupport::Supported(case) => testkit::FixturePreparation::Ready(case),
-                    FixtureSupport::Unsupported => testkit::FixturePreparation::Unavailable {
-                        reason: "fixture has no server-side copy case".to_owned(),
-                    },
+            return Ok(match self.copy_fast_path_case(qfs::copy::CopyMethod::ServerSide)? {
+                FixtureSupport::Supported(case) => testkit::FixturePreparation::Ready(case),
+                FixtureSupport::Unsupported => testkit::FixturePreparation::Unavailable {
+                    reason: "fixture has no server-side copy case".to_owned(),
                 },
-            );
+            });
         }
         let required = match scenario {
             testkit::CopyScenario::AtomicFile => Some(FileSystemCapability::AtomicFileCopy),
@@ -757,10 +694,7 @@ impl FileSystemFixture for MemoryFixture {
             _ => None,
         };
         if required.is_some_and(|capability| {
-            self.state
-                .lock()
-                .expect("memory state lock")
-                .unavailable_case
+            self.state.lock().expect("memory state lock").unavailable_case
                 == Some(UnavailableScenario::Capability(capability))
         }) {
             return Ok(testkit::FixturePreparation::Unavailable {
@@ -771,52 +705,37 @@ impl FileSystemFixture for MemoryFixture {
             scenario,
             testkit::CopyScenario::AtomicTree | testkit::CopyScenario::DurableTree
         ) {
-            if self
-                .state
-                .lock()
-                .expect("memory state lock")
-                .unavailable_case
-                == Some(UnavailableScenario::CopyTree)
-            {
+            if self.state.lock().expect("memory state lock").unavailable_case == Some(UnavailableScenario::CopyTree) {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "tree copy setup unavailable".to_owned(),
                 });
             }
-            let FixtureSupport::Supported(source) = self.seed_empty_directory(source_relative)?
-            else {
+            let FixtureSupport::Supported(source) = self.seed_empty_directory(source_relative)? else {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "tree root setup unavailable".to_owned(),
                 });
             };
             let sub_relative = format!("{source_relative}/sub");
-            if matches!(
-                self.seed_empty_directory(&sub_relative)?,
-                FixtureSupport::Unsupported
-            ) {
+            if matches!(self.seed_empty_directory(&sub_relative)?, FixtureSupport::Unsupported) {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "tree subdirectory setup unavailable".to_owned(),
                 });
             }
             let child_relative = format!("{source_relative}/sub/child");
-            if matches!(
-                self.seed_file(&child_relative, bytes)?,
-                FixtureSupport::Unsupported
-            ) {
+            if matches!(self.seed_file(&child_relative, bytes)?, FixtureSupport::Unsupported) {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "tree child setup unavailable".to_owned(),
                 });
             }
             let target = self.path(target_relative)?;
             let options = if scenario == testkit::CopyScenario::AtomicTree {
-                qfs::copy::CopyOptions::tree()
-                    .with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+                qfs::copy::CopyOptions::tree().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
             } else {
-                qfs::copy::CopyOptions::tree()
-                    .with_durability(qfs::metadata::DurabilityRequirement::Required)
+                qfs::copy::CopyOptions::tree().with_durability(qfs::metadata::DurabilityRequirement::Required)
             };
-            return Ok(testkit::FixturePreparation::Ready(
-                testkit::CopyFixtureCase::new(source, target, options),
-            ));
+            return Ok(testkit::FixturePreparation::Ready(testkit::CopyFixtureCase::new(
+                source, target, options,
+            )));
         }
         let FixtureSupport::Supported(source) = self.seed_file(source_relative, bytes)? else {
             return Ok(testkit::FixturePreparation::Unavailable {
@@ -824,8 +743,7 @@ impl FileSystemFixture for MemoryFixture {
             });
         };
         let target = if scenario == testkit::CopyScenario::Conflict {
-            let FixtureSupport::Supported(target) = self.seed_file(target_relative, b"existing")?
-            else {
+            let FixtureSupport::Supported(target) = self.seed_file(target_relative, b"existing")? else {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "copy conflict target seed unavailable".to_owned(),
                 });
@@ -835,15 +753,17 @@ impl FileSystemFixture for MemoryFixture {
             self.path(target_relative)?
         };
         let options = match scenario {
-            testkit::CopyScenario::AtomicFile => qfs::copy::CopyOptions::file()
-                .with_atomicity(qfs::metadata::AtomicityRequirement::Required),
-            testkit::CopyScenario::DurableFile => qfs::copy::CopyOptions::file()
-                .with_durability(qfs::metadata::DurabilityRequirement::Required),
+            testkit::CopyScenario::AtomicFile => {
+                qfs::copy::CopyOptions::file().with_atomicity(qfs::metadata::AtomicityRequirement::Required)
+            }
+            testkit::CopyScenario::DurableFile => {
+                qfs::copy::CopyOptions::file().with_durability(qfs::metadata::DurabilityRequirement::Required)
+            }
             _ => qfs::copy::CopyOptions::file(),
         };
-        Ok(testkit::FixturePreparation::Ready(
-            testkit::CopyFixtureCase::new(source, target, options),
-        ))
+        Ok(testkit::FixturePreparation::Ready(testkit::CopyFixtureCase::new(
+            source, target, options,
+        )))
     }
 
     fn prepare_delete(
@@ -853,11 +773,7 @@ impl FileSystemFixture for MemoryFixture {
         bytes: &[u8],
     ) -> FixtureResult<testkit::FixturePreparation<Path>> {
         if scenario == testkit::DeleteScenario::IfMatch
-            && self
-                .state
-                .lock()
-                .expect("memory state lock")
-                .unavailable_case
+            && self.state.lock().expect("memory state lock").unavailable_case
                 == Some(UnavailableScenario::DeleteIfMatch)
         {
             return Ok(testkit::FixturePreparation::Unavailable {
@@ -883,9 +799,7 @@ impl FileSystemFixture for MemoryFixture {
             .lock()
             .expect("memory state lock must succeed")
             .unavailable_case;
-        if scenario == testkit::WriteScenario::IfAbsent
-            && unavailable == Some(UnavailableScenario::WriteIfAbsent)
-        {
+        if scenario == testkit::WriteScenario::IfAbsent && unavailable == Some(UnavailableScenario::WriteIfAbsent) {
             return Ok(testkit::FixturePreparation::Unavailable {
                 reason: "fixture cannot prepare If-Absent case".to_owned(),
             });
@@ -906,28 +820,23 @@ impl FileSystemFixture for MemoryFixture {
                     reason: "conditional version unavailable".to_owned(),
                 });
             };
-            return Ok(testkit::FixturePreparation::Ready(
-                testkit::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    WriteOptions::default().with_precondition(WritePrecondition::IfMatch(version)),
-                ),
-            ));
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                WriteOptions::default().with_precondition(WritePrecondition::IfMatch(version)),
+            )));
         }
         if scenario == testkit::WriteScenario::Replace {
-            let FixtureSupport::Supported(path) = self.seed_file(relative, b"previous contents")?
-            else {
+            let FixtureSupport::Supported(path) = self.seed_file(relative, b"previous contents")? else {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "replacement seed unavailable".to_owned(),
                 });
             };
-            return Ok(testkit::FixturePreparation::Ready(
-                testkit::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default(),
-                ),
-            ));
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default(),
+            )));
         }
         if scenario == testkit::WriteScenario::CreateConflict {
             let FixtureSupport::Supported(path) = self.seed_file(relative, b"a")? else {
@@ -935,14 +844,11 @@ impl FileSystemFixture for MemoryFixture {
                     reason: "creation conflict seed unavailable".to_owned(),
                 });
             };
-            return Ok(testkit::FixturePreparation::Ready(
-                testkit::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default()
-                        .with_disposition(qfs::write::WriteDisposition::CreateNew),
-                ),
-            ));
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::CreateNew),
+            )));
         }
         if scenario == testkit::WriteScenario::Append {
             let FixtureSupport::Supported(path) = self.seed_file(relative, b"before")? else {
@@ -950,14 +856,11 @@ impl FileSystemFixture for MemoryFixture {
                     reason: "append seed unavailable".to_owned(),
                 });
             };
-            return Ok(testkit::FixturePreparation::Ready(
-                testkit::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default()
-                        .with_disposition(qfs::write::WriteDisposition::Append),
-                ),
-            ));
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_disposition(qfs::write::WriteDisposition::Append),
+            )));
         }
         if scenario == testkit::WriteScenario::AtomicReplace {
             let FixtureSupport::Supported(path) = self.seed_file(relative, b"a")? else {
@@ -965,49 +868,41 @@ impl FileSystemFixture for MemoryFixture {
                     reason: "atomic replacement seed unavailable".to_owned(),
                 });
             };
-            return Ok(testkit::FixturePreparation::Ready(
-                testkit::WriteFixtureCase::new(
-                    path,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default()
-                        .with_atomicity(qfs::metadata::AtomicityRequirement::Required),
-                ),
-            ));
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_atomicity(qfs::metadata::AtomicityRequirement::Required),
+            )));
         }
         if scenario == testkit::WriteScenario::Durable {
-            return Ok(testkit::FixturePreparation::Ready(
-                testkit::WriteFixtureCase::new(
-                    self.path(relative)?,
-                    bytes.to_vec(),
-                    qfs::write::WriteOptions::default()
-                        .with_disposition(qfs::write::WriteDisposition::CreateNew)
-                        .with_durability(qfs::metadata::DurabilityRequirement::Required),
-                ),
-            ));
+            return Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+                self.path(relative)?,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default()
+                    .with_disposition(qfs::write::WriteDisposition::CreateNew)
+                    .with_durability(qfs::metadata::DurabilityRequirement::Required),
+            )));
         }
         let options = match scenario {
             testkit::WriteScenario::Create | testkit::WriteScenario::Abort => {
                 WriteOptions::default().with_disposition(WriteDisposition::CreateNew)
             }
-            testkit::WriteScenario::IfAbsent => {
-                WriteOptions::default().with_precondition(WritePrecondition::IfAbsent)
-            }
+            testkit::WriteScenario::IfAbsent => WriteOptions::default().with_precondition(WritePrecondition::IfAbsent),
             _ => {
                 return Ok(testkit::FixturePreparation::Unavailable {
                     reason: "write scenario preparation unavailable".to_owned(),
                 });
             }
         };
-        Ok(testkit::FixturePreparation::Ready(
-            testkit::WriteFixtureCase::new(self.path(relative)?, bytes.to_vec(), options),
-        ))
+        Ok(testkit::FixturePreparation::Ready(testkit::WriteFixtureCase::new(
+            self.path(relative)?,
+            bytes.to_vec(),
+            options,
+        )))
     }
 
     fn copy_fallback_only(&self) -> bool {
-        self.state
-            .lock()
-            .expect("memory state lock must succeed")
-            .fallback_only
+        self.state.lock().expect("memory state lock must succeed").fallback_only
     }
 
     fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
@@ -1038,10 +933,7 @@ impl FileSystemFixture for MemoryFixture {
         })
     }
 
-    fn stale_resource_version(
-        &self,
-        path: &Path,
-    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let state = self.state.lock().expect("memory state lock must succeed");
         let current = state.versions.get(path.as_str()).copied().unwrap_or(1);
         Ok(FixtureSupport::Supported(ResourceVersion::new(format!(
@@ -1060,23 +952,13 @@ impl FileSystemFixture for MemoryFixture {
         ))
     }
 
-    fn write_file_out_of_band(
-        &self,
-        path: &Path,
-        bytes: &[u8],
-    ) -> FixtureResult<FixtureSupport<()>> {
+    fn write_file_out_of_band(&self, path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
         self.publish(path, Entry::File(bytes.to_vec()));
         Ok(FixtureSupport::Supported(()))
     }
 
     fn checksum_failure_case(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
-        if self
-            .state
-            .lock()
-            .expect("memory state lock must succeed")
-            .fault
-            == MemoryFault::ChecksumIgnoresCorruption
-        {
+        if self.state.lock().expect("memory state lock must succeed").fault == MemoryFault::ChecksumIgnoresCorruption {
             return Ok(FixtureSupport::Unsupported);
         }
         let path = Self::path_for(relative)?;
@@ -1128,10 +1010,7 @@ impl FileSystemFixture for MemoryFixture {
         Ok(FixtureSupport::Supported(path))
     }
 
-    fn copy_fast_path_case(
-        &self,
-        method: CopyMethod,
-    ) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
+    fn copy_fast_path_case(&self, method: CopyMethod) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
         if method != CopyMethod::ServerSide {
             return Ok(FixtureSupport::Unsupported);
         }
@@ -1141,10 +1020,7 @@ impl FileSystemFixture for MemoryFixture {
             .lock()
             .expect("memory state lock must succeed")
             .entries
-            .insert(
-                source.as_str().to_owned(),
-                Entry::File(b"server-side".to_vec()),
-            );
+            .insert(source.as_str().to_owned(), Entry::File(b"server-side".to_vec()));
         Ok(FixtureSupport::Supported(CopyFixtureCase::new(
             source,
             target,
@@ -1177,13 +1053,7 @@ impl MemorySpi {
     }
 
     /// Allocates one temporary resource path and inserts its entry.
-    fn create_temp(
-        &self,
-        directory: bool,
-        parent: Option<&Path>,
-        prefix: &str,
-        suffix: &str,
-    ) -> Path {
+    fn create_temp(&self, directory: bool, parent: Option<&Path>, prefix: &str, suffix: &str) -> Path {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         let parent = if state.fault == MemoryFault::TempIgnoresOptions {
             "/contract"
@@ -1330,11 +1200,9 @@ impl FileSystemSpi for MemorySpi {
                 state.fault != MemoryFault::ListDropsMetadata,
             )
         };
-        Ok(OpenedDirectoryStream::new(Box::new(
-            MemoryDirectoryStream {
-                entries: entries.into_iter(),
-            },
-        )))
+        Ok(OpenedDirectoryStream::new(Box::new(MemoryDirectoryStream {
+            entries: entries.into_iter(),
+        })))
     }
 
     fn open_reader(&self, request: OpenReaderRequest<'_>) -> FsResult<OpenedReader> {
@@ -1346,40 +1214,18 @@ impl FileSystemSpi for MemorySpi {
                 "memory entry absent",
             ));
         };
-        if request
+        if request.options().options().if_match().as_ref().is_some_and(|version| {
+            version.as_str() != format!("v{}", state.versions.get(request.path().as_str()).copied().unwrap_or(1))
+                && state.fault != MemoryFault::IgnoreReadIfMatch
+        }) || request
             .options()
             .options()
-            .if_match()
+            .if_none_match()
             .as_ref()
             .is_some_and(|version| {
-                version.as_str()
-                    != format!(
-                        "v{}",
-                        state
-                            .versions
-                            .get(request.path().as_str())
-                            .copied()
-                            .unwrap_or(1)
-                    )
-                    && state.fault != MemoryFault::IgnoreReadIfMatch
+                version.as_str() == format!("v{}", state.versions.get(request.path().as_str()).copied().unwrap_or(1))
+                    && state.fault != MemoryFault::IgnoreReadIfNoneMatch
             })
-            || request
-                .options()
-                .options()
-                .if_none_match()
-                .as_ref()
-                .is_some_and(|version| {
-                    version.as_str()
-                        == format!(
-                            "v{}",
-                            state
-                                .versions
-                                .get(request.path().as_str())
-                                .copied()
-                                .unwrap_or(1)
-                        )
-                        && state.fault != MemoryFault::IgnoreReadIfNoneMatch
-                })
         {
             return Err(FsError::new(
                 FsErrorKind::PreconditionFailed,
@@ -1388,9 +1234,7 @@ impl FileSystemSpi for MemorySpi {
             ));
         }
         let options = request.options().options();
-        if options.checksum() == ChecksumPolicy::Required
-            && request.path().as_str().contains("checksum-failure")
-        {
+        if options.checksum() == ChecksumPolicy::Required && request.path().as_str().contains("checksum-failure") {
             return Err(FsError::new(
                 FsErrorKind::DataCorruption,
                 FsOperation::OpenReader,
@@ -1398,8 +1242,7 @@ impl FileSystemSpi for MemorySpi {
             ));
         }
         let mut bytes = if state.fault == MemoryFault::ReadWrongBytes
-            || (state.fault == MemoryFault::ChecksumIgnoresCorruption
-                && options.checksum() == ChecksumPolicy::Required)
+            || (state.fault == MemoryFault::ChecksumIgnoresCorruption && options.checksum() == ChecksumPolicy::Required)
         {
             b"wrong bytes".to_vec()
         } else {
@@ -1417,9 +1260,7 @@ impl FileSystemSpi for MemorySpi {
     }
 
     fn open_writer(&self, request: OpenWriterRequest<'_>) -> FsResult<OpenedWriter> {
-        let info = if self.state.lock().expect("memory state lock").fault
-            == MemoryFault::InvalidWriterIdentity
-        {
+        let info = if self.state.lock().expect("memory state lock").fault == MemoryFault::InvalidWriterIdentity {
             OpenedFileInfo::new(
                 FileSystemId::new("foreign-identity").expect("identity"),
                 request.path().clone(),
@@ -1441,15 +1282,10 @@ impl FileSystemSpi for MemorySpi {
         ))
     }
 
-    fn create_directory(
-        &self,
-        request: CreateDirectoryRequest<'_>,
-    ) -> FsResult<CreateDirectoryOutcome> {
+    fn create_directory(&self, request: CreateDirectoryRequest<'_>) -> FsResult<CreateDirectoryOutcome> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         let already_existed = state.entries.contains_key(request.path().as_str());
-        if request.options().options().recursive()
-            && state.fault != MemoryFault::RecursiveCreateLeavesParentsMissing
-        {
+        if request.options().options().recursive() && state.fault != MemoryFault::RecursiveCreateLeavesParentsMissing {
             for (index, _) in request
                 .path()
                 .as_str()
@@ -1469,12 +1305,8 @@ impl FileSystemSpi for MemorySpi {
     }
 
     fn delete_file(&self, request: DeleteFileRequest<'_>) -> FsResult<DeleteOutcome> {
-        let cleanup_panics = self
-            .state
-            .lock()
-            .expect("memory state lock must succeed")
-            .fault
-            == MemoryFault::CleanupDeletePanic;
+        let cleanup_panics =
+            self.state.lock().expect("memory state lock must succeed").fault == MemoryFault::CleanupDeletePanic;
         if cleanup_panics {
             panic!("cleanup delete panic");
         }
@@ -1490,15 +1322,7 @@ impl FileSystemSpi for MemorySpi {
         let existed = state.entries.contains_key(request.path().as_str());
         if let Some(version) = request.options().options().if_match()
             && existed
-            && version.as_str()
-                != format!(
-                    "v{}",
-                    state
-                        .versions
-                        .get(request.path().as_str())
-                        .copied()
-                        .unwrap_or(1)
-                )
+            && version.as_str() != format!("v{}", state.versions.get(request.path().as_str()).copied().unwrap_or(1))
             && state.fault != MemoryFault::IgnoreDeleteIfMatch
         {
             return Err(FsError::new(
@@ -1516,12 +1340,8 @@ impl FileSystemSpi for MemorySpi {
     }
 
     fn delete_directory(&self, request: DeleteDirectoryRequest<'_>) -> FsResult<DeleteOutcome> {
-        let cleanup_panics = self
-            .state
-            .lock()
-            .expect("memory state lock must succeed")
-            .fault
-            == MemoryFault::CleanupDeletePanic;
+        let cleanup_panics =
+            self.state.lock().expect("memory state lock must succeed").fault == MemoryFault::CleanupDeletePanic;
         if cleanup_panics {
             panic!("cleanup delete panic");
         }
@@ -1540,9 +1360,7 @@ impl FileSystemSpi for MemorySpi {
         } else {
             let removed = remove_entry(&mut state, request.path().as_str());
             let mut removed_descendant = false;
-            if request.options().options().recursive()
-                && state.fault != MemoryFault::RecursiveDeleteLeavesChildren
-            {
+            if request.options().options().recursive() && state.fault != MemoryFault::RecursiveDeleteLeavesChildren {
                 let prefix = format!("{}/", request.path().as_str().trim_end_matches('/'));
                 let before = state.entries.len();
                 let descendants = state
@@ -1574,11 +1392,7 @@ impl FileSystemSpi for MemorySpi {
         {
             let Some(entry) = state.entries.get(request.source().as_str()).cloned() else {
                 return Err(SpiCopyFailure::new(
-                    FsError::new(
-                        FsErrorKind::NotFound,
-                        FsOperation::Copy,
-                        "memory copy source absent",
-                    ),
+                    FsError::new(FsErrorKind::NotFound, FsOperation::Copy, "memory copy source absent"),
                     CopyFailureState::Unchanged,
                     CopyStats::default(),
                 ));
@@ -1630,10 +1444,8 @@ impl FileSystemSpi for MemorySpi {
             if !(overwritten && state.fault == MemoryFault::CopyOverwriteKeepsTarget) {
                 publish_entry(&mut state, request.target().as_str(), entry);
             }
-            if matches!(
-                state.entries.get(request.source().as_str()),
-                Some(Entry::Directory)
-            ) && state.fault != MemoryFault::DirectoryCopyDropsChildren
+            if matches!(state.entries.get(request.source().as_str()), Some(Entry::Directory))
+                && state.fault != MemoryFault::DirectoryCopyDropsChildren
             {
                 let source_prefix = format!("{}/", request.source().as_str().trim_end_matches('/'));
                 let target_prefix = format!("{}/", request.target().as_str().trim_end_matches('/'));
@@ -1672,10 +1484,8 @@ impl FileSystemSpi for MemorySpi {
                     stats,
                     method,
                     if options.atomicity() == AtomicityRequirement::Required
-                        && !(options.mode() == CopyMode::File
-                            && state.fault == MemoryFault::AtomicFileCopyNonAtomic)
-                        && !(options.mode() == CopyMode::Tree
-                            && state.fault == MemoryFault::AtomicTreeCopyNonAtomic)
+                        && !(options.mode() == CopyMode::File && state.fault == MemoryFault::AtomicFileCopyNonAtomic)
+                        && !(options.mode() == CopyMode::Tree && state.fault == MemoryFault::AtomicTreeCopyNonAtomic)
                     {
                         AchievedAtomicity::Atomic
                     } else {
@@ -1685,8 +1495,7 @@ impl FileSystemSpi for MemorySpi {
                 .with_durable(
                     options.durability() == DurabilityRequirement::Required
                         && state.fault != MemoryFault::DurableFileCopyNonDurable
-                        && !(options.mode() == CopyMode::Tree
-                            && state.fault == MemoryFault::DurableTreeCopyNonDurable),
+                        && !(options.mode() == CopyMode::Tree && state.fault == MemoryFault::DurableTreeCopyNonDurable),
                 ),
             ));
         }
@@ -1696,9 +1505,7 @@ impl FileSystemSpi for MemorySpi {
     fn rename(&self, request: RenameRequest<'_>) -> Result<RenameOutcome, SpiRenameFailure> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         let _durability = request.options().options().durability();
-        if !request.options().options().overwrite()
-            && state.entries.contains_key(request.target().as_str())
-        {
+        if !request.options().options().overwrite() && state.entries.contains_key(request.target().as_str()) {
             return Err(SpiRenameFailure::new(
                 FsError::new(
                     FsErrorKind::AlreadyExists,
@@ -1710,23 +1517,15 @@ impl FileSystemSpi for MemorySpi {
         }
         let Some(entry) = remove_entry(&mut state, request.source().as_str()) else {
             return Err(SpiRenameFailure::new(
-                FsError::new(
-                    FsErrorKind::NotFound,
-                    FsOperation::Rename,
-                    "memory entry absent",
-                ),
+                FsError::new(FsErrorKind::NotFound, FsOperation::Rename, "memory entry absent"),
                 RenameFailureState::Unchanged,
             ));
         };
         if state.fault != MemoryFault::RenameNoOp {
             remove_entry(&mut state, request.source().as_str());
-            state
-                .entries
-                .insert(request.target().as_str().to_owned(), entry);
+            state.entries.insert(request.target().as_str().to_owned(), entry);
         } else {
-            state
-                .entries
-                .insert(request.source().as_str().to_owned(), entry);
+            state.entries.insert(request.source().as_str().to_owned(), entry);
         }
         Ok(RenameOutcome::new(
             request.source().clone(),
@@ -1762,10 +1561,7 @@ impl FileSystemSpi for MemorySpi {
         ))
     }
 
-    fn create_temp_directory(
-        &self,
-        request: CreateTempDirectoryRequest,
-    ) -> FsResult<OpenedTempDirectory> {
+    fn create_temp_directory(&self, request: CreateTempDirectoryRequest) -> FsResult<OpenedTempDirectory> {
         let path = self.create_temp(
             true,
             request.options().parent(),
@@ -1803,9 +1599,7 @@ pub(crate) fn listed_entries(
         .iter()
         .filter_map(|(text, entry)| {
             let relative = text.strip_prefix(&prefix)?;
-            if relative.is_empty()
-                || (!options.recursive() && options.prefix().is_none() && relative.contains('/'))
-            {
+            if relative.is_empty() || (!options.recursive() && options.prefix().is_none() && relative.contains('/')) {
                 return None;
             }
             if !options.prefix().is_none_or(|prefix| {
@@ -1850,12 +1644,7 @@ struct MemoryWriter {
 impl Output for MemoryWriter {
     type Item = u8;
 
-    unsafe fn write_unchecked(
-        &mut self,
-        input: &[u8],
-        index: usize,
-        count: usize,
-    ) -> IoResult<usize> {
+    unsafe fn write_unchecked(&mut self, input: &[u8], index: usize, count: usize) -> IoResult<usize> {
         let count = if matches!(
             self.state.lock().expect("memory state lock").fault,
             MemoryFault::WriteCommitState(_)
@@ -1878,10 +1667,9 @@ impl FileWriterSpi for MemoryWriter {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         if let MemoryFault::WriteCommitState(publication) = state.fault {
             if publication == WriteFailureState::Published {
-                state.entries.insert(
-                    self.path.as_str().to_owned(),
-                    Entry::File(self.bytes.clone()),
-                );
+                state
+                    .entries
+                    .insert(self.path.as_str().to_owned(), Entry::File(self.bytes.clone()));
             }
             return Err(SpiWriteFailure::new(
                 FsError::new(
@@ -1915,9 +1703,7 @@ impl FileWriterSpi for MemoryWriter {
                 WriteFailureState::NotPublished,
             ));
         }
-        if self.precondition == WritePrecondition::IfAbsent
-            && state.entries.contains_key(self.path.as_str())
-        {
+        if self.precondition == WritePrecondition::IfAbsent && state.entries.contains_key(self.path.as_str()) {
             return Err(SpiWriteFailure::new(
                 FsError::new(
                     FsErrorKind::PreconditionFailed,
@@ -1950,17 +1736,12 @@ impl FileWriterSpi for MemoryWriter {
             {
                 let mut combined = self.bytes.clone();
                 if let Some(Entry::File(existing)) = state.entries.get(self.path.as_str()) {
-                    combined
-                        .extend_from_slice(existing.get(self.bytes.len()..).unwrap_or_default());
+                    combined.extend_from_slice(existing.get(self.bytes.len()..).unwrap_or_default());
                 }
                 combined
-            } else if self.disposition == WriteDisposition::Append
-                && state.fault != MemoryFault::AppendOverwrites
-            {
+            } else if self.disposition == WriteDisposition::Append && state.fault != MemoryFault::AppendOverwrites {
                 match state.entries.get(self.path.as_str()) {
-                    Some(Entry::File(existing)) => {
-                        [existing.as_slice(), self.bytes.as_slice()].concat()
-                    }
+                    Some(Entry::File(existing)) => [existing.as_slice(), self.bytes.as_slice()].concat(),
                     Some(Entry::Directory | Entry::Symlink) | None => self.bytes.clone(),
                 }
             } else {
@@ -1975,9 +1756,7 @@ impl FileWriterSpi for MemoryWriter {
             }
         }
         Ok(WriteOutcome::new(
-            if self.atomicity == AtomicityRequirement::Required
-                && state.fault != MemoryFault::AtomicReplaceNonAtomic
-            {
+            if self.atomicity == AtomicityRequirement::Required && state.fault != MemoryFault::AtomicReplaceNonAtomic {
                 AchievedAtomicity::Atomic
             } else {
                 AchievedAtomicity::NonAtomic
@@ -1985,15 +1764,12 @@ impl FileWriterSpi for MemoryWriter {
             PublicationMethod::Direct,
         )
         .with_durable(
-            self.durability == DurabilityRequirement::Required
-                && state.fault != MemoryFault::DurableWriteDropsBytes,
+            self.durability == DurabilityRequirement::Required && state.fault != MemoryFault::DurableWriteDropsBytes,
         ))
     }
 
     fn abort(&mut self) -> FsResult<WriteAbortOutcome> {
-        if let MemoryFault::WriteCommitState(state) =
-            self.state.lock().expect("memory state lock").fault
-        {
+        if let MemoryFault::WriteCommitState(state) = self.state.lock().expect("memory state lock").fault {
             return Ok(match state {
                 WriteFailureState::Published => WriteAbortOutcome::Published,
                 WriteFailureState::Indeterminate => WriteAbortOutcome::Indeterminate,
@@ -2024,10 +1800,9 @@ impl FileWriterSpi for MemoryWriter {
                 ));
             }
             if state.fault == MemoryFault::AbortLies {
-                state.entries.insert(
-                    self.path.as_str().to_owned(),
-                    Entry::File(self.bytes.clone()),
-                );
+                state
+                    .entries
+                    .insert(self.path.as_str().to_owned(), Entry::File(self.bytes.clone()));
             }
         }
         Ok(WriteAbortOutcome::NotPublished)
@@ -2040,13 +1815,9 @@ struct TempSession {
 }
 
 impl TempResourceSpi for TempSession {
-    fn persist(
-        &mut self,
-        request: PersistRequest<'_>,
-    ) -> Result<PersistOutcome, SpiPersistFailure> {
+    fn persist(&mut self, request: PersistRequest<'_>) -> Result<PersistOutcome, SpiPersistFailure> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
-        let entry =
-            remove_entry(&mut state, self.path.as_str()).expect("temporary entry must exist");
+        let entry = remove_entry(&mut state, self.path.as_str()).expect("temporary entry must exist");
         publish_entry(&mut state, request.target().as_str(), entry);
         let target = if state.fault == MemoryFault::WrongPersistTarget {
             Path::parse("/contract/wrong-persist-target").expect("generated path must be valid")
@@ -2069,8 +1840,7 @@ impl TempResourceSpi for TempSession {
     fn keep(&mut self) -> Result<PersistOutcome, SpiPersistFailure> {
         let target = keep_target(&self.path);
         let mut state = self.state.lock().expect("memory state lock must succeed");
-        let entry =
-            remove_entry(&mut state, self.path.as_str()).expect("temporary entry must exist");
+        let entry = remove_entry(&mut state, self.path.as_str()).expect("temporary entry must exist");
         publish_entry(&mut state, target.as_str(), entry);
         Ok(PersistOutcome::new(
             target,

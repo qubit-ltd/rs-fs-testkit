@@ -39,11 +39,8 @@ impl FileSystemContractSuite<'_> {
                 reason: "Write capability is unavailable".to_owned(),
             });
         }
-        let bytes = super::write::bounded_payload(
-            self.context.properties().limits().max_write_bytes(),
-            b"aborted",
-            b'a',
-        );
+        let bytes =
+            super::write::bounded_payload(self.context.properties().limits().max_write_bytes(), b"aborted", b'a');
         let relative = self.context.relative_name("write-aborted");
         let prepared = self
             .fixture
@@ -57,8 +54,7 @@ impl FileSystemContractSuite<'_> {
             .map_err(|error| ContractFailure::with_source("abort preparation failed", error))?;
         let case = match prepared {
             FixturePreparation::Ready(case) => case,
-            FixturePreparation::Unavailable { reason }
-            | FixturePreparation::NotApplicable { reason } => {
+            FixturePreparation::Unavailable { reason } | FixturePreparation::NotApplicable { reason } => {
                 return Ok(ContractCheckOutcome::Unverified { reason });
             }
         };
@@ -69,9 +65,10 @@ impl FileSystemContractSuite<'_> {
             id,
             "abort fixture changed creation semantics",
         )?;
-        let before = self.fixture.exists_out_of_band(&path).map_err(|error| {
-            ContractFailure::with_source("abort initial observation failed", error)
-        })?;
+        let before = self
+            .fixture
+            .exists_out_of_band(&path)
+            .map_err(|error| ContractFailure::with_source("abort initial observation failed", error))?;
         let FixtureSupport::Supported(before) = before else {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "abort initial existence evidence unavailable".to_owned(),
@@ -82,9 +79,7 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .file_system()
             .open_writer(&path, case.options().clone())
-            .map_err(|error| {
-                ContractFailure::with_owned_source("abort writer opening failed", error)
-            })?;
+            .map_err(|error| ContractFailure::with_owned_source("abort writer opening failed", error))?;
         if let Err(error) = Output::write_fully(&mut writer, &bytes) {
             return Err(ContractFailure::with_owned_source(
                 "abort writer rejected bytes",
@@ -110,25 +105,22 @@ impl FileSystemContractSuite<'_> {
             id,
             "abort outcome and writer state disagree",
         )?;
-        let after = self.fixture.exists_out_of_band(&path).map_err(|error| {
-            ContractFailure::with_source("abort final observation failed", error)
-        })?;
+        let after = self
+            .fixture
+            .exists_out_of_band(&path)
+            .map_err(|error| ContractFailure::with_source("abort final observation failed", error))?;
         let FixtureSupport::Supported(after) = after else {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "abort final existence evidence unavailable".to_owned(),
             });
         };
         match outcome {
-            WriteAbortOutcome::NotPublished => verify_condition(
-                !after,
-                id,
-                "abort claimed NotPublished but created the destination",
-            )?,
-            WriteAbortOutcome::Published => verify_condition(
-                after,
-                id,
-                "abort claimed Published but destination is absent",
-            )?,
+            WriteAbortOutcome::NotPublished => {
+                verify_condition(!after, id, "abort claimed NotPublished but created the destination")?
+            }
+            WriteAbortOutcome::Published => {
+                verify_condition(after, id, "abort claimed Published but destination is absent")?
+            }
             WriteAbortOutcome::Indeterminate => {}
         }
         Ok(ContractCheckOutcome::Passed)

@@ -22,32 +22,26 @@ use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Checks a flat scope without deriving expectations from the tested list.
-    pub(super) async fn check_flat_scope_item(
-        &mut self,
-        id: ContractCheckId,
-    ) -> Result<(), ContractFailure> {
+    pub(super) async fn check_flat_scope_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let capability = FileSystemCapability::List;
-        let hierarchical =
-            self.context.properties().info().path_semantics() == PathSemantics::Hierarchical;
+        let hierarchical = self.context.properties().info().path_semantics() == PathSemantics::Hierarchical;
         let relative = self.context.relative_name("flat-scope");
         let scope = if id == ContractCheckId::ListNamespace {
             ListScope::Namespace
         } else {
-            ListScope::Path(self.fixture.path(&relative).map_err(|error| {
-                ContractFailure::with_source("raw prefix preparation failed", error).at(id)
-            })?)
+            ListScope::Path(
+                self.fixture
+                    .path(&relative)
+                    .map_err(|error| ContractFailure::with_source("raw prefix preparation failed", error).at(id))?,
+            )
         };
-        let options =
-            ListOptions::object_keys().with_filter(Some(ListFilter::LiteralPrefix(String::new())));
+        let options = ListOptions::object_keys().with_filter(Some(ListFilter::LiteralPrefix(String::new())));
         if hierarchical || !self.capable(capability) {
             let error = match self.fixture.file_system().list(&scope, options).await {
                 Err(error) => error,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only(
-                        "unsupported flat listing succeeded",
-                    )
-                    .at(id));
+                    return Err(ContractFailure::message_only("unsupported flat listing succeeded").at(id));
                 }
             };
             let expected_kind = if hierarchical {
@@ -65,11 +59,8 @@ impl AsyncFileSystemContractSuite<'_> {
                 id,
                 "flat listing rejection context mismatch",
             )?;
-            self.context.record_check(
-                id,
-                Some(capability),
-                ContractCheckOutcome::RejectedAsExpected,
-            );
+            self.context
+                .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
             return Ok(());
         }
         let names = if id == ContractCheckId::ListNamespace {
@@ -88,9 +79,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 .fixture
                 .seed_file(name, b"flat entry")
                 .await
-                .map_err(|error| {
-                    ContractFailure::with_source("flat listing seed failed", error).at(id)
-                })?;
+                .map_err(|error| ContractFailure::with_source("flat listing seed failed", error).at(id))?;
             let FixtureSupport::Supported(path) = prepared else {
                 self.context.record_check(
                     id,
@@ -111,16 +100,13 @@ impl AsyncFileSystemContractSuite<'_> {
                 .fixture
                 .snapshot_namespace_paths()
                 .await
-                .map_err(|error| {
-                    ContractFailure::with_source("namespace snapshot failed", error).at(id)
-                })?;
+                .map_err(|error| ContractFailure::with_source("namespace snapshot failed", error).at(id))?;
             let FixtureSupport::Supported(paths) = snapshot else {
                 self.context.record_check(
                     id,
                     Some(capability),
                     ContractCheckOutcome::Unverified {
-                        reason: "namespace listing needs an independent complete snapshot"
-                            .to_owned(),
+                        reason: "namespace listing needs an independent complete snapshot".to_owned(),
                     },
                 );
                 return Ok(());
@@ -135,18 +121,15 @@ impl AsyncFileSystemContractSuite<'_> {
         let mut stream = self
             .fixture
             .file_system()
-            .list(
-                &scope,
-                options.with_max_entries(Some(expected.len().saturating_add(1))),
-            )
+            .list(&scope, options.with_max_entries(Some(expected.len().saturating_add(1))))
             .await
-            .map_err(|error| {
-                ContractFailure::with_source("flat listing open failed", error).at(id)
-            })?;
+            .map_err(|error| ContractFailure::with_source("flat listing open failed", error).at(id))?;
         let mut actual = Vec::new();
-        while let Some(entry) = stream.next_entry_async().await.map_err(|error| {
-            ContractFailure::with_source("flat listing stream failed", error).at(id)
-        })? {
+        while let Some(entry) = stream
+            .next_entry_async()
+            .await
+            .map_err(|error| ContractFailure::with_source("flat listing stream failed", error).at(id))?
+        {
             actual.push(entry.path);
             verify_condition(
                 actual.len() <= expected.len(),

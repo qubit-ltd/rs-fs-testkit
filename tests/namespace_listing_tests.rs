@@ -28,10 +28,7 @@ fn hierarchical_namespace_is_rejected_as_expected() {
     let run = suite.run_check(ContractCheckId::ListNamespace);
     run.assert_satisfied();
     assert_eq!(ContractCheckId::ListNamespace.as_str(), "list/namespace");
-    assert_eq!(
-        ContractCheckId::ListRawRootPrefix.as_str(),
-        "list/raw-root-prefix"
-    );
+    assert_eq!(ContractCheckId::ListRawRootPrefix.as_str(), "list/raw-root-prefix");
 }
 
 /// Complete namespace snapshots include keys that predate the selected check.
@@ -43,24 +40,12 @@ fn flat_checks_accept_complete_results_and_reject_defects() {
         (ContractCheckId::ListLiteralPrefix, Fault::None, true),
         (ContractCheckId::ListNamespace, Fault::OmitExisting, false),
         (ContractCheckId::ListNamespace, Fault::Duplicate, false),
-        (
-            ContractCheckId::ListLiteralPrefix,
-            Fault::IgnoreFilter,
-            false,
-        ),
-        (
-            ContractCheckId::ListRawRootPrefix,
-            Fault::ComponentPrefix,
-            false,
-        ),
+        (ContractCheckId::ListLiteralPrefix, Fault::IgnoreFilter, false),
+        (ContractCheckId::ListRawRootPrefix, Fault::ComponentPrefix, false),
     ] {
         let fixture = FlatFixture::new(fault, true);
         let mut suite = FileSystemContractSuite::new(&fixture);
-        assert_eq!(
-            suite.run_check(id).requirements_satisfied(),
-            satisfied,
-            "{id}"
-        );
+        assert_eq!(suite.run_check(id).requirements_satisfied(), satisfied, "{id}");
         #[cfg(feature = "async")]
         common::async_memory_file_system::run_controlled(async {
             let fixture = FlatFixture::new(fault, true);
@@ -131,11 +116,7 @@ fn flat_check_failures_preserve_diagnostics() {
         #[cfg(feature = "async")]
         common::async_memory_file_system::run_controlled(async {
             let fixture = FlatFixture::new(fault, true);
-            verify(
-                AsyncFileSystemContractSuite::new(&fixture)
-                    .run_check(id)
-                    .await,
-            );
+            verify(AsyncFileSystemContractSuite::new(&fixture).run_check(id).await);
         });
     }
 }

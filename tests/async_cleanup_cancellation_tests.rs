@@ -126,10 +126,7 @@ impl AsyncFileSystemSpi for CleanupSpi {
         })
     }
 
-    fn delete_file<'a>(
-        &'a self,
-        request: DeleteFileRequest<'a>,
-    ) -> SpiFuture<'a, FsResult<DeleteOutcome>> {
+    fn delete_file<'a>(&'a self, request: DeleteFileRequest<'a>) -> SpiFuture<'a, FsResult<DeleteOutcome>> {
         Box::pin(async move {
             self.0.checkpoint().await;
             if self.0.fail_delete_once.swap(false, Ordering::Relaxed) {
@@ -149,10 +146,7 @@ impl AsyncFileSystemSpi for CleanupSpi {
         })
     }
 
-    fn delete_directory<'a>(
-        &'a self,
-        _request: DeleteDirectoryRequest<'a>,
-    ) -> SpiFuture<'a, FsResult<DeleteOutcome>> {
+    fn delete_directory<'a>(&'a self, _request: DeleteDirectoryRequest<'a>) -> SpiFuture<'a, FsResult<DeleteOutcome>> {
         Box::pin(async { panic!("this fixture only owns files") })
     }
 }
@@ -173,8 +167,7 @@ impl CleanupFixture {
             pause_at,
             fail_delete_once: AtomicBool::new(false),
         });
-        let filesystem = AsyncFileSystem::from_spi(CleanupSpi(Arc::clone(&state)))
-            .expect("valid cleanup facade");
+        let filesystem = AsyncFileSystem::from_spi(CleanupSpi(Arc::clone(&state))).expect("valid cleanup facade");
         Self { state, filesystem }
     }
 }
@@ -185,15 +178,10 @@ impl AsyncFileSystemFixture for CleanupFixture {
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/{relative}"))
-            .map_err(|error| FixtureError::with_source("fixture path", error))
+        Path::parse(&format!("/{relative}")).map_err(|error| FixtureError::with_source("fixture path", error))
     }
 
-    fn seed_file<'a>(
-        &'a self,
-        relative: &'a str,
-        _bytes: &'a [u8],
-    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_file<'a>(&'a self, relative: &'a str, _bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
             let path = self.path(relative)?;
             self.state
@@ -213,9 +201,7 @@ impl AsyncFileSystemFixture for CleanupFixture {
             if remaining == 0 {
                 Ok(())
             } else {
-                Err(FixtureError::new(format!(
-                    "facade cleanup lost {remaining} resources"
-                )))
+                Err(FixtureError::new(format!("facade cleanup lost {remaining} resources")))
             }
         })
     }
@@ -224,10 +210,7 @@ impl AsyncFileSystemFixture for CleanupFixture {
 /// Polls a future that must finish after the provider gate has been released.
 fn ready<T>(future: impl Future<Output = T>) -> T {
     let mut future = Box::pin(future);
-    match future
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
-    {
+    match future.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
         Poll::Ready(value) => value,
         Poll::Pending => panic!("released cleanup must finish without another suspension"),
     }
@@ -246,9 +229,7 @@ fn test_finish_retries_every_resource_after_cancellation() {
         let mut cleanup = Box::pin(suite.finish());
         assert!(
             matches!(
-                cleanup
-                    .as_mut()
-                    .poll(&mut Context::from_waker(Waker::noop())),
+                cleanup.as_mut().poll(&mut Context::from_waker(Waker::noop())),
                 Poll::Pending
             ),
             "cleanup did not reach pause {pause_at}"
@@ -267,9 +248,7 @@ fn test_cancelled_run_retains_report_and_rejects_restart() {
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
     let mut execution = Box::pin(suite.run_contract(testkit::FileSystemContract::ErrorContext));
     assert!(matches!(
-        execution
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop())),
+        execution.as_mut().poll(&mut Context::from_waker(Waker::noop())),
         Poll::Pending
     ));
     drop(execution);
@@ -288,19 +267,14 @@ fn test_cancelled_run_retains_report_and_rejects_restart() {
 #[test]
 fn test_cleanup_failure_survives_later_cancellation() {
     let fixture = CleanupFixture::new(2);
-    fixture
-        .state
-        .fail_delete_once
-        .store(true, Ordering::Relaxed);
+    fixture.state.fail_delete_once.store(true, Ordering::Relaxed);
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
     for name in ["first", "second"] {
         ready(suite.required_seed(name, b"owned", "failure retention"));
     }
     let mut cleanup = Box::pin(suite.finish());
     assert!(matches!(
-        cleanup
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop())),
+        cleanup.as_mut().poll(&mut Context::from_waker(Waker::noop())),
         Poll::Pending
     ));
     drop(cleanup);

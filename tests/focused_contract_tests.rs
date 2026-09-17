@@ -78,10 +78,7 @@ fn test_focused_stat_failure_has_identity() {
     let run = suite.run_check(ContractCheckId::StatFileKind);
     assert!(!run.requirements_satisfied());
     assert_eq!(run.failures().len(), 1);
-    assert_eq!(
-        run.failures()[0].check(),
-        Some(ContractCheckId::StatFileKind)
-    );
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::StatFileKind));
     assert!(run.failures()[0].take_panic_payload().is_none());
 }
 
@@ -93,10 +90,7 @@ fn test_focused_sync_rejects_async_only_check() {
     let run = suite.run_check(ContractCheckId::WriteCancelOpen);
     assert!(!run.requirements_satisfied());
     assert_eq!(run.report().checks().len(), 1);
-    assert_eq!(
-        run.failures()[0].check(),
-        Some(ContractCheckId::WriteCancelOpen)
-    );
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteCancelOpen));
     assert!(fixture.is_empty());
 }
 
@@ -166,15 +160,11 @@ fn test_focused_snapshot_does_not_prepare_fixture_path() {
 /// Creating only the leaf must not satisfy recursive directory creation.
 #[test]
 fn test_recursive_creation_requires_ancestors() {
-    let fixture =
-        MemoryFixture::with_fault(self::common::MemoryFault::RecursiveCreateLeavesParentsMissing);
+    let fixture = MemoryFixture::with_fault(self::common::MemoryFault::RecursiveCreateLeavesParentsMissing);
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::DirectoryRecursive);
     assert!(!run.requirements_satisfied());
-    assert_eq!(
-        run.failures()[0].check(),
-        Some(ContractCheckId::DirectoryRecursive)
-    );
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::DirectoryRecursive));
     assert!(run.failures()[0].message().contains("ancestor"));
     assert!(fixture.is_empty());
 }
@@ -189,16 +179,12 @@ fn test_async_recursive_creation_requires_ancestors() {
     use self::common::AsyncMemoryFault;
     use self::common::AsyncMemoryFixture;
     use self::common::async_memory_file_system::run_controlled;
-    let fixture =
-        AsyncMemoryFixture::with_fault(AsyncMemoryFault::RecursiveCreateLeavesParentsMissing);
+    let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::RecursiveCreateLeavesParentsMissing);
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::DirectoryRecursive).await;
         assert!(!run.requirements_satisfied());
-        assert_eq!(
-            run.failures()[0].check(),
-            Some(ContractCheckId::DirectoryRecursive)
-        );
+        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::DirectoryRecursive));
         assert!(run.failures()[0].message().contains("ancestor"));
         assert!(fixture.is_empty());
     });
@@ -235,15 +221,8 @@ fn test_async_stale_delete_is_rejected() {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::DeleteIfMatch).await;
         assert!(!run.requirements_satisfied());
-        assert_eq!(
-            run.failures()[0].check(),
-            Some(ContractCheckId::DeleteIfMatch)
-        );
-        assert!(
-            run.failures()[0]
-                .message()
-                .contains("stale version was accepted")
-        );
+        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::DeleteIfMatch));
+        assert!(run.failures()[0].message().contains("stale version was accepted"));
         assert!(run.failures()[0].take_panic_payload().is_none());
     });
 }
@@ -259,10 +238,7 @@ fn test_focused_list_metadata_has_its_own_failure() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::ListPagination);
     assert!(!run.requirements_satisfied());
-    assert_eq!(
-        run.failures()[0].check(),
-        Some(ContractCheckId::ListPagination)
-    );
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::ListPagination));
     assert!(run.failures()[0].take_panic_payload().is_none());
     assert!(fixture.is_empty());
 }
@@ -286,10 +262,7 @@ fn test_focused_async_rename_guarantee_has_identity() {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::RenameAtomic).await;
         assert!(!run.requirements_satisfied());
-        assert_eq!(
-            run.failures()[0].check(),
-            Some(ContractCheckId::RenameAtomic)
-        );
+        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::RenameAtomic));
         assert!(run.failures()[0].take_panic_payload().is_none());
         assert!(fixture.is_empty());
     });
@@ -342,10 +315,7 @@ fn test_focused_async_copy_basic_and_repeat() {
     use self::common::AsyncMemoryFixture;
     use self::common::async_memory_file_system::run_controlled;
     run_controlled(async {
-        for id in [
-            ContractCheckId::CopyBasic,
-            ContractCheckId::CopyRepeatedExecute,
-        ] {
+        for id in [ContractCheckId::CopyBasic, ContractCheckId::CopyRepeatedExecute] {
             let fixture = AsyncMemoryFixture::new();
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id).await;
@@ -417,10 +387,7 @@ fn test_focused_copy_repeat_does_not_execute_basic() {
 /// ID.
 #[test]
 fn test_focused_copy_conflicts() {
-    for fixture in [
-        MemoryFixture::with_native_copy(),
-        MemoryFixture::fallback_only(),
-    ] {
+    for fixture in [MemoryFixture::with_native_copy(), MemoryFixture::fallback_only()] {
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::CopyFallbackOverwriteRejected);
         assert_eq!(run.report().checks().len(), 1);
@@ -442,9 +409,7 @@ fn test_focused_async_copy_conflicts() {
             AsyncMemoryFixture::fallback_only(),
         ] {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-            let run = suite
-                .run_check(ContractCheckId::CopyFallbackOverwriteRejected)
-                .await;
+            let run = suite.run_check(ContractCheckId::CopyFallbackOverwriteRejected).await;
             assert_eq!(run.report().checks().len(), 1);
             run.assert_satisfied();
         }
@@ -455,9 +420,7 @@ fn test_focused_async_copy_conflicts() {
 /// skip.
 #[test]
 fn test_focused_copy_unavailable_conflict_is_unverified() {
-    let fixture = MemoryFixture::with_conditional_case_unavailable(
-        crate::common::UnavailableScenario::CopyOverwrite,
-    );
+    let fixture = MemoryFixture::with_conditional_case_unavailable(crate::common::UnavailableScenario::CopyOverwrite);
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::CopyFallbackOverwriteRejected);
     assert!(!run.requirements_satisfied());
@@ -476,14 +439,11 @@ fn test_focused_async_copy_unavailable_conflict_is_unverified() {
 
     use self::common::AsyncMemoryFixture;
     use self::common::async_memory_file_system::run_controlled;
-    let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(
-        crate::common::UnavailableScenario::CopyOverwrite,
-    );
+    let fixture =
+        AsyncMemoryFixture::with_conditional_case_unavailable(crate::common::UnavailableScenario::CopyOverwrite);
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        let run = suite
-            .run_check(ContractCheckId::CopyFallbackOverwriteRejected)
-            .await;
+        let run = suite.run_check(ContractCheckId::CopyFallbackOverwriteRejected).await;
         assert!(!run.requirements_satisfied());
         assert!(matches!(
             run.report().checks()[0].outcome(),
@@ -520,9 +480,7 @@ fn test_focused_async_copy_detects_unpublished_overwrite() {
     let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::CopyOverwriteKeepsTarget);
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        let run = suite
-            .run_check(ContractCheckId::CopyFallbackOverwriteRejected)
-            .await;
+        let run = suite.run_check(ContractCheckId::CopyFallbackOverwriteRejected).await;
         assert!(!run.requirements_satisfied());
         assert_eq!(
             run.failures()[0].check(),
@@ -536,10 +494,7 @@ fn test_focused_async_copy_detects_unpublished_overwrite() {
 /// guarantees.
 #[test]
 fn test_focused_server_side_copy() {
-    for fixture in [
-        MemoryFixture::with_all_capabilities(),
-        MemoryFixture::fallback_only(),
-    ] {
+    for fixture in [MemoryFixture::with_all_capabilities(), MemoryFixture::fallback_only()] {
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::CopyServerSide);
         assert_eq!(run.report().checks().len(), 1);
@@ -556,10 +511,7 @@ fn test_focused_async_server_side_copy() {
     use self::common::AsyncMemoryFixture;
     use self::common::async_memory_file_system::run_controlled;
     run_controlled(async {
-        for fixture in [
-            AsyncMemoryFixture::new(),
-            AsyncMemoryFixture::fallback_only(),
-        ] {
+        for fixture in [AsyncMemoryFixture::new(), AsyncMemoryFixture::fallback_only()] {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(ContractCheckId::CopyServerSide).await;
             assert_eq!(run.report().checks().len(), 1);
@@ -575,10 +527,7 @@ fn test_focused_server_side_detects_wrong_method() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::CopyServerSide);
     assert!(!run.requirements_satisfied());
-    assert_eq!(
-        run.failures()[0].check(),
-        Some(ContractCheckId::CopyServerSide)
-    );
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::CopyServerSide));
     assert!(run.failures()[0].take_panic_payload().is_none());
     assert!(fixture.is_empty());
 }
@@ -596,10 +545,7 @@ fn test_focused_async_server_side_detects_wrong_method() {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::CopyServerSide).await;
         assert!(!run.requirements_satisfied());
-        assert_eq!(
-            run.failures()[0].check(),
-            Some(ContractCheckId::CopyServerSide)
-        );
+        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::CopyServerSide));
         assert!(run.failures()[0].take_panic_payload().is_none());
     });
 }
@@ -607,11 +553,9 @@ fn test_focused_async_server_side_detects_wrong_method() {
 /// An advertised server-side capability needs an independently prepared case.
 #[test]
 fn test_focused_server_side_unavailable_case() {
-    let fixture = MemoryFixture::with_conditional_case_unavailable(
-        crate::common::UnavailableScenario::Capability(
-            qfs::metadata::FileSystemCapability::ServerSideCopy,
-        ),
-    );
+    let fixture = MemoryFixture::with_conditional_case_unavailable(crate::common::UnavailableScenario::Capability(
+        qfs::metadata::FileSystemCapability::ServerSideCopy,
+    ));
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::CopyServerSide);
     assert!(!run.requirements_satisfied());
@@ -631,9 +575,7 @@ fn test_focused_async_server_side_unavailable_case() {
     use self::common::AsyncMemoryFixture;
     use self::common::async_memory_file_system::run_controlled;
     let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(
-        crate::common::UnavailableScenario::Capability(
-            qfs::metadata::FileSystemCapability::ServerSideCopy,
-        ),
+        crate::common::UnavailableScenario::Capability(qfs::metadata::FileSystemCapability::ServerSideCopy),
     );
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
@@ -651,14 +593,8 @@ fn test_focused_async_server_side_unavailable_case() {
 /// profiles.
 #[test]
 fn test_focused_strong_file_copy() {
-    for id in [
-        ContractCheckId::CopyAtomicFile,
-        ContractCheckId::CopyDurableFile,
-    ] {
-        for fixture in [
-            MemoryFixture::with_all_capabilities(),
-            MemoryFixture::fallback_only(),
-        ] {
+    for id in [ContractCheckId::CopyAtomicFile, ContractCheckId::CopyDurableFile] {
+        for fixture in [MemoryFixture::with_all_capabilities(), MemoryFixture::fallback_only()] {
             let mut suite = FileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id);
             assert_eq!(run.report().checks().len(), 1);
@@ -676,14 +612,8 @@ fn test_focused_async_strong_file_copy() {
     use self::common::AsyncMemoryFixture;
     use self::common::async_memory_file_system::run_controlled;
     run_controlled(async {
-        for id in [
-            ContractCheckId::CopyAtomicFile,
-            ContractCheckId::CopyDurableFile,
-        ] {
-            for fixture in [
-                AsyncMemoryFixture::new(),
-                AsyncMemoryFixture::fallback_only(),
-            ] {
+        for id in [ContractCheckId::CopyAtomicFile, ContractCheckId::CopyDurableFile] {
+            for fixture in [AsyncMemoryFixture::new(), AsyncMemoryFixture::fallback_only()] {
                 let mut suite = AsyncFileSystemContractSuite::new(&fixture);
                 let run = suite.run_check(id).await;
                 assert_eq!(run.report().checks().len(), 1);
@@ -750,18 +680,12 @@ fn test_focused_async_strong_file_copy_detects_false_guarantees() {
 fn test_focused_strong_file_copy_unavailable_case() {
     use qubit_fs::metadata::FileSystemCapability;
     for (id, capability) in [
-        (
-            ContractCheckId::CopyAtomicFile,
-            FileSystemCapability::AtomicFileCopy,
-        ),
-        (
-            ContractCheckId::CopyDurableFile,
-            FileSystemCapability::DurableFileCopy,
-        ),
+        (ContractCheckId::CopyAtomicFile, FileSystemCapability::AtomicFileCopy),
+        (ContractCheckId::CopyDurableFile, FileSystemCapability::DurableFileCopy),
     ] {
-        let fixture = MemoryFixture::with_conditional_case_unavailable(
-            crate::common::UnavailableScenario::Capability(capability),
-        );
+        let fixture = MemoryFixture::with_conditional_case_unavailable(crate::common::UnavailableScenario::Capability(
+            capability,
+        ));
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(id);
         assert!(!run.requirements_satisfied());
@@ -784,14 +708,8 @@ fn test_focused_async_strong_file_copy_unavailable_case() {
     use self::common::async_memory_file_system::run_controlled;
     run_controlled(async {
         for (id, capability) in [
-            (
-                ContractCheckId::CopyAtomicFile,
-                FileSystemCapability::AtomicFileCopy,
-            ),
-            (
-                ContractCheckId::CopyDurableFile,
-                FileSystemCapability::DurableFileCopy,
-            ),
+            (ContractCheckId::CopyAtomicFile, FileSystemCapability::AtomicFileCopy),
+            (ContractCheckId::CopyDurableFile, FileSystemCapability::DurableFileCopy),
         ] {
             let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(
                 crate::common::UnavailableScenario::Capability(capability),
@@ -811,14 +729,8 @@ fn test_focused_async_strong_file_copy_unavailable_case() {
 /// Required tree-copy guarantees must be independently executable.
 #[test]
 fn test_focused_strong_tree_copy() {
-    for id in [
-        ContractCheckId::CopyAtomicTree,
-        ContractCheckId::CopyDurableTree,
-    ] {
-        for fixture in [
-            MemoryFixture::with_all_capabilities(),
-            MemoryFixture::fallback_only(),
-        ] {
+    for id in [ContractCheckId::CopyAtomicTree, ContractCheckId::CopyDurableTree] {
+        for fixture in [MemoryFixture::with_all_capabilities(), MemoryFixture::fallback_only()] {
             let mut suite = FileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id);
             assert_eq!(run.report().checks().len(), 1);
@@ -836,10 +748,7 @@ fn test_focused_async_strong_tree_copy() {
     use self::common::AsyncMemoryFixture;
     use self::common::async_memory_file_system::run_controlled;
     run_controlled(async {
-        for id in [
-            ContractCheckId::CopyAtomicTree,
-            ContractCheckId::CopyDurableTree,
-        ] {
+        for id in [ContractCheckId::CopyAtomicTree, ContractCheckId::CopyDurableTree] {
             for fixture in [
                 AsyncMemoryFixture::with_all_capabilities(),
                 AsyncMemoryFixture::fallback_only(),
@@ -858,30 +767,15 @@ fn test_focused_async_strong_tree_copy() {
 fn test_focused_tree_copy_faults() {
     use self::common::MemoryFault;
     for (id, fault) in [
-        (
-            ContractCheckId::CopyAtomicTree,
-            MemoryFault::AtomicTreeCopyNonAtomic,
-        ),
-        (
-            ContractCheckId::CopyDurableTree,
-            MemoryFault::DurableTreeCopyNonDurable,
-        ),
-        (
-            ContractCheckId::CopyAtomicTree,
-            MemoryFault::DirectoryCopyDropsChildren,
-        ),
+        (ContractCheckId::CopyAtomicTree, MemoryFault::AtomicTreeCopyNonAtomic),
+        (ContractCheckId::CopyDurableTree, MemoryFault::DurableTreeCopyNonDurable),
+        (ContractCheckId::CopyAtomicTree, MemoryFault::DirectoryCopyDropsChildren),
         (
             ContractCheckId::CopyDurableTree,
             MemoryFault::DirectoryCopyDropsChildren,
         ),
-        (
-            ContractCheckId::CopyAtomicTree,
-            MemoryFault::TreeCopyWrongStats,
-        ),
-        (
-            ContractCheckId::CopyDurableTree,
-            MemoryFault::TreeCopyWrongStats,
-        ),
+        (ContractCheckId::CopyAtomicTree, MemoryFault::TreeCopyWrongStats),
+        (ContractCheckId::CopyDurableTree, MemoryFault::TreeCopyWrongStats),
     ] {
         let fixture = MemoryFixture::with_fault(fault);
         let mut suite = FileSystemContractSuite::new(&fixture);
@@ -895,10 +789,7 @@ fn test_focused_tree_copy_faults() {
 /// Tree preparation does not require the tested CreateDirectory operation.
 #[test]
 fn test_focused_tree_copy_without_directory_creation() {
-    for id in [
-        ContractCheckId::CopyAtomicTree,
-        ContractCheckId::CopyDurableTree,
-    ] {
+    for id in [ContractCheckId::CopyAtomicTree, ContractCheckId::CopyDurableTree] {
         let fixture = MemoryFixture::tree_copy_without_directory_creation();
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(id);
@@ -937,14 +828,8 @@ fn test_focused_async_tree_copy_faults() {
                 ContractCheckId::CopyDurableTree,
                 AsyncMemoryFault::DirectoryCopyDropsChildren,
             ),
-            (
-                ContractCheckId::CopyAtomicTree,
-                AsyncMemoryFault::TreeCopyWrongStats,
-            ),
-            (
-                ContractCheckId::CopyDurableTree,
-                AsyncMemoryFault::TreeCopyWrongStats,
-            ),
+            (ContractCheckId::CopyAtomicTree, AsyncMemoryFault::TreeCopyWrongStats),
+            (ContractCheckId::CopyDurableTree, AsyncMemoryFault::TreeCopyWrongStats),
         ] {
             let fixture = AsyncMemoryFixture::with_fault(fault);
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
@@ -965,10 +850,7 @@ fn test_focused_async_tree_copy_without_directory_creation() {
     use self::common::AsyncMemoryFixture;
     use self::common::async_memory_file_system::run_controlled;
     run_controlled(async {
-        for id in [
-            ContractCheckId::CopyAtomicTree,
-            ContractCheckId::CopyDurableTree,
-        ] {
+        for id in [ContractCheckId::CopyAtomicTree, ContractCheckId::CopyDurableTree] {
             let fixture = AsyncMemoryFixture::tree_copy_without_directory_creation();
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id).await;

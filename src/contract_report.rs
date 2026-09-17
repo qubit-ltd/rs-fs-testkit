@@ -119,19 +119,11 @@ impl ContractReport {
             match check.outcome() {
                 ContractCheckOutcome::Unverified { reason }
                 | ContractCheckOutcome::Failed { reason }
-                | ContractCheckOutcome::NotRun { reason } => {
-                    issues.push(format!("{} ({reason})", check.id()))
+                | ContractCheckOutcome::NotRun { reason } => issues.push(format!("{} ({reason})", check.id())),
+                ContractCheckOutcome::SkippedOptional { reason } if required.contains(&check.id()) => {
+                    issues.push(format!("{} (required optional probe: {reason})", check.id()));
                 }
-                ContractCheckOutcome::SkippedOptional { reason }
-                    if required.contains(&check.id()) =>
-                {
-                    issues.push(format!(
-                        "{} (required optional probe: {reason})",
-                        check.id()
-                    ));
-                }
-                ContractCheckOutcome::SkippedOptional { reason }
-                | ContractCheckOutcome::NotApplicable { reason }
+                ContractCheckOutcome::SkippedOptional { reason } | ContractCheckOutcome::NotApplicable { reason }
                     if reason.trim().is_empty() =>
                 {
                     issues.push(format!("{} (missing applicability reason)", check.id()));
@@ -185,14 +177,9 @@ impl ContractReport {
     }
 
     /// Registers a pending catalog check without completing it.
-    pub(crate) fn register(
-        &mut self,
-        id: ContractCheckId,
-        capability: Option<FileSystemCapability>,
-    ) {
+    pub(crate) fn register(&mut self, id: ContractCheckId, capability: Option<FileSystemCapability>) {
         if self.expected.contains(&id) {
-            self.violations
-                .push(format!("{id} (duplicate registration)"));
+            self.violations.push(format!("{id} (duplicate registration)"));
             return;
         }
         self.expect(id);
@@ -246,11 +233,7 @@ mod tests {
     fn missing_catalog_entry_is_incomplete() {
         let mut report = ContractReport::new();
         report.expect(ContractCheckId::ReadBasic);
-        report.record(
-            ContractCheckId::WriteBasic,
-            None,
-            ContractCheckOutcome::Passed,
-        );
+        report.record(ContractCheckId::WriteBasic, None, ContractCheckOutcome::Passed);
         assert!(!report.requirements_satisfied());
     }
 
@@ -336,11 +319,7 @@ mod tests {
     fn required_probe_must_belong_to_the_report() {
         let mut report = ContractReport::new();
         report.expect(ContractCheckId::ReadBasic);
-        report.record(
-            ContractCheckId::ReadBasic,
-            None,
-            ContractCheckOutcome::Passed,
-        );
+        report.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
         assert!(report.requirements_satisfied());
         assert!(!report.requirements_satisfied_with(&[ContractCheckId::WriteCancelOpen]));
     }
@@ -349,16 +328,8 @@ mod tests {
     fn duplicate_completion_invalidates_report() {
         let mut report = ContractReport::new();
         report.expect(ContractCheckId::ReadBasic);
-        report.record(
-            ContractCheckId::ReadBasic,
-            None,
-            ContractCheckOutcome::Passed,
-        );
-        report.record(
-            ContractCheckId::ReadBasic,
-            None,
-            ContractCheckOutcome::Passed,
-        );
+        report.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
+        report.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
         assert!(!report.requirements_satisfied());
     }
 
@@ -366,16 +337,8 @@ mod tests {
     fn unregistered_completion_invalidates_report() {
         let mut report = ContractReport::new();
         report.expect(ContractCheckId::ReadBasic);
-        report.record(
-            ContractCheckId::ReadBasic,
-            None,
-            ContractCheckOutcome::Passed,
-        );
-        report.record(
-            ContractCheckId::WriteBasic,
-            None,
-            ContractCheckOutcome::Passed,
-        );
+        report.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
+        report.record(ContractCheckId::WriteBasic, None, ContractCheckOutcome::Passed);
         assert!(!report.requirements_satisfied());
     }
 
@@ -390,11 +353,7 @@ mod tests {
                 reason: "independent read unavailable".to_owned(),
             },
         );
-        report.record(
-            ContractCheckId::ReadBasic,
-            None,
-            ContractCheckOutcome::Passed,
-        );
+        report.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
         assert!(!report.requirements_satisfied());
     }
 

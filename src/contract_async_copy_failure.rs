@@ -84,8 +84,7 @@ impl Debug for ContractAsyncCopyFailure {
 
 impl Display for ContractAsyncCopyFailure {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        formatter
-            .write_str("copy operation failed; original failure and available operation retained")
+        formatter.write_str("copy operation failed; original failure and available operation retained")
     }
 }
 

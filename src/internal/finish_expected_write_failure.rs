@@ -31,21 +31,17 @@ pub(crate) fn finish_expected_write_failure(
         failure.state(),
         WriteFailureState::NotPublished | WriteFailureState::RetryableNotPublished
     ) {
-        return Err(ContractFailure::with_owned_source(
-            "write rejection did not prove non-publication",
-            failure,
-        )
-        .at(id));
+        return Err(
+            ContractFailure::with_owned_source("write rejection did not prove non-publication", failure).at(id),
+        );
     }
     let result = match failure.recovery_mut() {
         None => return Ok(()),
         Some(WriterRecovery::Opened(writer)) => writer.abort(),
         Some(WriterRecovery::Rejected(_)) => {
-            return Err(ContractFailure::with_owned_source(
-                "write rejection retained an invalid session",
-                failure,
-            )
-            .at(id));
+            return Err(
+                ContractFailure::with_owned_source("write rejection retained an invalid session", failure).at(id),
+            );
         }
     };
     match result {
@@ -77,10 +73,7 @@ pub(crate) async fn finish_expected_async_write_failure(
 
     use crate::internal::expected_write_cleanup_guard::ExpectedWriteCleanupGuard;
 
-    if failure
-        .operation()
-        .is_none_or(|operation| !operation.has_recovery())
-    {
+    if failure.operation().is_none_or(|operation| !operation.has_recovery()) {
         return Ok(());
     }
 
@@ -88,11 +81,9 @@ pub(crate) async fn finish_expected_async_write_failure(
         failure.failure().state(),
         WriteFailureState::NotPublished | WriteFailureState::RetryableNotPublished
     ) {
-        return Err(ContractFailure::with_owned_source(
-            "write rejection did not prove non-publication",
-            failure,
-        )
-        .at(id));
+        return Err(
+            ContractFailure::with_owned_source("write rejection did not prove non-publication", failure).at(id),
+        );
     }
     let mut guard = ExpectedWriteCleanupGuard::new(failure, failures, id);
     let result = match guard
