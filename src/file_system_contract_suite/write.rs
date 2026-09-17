@@ -7,8 +7,15 @@
 
 use qubit_fs::metadata::FileSystemLimit;
 
-use super::*;
+use super::FileSystemCapability;
+use super::FileSystemContract;
+use super::FileSystemContractSuite;
+use super::FsErrorKind;
+use super::FsOperation;
+use super::WriteDisposition;
 use crate::ContractCheckId;
+use crate::ContractCheckOutcome;
+use crate::FixtureSupport;
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Returns ordinary errors without dropping original recovery failures.
