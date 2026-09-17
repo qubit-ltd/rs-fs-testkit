@@ -248,7 +248,7 @@ remote suite has been run.
 
 ## Whole-file asynchronous write recovery (0.3)
 
-`qubit-fs` 0.8 requires owned payloads for `begin_write_all`. The async Write
+`qubit-fs` 0.2 requires owned payloads for `begin_write_all`. The async Write
 phase checks `write/owning-operation` and `write/repeated-execute`, and actually
 calls `prepare_write_cancellation` for Open, Write, Flush and Commit.
 Implement `WriteCancellationProbe::poll_reached` to acknowledge that the selected

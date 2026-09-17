@@ -185,7 +185,7 @@ S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create
 
 ## 异步整文件写入恢复（0.3）
 
-`qubit-fs` 0.8 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
+`qubit-fs` 0.2 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
 `write/owning-operation`、`write/repeated-execute`，并真实调用 Open、Write、Flush、Commit
 四阶段的 `prepare_write_cancellation`。`WriteCancellationProbe::poll_reached` 应确认
 提供者已经在指定阶段 Pending，等待时按需唤醒调用方；`disarm` 只释放 gate，不启动文件系统
