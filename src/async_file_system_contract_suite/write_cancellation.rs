@@ -68,6 +68,8 @@ impl AsyncFileSystemContractSuite<'_> {
         Ok(())
     }
 
+    /// Drives a stage-aware probe and preserves its disarm obligation across
+    /// every asynchronous suspension point.
     async fn run_write_cancellation_probe(
         &mut self,
         stage: AsyncWriteCancellationStage,
