@@ -94,7 +94,7 @@ the suite's current coverage.
 - [API documentation](https://docs.rs/qubit-fs-testkit)
 - [中文 README](README.zh_CN.md)
 
-Version 0.7 targets `qubit-fs` 0.8; list, cancellation, and recovery details
+Version 0.7 targets `qubit-fs` 0.2; list, cancellation, and recovery details
 are documented in the [user guide](doc/user_guide.md).
 
 ## Testing
