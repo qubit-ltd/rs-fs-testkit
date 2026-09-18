@@ -51,7 +51,7 @@ impl ContractContext {
     }
 
     /// Returns the suite's immutable property snapshot.
-    #[inline(always)]
+    #[inline]
     pub(crate) const fn properties(&self) -> &FileSystemProperties {
         &self.properties
     }
@@ -95,7 +95,7 @@ impl ContractContext {
     }
 
     /// Returns the contract currently producing diagnostics.
-    #[inline(always)]
+    #[inline]
     pub(crate) const fn current_contract(&self) -> &'static str {
         self.current_contract
     }

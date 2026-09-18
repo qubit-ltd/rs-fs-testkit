@@ -133,7 +133,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// # Returns
     ///
     /// `true` when the provider advertises the capability.
-    #[inline(always)]
+    #[inline]
     pub fn capable(&self, capability: FileSystemCapability) -> bool {
         self.context.properties().capabilities().supports(capability)
     }

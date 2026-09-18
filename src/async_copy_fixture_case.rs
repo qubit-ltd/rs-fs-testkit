@@ -62,7 +62,7 @@ impl AsyncCopyFixtureCase {
     /// # Returns
     ///
     /// The prepared source path.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub const fn source(&self) -> &Path {
         &self.source
@@ -73,7 +73,7 @@ impl AsyncCopyFixtureCase {
     /// # Returns
     ///
     /// The prepared destination path.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub const fn target(&self) -> &Path {
         &self.target
@@ -84,7 +84,7 @@ impl AsyncCopyFixtureCase {
     /// # Returns
     ///
     /// The prepared copy options.
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub const fn options(&self) -> &CopyOptions {
         &self.options
