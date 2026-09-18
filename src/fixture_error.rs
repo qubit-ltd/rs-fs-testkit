@@ -98,7 +98,7 @@ impl Display for FixtureError {
     /// # Returns
     ///
     /// The formatter result.
-    #[inline(always)]
+    #[inline]
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str(&self.message)
     }
