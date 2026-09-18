@@ -45,6 +45,11 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝。
 不适用的检查和缺失的可选探针会在报告中明确记录。
 
+默认断言只在报告记录了非空 `SkippedOptional` 原因时接受缺失的可选取消探针。
+这表示本次运行的必需检查已通过，但在所有适用的可选探针都有证据前，
+`run.all_applicable_checks_verified()` 仍为 false。若某个可选探针是发布要求，
+请使用 `run.assert_satisfied_with(&[check_id])`；已经执行的探针失败仍会使运行失败。
+
 ## 为什么需要这个项目
 
 每个 `qubit-fs` provider 都要证明：已声明 capability 与真实文件系统行为一致，包括预检拒绝、

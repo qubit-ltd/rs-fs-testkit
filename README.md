@@ -51,6 +51,13 @@ The suite follows advertised capabilities. It checks supported behavior and
 structured rejection of unavailable operations. Inapplicable checks and missing
 optional instrumentation remain explicit in the report.
 
+The default assertion accepts a missing optional cancellation probe only when
+the report records a non-empty `SkippedOptional` reason. This means the run's
+required checks passed, while `run.all_applicable_checks_verified()` remains
+false until every applicable optional probe has evidence. Use
+`run.assert_satisfied_with(&[check_id])` when a particular optional probe is a
+release requirement; any executed probe failure still fails the run.
+
 ## Why This Project Exists
 
 Each `qubit-fs` provider must show that declared capabilities match real
