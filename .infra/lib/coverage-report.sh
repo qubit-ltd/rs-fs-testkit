@@ -6,7 +6,7 @@ source "$project_root/.infra/lib/cleanup-build-artifacts.sh"
 cd "$project_root"
 mkdir -p target/llvm-cov/html
 
-coverage_config="$project_root/.infra/ci/coverage.json"
+coverage_config="$project_root/.infra/coverage/coverage.json"
 coverage_scope="default-members"
 if [ -f "$coverage_config" ]; then
     coverage_scope=$(jq -r '.scope // "default-members"' "$coverage_config")
