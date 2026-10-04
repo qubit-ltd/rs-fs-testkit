@@ -524,9 +524,8 @@ src/
 - public API 中不再出现 `&dyn FileSystem` 或 assertion free function；
 - 可选 registration macro 只生成 test wrapper，不承载 contract 逻辑。
 
-覆盖率阈值仍适用于 catalog、report、run 和 resource ledger 核心。依赖 provider
-能力的契约分支列在经过评审的阈值豁免清单中，因为单个 fixture 无法真实覆盖所有
-native capability 与失败组合；确定性矩阵和聚焦回归测试仍是这些分支的可执行覆盖。
+覆盖率阈值适用于全部源码文件，不设置豁免。依赖 provider 能力的契约分支必须由
+确定性的 fixture profile 和聚焦回归测试执行，包括 native capability 与失败组合。
 
 
 ## 恢复所有权

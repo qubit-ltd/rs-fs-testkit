@@ -69,11 +69,10 @@ The latter requires explicit endpoint, bucket, credentials, region, and a
 unique prefix; it never creates remote resources and must not be treated as
 evidence for an unconfigured service.
 
-Coverage thresholds continue to apply to the catalog, report, run, and
-resource-ledger core. Provider-dependent contract branches are listed as
-reviewed threshold exemptions because one fixture cannot truthfully exercise
-every native capability and failure combination; the deterministic matrix and
-focused regression tests remain the executable coverage for those branches.
+Coverage thresholds apply to every source file without exemptions. Provider-
+dependent contract branches must be exercised by deterministic fixture profiles
+and focused regression tests, including their native capability and failure
+combinations.
 
 
 ## Recovery ownership
