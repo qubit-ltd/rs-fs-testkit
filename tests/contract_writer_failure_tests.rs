@@ -7,10 +7,10 @@
 // =============================================================================
 //! Recovery ownership remains available through a borrowed contract result.
 
+pub use ::qubit_fs_testkit;
 use qubit_fs as qfs;
 #[cfg(feature = "async")]
 use qubit_fs::write::AsyncWriterRecovery;
-
 mod common;
 use qubit_fs::error::FsError;
 use qubit_fs::error::FsErrorKind;

@@ -10,6 +10,8 @@
 use qubit_fs::metadata::FileSystemCapability;
 
 use crate::ContractCheckId;
+use crate::ContractFailure;
+use crate::CopyScenario;
 use crate::FileSystemContract;
 use crate::internal::check_spec::CheckSpec;
 
@@ -754,11 +756,24 @@ pub(crate) fn for_contract(contract: FileSystemContract, asynchronous: bool) -> 
         .collect()
 }
 
+/// Returns the registered copy scenario or attributes a catalog mismatch to
+/// the selected check.
+pub(crate) fn required_copy_scenario(
+    id: ContractCheckId,
+    missing_message: &'static str,
+) -> Result<CopyScenario, ContractFailure> {
+    match specification(id).copy_scenario {
+        Some(scenario) => Ok(scenario),
+        None => Err(ContractFailure::message_only(missing_message).at(id)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
     use super::for_contract;
+    use super::required_copy_scenario;
     use super::specification;
     use crate::ContractCheckId;
     use crate::FileSystemContract;
@@ -802,5 +817,17 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn required_copy_scenario_returns_and_rejects_catalog_entries() {
+        assert!(matches!(
+            required_copy_scenario(ContractCheckId::CopyBasic, "missing copy scenario"),
+            Ok(crate::CopyScenario::Basic)
+        ));
+        let failure = required_copy_scenario(ContractCheckId::ReadBasic, "missing copy scenario")
+            .expect_err("read checks have no copy scenario");
+        assert_eq!(failure.check(), Some(ContractCheckId::ReadBasic));
+        assert_eq!(failure.message(), "missing copy scenario");
     }
 }

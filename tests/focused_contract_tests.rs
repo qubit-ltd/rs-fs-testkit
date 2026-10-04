@@ -7,9 +7,9 @@
 // =============================================================================
 //! Focused selection must execute only the requested check and its own setup.
 
+pub use ::qubit_fs_testkit;
 use qubit_fs as qfs;
 use qubit_fs_testkit as testkit;
-
 mod common;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::FileSystemContractSuite;

@@ -7,6 +7,7 @@
 // =============================================================================
 #![cfg(feature = "async")]
 
+pub use ::qubit_fs_testkit;
 mod common;
 use std::task::Poll;
 

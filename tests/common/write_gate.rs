@@ -10,9 +10,9 @@
 use std::task::Context;
 use std::task::Poll;
 
-use qubit_fs_testkit::AsyncWriteCancellationStage;
-use qubit_fs_testkit::FixtureError;
-use qubit_fs_testkit::FixtureResult;
+use crate::qubit_fs_testkit::AsyncWriteCancellationStage;
+use crate::qubit_fs_testkit::FixtureError;
+use crate::qubit_fs_testkit::FixtureResult;
 
 /// One provider-side gate with deliberate wake-driven suspensions.
 pub(crate) struct WriteGate {

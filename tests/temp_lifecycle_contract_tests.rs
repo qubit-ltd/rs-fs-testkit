@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+pub use ::qubit_fs_testkit;
 mod common;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::AtomicityRequirement;

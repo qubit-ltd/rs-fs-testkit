@@ -47,9 +47,8 @@ impl AsyncFileSystemContractSuite<'_> {
         let source_relative = self.context.relative_name("copy-conflict-source");
         let target_relative = self.context.relative_name("copy-conflict-target");
         let bytes = b"copy bytes";
-        let scenario = crate::internal::check_catalog::specification(id)
-            .copy_scenario
-            .ok_or_else(|| ContractFailure::message_only("copy preparation missing from catalog").at(id))?;
+        let scenario =
+            crate::internal::check_catalog::required_copy_scenario(id, "copy preparation missing from catalog")?;
         let prepared = self
             .fixture
             .prepare_copy(scenario, &source_relative, &target_relative, bytes)

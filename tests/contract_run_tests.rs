@@ -7,9 +7,9 @@
 // =============================================================================
 //! A suite retains its completed result and rejects another execution session.
 
+pub use ::qubit_fs_testkit;
 use qubit_fs as qfs;
 use qubit_fs_testkit as testkit;
-
 mod common;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;

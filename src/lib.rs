@@ -104,3 +104,14 @@ pub use read_scenario::ReadScenario;
 pub use write_cancellation_probe::WriteCancellationProbe;
 pub use write_fixture_case::WriteFixtureCase;
 pub use write_scenario::WriteScenario;
+
+#[cfg(test)]
+pub use crate as qubit_fs_testkit;
+
+#[cfg(test)]
+#[path = "../tests/common/mod.rs"]
+mod common;
+
+#[cfg(test)]
+#[path = "../tests/common/rustdoc_support.rs"]
+mod rustdoc_support;

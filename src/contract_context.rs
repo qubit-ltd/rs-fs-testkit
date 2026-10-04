@@ -108,13 +108,6 @@ impl ContractContext {
         &self.run.report
     }
 
-    /// Returns mutable access for a suite phase to record a check outcome.
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn report_mut(&mut self) -> &mut ContractReport {
-        &mut self.run.report
-    }
-
     /// Records one stable check outcome after its phase has executed.
     #[inline]
     pub(crate) fn record_check(
@@ -389,4 +382,494 @@ fn panic_error(payload: Box<dyn Any + Send>) -> FixtureError {
         "provider panicked during cleanup",
         crate::ContractFailure::panicked("provider cleanup panic", payload),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ContractContext;
+    use crate::ContractFailure;
+    use crate::FileSystemFixture;
+    use crate::FixtureSupport;
+    use crate::common::MemoryFault;
+    use crate::common::MemoryFixture;
+
+    #[test]
+    fn counters_saturate_and_duplicate_resources_keep_the_first_owner() {
+        use qubit_fs::path::Path;
+
+        let fixture = MemoryFixture::new();
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        context.name_counter = u64::MAX;
+        context.begin("write/basic");
+        assert_eq!(
+            context.relative_name("payload"),
+            "write-basic-18446744073709551615-payload"
+        );
+
+        let first = Path::parse("/context/first").expect("valid path");
+        context.record_resource(first.clone(), "write/basic");
+        context.record_resource(first, "copy/basic");
+        assert_eq!(context.resources.len(), 1);
+        assert_eq!(context.resources[0].owner_check, "write/basic");
+
+        context.resource_index = u64::MAX;
+        context.record_resource(Path::parse("/context/second").expect("valid path"), "copy/basic");
+        assert_eq!(context.resource_index, u64::MAX);
+        assert_eq!(context.resources.len(), 2);
+    }
+
+    #[test]
+    fn created_resources_inherit_the_current_contract_owner() {
+        use qubit_fs::path::Path;
+
+        let fixture = MemoryFixture::new();
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        context.begin("copy/tree");
+        let path = Path::parse("/context/created").expect("valid path");
+
+        context.record_created(path.clone());
+
+        assert_eq!(context.resources.len(), 1);
+        assert_eq!(context.resources[0].path, path);
+        assert_eq!(context.resources[0].owner_check, "copy/tree");
+        assert_eq!(context.resources[0].creation_index, 1);
+    }
+
+    #[test]
+    fn fail_without_check_keeps_the_failure_without_changing_check_outcomes() {
+        let fixture = MemoryFixture::new();
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        let outcomes_before = context.report().checks().len();
+
+        context.fail(ContractFailure::message_only("unattributed failure"));
+
+        assert_eq!(context.run.failures.len(), 1);
+        assert_eq!(context.run.failures[0].check(), None);
+        assert_eq!(context.report().checks().len(), outcomes_before);
+    }
+
+    #[test]
+    fn phase_registration_and_attributed_failure_share_one_report() {
+        use crate::ContractCheckId;
+        use crate::ContractCheckOutcome;
+        use crate::FileSystemContract;
+
+        let fixture = MemoryFixture::new();
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        context.begin("read/basic");
+        assert_eq!(context.current_contract(), "read/basic");
+        assert!(context.relative_name("source").starts_with("read-basic-1-"));
+
+        context.prepare_phase(FileSystemContract::Read, false);
+        let check = context
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == ContractCheckId::ReadBasic)
+            .expect("read check registered before execution");
+        assert!(matches!(check.outcome(), ContractCheckOutcome::NotRun { .. }));
+
+        context.fail(ContractFailure::message_only("read evidence failed").at(ContractCheckId::ReadBasic));
+        assert_eq!(context.run.failures.len(), 1);
+        assert_eq!(context.run.failures[0].check(), Some(ContractCheckId::ReadBasic));
+        let recorded = context
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == ContractCheckId::ReadBasic)
+            .expect("failed check remains registered");
+        assert!(matches!(recorded.outcome(), ContractCheckOutcome::Failed { .. }));
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn asynchronous_phase_registration_includes_async_only_checks() {
+        use crate::ContractCheckId;
+        use crate::FileSystemContract;
+
+        let fixture = MemoryFixture::new();
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        context.prepare_phase(FileSystemContract::Copy, true);
+
+        let checks = context.report().checks();
+        assert!(!checks.is_empty());
+        assert!(checks.iter().any(|check| check.id() == ContractCheckId::CopyBasic));
+        assert!(
+            checks
+                .iter()
+                .any(|check| check.id() == ContractCheckId::AsyncCopyCancelCommit)
+        );
+    }
+
+    #[test]
+    fn cleanup_retains_resource_after_stat_panics_and_retries() {
+        let fixture = MemoryFixture::new();
+        let FixtureSupport::Supported(path) = fixture
+            .seed_file("cleanup-stat-panic", b"payload")
+            .expect("seed succeeds")
+        else {
+            panic!("memory fixture supports seeded files");
+        };
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        context.record_resource(path, "write/basic");
+
+        fixture.set_fault(MemoryFault::CleanupStatPanic);
+        context.cleanup(fixture.file_system());
+        assert_eq!(context.resources.len(), 1);
+        assert_eq!(context.run.cleanup.failures.len(), 1);
+
+        fixture.set_fault(MemoryFault::None);
+        context.cleanup(fixture.file_system());
+        assert!(context.resources.is_empty());
+        assert_eq!(context.run.cleanup.failures.len(), 1);
+        assert!(fixture.is_empty());
+    }
+
+    #[test]
+    fn cleanup_stat_errors_preserve_owner_path_and_source() {
+        use crate::common::MemoryFault;
+
+        let fixture = MemoryFixture::with_fault(MemoryFault::CleanupStatError);
+        let FixtureSupport::Supported(path) = fixture
+            .seed_file("cleanup-stat-error", b"payload")
+            .expect("seed succeeds")
+        else {
+            panic!("memory fixture supports seeded files");
+        };
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        context.record_resource(path.clone(), "write/basic");
+
+        context.cleanup(fixture.file_system());
+
+        assert_eq!(context.resources.len(), 1);
+        let failure = &context.run.cleanup.failures[0];
+        let message = failure.message();
+        assert!(message.contains("owner=write/basic"));
+        assert!(message.contains(path.as_str()));
+        assert!(message.contains("stat"));
+        assert!(std::error::Error::source(failure).is_some());
+    }
+
+    #[test]
+    fn cleanup_continues_after_a_resource_stat_failure() {
+        use crate::common::MemoryFault;
+
+        let fixture = MemoryFixture::with_fault(MemoryFault::CleanupStatError);
+        let FixtureSupport::Supported(first) = fixture
+            .seed_file("cleanup-first", b"first")
+            .expect("first seed succeeds")
+        else {
+            panic!("memory fixture supports seeded files");
+        };
+        let FixtureSupport::Supported(second) = fixture
+            .seed_file("cleanup-second", b"second")
+            .expect("second seed succeeds")
+        else {
+            panic!("memory fixture supports seeded files");
+        };
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        context.record_resource(first, "write/first");
+        context.record_resource(second, "write/second");
+
+        context.cleanup(fixture.file_system());
+
+        assert_eq!(context.resources.len(), 2);
+        assert_eq!(context.run.cleanup.failures.len(), 2);
+        assert!(!fixture.is_empty());
+        fixture.set_fault(MemoryFault::None);
+        context.cleanup(fixture.file_system());
+        assert!(context.resources.is_empty());
+        assert!(fixture.is_empty());
+    }
+
+    #[test]
+    fn cleanup_retains_resource_when_post_delete_stat_errors_or_panics() {
+        use crate::common::MemoryFault;
+
+        for fault in [MemoryFault::CleanupVerifyStatError, MemoryFault::CleanupVerifyStatPanic] {
+            let fixture = MemoryFixture::with_fault(fault);
+            let FixtureSupport::Supported(path) = fixture
+                .seed_file("cleanup-verify-stat", b"payload")
+                .expect("seed succeeds")
+            else {
+                panic!("memory fixture supports seeded files");
+            };
+            let mut context = ContractContext::new(fixture.file_system().properties());
+            context.record_resource(path, "write/basic");
+
+            context.cleanup(fixture.file_system());
+
+            assert_eq!(context.resources.len(), 1, "{fault:?}");
+            assert_eq!(context.run.cleanup.failures.len(), 1, "{fault:?}");
+            assert!(fixture.is_empty(), "deletion succeeded before verification failed");
+        }
+    }
+
+    #[test]
+    fn cleanup_retains_resource_after_delete_errors_and_noop() {
+        use crate::common::MemoryFault;
+
+        for fault in [
+            MemoryFault::CleanupDeleteError,
+            MemoryFault::CleanupDeletePanic,
+            MemoryFault::DeleteNoOp,
+        ] {
+            let fixture = MemoryFixture::with_fault(fault);
+            let FixtureSupport::Supported(path) = fixture
+                .seed_file("cleanup-delete-failure", b"payload")
+                .expect("seed succeeds")
+            else {
+                panic!("memory fixture supports seeded files");
+            };
+            let mut context = ContractContext::new(fixture.file_system().properties());
+            context.record_resource(path, "write/basic");
+
+            context.cleanup(fixture.file_system());
+
+            assert_eq!(context.resources.len(), 1, "{fault:?}");
+            assert_eq!(context.run.cleanup.failures.len(), 1, "{fault:?}");
+            assert!(!fixture.is_empty(), "{fault:?}");
+        }
+    }
+
+    #[test]
+    fn cleanup_skips_unsupported_delete_and_releases_missing_paths() {
+        use qubit_fs::path::Path;
+
+        let fixture = MemoryFixture::without_delete();
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        context.record_resource(Path::parse("/cleanup/unsupported").expect("valid path"), "write/basic");
+
+        context.cleanup(fixture.file_system());
+
+        assert_eq!(context.resources.len(), 1, "unsupported cleanup retains ownership");
+        assert!(context.run.cleanup.failures.is_empty());
+
+        let fixture = MemoryFixture::new();
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        context.record_resource(
+            Path::parse("/cleanup/already-missing").expect("valid path"),
+            "write/basic",
+        );
+
+        context.cleanup(fixture.file_system());
+
+        assert!(context.resources.is_empty(), "missing paths are already cleaned");
+        assert!(context.run.cleanup.failures.is_empty());
+    }
+
+    #[test]
+    fn cleanup_deletes_recorded_directories() {
+        let fixture = MemoryFixture::new();
+        let FixtureSupport::Supported(path) = fixture
+            .seed_empty_directory("cleanup-recorded-directory")
+            .expect("directory seed succeeds")
+        else {
+            panic!("memory fixture supports seeded directories");
+        };
+        let mut context = ContractContext::new(fixture.file_system().properties());
+        context.record_resource(path, "directory/create");
+
+        context.cleanup(fixture.file_system());
+
+        assert!(context.resources.is_empty());
+        assert!(context.run.cleanup.failures.is_empty());
+        assert!(fixture.is_empty());
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_cleanup_retains_resource_after_stat_panics_and_retries() {
+        use crate::AsyncFileSystemFixture;
+        use crate::common::AsyncMemoryFixture;
+        use crate::common::async_memory_file_system::run_controlled;
+
+        let fixture = AsyncMemoryFixture::new();
+        run_controlled(async {
+            let FixtureSupport::Supported(path) = fixture
+                .seed_file("async-cleanup-stat-panic", b"payload")
+                .await
+                .expect("seed succeeds")
+            else {
+                panic!("memory fixture supports seeded files");
+            };
+            let mut context = ContractContext::new(fixture.file_system().properties());
+            context.record_resource(path, "write/basic");
+
+            fixture.set_cleanup_stat_panics(true);
+            context.cleanup_async(fixture.file_system()).await;
+            assert_eq!(context.resources.len(), 1);
+            assert_eq!(context.run.cleanup.failures.len(), 1);
+
+            fixture.set_cleanup_stat_panics(false);
+            context.cleanup_async(fixture.file_system()).await;
+            assert!(context.resources.is_empty());
+            assert_eq!(context.run.cleanup.failures.len(), 1);
+            assert!(fixture.is_empty());
+        });
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_cleanup_stat_errors_preserve_owner_path_and_source() {
+        use crate::AsyncFileSystemFixture;
+        use crate::common::AsyncMemoryFault;
+        use crate::common::AsyncMemoryFixture;
+        use crate::common::async_memory_file_system::run_controlled;
+
+        let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::CleanupStatError);
+        run_controlled(async {
+            let FixtureSupport::Supported(path) = fixture
+                .seed_file("async-cleanup-stat-error", b"payload")
+                .await
+                .expect("seed succeeds")
+            else {
+                panic!("memory fixture supports seeded files");
+            };
+            let mut context = ContractContext::new(fixture.file_system().properties());
+            context.record_resource(path.clone(), "write/basic");
+
+            context.cleanup_async(fixture.file_system()).await;
+
+            assert_eq!(context.resources.len(), 1);
+            let failure = &context.run.cleanup.failures[0];
+            let message = failure.message();
+            assert!(message.contains("owner=write/basic"));
+            assert!(message.contains(path.as_str()));
+            assert!(message.contains("stat"));
+            assert!(std::error::Error::source(failure).is_some());
+        });
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_cleanup_retains_resource_when_post_delete_stat_errors_or_panics() {
+        use crate::AsyncFileSystemFixture;
+        use crate::common::AsyncMemoryFault;
+        use crate::common::AsyncMemoryFixture;
+        use crate::common::async_memory_file_system::run_controlled;
+
+        for fault in [
+            AsyncMemoryFault::CleanupVerifyStatError,
+            AsyncMemoryFault::CleanupVerifyStatPanic,
+        ] {
+            let fixture = AsyncMemoryFixture::with_fault(fault);
+            run_controlled(async {
+                let FixtureSupport::Supported(path) = fixture
+                    .seed_file("async-cleanup-verify-stat", b"payload")
+                    .await
+                    .expect("seed succeeds")
+                else {
+                    panic!("memory fixture supports seeded files");
+                };
+                let mut context = ContractContext::new(fixture.file_system().properties());
+                context.record_resource(path, "write/basic");
+
+                context.cleanup_async(fixture.file_system()).await;
+
+                assert_eq!(context.resources.len(), 1, "{fault:?}");
+                assert_eq!(context.run.cleanup.failures.len(), 1, "{fault:?}");
+                assert!(fixture.is_empty(), "deletion succeeded before verification failed");
+            });
+        }
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_cleanup_retains_resource_after_delete_errors_and_noop() {
+        use crate::AsyncFileSystemFixture;
+        use crate::common::AsyncMemoryFault;
+        use crate::common::AsyncMemoryFixture;
+        use crate::common::async_memory_file_system::run_controlled;
+
+        for fault in [
+            AsyncMemoryFault::CleanupDeleteError,
+            AsyncMemoryFault::CleanupDeletePanic,
+            AsyncMemoryFault::DeleteNoOp,
+        ] {
+            let fixture = AsyncMemoryFixture::with_fault(fault);
+            run_controlled(async {
+                let FixtureSupport::Supported(path) = fixture
+                    .seed_file("async-cleanup-delete-failure", b"payload")
+                    .await
+                    .expect("seed succeeds")
+                else {
+                    panic!("memory fixture supports seeded files");
+                };
+                let mut context = ContractContext::new(fixture.file_system().properties());
+                context.record_resource(path, "write/basic");
+
+                context.cleanup_async(fixture.file_system()).await;
+
+                assert_eq!(context.resources.len(), 1, "{fault:?}");
+                assert_eq!(context.run.cleanup.failures.len(), 1, "{fault:?}");
+                assert!(!fixture.is_empty(), "{fault:?}");
+            });
+        }
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_cleanup_skips_unsupported_delete_and_releases_missing_paths() {
+        use qubit_fs::path::Path;
+
+        use crate::AsyncFileSystemFixture;
+        use crate::common::AsyncMemoryFixture;
+        use crate::common::async_memory_file_system::run_controlled;
+
+        let fixture = AsyncMemoryFixture::without_operation_capabilities();
+        run_controlled(async {
+            let mut context = ContractContext::new(fixture.file_system().properties());
+            context.record_resource(
+                Path::parse("/async-cleanup/unsupported").expect("valid path"),
+                "write/basic",
+            );
+
+            context.cleanup_async(fixture.file_system()).await;
+
+            assert_eq!(context.resources.len(), 1, "unsupported cleanup retains ownership");
+            assert!(context.run.cleanup.failures.is_empty());
+        });
+
+        let fixture = AsyncMemoryFixture::new();
+        run_controlled(async {
+            let mut context = ContractContext::new(fixture.file_system().properties());
+            context.record_resource(
+                Path::parse("/async-cleanup/already-missing").expect("valid path"),
+                "write/basic",
+            );
+
+            context.cleanup_async(fixture.file_system()).await;
+
+            assert!(context.resources.is_empty(), "missing paths are already cleaned");
+            assert!(context.run.cleanup.failures.is_empty());
+        });
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_cleanup_deletes_recorded_directories() {
+        use crate::AsyncFileSystemFixture;
+        use crate::common::AsyncMemoryFixture;
+        use crate::common::async_memory_file_system::run_controlled;
+
+        let fixture = AsyncMemoryFixture::new();
+        run_controlled(async {
+            let FixtureSupport::Supported(path) = fixture
+                .seed_empty_directory("async-cleanup-recorded-directory")
+                .await
+                .expect("directory seed succeeds")
+            else {
+                panic!("memory fixture supports seeded directories");
+            };
+            let mut context = ContractContext::new(fixture.file_system().properties());
+            context.record_resource(path, "directory/create");
+
+            context.cleanup_async(fixture.file_system()).await;
+
+            assert!(context.resources.is_empty());
+            assert!(context.run.cleanup.failures.is_empty());
+            assert!(fixture.is_empty());
+        });
+    }
 }

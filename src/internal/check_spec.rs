@@ -38,7 +38,7 @@ impl CheckSpec {
     ///
     /// Prerequisites describe evidence ordering only; `run_check` still runs
     /// exactly the requested identity and never silently executes siblings.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) const fn prerequisites(self) -> &'static [ContractCheckId] {
         match self.id {
             ContractCheckId::CopyRepeatedExecute

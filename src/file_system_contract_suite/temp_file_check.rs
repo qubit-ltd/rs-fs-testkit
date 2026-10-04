@@ -38,9 +38,7 @@ impl FileSystemContractSuite<'_> {
                 PathSemantics::Hierarchical => Path::parse_literal("/temp-invalid-parent"),
                 _ => Path::parse("/temp-invalid-parent"),
             }
-            .map_err(|error| {
-                ContractFailure::with_source("temporary invalid-parent request preparation failed", error).at(id)
-            })?;
+            .expect("invalid-parent probe path is a valid constant");
             let error =
                 match filesystem.create_temp_file(TempOptions::default().with_parent(Some(incompatible.clone()))) {
                     Err(error) => error,

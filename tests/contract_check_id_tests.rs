@@ -7,6 +7,7 @@
 // =============================================================================
 //! Public report identities must come from the exhaustive typed check set.
 
+pub use ::qubit_fs_testkit;
 mod common;
 use std::collections::HashSet;
 
@@ -29,6 +30,10 @@ fn test_check_names_are_unique() {
     );
     assert!(names.contains("write/cancel-open"));
     assert!(names.contains("write/repeated-execute"));
+    for id in ContractCheckId::ALL.iter().copied() {
+        assert_eq!(id.to_string(), id.as_str());
+        let _ = id.is_optional();
+    }
 }
 
 /// Callers receive a typed identity, not an arbitrary runtime string.

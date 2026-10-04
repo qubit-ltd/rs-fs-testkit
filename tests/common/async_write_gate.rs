@@ -13,11 +13,11 @@ use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
 
-use qubit_fs_testkit::AsyncWriteCancellationStage;
-use qubit_fs_testkit::AsyncWriteFixtureCase;
-use qubit_fs_testkit::FixtureError;
-use qubit_fs_testkit::FixtureResult;
-use qubit_fs_testkit::WriteCancellationProbe;
+use crate::qubit_fs_testkit::AsyncWriteCancellationStage;
+use crate::qubit_fs_testkit::AsyncWriteFixtureCase;
+use crate::qubit_fs_testkit::FixtureError;
+use crate::qubit_fs_testkit::FixtureResult;
+use crate::qubit_fs_testkit::WriteCancellationProbe;
 
 /// Shared stage gate used by the asynchronous cancellation self-test.
 #[cfg(feature = "async")]

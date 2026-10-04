@@ -6,23 +6,48 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+pub use ::qubit_fs_testkit;
 mod common;
+use qubit_fs::FileSystem;
 use qubit_fs::error::FsError;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
+use qubit_fs::path::Path;
 use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
+use qubit_fs_testkit::FixtureError;
+use qubit_fs_testkit::FixtureResult;
+
+/// Fixture using all trait-default setup and observation hooks.
+struct DefaultHooksSyncFixture<'a> {
+    file_system: &'a FileSystem,
+}
+
+impl FileSystemFixture for DefaultHooksSyncFixture<'_> {
+    fn teardown(&self) -> FixtureResult<()> {
+        Ok(())
+    }
+
+    fn file_system(&self) -> &FileSystem {
+        self.file_system
+    }
+
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        Path::parse(&format!("/default-hooks/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
+    }
+}
 
 use self::common::MemoryFault;
 use self::common::MemoryFixture;
 use self::common::check_matrix::assert_panics_at;
 use self::common::check_matrix::sync_fault_cases;
 use crate::common::UnavailableScenario;
+
 /// Both suites intentionally cover every capability in this stable order.
 const COVERED_CAPABILITIES: [FileSystemCapability; 28] = [
     FileSystemCapability::List,
@@ -79,6 +104,13 @@ fn test_all_capabilities_execute_sync_contracts() {
     assert!(fixture.is_empty(), "all-capability suite must clean up");
 }
 
+#[test]
+fn test_sync_object_and_prefix_metadata_kinds_satisfy_contracts() {
+    let fixture = MemoryFixture::with_fault(MemoryFault::ObjectKinds);
+    FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
+    assert!(fixture.is_empty());
+}
+
 /// A conforming provider satisfies every synchronous suite phase.
 #[test]
 fn test_conforming_memory_provider_satisfies_sync_suite() {
@@ -121,6 +153,57 @@ fn test_sync_phase_matrix_exercises_declared_profiles() {
     }
 }
 
+/// Default unsupported hooks leave provider-dependent checks unverified.
+#[test]
+fn test_sync_suite_classifies_default_hooks_as_unverified() {
+    let memory = MemoryFixture::with_all_capabilities();
+    let fixture = DefaultHooksSyncFixture {
+        file_system: memory.file_system(),
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_all();
+
+    assert!(!run.was_interrupted());
+    assert_eq!(run.failures().len(), 1);
+    assert_eq!(run.failures()[0].check(), Some(testkit::ContractCheckId::WriteBasic));
+    assert!(
+        run.report()
+            .checks()
+            .iter()
+            .any(|check| matches!(check.outcome(), testkit::ContractCheckOutcome::Unverified { .. }))
+    );
+    assert!(memory.is_empty());
+}
+
+/// Every focused check keeps its identity when fixture setup hooks are absent.
+#[test]
+fn test_sync_focused_checks_preserve_default_hook_results() {
+    for id in testkit::ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        let memory = MemoryFixture::with_all_capabilities();
+        let fixture = DefaultHooksSyncFixture {
+            file_system: memory.file_system(),
+        };
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+
+        assert!(!run.was_interrupted(), "{id}");
+        assert_eq!(run.report().checks().len(), 1, "{id}");
+        assert_eq!(run.report().checks()[0].id(), id, "{id}");
+        assert!(
+            run.failures()
+                .iter()
+                .all(|failure| { failure.check() == Some(id) && failure.take_panic_payload().is_none() }),
+            "{id}: {:?}",
+            run.failures()
+        );
+        assert!(memory.is_empty(), "{id}: default fixture must not leak resources");
+    }
+}
+
 #[test]
 fn test_sync_faults_exercise_full_suite_paths() {
     for case in sync_fault_cases() {
@@ -131,6 +214,38 @@ fn test_sync_faults_exercise_full_suite_paths() {
                     .run_contract(contract)
                     .assert_satisfied();
             }));
+        }
+    }
+}
+
+/// Each provider fault is also exercised against every focused check entry.
+#[test]
+fn test_sync_faults_exercise_every_focused_check() {
+    for case in sync_fault_cases() {
+        if matches!(
+            case.fault,
+            MemoryFault::DeleteNoOp
+                | MemoryFault::CleanupStatError
+                | MemoryFault::CleanupDeleteError
+                | MemoryFault::CleanupDeletePanic
+        ) {
+            continue;
+        }
+        for id in testkit::ContractCheckId::ALL
+            .iter()
+            .copied()
+            .filter(|id| id.supports_synchronous())
+        {
+            let fixture = MemoryFixture::with_fault(case.fault);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(
+                run.failures().iter().all(|failure| failure.check() == Some(id)),
+                "{id}, fault {:?}: {:?}",
+                case.fault,
+                run.failures()
+            );
+            assert!(fixture.is_empty(), "{id}, fault {:?}: cleanup failed", case.fault);
         }
     }
 }
@@ -149,14 +264,87 @@ fn test_sync_property_profiles_cover_all_limit_outcomes() {
         let snapshot = FileSystemLimits::unknown()
             .with_max_path_text_bytes(limit)
             .with_max_component_text_bytes(limit)
+            .with_max_write_bytes(limit)
             .with_max_list_page_entries(limit);
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let fixture = MemoryFixture::with_limits(snapshot);
-            FileSystemContractSuite::new(&fixture)
-                .run_contract(FileSystemContract::Properties)
-                .assert_satisfied();
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            suite.run_contract(FileSystemContract::Properties).assert_satisfied();
+            suite.run_check(testkit::ContractCheckId::WriteLimit).assert_satisfied();
         }));
     }
+}
+
+/// A bounded write fixture can fail at the boundary and keeps the check ID.
+#[test]
+fn test_sync_write_limit_boundary_failure_is_attributed() {
+    let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4));
+    let fixture = MemoryFixture::with_fault_and_limits(MemoryFault::WriteFails, limits);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(testkit::ContractCheckId::WriteLimit);
+    assert!(!run.requirements_satisfied());
+    assert_eq!(run.failures().len(), 1);
+    assert_eq!(run.failures()[0].check(), Some(testkit::ContractCheckId::WriteLimit));
+    assert!(fixture.is_empty());
+}
+
+#[test]
+fn test_sync_bounded_read_and_write_limits_are_verified() {
+    let limits = FileSystemLimits::unknown()
+        .with_max_read_range_bytes(FileSystemLimit::Maximum(4))
+        .with_max_write_bytes(FileSystemLimit::Maximum(4));
+    for id in [
+        testkit::ContractCheckId::ReadRangeLimit,
+        testkit::ContractCheckId::WriteLimit,
+    ] {
+        let fixture = MemoryFixture::with_limits(limits);
+        FileSystemContractSuite::new(&fixture).run_check(id).assert_satisfied();
+        assert!(fixture.is_empty(), "{id}");
+    }
+}
+
+#[test]
+fn test_sync_bounded_write_limit_reports_setup_and_observation_errors() {
+    use self::common::shared_model::FixtureHook;
+
+    let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4));
+    let id = testkit::ContractCheckId::WriteLimit;
+    for fixture in [
+        MemoryFixture::with_path_error_call_and_limits(1, limits),
+        MemoryFixture::with_fixture_hook_error_and_limits(FixtureHook::ReadFile, 1, limits),
+    ] {
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        assert!(!run.failures().is_empty(), "{id}: {:?}", run.report().checks());
+        assert_eq!(run.failures()[0].check(), Some(id));
+        assert!(fixture.is_empty());
+    }
+}
+
+#[test]
+fn test_sync_bounded_read_limit_reports_setup_and_provider_errors() {
+    let limits = FileSystemLimits::unknown().with_max_read_range_bytes(FileSystemLimit::Maximum(4));
+    let id = testkit::ContractCheckId::ReadRangeLimit;
+    for fixture in [
+        MemoryFixture::with_file_seed_error_call_and_limits(1, limits),
+        MemoryFixture::with_fault_and_limits(MemoryFault::ReadFails, limits),
+    ] {
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        assert!(!run.failures().is_empty(), "{id}: {:?}", run.report().checks());
+        assert_eq!(run.failures()[0].check(), Some(id));
+        assert!(fixture.is_empty());
+    }
+}
+
+#[test]
+fn test_sync_missing_read_capability_still_attributes_path_errors() {
+    let id = testkit::ContractCheckId::ReadBasic;
+    let fixture = MemoryFixture::without_core_capabilities_with_path_error(1);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(id);
+    assert_eq!(run.failures().len(), 1);
+    assert_eq!(run.failures()[0].check(), Some(id));
 }
 
 #[test]
@@ -204,6 +392,239 @@ fn test_sync_suite_skips_unadvertised_optional_capabilities() {
     let fixture = MemoryFixture::without_optional_capabilities();
     FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
     assert!(fixture.is_empty(), "core contract resources must be cleaned");
+}
+
+/// Atomic temp persistence rejection is checked while temp resources remain
+/// independently usable.
+#[test]
+fn test_sync_temp_atomic_rejection_preserves_owned_resource() {
+    let fixture = MemoryFixture::without_atomic_temp_persist();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(testkit::ContractCheckId::TempAtomic);
+
+    run.assert_satisfied();
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        testkit::ContractCheckOutcome::RejectedAsExpected
+    ));
+    assert!(fixture.is_empty(), "atomic rejection must clean temp resources");
+}
+
+/// Temporary contracts work when the provider cannot seed a requested parent.
+#[test]
+fn test_sync_temp_contracts_without_directory_creation() {
+    let fixture = MemoryFixture::tree_copy_without_directory_creation();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+
+    suite.run_contract(FileSystemContract::TempResources).assert_satisfied();
+    assert!(fixture.is_empty(), "temporary contract resources must be cleaned");
+}
+
+/// Isolated directory checks reach branches hidden by the earlier file check.
+#[test]
+fn test_sync_temp_directory_faults_are_attributed_to_directory_check() {
+    for fault in [
+        MemoryFault::TempIgnoresOptions,
+        MemoryFault::KeepTempOnCleanup,
+        MemoryFault::WrongPersistTarget,
+    ] {
+        let fixture = MemoryFixture::with_fault(fault);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(testkit::ContractCheckId::TempDirectory);
+        assert!(!run.requirements_satisfied(), "{fault:?}");
+        assert_eq!(run.failures().len(), 1, "{fault:?}");
+        assert_eq!(run.failures()[0].check(), Some(testkit::ContractCheckId::TempDirectory));
+        assert!(fixture.is_empty(), "{fault:?}: directory resources must be cleaned");
+    }
+}
+
+/// Observation errors at each temporary lifecycle stage retain their check.
+#[test]
+fn test_sync_temp_lifecycle_observation_errors_are_attributed() {
+    for (id, maximum_call, no_atomic_persist) in [
+        (testkit::ContractCheckId::TempDirectory, 4, false),
+        (testkit::ContractCheckId::TempRepeatedLifecycle, 8, false),
+        (testkit::ContractCheckId::TempAtomic, 4, true),
+    ] {
+        for fail_call in 1..=maximum_call {
+            let fixture = if no_atomic_persist {
+                MemoryFixture::without_atomic_temp_persist_with_exists_error_call(fail_call)
+            } else {
+                MemoryFixture::with_exists_error_call(fail_call)
+            };
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
+            assert!(fixture.is_empty(), "{id}, observation {fail_call}: cleanup failed");
+        }
+    }
+}
+
+#[test]
+fn test_sync_later_temp_resource_creation_errors_keep_check_identity() {
+    for id in [
+        testkit::ContractCheckId::TempDirectory,
+        testkit::ContractCheckId::TempFile,
+    ] {
+        let maximum_call = if id == testkit::ContractCheckId::TempDirectory {
+            4
+        } else {
+            3
+        };
+        for fail_call in 2..=maximum_call {
+            let fixture = MemoryFixture::with_temp_creation_error_call(fail_call);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(!run.failures().is_empty(), "{id}, call {fail_call}");
+            assert_eq!(run.failures()[0].check(), Some(id), "{id}, call {fail_call}");
+            assert!(fixture.is_empty(), "{id}, call {fail_call}: leaked resources");
+        }
+    }
+}
+
+/// Every synchronous check preserves identity when any existence observation
+/// fails.
+#[test]
+fn test_sync_checks_handle_existence_observation_failures() {
+    for id in testkit::ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        for fail_call in 1..=12 {
+            let fixture = MemoryFixture::with_exists_error_call(fail_call);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
+            assert!(fixture.is_empty(), "{id}, observation {fail_call}: cleanup failed");
+        }
+    }
+}
+
+/// Every synchronous check preserves identity when path preparation fails.
+#[test]
+fn test_sync_checks_handle_path_preparation_failures() {
+    for id in testkit::ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut baseline_suite = FileSystemContractSuite::new(&baseline);
+        let _ = baseline_suite.run_check(id);
+        let path_calls = baseline.path_call_count();
+        assert!(baseline.is_empty(), "{id}: baseline cleanup failed");
+        for fail_call in 1..=path_calls {
+            let fixture = MemoryFixture::with_path_error_call(fail_call);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
+            assert!(fixture.is_empty(), "{id}, path {fail_call}: cleanup failed");
+        }
+    }
+}
+
+/// Every check keeps fixture seed errors distinct from unavailable evidence.
+#[test]
+fn test_sync_checks_handle_seed_preparation_errors() {
+    for id in testkit::ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        for file_call in 1..=8 {
+            let fixture = MemoryFixture::with_seed_error_calls(Some(file_call), None);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
+            assert!(fixture.is_empty(), "{id}, file seed {file_call}: cleanup failed");
+        }
+        for directory_call in 1..=4 {
+            let fixture = MemoryFixture::with_seed_error_calls(None, Some(directory_call));
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
+            assert!(
+                fixture.is_empty(),
+                "{id}, directory seed {directory_call}: cleanup failed"
+            );
+        }
+    }
+}
+
+/// Optional observation failures remain explicit across every contract check.
+#[test]
+fn test_sync_checks_handle_optional_fixture_hook_errors() {
+    use self::common::shared_model::FixtureHook;
+    for hook in [
+        FixtureHook::Snapshot,
+        FixtureHook::ReadFile,
+        FixtureHook::WriteFile,
+        FixtureHook::ResourceVersion,
+        FixtureHook::StaleResourceVersion,
+        FixtureHook::ChecksumFailureCase,
+        FixtureHook::SeedSymlink,
+        FixtureHook::CopyFastPathCase,
+    ] {
+        for id in testkit::ContractCheckId::ALL
+            .iter()
+            .copied()
+            .filter(|id| id.supports_synchronous())
+        {
+            for call in 1..=4 {
+                let fixture = MemoryFixture::with_fixture_hook_error(hook, call);
+                let mut suite = FileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id);
+                assert!(
+                    run.failures().iter().all(|failure| failure.check() == Some(id)),
+                    "{id}, {hook:?}"
+                );
+                assert!(fixture.is_empty(), "{id}, {hook:?} call {call}: cleanup failed");
+            }
+        }
+    }
+}
+
+/// Recursive deletion reports incomplete evidence for each unavailable seed.
+#[test]
+fn test_sync_recursive_delete_marks_missing_setup_unverified() {
+    for (directory_call, file_call) in [(Some(1), None), (Some(2), None), (None, Some(1))] {
+        let fixture = MemoryFixture::with_unavailable_seed_calls(directory_call, file_call);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(testkit::ContractCheckId::DeleteTree);
+
+        assert!(run.failures().is_empty());
+        assert!(
+            matches!(
+                run.report().checks()[0].outcome(),
+                testkit::ContractCheckOutcome::Unverified { .. }
+            ),
+            "{:?}",
+            run.report().checks()[0].outcome()
+        );
+        assert!(fixture.is_empty(), "partial tree setup must be cleaned");
+    }
+}
+
+/// Strong tree copy records unavailable source preparation without leaking it.
+#[test]
+fn test_sync_strong_tree_copy_marks_partial_setup_unverified() {
+    for (directory_call, file_call) in [(Some(1), None), (Some(2), None), (None, Some(1))] {
+        let fixture = MemoryFixture::with_unavailable_seed_calls(directory_call, file_call);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(testkit::ContractCheckId::CopyAtomicTree);
+
+        assert!(run.failures().is_empty());
+        assert!(
+            matches!(
+                run.report().checks()[0].outcome(),
+                testkit::ContractCheckOutcome::Unverified { .. }
+            ),
+            "{:?}",
+            run.report().checks()[0].outcome()
+        );
+        assert!(fixture.is_empty(), "partial tree setup must be cleaned");
+    }
 }
 
 /// Each injected provider defect must be rejected by the matching suite phase.

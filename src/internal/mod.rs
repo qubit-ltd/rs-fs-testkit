@@ -24,9 +24,6 @@ pub(crate) mod property_expectations;
 pub(crate) mod read_expectations;
 pub(crate) mod tracked_resource;
 
-pub(crate) use assertions::assert_error_with_source_or_target;
-pub(crate) use assertions::assert_error_with_target;
-pub(crate) use assertions::assert_unsupported_error;
 pub(crate) use assertions::verify_condition;
 pub(crate) use assertions::verify_fs_error;
 pub(crate) use assertions::verify_missing_error;

@@ -9,12 +9,12 @@
 
 use qubit_fs::FileSystem;
 use qubit_fs::path::Path;
-use qubit_fs_testkit::FileSystemFixture;
-use qubit_fs_testkit::FixturePreparation;
-use qubit_fs_testkit::FixtureResult;
-use qubit_fs_testkit::ReadScenario;
 
 use crate::common::MemoryFixture;
+use crate::qubit_fs_testkit::FileSystemFixture;
+use crate::qubit_fs_testkit::FixturePreparation;
+use crate::qubit_fs_testkit::FixtureResult;
+use crate::qubit_fs_testkit::ReadScenario;
 
 /// Keeps missing basic preparation separate from available range evidence.
 pub(crate) struct SelectiveReadFixture {

@@ -7,6 +7,7 @@
 // =============================================================================
 //! Namespace and raw-root checks must be independently selectable contracts.
 
+pub use ::qubit_fs_testkit;
 mod common;
 use std::error::Error;
 

@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+pub use ::qubit_fs_testkit;
 mod common;
 use qubit_fs::FileSystem;
 use qubit_fs::copy::CopyMethod;

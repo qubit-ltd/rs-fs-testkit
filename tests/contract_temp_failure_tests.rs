@@ -7,6 +7,7 @@
 // =============================================================================
 //! Failed persistence keeps the resource available through the borrowed report.
 
+pub use ::qubit_fs_testkit;
 mod common;
 
 use qubit_fs::temp::PersistFailure;

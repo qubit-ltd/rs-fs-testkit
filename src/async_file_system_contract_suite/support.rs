@@ -12,12 +12,7 @@ use std::panic::resume_unwind;
 
 use super::AsyncFileSystemContractSuite;
 use super::FileSystemCapability;
-use super::FsError;
-use super::FsErrorKind;
-use super::FsOperation;
 use super::Path;
-use super::assert_error_with_target;
-use super::assert_unsupported_error;
 use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 use crate::FixtureError;
@@ -171,114 +166,59 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             }
         }
     }
+}
 
-    /// Reads a fixture-owned file and checks its exact bytes after copy.
-    ///
-    /// # Parameters
-    ///
-    /// * `path` - Provider path to observe.
-    /// * `expected` - Exact expected content.
-    /// * `message` - Assertion message used when content differs.
-    ///
-    /// # Panics
-    ///
-    /// Panics when observation fails, is unsupported, or returns different
-    /// content.
-    #[allow(dead_code)]
-    pub(super) async fn assert_bytes(&self, path: &Path, expected: &[u8], message: &str) {
-        match self
-            .fixture
-            .read_file(path)
-            .await
-            .expect("async copy contract: fixture observation failed")
-        {
-            FixtureSupport::Supported(actual) => {
-                assert_eq!(actual, expected, "{message}")
-            }
-            FixtureSupport::Unsupported => {
-                panic!("{message}: Copy capability requires fixture.read_file support")
-            }
+#[cfg(test)]
+mod tests {
+    use qubit_fs::AsyncFileSystem;
+    use qubit_fs::path::Path;
+
+    use crate::AsyncFileSystemContractSuite;
+    use crate::AsyncFileSystemFixture;
+    use crate::FileSystemContract;
+    use crate::FixtureError;
+    use crate::FixtureFuture;
+    use crate::FixtureResult;
+    use crate::common::AsyncMemoryFixture;
+    use crate::common::async_memory_file_system::run_controlled;
+
+    struct TeardownFixture {
+        inner: AsyncMemoryFixture,
+        panic: bool,
+    }
+
+    impl AsyncFileSystemFixture for TeardownFixture {
+        fn file_system(&self) -> &AsyncFileSystem {
+            self.inner.file_system()
+        }
+
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            self.inner.path(relative)
+        }
+
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            Box::pin(async move {
+                if self.panic {
+                    panic!("injected async fixture teardown panic");
+                }
+                Err(FixtureError::new("injected async fixture teardown failure"))
+            })
         }
     }
 
-    /// Checks public context on an asynchronous facade error.
-    ///
-    /// # Parameters
-    ///
-    /// * `error` - Actual filesystem error.
-    /// * `kind` - Expected error classification.
-    /// * `operation` - Expected public operation.
-    /// * `path` - Expected source path.
-    ///
-    /// # Panics
-    ///
-    /// Panics when any expected structured field differs.
-    #[allow(dead_code)]
-    pub(super) fn assert_error(&self, error: &FsError, kind: FsErrorKind, operation: FsOperation, path: &Path) {
-        let provider = Some(self.context.properties().info().provider_id());
-        if kind == FsErrorKind::UnsupportedCapability {
-            assert_unsupported_error(
-                error,
-                kind,
-                operation,
-                Some(path),
-                provider,
-                error.required_capability(),
-            );
-        } else {
-            assert_error_with_target(
-                error,
-                kind,
-                operation,
-                Some(path),
-                None,
-                provider,
-                error.required_capability(),
-            );
+    #[test]
+    fn async_finish_capture_retains_teardown_error_and_panic() {
+        for panic in [false, true] {
+            let fixture = TeardownFixture {
+                inner: AsyncMemoryFixture::new(),
+                panic,
+            };
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_contract(FileSystemContract::ErrorContext).await;
+                assert!(!run.cleanup().failures().is_empty());
+                assert!(!run.requirements_satisfied());
+            });
         }
-    }
-
-    /// Validates an asynchronous operation error with no logical input path.
-    #[allow(dead_code)]
-    pub(super) fn assert_pathless_error(&self, error: &FsError, kind: FsErrorKind, operation: FsOperation) {
-        assert_unsupported_error(
-            error,
-            kind,
-            operation,
-            None,
-            Some(self.context.properties().info().provider_id()),
-            error.required_capability(),
-        );
-    }
-
-    /// Validates option-derived asynchronous capability preflight errors.
-    ///
-    /// # Parameters
-    ///
-    /// * `error` - Actual filesystem error.
-    /// * `operation` - Expected public operation.
-    /// * `capability` - Capability required by the rejected options.
-    /// * `contract` - Contract label used in diagnostics.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the error kind, operation, or required capability differs.
-    #[allow(dead_code)]
-    pub(super) fn assert_requirement_error(
-        &self,
-        error: &FsError,
-        operation: FsOperation,
-        capability: FileSystemCapability,
-        contract: &str,
-    ) {
-        let _ = contract;
-        assert_unsupported_error(
-            error,
-            FsErrorKind::RequirementNotMet,
-            operation,
-            error.path(),
-            Some(self.context.properties().info().provider_id()),
-            Some(capability),
-        );
     }
 }

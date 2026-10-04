@@ -29,7 +29,7 @@ use qubit_fs::path::Path;
 ///
 /// Panics when any expected field differs from the actual error.
 #[track_caller]
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn assert_error(
     error: &FsError,
     kind: FsErrorKind,
@@ -68,7 +68,7 @@ pub(crate) fn assert_error(
 ///
 /// Panics when any expected field differs from the actual error.
 #[track_caller]
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn assert_error_with_target(
     error: &FsError,
     kind: FsErrorKind,
@@ -89,7 +89,7 @@ pub(crate) fn assert_error_with_target(
 /// public error therefore preserves either request path as its primary path
 /// and always retains the destination in `target`.
 #[track_caller]
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn assert_error_with_source_or_target(
     error: &FsError,
     kind: FsErrorKind,
@@ -134,7 +134,7 @@ pub(crate) fn assert_error_with_source_or_target(
 /// match the configured provider. Missing provider context remains valid for
 /// trait-default errors.
 #[track_caller]
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn assert_unsupported_error(
     error: &FsError,
     kind: FsErrorKind,
@@ -213,5 +213,118 @@ pub(crate) fn verify_condition(
         Ok(())
     } else {
         Err(crate::ContractFailure::message_only(format!("{check}: {message}")).at(check))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use qubit_fs::error::FsError;
+    use qubit_fs::error::FsErrorKind;
+    use qubit_fs::error::FsOperation;
+    use qubit_fs::metadata::FileSystemCapability;
+    use qubit_fs::path::Path;
+
+    use super::assert_error;
+    use super::assert_error_with_source_or_target;
+    use super::assert_error_with_target;
+    use super::assert_unsupported_error;
+    use super::verify_condition;
+    use super::verify_fs_error;
+    use super::verify_missing_error;
+
+    #[test]
+    fn error_assertions_accept_matching_structured_context() {
+        let path = Path::parse("/source").unwrap();
+        let target = Path::parse("/target").unwrap();
+        let capability = FileSystemCapability::Read;
+        let error = || {
+            FsError::new(FsErrorKind::Io, FsOperation::Read, "read failed")
+                .with_path(path.clone())
+                .with_provider("memory")
+                .with_required_capability(capability)
+        };
+
+        assert_error(
+            &error(),
+            FsErrorKind::Io,
+            FsOperation::Read,
+            Some(&path),
+            Some("memory"),
+            Some(capability),
+        );
+        assert_error_with_target(
+            &error().with_target(target.clone()),
+            FsErrorKind::Io,
+            FsOperation::Read,
+            Some(&path),
+            Some(&target),
+            Some("memory"),
+            Some(capability),
+        );
+        assert_error_with_source_or_target(
+            &error().with_path(target.clone()).with_target(target.clone()),
+            FsErrorKind::Io,
+            FsOperation::Read,
+            &path,
+            &target,
+            Some("memory"),
+            Some(capability),
+        );
+        assert_unsupported_error(
+            &FsError::new(FsErrorKind::UnsupportedCapability, FsOperation::Read, "unsupported")
+                .with_path(path.clone())
+                .with_required_capability(capability),
+            FsErrorKind::UnsupportedCapability,
+            FsOperation::Read,
+            Some(&path),
+            Some("memory"),
+            Some(capability),
+        );
+    }
+
+    #[test]
+    fn error_verifiers_accept_and_reject_structured_context() {
+        let path = Path::parse("/missing").unwrap();
+        let check = crate::ContractCheckId::ReadBasic;
+        let missing = FsError::new(FsErrorKind::NotFound, FsOperation::Stat, "missing").with_path(path.clone());
+        assert!(verify_missing_error(missing, &path, "memory", check).is_ok());
+
+        let wrong_missing = FsError::new(FsErrorKind::Io, FsOperation::Stat, "wrong kind").with_path(path.clone());
+        assert!(verify_missing_error(wrong_missing, &path, "memory", check).is_err());
+
+        let matching = FsError::new(FsErrorKind::Io, FsOperation::Read, "read failed")
+            .with_path(path.clone())
+            .with_provider("memory");
+        assert!(
+            verify_fs_error(
+                matching,
+                FsErrorKind::Io,
+                FsOperation::Read,
+                &path,
+                "memory",
+                None,
+                check,
+            )
+            .is_ok()
+        );
+
+        let mismatching = FsError::new(FsErrorKind::Io, FsOperation::Read, "wrong provider")
+            .with_path(path.clone())
+            .with_provider("other");
+        assert!(
+            verify_fs_error(
+                mismatching,
+                FsErrorKind::Io,
+                FsOperation::Read,
+                &path,
+                "memory",
+                None,
+                check,
+            )
+            .is_err()
+        );
+
+        assert!(verify_condition(true, check, "condition").is_ok());
+        assert!(verify_condition(false, check, "condition").is_err());
     }
 }

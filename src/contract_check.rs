@@ -55,3 +55,24 @@ impl ContractCheck {
         &self.outcome
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use qubit_fs::metadata::FileSystemCapability;
+
+    use super::ContractCheck;
+    use crate::ContractCheckId;
+    use crate::ContractCheckOutcome;
+
+    #[test]
+    fn accessors_return_the_recorded_check_fields() {
+        let check = ContractCheck {
+            id: ContractCheckId::ListBasic,
+            capability: Some(FileSystemCapability::List),
+            outcome: ContractCheckOutcome::Passed,
+        };
+        assert_eq!(check.id(), ContractCheckId::ListBasic);
+        assert_eq!(check.capability(), Some(FileSystemCapability::List));
+        assert_eq!(check.outcome(), &ContractCheckOutcome::Passed);
+    }
+}

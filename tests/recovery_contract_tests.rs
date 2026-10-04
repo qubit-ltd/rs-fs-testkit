@@ -7,6 +7,7 @@
 // =============================================================================
 //! Original failure snapshots and rejected sessions survive contract reporting.
 
+pub use ::qubit_fs_testkit;
 mod common;
 use common::MemoryFault;
 use common::MemoryFixture;
@@ -16,9 +17,10 @@ use qubit_fs::write::RejectedWriter;
 use qubit_fs::write::WriteAllFailure;
 use qubit_fs::write::WriteFailureState;
 use qubit_fs::write::WriterRecovery;
-use qubit_fs_testkit::ContractCheckId;
-use qubit_fs_testkit::ContractSource;
-use qubit_fs_testkit::FileSystemContractSuite;
+
+use crate::qubit_fs_testkit::ContractCheckId;
+use crate::qubit_fs_testkit::ContractSource;
+use crate::qubit_fs_testkit::FileSystemContractSuite;
 
 /// A real facade failure crosses the report wrapper without losing frozen
 /// facts.
@@ -89,7 +91,8 @@ fn test_contract_report_retains_rejected_writer_open_failure() {
 fn test_conditional_cleanup_failure_preserves_sync_recovery() {
     use qubit_fs::error::FsErrorKind;
     use qubit_fs::write::WriteAbortOutcome;
-    use qubit_fs_testkit::ContractWriterFailure;
+
+    use crate::qubit_fs_testkit::ContractWriterFailure;
     for id in [ContractCheckId::WriteIfAbsent, ContractCheckId::WriteIfMatch] {
         let fixture = MemoryFixture::with_fault(MemoryFault::ConditionalAbortFailsOnce);
         let mut suite = FileSystemContractSuite::new(&fixture);

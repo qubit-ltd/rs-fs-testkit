@@ -8,6 +8,7 @@
 
 #![cfg(feature = "async")]
 
+pub use ::qubit_fs_testkit;
 mod common;
 use qubit_fs::metadata::AtomicityRequirement;
 use qubit_fs::path::Path;

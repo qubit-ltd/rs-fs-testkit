@@ -64,3 +64,30 @@ impl Drop for ProbeDisarmGuard<'_> {
         let _ = self.disarm();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ProbeDisarmGuard;
+    use crate::FixtureError;
+
+    #[test]
+    fn disarm_records_an_error_once() {
+        let mut failures = Vec::new();
+        let mut guard = ProbeDisarmGuard::new(|| Err(FixtureError::new("disarm failure")), &mut failures);
+        assert!(!guard.disarm());
+        assert!(guard.disarm());
+        drop(guard);
+        assert_eq!(failures.len(), 1);
+        assert!(failures[0].message().contains("probe disarm failed"));
+    }
+
+    #[test]
+    fn drop_retains_a_disarm_panic() {
+        let mut failures = Vec::new();
+        let guard = ProbeDisarmGuard::new(|| -> crate::FixtureResult<()> { panic!("disarm panic") }, &mut failures);
+        drop(guard);
+        assert_eq!(failures.len(), 1);
+        assert!(failures[0].message().contains("probe disarm panicked: disarm panic"));
+        assert!(failures[0].take_panic_payload().is_some());
+    }
+}

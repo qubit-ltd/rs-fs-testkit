@@ -10,7 +10,6 @@
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
-pub(crate) use qubit_fs::error::FsError;
 pub(crate) use qubit_fs::error::FsErrorKind;
 pub(crate) use qubit_fs::error::FsOperation;
 pub(crate) use qubit_fs::metadata::FileSystemCapability;
@@ -21,9 +20,6 @@ use crate::ContractReport;
 use crate::FileSystemContract;
 use crate::FileSystemFixture;
 use crate::contract_context::ContractContext;
-pub(crate) use crate::internal::assert_error_with_source_or_target;
-pub(crate) use crate::internal::assert_error_with_target;
-pub(crate) use crate::internal::assert_unsupported_error;
 // Implements property snapshots and bounded limit checks.
 mod properties;
 // Implements reader contracts.

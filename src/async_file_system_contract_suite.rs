@@ -7,7 +7,6 @@
 // =============================================================================
 //! Stateful runtime-neutral asynchronous filesystem provider contract suite.
 
-pub(crate) use qubit_fs::error::FsError;
 pub(crate) use qubit_fs::error::FsErrorKind;
 pub(crate) use qubit_fs::error::FsOperation;
 pub(crate) use qubit_fs::metadata::FileSystemCapability;
@@ -19,8 +18,6 @@ use crate::AsyncFileSystemFixture;
 use crate::ContractReport;
 use crate::FileSystemContract;
 use crate::contract_context::ContractContext;
-pub(crate) use crate::internal::assert_error_with_target;
-pub(crate) use crate::internal::assert_unsupported_error;
 use crate::internal::catch_unwind_future;
 // Implements property snapshots and bounded limit checks.
 mod properties;

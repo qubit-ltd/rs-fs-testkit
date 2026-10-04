@@ -8,8 +8,8 @@
 
 #![cfg(feature = "async")]
 
+pub use ::qubit_fs_testkit;
 use qubit_fs_testkit as testkit;
-
 mod common;
 use std::task::Context;
 use std::task::Poll;

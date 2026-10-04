@@ -7,9 +7,9 @@
 // =============================================================================
 //! A capability claim cannot be satisfied by skipping its positive scenario.
 
+pub use ::qubit_fs_testkit;
 use qubit_fs as qfs;
 use qubit_fs_testkit as testkit;
-
 mod common;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;

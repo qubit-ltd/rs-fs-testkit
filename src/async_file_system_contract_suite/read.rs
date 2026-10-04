@@ -42,9 +42,7 @@ impl AsyncFileSystemContractSuite<'_> {
     pub(super) async fn check_read_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let spec = check_catalog::specification(id);
-        let scenario = spec
-            .read_scenario
-            .ok_or_else(|| ContractFailure::message_only("selected entry is not a read check").at(id))?;
+        let scenario = spec.read_scenario.expect("dispatch selected a non-read check");
         let outcome = self.execute_read_scenario(id, scenario).await?;
         self.context.record_check(id, spec.capability, outcome);
         Ok(())
@@ -57,9 +55,7 @@ impl AsyncFileSystemContractSuite<'_> {
         scenario: ReadScenario,
     ) -> Result<ContractCheckOutcome, ContractFailure> {
         let spec = check_catalog::specification(id);
-        let capability = spec
-            .capability
-            .ok_or_else(|| ContractFailure::message_only("read catalog entry lacks a capability").at(id))?;
+        let capability = spec.capability.expect("read check has no capability");
         let limit = self.context.properties().limits().max_read_range_bytes();
         let name = if scenario == ReadScenario::ChecksumCorruption {
             "checksum-failure".to_owned()

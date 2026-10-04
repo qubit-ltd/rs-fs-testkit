@@ -32,9 +32,7 @@ impl AsyncFileSystemContractSuite<'_> {
     pub(super) async fn check_strong_tree_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let spec = crate::internal::check_catalog::specification(id);
-        let scenario = spec
-            .copy_scenario
-            .ok_or_else(|| ContractFailure::message_only("strong copy scenario absent from catalog").at(id))?;
+        let scenario = spec.copy_scenario.expect("tree-copy check has no catalog scenario");
         let (capability, options) = match scenario {
             CopyScenario::AtomicTree => (
                 FileSystemCapability::AtomicTreeCopy,
@@ -120,10 +118,8 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "strong copy preparation changed required request semantics",
         )?;
-        let sub = qfs::path::RelativePath::parse("sub")
-            .map_err(|error| ContractFailure::with_source("tree subdirectory path failed", error).at(id))?;
-        let child = qfs::path::RelativePath::parse("sub/child")
-            .map_err(|error| ContractFailure::with_source("tree child path failed", error).at(id))?;
+        let sub = qfs::path::RelativePath::parse("sub").expect("static tree child path must be valid");
+        let child = qfs::path::RelativePath::parse("sub/child").expect("static tree child path must be valid");
         let source_sub = source.join(&sub);
         let source_child = source.join(&child);
         let target_sub = target.join(&sub);

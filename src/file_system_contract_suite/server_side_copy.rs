@@ -78,9 +78,8 @@ impl FileSystemContractSuite<'_> {
                 .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
             return Ok(());
         }
-        let scenario = crate::internal::check_catalog::specification(id)
-            .copy_scenario
-            .ok_or_else(|| ContractFailure::message_only("server-side scenario absent from catalog").at(id))?;
+        let scenario =
+            crate::internal::check_catalog::required_copy_scenario(id, "server-side scenario absent from catalog")?;
         let prepared = self
             .fixture
             .prepare_copy(scenario, &source_relative, &target_relative, b"server-side")

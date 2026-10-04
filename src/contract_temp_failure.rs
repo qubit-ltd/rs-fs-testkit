@@ -85,3 +85,23 @@ impl<T> Error for ContractTempFailure<T> {
         Some(self.error.as_ref())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ContractTempFailure;
+
+    #[test]
+    fn retained_resource_can_be_inspected_and_transferred() {
+        let mut failure = ContractTempFailure::new(std::io::Error::other("temp"), 7_u8);
+        assert_eq!(failure.error().to_string(), "temp");
+        assert_eq!(*failure.resource(), 7);
+        *failure.resource_mut() = 8;
+        assert_eq!(*failure.resource(), 8);
+        assert!(format!("{failure:?}").contains("retained"));
+        assert!(format!("{failure}").contains("recovery resource"));
+        assert_eq!(std::error::Error::source(&failure).unwrap().to_string(), "temp");
+        let (error, resource) = failure.into_parts();
+        assert_eq!(error.to_string(), "temp");
+        assert_eq!(resource, 8);
+    }
+}

@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+pub use ::qubit_fs_testkit;
 mod common;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
@@ -261,7 +262,7 @@ fn test_cleanup_retains_resources_for_stat_and_delete_failures() {
             "initial cleanup failure must remain visible"
         );
         let initial = fixture.entry_count();
-        assert!(initial > 0, "write phase must prepare resources");
+        assert!(initial > 0, "{fault:?}: write phase must prepare resources");
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| suite.finish()));
         assert!(result.is_err(), "cleanup fault must be reported: {fault:?}");

@@ -30,10 +30,8 @@ impl AsyncFileSystemContractSuite<'_> {
     /// bytes.
     pub(super) async fn check_strong_file_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
-        let spec = crate::internal::check_catalog::specification(id);
-        let scenario = spec
-            .copy_scenario
-            .ok_or_else(|| ContractFailure::message_only("strong copy scenario absent from catalog").at(id))?;
+        let scenario =
+            crate::internal::check_catalog::required_copy_scenario(id, "strong copy scenario absent from catalog")?;
         let (capability, options) = match scenario {
             CopyScenario::AtomicFile => (
                 FileSystemCapability::AtomicFileCopy,

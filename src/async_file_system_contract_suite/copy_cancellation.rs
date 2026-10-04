@@ -299,3 +299,21 @@ async fn observe_file(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::AsyncFileSystemContractSuite;
+    use crate::ContractCheckId;
+    use crate::common::AsyncMemoryFixture;
+    use crate::common::async_memory_file_system::run_controlled;
+
+    #[test]
+    fn rejects_a_non_cancellation_check_identity() {
+        let fixture = AsyncMemoryFixture::new();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let result = suite.check_copy_cancellation_item(ContractCheckId::ReadBasic).await;
+            assert!(result.is_err());
+        });
+    }
+}

@@ -20,6 +20,7 @@ use std::io::Result as IoResult;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 #[cfg(feature = "async")]
@@ -110,6 +111,7 @@ use qubit_fs::spi::SpiPersistFailure;
 use qubit_fs::spi::SpiRenameFailure;
 use qubit_fs::spi::StatRequest;
 use qubit_fs::spi::StatResponse;
+use qubit_fs::temp::PersistFailureState;
 use qubit_fs::temp::PersistOutcome;
 use qubit_fs::write::WriteAbortOutcome;
 use qubit_fs::write::WriteDisposition;
@@ -118,25 +120,6 @@ use qubit_fs::write::WriteFailure;
 use qubit_fs::write::WriteFailureState;
 use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WritePrecondition;
-use qubit_fs_testkit as testkit;
-#[cfg(feature = "async")]
-use qubit_fs_testkit::AsyncCopyCancellationStage;
-#[cfg(feature = "async")]
-use qubit_fs_testkit::AsyncCopyFixtureCase;
-#[cfg(feature = "async")]
-use qubit_fs_testkit::AsyncFileSystemFixture;
-use qubit_fs_testkit::AsyncWriteCancellationStage;
-use qubit_fs_testkit::AsyncWriteFixtureCase;
-#[cfg(feature = "async")]
-use qubit_fs_testkit::CopyCancellationProbe;
-use qubit_fs_testkit::CopyFixtureCase;
-#[cfg(feature = "async")]
-use qubit_fs_testkit::FixtureError;
-#[cfg(feature = "async")]
-use qubit_fs_testkit::FixtureFuture;
-use qubit_fs_testkit::FixtureResult;
-use qubit_fs_testkit::FixtureSupport;
-use qubit_fs_testkit::WriteCancellationProbe;
 #[cfg(feature = "async")]
 use qubit_io::AsyncInput;
 #[cfg(feature = "async")]
@@ -147,8 +130,29 @@ use super::async_memory_write_cancellation_probe::AsyncMemoryWriteCancellationPr
 use super::memory_file_system::listed_entries;
 use super::memory_file_system::provider_properties;
 use super::shared_model::Entry;
+use super::shared_model::FixtureHook;
+use super::shared_model::FixtureHookErrorPlan;
 use super::write_gate::WriteGate;
 use crate::common::UnavailableScenario;
+use crate::qubit_fs_testkit as testkit;
+#[cfg(feature = "async")]
+use crate::qubit_fs_testkit::AsyncCopyCancellationStage;
+#[cfg(feature = "async")]
+use crate::qubit_fs_testkit::AsyncCopyFixtureCase;
+#[cfg(feature = "async")]
+use crate::qubit_fs_testkit::AsyncFileSystemFixture;
+use crate::qubit_fs_testkit::AsyncWriteCancellationStage;
+use crate::qubit_fs_testkit::AsyncWriteFixtureCase;
+#[cfg(feature = "async")]
+use crate::qubit_fs_testkit::CopyCancellationProbe;
+use crate::qubit_fs_testkit::CopyFixtureCase;
+#[cfg(feature = "async")]
+use crate::qubit_fs_testkit::FixtureError;
+#[cfg(feature = "async")]
+use crate::qubit_fs_testkit::FixtureFuture;
+use crate::qubit_fs_testkit::FixtureResult;
+use crate::qubit_fs_testkit::FixtureSupport;
+use crate::qubit_fs_testkit::WriteCancellationProbe;
 
 #[cfg(feature = "async")]
 struct WakeFlag(AtomicUsize);
@@ -188,6 +192,7 @@ pub(crate) fn run_controlled<T>(future: impl Future<Output = T>) -> T {
 #[cfg(feature = "async")]
 pub struct AsyncMemoryFixture {
     file_system: AsyncFileSystem,
+    fault: AsyncMemoryFault,
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
     copy_gate: Arc<Mutex<CopyGate>>,
     write_gate: Arc<Mutex<WriteGate>>,
@@ -200,6 +205,19 @@ pub struct AsyncMemoryFixture {
     limits: FileSystemLimits,
     unavailable_case: Option<UnavailableScenario>,
     invalid_probe_path: Option<&'static str>,
+    path_error_call: Option<usize>,
+    seed_file_calls: Arc<AtomicUsize>,
+    seed_directory_calls: Arc<AtomicUsize>,
+    unavailable_file_seed_call: Option<usize>,
+    unavailable_directory_seed_call: Option<usize>,
+    file_seed_error_call: Option<usize>,
+    directory_seed_error_call: Option<usize>,
+    exists_calls: Arc<AtomicUsize>,
+    exists_error_call: Option<usize>,
+    fixture_hook_errors: Arc<Mutex<FixtureHookErrorPlan>>,
+    temp_creation_calls: Arc<AtomicUsize>,
+    temp_creation_error_call: Arc<AtomicUsize>,
+    cleanup_stat_panics: Arc<AtomicBool>,
 }
 
 /// Shared stage gate used by the asynchronous cancellation self-test.
@@ -211,6 +229,8 @@ struct CopyGate {
     armed: bool,
     execution_live: bool,
     ever_reached: bool,
+    fail_acknowledgement: bool,
+    fail_disarm: bool,
     waker: Option<Waker>,
 }
 
@@ -225,6 +245,8 @@ impl CopyGate {
             armed: false,
             execution_live: false,
             ever_reached: false,
+            fail_acknowledgement: false,
+            fail_disarm: false,
             waker: None,
         }
     }
@@ -265,6 +287,9 @@ impl CopyGate {
     /// Polls stage acknowledgement using the caller's real waker.
     fn poll_reached(&mut self, context: &Context<'_>) -> Poll<FixtureResult<()>> {
         if self.target_reached {
+            if self.fail_acknowledgement {
+                return Poll::Ready(Err(FixtureError::new("injected copy acknowledgement failure")));
+            }
             return Poll::Ready(Ok(()));
         }
         if !self.armed {
@@ -285,6 +310,9 @@ impl CopyGate {
         self.target_reached = false;
         if let Some(waker) = self.waker.take() {
             waker.wake();
+        }
+        if self.fail_disarm {
+            return Err(FixtureError::new("injected copy probe disarm failure"));
         }
         Ok(())
     }
@@ -379,12 +407,18 @@ pub enum AsyncMemoryFault {
     WrongStatMetadata,
     /// Claims recursive creation while omitting ancestors.
     RecursiveCreateLeavesParentsMissing,
+    /// Fails directory creation before publishing any path.
+    CreateDirectoryFails,
     /// Ignores an explicitly stale deletion condition.
     IgnoreDeleteIfMatch,
     /// Returns bytes different from the provider's seeded content.
     ReadWrongBytes,
+    /// Fails when opening a provider-owned reader.
+    ReadFails,
     /// Accepts writes but does not publish their bytes.
     WriteDropsBytes,
+    /// Fails when opening a provider-owned writer.
+    WriteFails,
     /// Produces a listing entry outside the requested namespace.
     ListEscapesNamespace,
     /// Returns no entries for a non-empty requested directory.
@@ -405,8 +439,32 @@ pub enum AsyncMemoryFault {
     CopyOverwriteKeepsTarget,
     /// Publishes through a native method despite requiring server-side copy.
     ServerSideCopyFallsBack,
+    /// Fails stage acknowledgement in the copy cancellation probe.
+    CopyCancelAcknowledgeFails,
+    /// Fails probe disarm after releasing the copy gate.
+    CopyCancelDisarmFails,
+    /// Fails copy execution before the selected cancellation stage is reached.
+    CopyCancelFailsBeforeStage,
+    /// Fails a server-side-required copy before publishing a target.
+    ServerSideCopyFails,
     /// Reports temporary cleanup success without removing the resource.
     TempCleanupNoOp,
+    /// Fails temporary file and directory creation requests.
+    TempCreationFails,
+    /// Fails temporary resource keep before publishing it.
+    TempKeepFails,
+    /// Fails temporary persist before publishing it.
+    TempPersistFails,
+    /// Fails one temporary cleanup attempt.
+    TempCleanupFailsOnce,
+    /// Fails independent observation in the owning-write cancellation probe.
+    WriteCancelObserveFails,
+    /// Fails stage acknowledgement in the owning-write cancellation probe.
+    WriteCancelAcknowledgeFails,
+    /// Fails accepted-byte observation in the owning-write cancellation probe.
+    WriteCancelAcceptedBytesFails,
+    /// Fails probe disarm after releasing the provider gate.
+    WriteCancelDisarmFails,
     /// Appends by replacing existing bytes.
     AppendOverwrites,
     /// Ignores CreateNew and replaces an existing destination.
@@ -421,6 +479,8 @@ pub enum AsyncMemoryFault {
     CopyWriteFails,
     /// Publishes during explicit abort while claiming the target is unchanged.
     AbortLies,
+    /// Claims an expected conditional rejection cleanup published the request.
+    ConditionalAbortReportsPublished,
     /// Rejects basic writer publication before changing the target.
     BasicCommitFails,
     /// Rejects owning writer publication while leaving its recovery session
@@ -468,6 +528,10 @@ pub enum AsyncMemoryFault {
     ChecksumIgnoresCorruption,
     /// Returns an ordinary error while cleanup inspects a resource.
     CleanupStatError,
+    /// Returns an ordinary error while verifying a completed cleanup deletion.
+    CleanupVerifyStatError,
+    /// Panics while verifying a completed cleanup deletion.
+    CleanupVerifyStatPanic,
     /// Returns an ordinary error while cleanup deletes a resource.
     CleanupDeleteError,
     /// Panics while cleanup deletes a resource.
@@ -482,6 +546,7 @@ struct AsyncCapabilityProfile {
     optional: bool,
     create_directory: bool,
     extended: bool,
+    atomic_temp_persist: bool,
     read_only: bool,
 }
 
@@ -492,6 +557,7 @@ impl AsyncCapabilityProfile {
         optional: false,
         create_directory: false,
         extended: false,
+        atomic_temp_persist: false,
         read_only: false,
     };
     const CORE: Self = Self {
@@ -499,6 +565,7 @@ impl AsyncCapabilityProfile {
         optional: false,
         create_directory: false,
         extended: false,
+        atomic_temp_persist: false,
         read_only: false,
     };
     const STANDARD: Self = Self {
@@ -506,6 +573,7 @@ impl AsyncCapabilityProfile {
         optional: true,
         create_directory: true,
         extended: false,
+        atomic_temp_persist: true,
         read_only: false,
     };
     const FALLBACK: Self = Self {
@@ -513,6 +581,7 @@ impl AsyncCapabilityProfile {
         optional: false,
         create_directory: true,
         extended: false,
+        atomic_temp_persist: false,
         read_only: false,
     };
     const PREFIX_DELETE: Self = Self {
@@ -520,6 +589,7 @@ impl AsyncCapabilityProfile {
         optional: true,
         create_directory: false,
         extended: false,
+        atomic_temp_persist: true,
         read_only: false,
     };
     const ALL: Self = Self {
@@ -527,6 +597,7 @@ impl AsyncCapabilityProfile {
         optional: true,
         create_directory: true,
         extended: true,
+        atomic_temp_persist: true,
         read_only: false,
     };
 }
@@ -565,6 +636,44 @@ impl AsyncMemoryFixture {
             limits,
             None,
         )
+    }
+
+    /// Creates a fully capable fixture with one fault and explicit limits.
+    pub fn with_fault_and_limits(fault: AsyncMemoryFault, limits: FileSystemLimits) -> Self {
+        Self::with_configuration_options(
+            fault,
+            false,
+            false,
+            AsyncCapabilityProfile::ALL,
+            "async-memory-limits-provider",
+            limits,
+            None,
+        )
+    }
+
+    /// Creates a bounded fixture that fails one optional observation hook.
+    pub fn with_fixture_hook_error_and_limits(hook: FixtureHook, call: usize, limits: FileSystemLimits) -> Self {
+        let fixture = Self::with_fault_and_limits(AsyncMemoryFault::None, limits);
+        fixture
+            .fixture_hook_errors
+            .lock()
+            .expect("async fixture hook error lock must succeed")
+            .fail_at(hook, call);
+        fixture
+    }
+
+    /// Creates a bounded fixture that fails one indexed file seed.
+    pub fn with_file_seed_error_call_and_limits(call: usize, limits: FileSystemLimits) -> Self {
+        let mut fixture = Self::with_fault_and_limits(AsyncMemoryFault::None, limits);
+        fixture.file_seed_error_call = Some(call);
+        fixture
+    }
+
+    /// Creates a bounded fixture that fails one indexed path request.
+    pub fn with_path_error_call_and_limits(call: usize, limits: FileSystemLimits) -> Self {
+        let mut fixture = Self::with_fault_and_limits(AsyncMemoryFault::None, limits);
+        fixture.path_error_call = Some(call);
+        fixture
     }
 
     /// Creates a bounded fixture with real cancellation gates enabled.
@@ -624,6 +733,13 @@ impl AsyncMemoryFixture {
         )
     }
 
+    /// Creates a core-capability-free fixture that fails one path request.
+    pub fn without_core_capabilities_with_path_error(call: usize) -> Self {
+        let mut fixture = Self::without_operation_capabilities();
+        fixture.path_error_call = Some(call);
+        fixture
+    }
+
     /// Creates a fixture that advertises none of the suite operation
     /// capabilities.
     pub fn without_operation_capabilities() -> Self {
@@ -645,6 +761,14 @@ impl AsyncMemoryFixture {
             AsyncCapabilityProfile::CORE,
             "async-memory-contract-provider",
         )
+    }
+
+    /// Creates a core-only asynchronous provider whose selected fixture path
+    /// call fails.
+    pub fn without_optional_capabilities_with_path_error_call(call: usize) -> Self {
+        let mut fixture = Self::without_optional_capabilities();
+        fixture.path_error_call = Some(call);
+        fixture
     }
 
     /// Creates an asynchronous fixture whose copy uses only the facade
@@ -718,6 +842,100 @@ impl AsyncMemoryFixture {
         )
     }
 
+    /// Creates a provider with temporary resources but without atomic persist.
+    pub fn without_atomic_temp_persist() -> Self {
+        Self::with_configuration(
+            AsyncMemoryFault::None,
+            false,
+            false,
+            AsyncCapabilityProfile {
+                atomic_temp_persist: false,
+                ..AsyncCapabilityProfile::ALL
+            },
+            "async-memory-no-atomic-temp-provider",
+        )
+    }
+
+    /// Creates a no-atomic-persist fixture with one failing existence probe.
+    pub fn without_atomic_temp_persist_with_exists_error_call(call: usize) -> Self {
+        let mut fixture = Self::without_atomic_temp_persist();
+        fixture.exists_error_call = Some(call);
+        fixture
+    }
+
+    /// Creates an all-capability fixture that omits one indexed seed hook.
+    pub fn with_unavailable_seed_calls(directory_call: Option<usize>, file_call: Option<usize>) -> Self {
+        let mut fixture = Self::with_all_capabilities();
+        fixture.unavailable_directory_seed_call = directory_call;
+        fixture.unavailable_file_seed_call = file_call;
+        fixture
+    }
+
+    /// Creates a fixture that fails one indexed out-of-band existence probe.
+    pub fn with_exists_error_call(call: usize) -> Self {
+        let mut fixture = Self::with_all_capabilities();
+        fixture.exists_error_call = Some(call);
+        fixture
+    }
+
+    /// Creates an instrumented cancellation fixture with one existence error.
+    pub fn with_cancellation_exists_error_call(call: usize) -> Self {
+        let mut fixture = Self::with_fault(AsyncMemoryFault::None);
+        fixture.exists_error_call = Some(call);
+        fixture
+    }
+
+    /// Creates a fixture that fails one indexed temporary-resource creation.
+    pub fn with_temp_creation_error_call(call: usize) -> Self {
+        let fixture = Self::with_all_capabilities();
+        fixture.temp_creation_error_call.store(call, Ordering::Release);
+        fixture
+    }
+
+    /// Creates a fixture that fails one indexed path preparation request.
+    pub fn with_path_error_call(call: usize) -> Self {
+        let mut fixture = Self::with_all_capabilities();
+        fixture.path_error_call = Some(call);
+        fixture
+    }
+
+    /// Creates a fixture that fails selected file or directory seed calls.
+    pub fn with_seed_error_calls(file_call: Option<usize>, directory_call: Option<usize>) -> Self {
+        let mut fixture = Self::with_all_capabilities();
+        fixture.file_seed_error_call = file_call;
+        fixture.directory_seed_error_call = directory_call;
+        fixture
+    }
+
+    /// Creates a fixture that fails one indexed optional fixture hook.
+    pub fn with_fixture_hook_error(hook: FixtureHook, call: usize) -> Self {
+        let fixture = Self::with_all_capabilities();
+        fixture
+            .fixture_hook_errors
+            .lock()
+            .expect("async fixture hook error lock must succeed")
+            .fail_at(hook, call);
+        fixture
+    }
+
+    /// Creates an instrumented cancellation fixture with one hook error.
+    pub fn with_cancellation_fixture_hook_error(hook: FixtureHook, call: usize) -> Self {
+        let fixture = Self::with_fault(AsyncMemoryFault::None);
+        fixture
+            .fixture_hook_errors
+            .lock()
+            .expect("async fixture hook error lock must succeed")
+            .fail_at(hook, call);
+        fixture
+    }
+
+    fn fixture_hook_fails(&self, hook: FixtureHook) -> bool {
+        self.fixture_hook_errors
+            .lock()
+            .expect("async fixture hook error lock must succeed")
+            .should_fail(hook)
+    }
+
     /// Creates a fixture with selected copy and fault behavior.
     fn with_copy_behavior(fault: AsyncMemoryFault, supports_cancellation_cases: bool, native_copy: bool) -> Self {
         Self::with_configuration(
@@ -764,6 +982,9 @@ impl AsyncMemoryFixture {
         let entries = Arc::new(Mutex::new(HashMap::new()));
         let versions = Arc::new(Mutex::new(HashMap::new()));
         let path_calls = Arc::new(AtomicUsize::new(0));
+        let temp_creation_calls = Arc::new(AtomicUsize::new(0));
+        let temp_creation_error_call = Arc::new(AtomicUsize::new(usize::MAX));
+        let cleanup_stat_panics = Arc::new(AtomicBool::new(false));
         let file_system = AsyncFileSystem::from_spi(AsyncMemorySpi {
             stage: Arc::clone(&stage),
             copy_gate: Arc::clone(&copy_gate),
@@ -776,13 +997,18 @@ impl AsyncMemoryFixture {
             optional_capabilities: capabilities.optional,
             create_directory_capability: capabilities.create_directory,
             extended_capabilities: capabilities.extended,
+            atomic_temp_persist: capabilities.atomic_temp_persist,
             provider_id,
             limits,
             read_only: capabilities.read_only,
+            temp_creation_calls: Arc::clone(&temp_creation_calls),
+            temp_creation_error_call: Arc::clone(&temp_creation_error_call),
+            cleanup_stat_panics: Arc::clone(&cleanup_stat_panics),
         })
         .expect("async memory SPI properties must be valid");
         Self {
             file_system,
+            fault,
             stage,
             copy_gate,
             write_gate,
@@ -795,6 +1021,19 @@ impl AsyncMemoryFixture {
             limits,
             unavailable_case,
             invalid_probe_path: None,
+            path_error_call: None,
+            seed_file_calls: Arc::new(AtomicUsize::new(0)),
+            seed_directory_calls: Arc::new(AtomicUsize::new(0)),
+            unavailable_file_seed_call: None,
+            unavailable_directory_seed_call: None,
+            file_seed_error_call: None,
+            directory_seed_error_call: None,
+            exists_calls: Arc::new(AtomicUsize::new(0)),
+            exists_error_call: None,
+            fixture_hook_errors: Arc::new(Mutex::new(FixtureHookErrorPlan::default())),
+            temp_creation_calls,
+            temp_creation_error_call,
+            cleanup_stat_panics,
         }
     }
 
@@ -807,6 +1046,11 @@ impl AsyncMemoryFixture {
     /// Reports whether a write probe still owns an armed gate.
     pub fn write_cancellation_is_armed(&self) -> bool {
         self.write_gate.lock().expect("write gate lock").is_armed()
+    }
+
+    /// Toggles a stat panic that can be activated after a contract body.
+    pub fn set_cleanup_stat_panics(&self, panics: bool) {
+        self.cleanup_stat_panics.store(panics, Ordering::Release);
     }
 
     /// Returns stages acknowledged by the provider's actual write gate.
@@ -826,6 +1070,29 @@ impl AsyncMemoryFixture {
     pub fn path_call_count(&self) -> usize {
         self.path_calls.load(Ordering::Relaxed)
     }
+
+    pub fn seed_file_call_count(&self) -> usize {
+        self.seed_file_calls.load(Ordering::Relaxed)
+    }
+
+    pub fn seed_directory_call_count(&self) -> usize {
+        self.seed_directory_calls.load(Ordering::Relaxed)
+    }
+
+    pub fn exists_call_count(&self) -> usize {
+        self.exists_calls.load(Ordering::Relaxed)
+    }
+
+    pub fn temp_creation_call_count(&self) -> usize {
+        self.temp_creation_calls.load(Ordering::Relaxed)
+    }
+
+    pub fn fixture_hook_call_count(&self, hook: FixtureHook) -> usize {
+        self.fixture_hook_errors
+            .lock()
+            .expect("fixture hook error lock must succeed")
+            .call_count(hook)
+    }
 }
 
 #[cfg(feature = "async")]
@@ -833,6 +1100,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
     /// Reads the entire isolated model without calling the facade.
     fn snapshot_namespace_paths(&self) -> FixtureFuture<'_, FixtureSupport<Vec<Path>>> {
         Box::pin(async move {
+            if self.fixture_hook_fails(FixtureHook::Snapshot) {
+                return Err(FixtureError::new("injected namespace snapshot failure"));
+            }
             let entries = self.entries.lock().expect("async memory state lock");
             let paths = entries
                 .keys()
@@ -887,7 +1157,10 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
     }
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        self.path_calls.fetch_add(1, Ordering::Relaxed);
+        let call = self.path_calls.fetch_add(1, Ordering::Relaxed) + 1;
+        if self.path_error_call == Some(call) {
+            return Err(FixtureError::new("injected fixture path failure"));
+        }
         if self.invalid_probe_path.is_some_and(|suffix| relative.ends_with(suffix)) {
             return Path::parse_literal("/invalid-probe-path")
                 .map_err(|error| FixtureError::with_source("probe path", error));
@@ -1152,6 +1425,13 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
+            let call = self.seed_file_calls.fetch_add(1, Ordering::Relaxed) + 1;
+            if self.file_seed_error_call == Some(call) {
+                return Err(FixtureError::new("injected file seed failure"));
+            }
+            if self.unavailable_file_seed_call == Some(call) {
+                return Ok(FixtureSupport::Unsupported);
+            }
             let path = self.path(relative)?;
             self.entries
                 .lock()
@@ -1164,6 +1444,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
         Box::pin(async move {
+            if self.fixture_hook_fails(FixtureHook::ReadFile) {
+                return Err(FixtureError::new("injected file observation failure"));
+            }
             let entry = self
                 .entries
                 .lock()
@@ -1179,6 +1462,10 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
         Box::pin(async move {
+            let call = self.exists_calls.fetch_add(1, Ordering::Relaxed) + 1;
+            if self.exists_error_call == Some(call) {
+                return Err(FixtureError::new("injected existence observation failure"));
+            }
             Ok(FixtureSupport::Supported(
                 self.entries
                     .lock()
@@ -1190,6 +1477,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn write_file_out_of_band<'a>(&'a self, path: &'a Path, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<()>> {
         Box::pin(async move {
+            if self.fixture_hook_fails(FixtureHook::WriteFile) {
+                return Err(FixtureError::new("injected out-of-band write failure"));
+            }
             self.entries
                 .lock()
                 .expect("async memory state lock must succeed")
@@ -1201,6 +1491,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         Box::pin(async move {
+            if self.fixture_hook_fails(FixtureHook::ResourceVersion) {
+                return Err(FixtureError::new("injected resource version failure"));
+            }
             let version = self
                 .entries
                 .lock()
@@ -1216,6 +1509,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn stale_resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         Box::pin(async move {
+            if self.fixture_hook_fails(FixtureHook::StaleResourceVersion) {
+                return Err(FixtureError::new("injected stale version failure"));
+            }
             let exists = self
                 .entries
                 .lock()
@@ -1231,6 +1527,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn checksum_failure_case<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
+            if self.fixture_hook_fails(FixtureHook::ChecksumFailureCase) {
+                return Err(FixtureError::new("injected checksum setup failure"));
+            }
             let path = self.path(relative)?;
             self.entries
                 .lock()
@@ -1253,6 +1552,13 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn seed_empty_directory<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
+            let call = self.seed_directory_calls.fetch_add(1, Ordering::Relaxed) + 1;
+            if self.directory_seed_error_call == Some(call) {
+                return Err(FixtureError::new("injected directory seed failure"));
+            }
+            if self.unavailable_directory_seed_call == Some(call) {
+                return Ok(FixtureSupport::Unsupported);
+            }
             let path = self.path(relative)?;
             self.entries
                 .lock()
@@ -1264,6 +1570,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn seed_symlink<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
+            if self.fixture_hook_fails(FixtureHook::SeedSymlink) {
+                return Err(FixtureError::new("injected symlink setup failure"));
+            }
             let path = self.path(relative)?;
             self.entries
                 .lock()
@@ -1275,6 +1584,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn copy_fast_path_case<'a>(&'a self, method: CopyMethod) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
         Box::pin(async move {
+            if self.fixture_hook_fails(FixtureHook::CopyFastPathCase) {
+                return Err(FixtureError::new("injected fast-path case preparation failure"));
+            }
             if method != CopyMethod::ServerSide {
                 return Ok(FixtureSupport::Unsupported);
             }
@@ -1312,6 +1624,21 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 case,
                 gate: Arc::clone(&self.write_gate),
                 entries: Arc::clone(&self.entries),
+                fault: match self.fault {
+                    AsyncMemoryFault::WriteCancelObserveFails => {
+                        Some(super::async_memory_write_cancellation_probe::ProbeFault::Observe)
+                    }
+                    AsyncMemoryFault::WriteCancelAcknowledgeFails => {
+                        Some(super::async_memory_write_cancellation_probe::ProbeFault::Acknowledge)
+                    }
+                    AsyncMemoryFault::WriteCancelAcceptedBytesFails => {
+                        Some(super::async_memory_write_cancellation_probe::ProbeFault::AcceptedBytes)
+                    }
+                    AsyncMemoryFault::WriteCancelDisarmFails => {
+                        Some(super::async_memory_write_cancellation_probe::ProbeFault::Disarm)
+                    }
+                    _ => None,
+                },
             });
             Ok(FixtureSupport::Supported(probe))
         })
@@ -1327,10 +1654,11 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 return Ok(FixtureSupport::Unsupported);
             }
             *self.stage.lock().expect("async stage lock must succeed") = stage;
-            self.copy_gate
-                .lock()
-                .expect("async copy gate lock must succeed")
-                .arm(stage);
+            let mut gate = self.copy_gate.lock().expect("async copy gate lock must succeed");
+            gate.arm(stage);
+            gate.fail_acknowledgement = self.fault == AsyncMemoryFault::CopyCancelAcknowledgeFails;
+            gate.fail_disarm = self.fault == AsyncMemoryFault::CopyCancelDisarmFails;
+            drop(gate);
             let source_relative = format!("{relative}-source");
             let target_relative = format!("{relative}-target");
             let source = self.path(&source_relative)?;
@@ -1394,9 +1722,13 @@ struct AsyncMemorySpi {
     optional_capabilities: bool,
     create_directory_capability: bool,
     extended_capabilities: bool,
+    atomic_temp_persist: bool,
     provider_id: &'static str,
     limits: FileSystemLimits,
     read_only: bool,
+    temp_creation_calls: Arc<AtomicUsize>,
+    temp_creation_error_call: Arc<AtomicUsize>,
+    cleanup_stat_panics: Arc<AtomicBool>,
 }
 
 #[cfg(feature = "async")]
@@ -1450,8 +1782,10 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 .with_guaranteed(FileSystemCapability::DurableFileCopy)
                 .with_guaranteed(FileSystemCapability::DurableRename)
                 .with_guaranteed(FileSystemCapability::DurableWrite)
-                .with_guaranteed(FileSystemCapability::AtomicTempPersist)
                 .with_guaranteed(FileSystemCapability::ServerSideCopy);
+        }
+        if self.atomic_temp_persist {
+            capabilities = capabilities.with_guaranteed(FileSystemCapability::AtomicTempPersist);
         }
         if self.create_directory_capability {
             capabilities = capabilities.with_guaranteed(FileSystemCapability::CreateDirectory);
@@ -1506,7 +1840,11 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             .get(path.as_str())
             .cloned();
         let fault = self.fault;
+        let cleanup_stat_panics = Arc::clone(&self.cleanup_stat_panics);
         Box::pin(async move {
+            if cleanup_stat_panics.load(Ordering::Acquire) {
+                panic!("async cleanup stat panic");
+            }
             if fault == AsyncMemoryFault::CleanupStatError {
                 return Err(FsError::new(
                     FsErrorKind::PermissionDenied,
@@ -1539,6 +1877,14 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 None if fault == AsyncMemoryFault::MissingPathExists => {
                     Ok(StatResponse::new(path, FileMetadata::new(FileKind::File)))
                 }
+                None if fault == AsyncMemoryFault::CleanupVerifyStatPanic => {
+                    panic!("async cleanup verification stat panic")
+                }
+                None if fault == AsyncMemoryFault::CleanupVerifyStatError => Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::Stat,
+                    "async cleanup verification stat error",
+                )),
                 None => Err(FsError::new(
                     FsErrorKind::NotFound,
                     FsOperation::Stat,
@@ -1588,6 +1934,13 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let versions = Arc::clone(&self.versions);
         let options = request.options().options().clone();
         Box::pin(async move {
+            if fault == AsyncMemoryFault::ReadFails {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::OpenReader,
+                    "injected reader failure",
+                ));
+            }
             let Some(Entry::File(mut bytes)) = bytes else {
                 return Err(FsError::new(
                     FsErrorKind::NotFound,
@@ -1663,6 +2016,13 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let precondition = request.options().options().precondition().clone();
         let durability = request.options().options().durability();
         Box::pin(async move {
+            if fault == AsyncMemoryFault::WriteFails {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::OpenWriter,
+                    "injected writer failure",
+                ));
+            }
             std::future::poll_fn(|context| {
                 write_gate
                     .lock()
@@ -1700,15 +2060,31 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let fault = self.fault;
         Box::pin(async move {
             let mut entries = entries.lock().expect("async memory state lock must succeed");
+            if fault == AsyncMemoryFault::CreateDirectoryFails {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::CreateDir,
+                    "injected directory creation failure",
+                ));
+            }
+            let mut created_ancestors = 0;
             if recursive && fault != AsyncMemoryFault::RecursiveCreateLeavesParentsMissing {
                 for (index, _) in path.as_str().match_indices('/').filter(|(index, _)| *index > 0) {
-                    entries
-                        .entry(path.as_str()[..index].to_owned())
-                        .or_insert(Entry::Directory);
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        entries.entry(path.as_str()[..index].to_owned())
+                    {
+                        entry.insert(Entry::Directory);
+                        created_ancestors += 1;
+                    }
                 }
             }
             let already_existed = entries.insert(path.as_str().to_owned(), Entry::Directory).is_some();
-            Ok(CreateDirectoryOutcome::new(already_existed))
+            let outcome = CreateDirectoryOutcome::new(already_existed);
+            Ok(if recursive {
+                outcome.with_created_ancestors(created_ancestors)
+            } else {
+                outcome
+            })
         })
     }
 
@@ -1743,16 +2119,10 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     "async memory delete condition failed",
                 ));
             }
-            let missing = if fault == AsyncMemoryFault::DeleteNoOp {
-                false
-            } else {
-                entries
-                    .lock()
-                    .expect("async memory state lock must succeed")
-                    .remove(path.as_str())
-                    .is_none()
-            };
-            Ok(DeleteOutcome::new(missing))
+            let mut entries = entries.lock().expect("async memory state lock must succeed");
+            let existed = entries.contains_key(path.as_str());
+            let removed = fault != AsyncMemoryFault::DeleteNoOp && entries.remove(path.as_str()).is_some();
+            Ok(DeleteOutcome::new(!existed && !removed).with_deleted_entries(u64::from(removed)))
         })
     }
 
@@ -1792,6 +2162,19 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
 
     fn try_copy<'a>(&'a self, request: CopyRequest<'a>) -> SpiFuture<'a, Result<CopyAttempt, SpiCopyFailure>> {
         if self.gate_controls(AsyncCopyCancellationStage::NativeAttempt) {
+            if self.fault == AsyncMemoryFault::CopyCancelFailsBeforeStage {
+                return Box::pin(async {
+                    Err(SpiCopyFailure::new(
+                        FsError::new(
+                            FsErrorKind::PermissionDenied,
+                            FsOperation::Copy,
+                            "injected copy failure before cancellation stage",
+                        ),
+                        CopyFailureState::Unchanged,
+                        CopyStats::default(),
+                    ))
+                });
+            }
             let gate = Arc::clone(&self.copy_gate);
             return Box::pin(async move { wait_copy_gate(gate, AsyncCopyCancellationStage::NativeAttempt).await });
         }
@@ -1814,6 +2197,17 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             let entries = Arc::clone(&self.entries);
             let fault = self.fault;
             return Box::pin(async move {
+                if fault == AsyncMemoryFault::ServerSideCopyFails && server_side {
+                    return Err(SpiCopyFailure::new(
+                        FsError::new(
+                            FsErrorKind::PermissionDenied,
+                            FsOperation::Copy,
+                            "injected async server-side copy failure",
+                        ),
+                        CopyFailureState::Unchanged,
+                        CopyStats::default(),
+                    ));
+                }
                 let mut entries = entries.lock().expect("async memory state lock must succeed");
                 let Some(entry) = entries.get(source.as_str()).cloned() else {
                     return Err(SpiCopyFailure::new(
@@ -1982,9 +2376,19 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
 
     fn create_temp_file<'a>(&'a self, request: CreateTempFileRequest) -> SpiFuture<'a, FsResult<OpenedAsyncTempFile>> {
         let entries = Arc::clone(&self.entries);
+        let calls = Arc::clone(&self.temp_creation_calls);
+        let error_call = Arc::clone(&self.temp_creation_error_call);
         let fault = self.fault;
         let options = request.options().clone();
         Box::pin(async move {
+            let call = calls.fetch_add(1, Ordering::Relaxed) + 1;
+            if fault == AsyncMemoryFault::TempCreationFails || call == error_call.load(Ordering::Acquire) {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::CreateTemp,
+                    "injected temporary creation failure",
+                ));
+            }
             let path = allocate_async_temp(
                 &entries,
                 false,
@@ -2005,9 +2409,19 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         request: CreateTempDirectoryRequest,
     ) -> SpiFuture<'a, FsResult<OpenedAsyncTempDirectory>> {
         let entries = Arc::clone(&self.entries);
+        let calls = Arc::clone(&self.temp_creation_calls);
+        let error_call = Arc::clone(&self.temp_creation_error_call);
         let fault = self.fault;
         let options = request.options().clone();
         Box::pin(async move {
+            let call = calls.fetch_add(1, Ordering::Relaxed) + 1;
+            if fault == AsyncMemoryFault::TempCreationFails || call == error_call.load(Ordering::Acquire) {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::CreateTemp,
+                    "injected temporary creation failure",
+                ));
+            }
             let path = allocate_async_temp(
                 &entries,
                 true,
@@ -2293,6 +2707,15 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                         .insert(this.path.as_str().to_owned(), Entry::File(this.bytes.clone()));
                 }
             }
+            if this.path.as_str().contains("write-conditional")
+                && this.fault == AsyncMemoryFault::ConditionalAbortReportsPublished
+            {
+                this.state
+                    .lock()
+                    .expect("async memory state lock")
+                    .insert(this.path.as_str().to_owned(), Entry::File(this.bytes.clone()));
+                return Ok(WriteAbortOutcome::Published);
+            }
             if (this.fault == AsyncMemoryFault::CopyAbortPublishes
                 && this.copy_gate.lock().expect("copy gate lock").ever_reached)
                 || (this.fault == AsyncMemoryFault::WriteAbortPublishes
@@ -2377,6 +2800,13 @@ impl AsyncTempResourceSpi for AsyncTempSession {
         let path = this.path.clone();
         let fault = this.fault;
         Box::pin(async move {
+            if fault == AsyncMemoryFault::TempCleanupFailsOnce {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::CleanupTemp,
+                    "injected temp cleanup failure",
+                ));
+            }
             if fault != AsyncMemoryFault::TempCleanupNoOp {
                 entries
                     .lock()
@@ -2391,7 +2821,14 @@ impl AsyncTempResourceSpi for AsyncTempSession {
         let this = self.get_mut();
         let entries = Arc::clone(&this.entries);
         let source = this.path.clone();
+        let fault = this.fault;
         Box::pin(async move {
+            if fault == AsyncMemoryFault::TempKeepFails {
+                return Err(SpiPersistFailure::new(
+                    FsError::new(FsErrorKind::Io, FsOperation::KeepTemp, "injected temp keep failure"),
+                    PersistFailureState::NotPublished,
+                ));
+            }
             let target = keep_target(&source);
             let mut entries = entries.lock().expect("async memory state lock must succeed");
             let entry = entries.remove(source.as_str()).expect("temporary entry must exist");
@@ -2415,6 +2852,16 @@ impl AsyncTempResourceSpi for AsyncTempSession {
         let atomicity = request.options().atomicity();
         let fault = this.fault;
         Box::pin(async move {
+            if fault == AsyncMemoryFault::TempPersistFails {
+                return Err(SpiPersistFailure::new(
+                    FsError::new(
+                        FsErrorKind::Io,
+                        FsOperation::PersistTemp,
+                        "injected temp persist failure",
+                    ),
+                    PersistFailureState::NotPublished,
+                ));
+            }
             let mut entries = entries.lock().expect("async memory state lock must succeed");
             let entry = entries.remove(source.as_str()).expect("temporary entry must exist");
             entries.insert(target.as_str().to_owned(), entry);

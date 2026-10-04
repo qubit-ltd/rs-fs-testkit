@@ -14,13 +14,7 @@ use std::panic::resume_unwind;
 
 use super::FileSystemCapability;
 use super::FileSystemContractSuite;
-use super::FsError;
-use super::FsErrorKind;
-use super::FsOperation;
 use super::Path;
-use super::assert_error_with_source_or_target;
-use super::assert_error_with_target;
-use super::assert_unsupported_error;
 use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 use crate::FixtureError;
@@ -191,134 +185,53 @@ impl<'a> FileSystemContractSuite<'a> {
         }
         support
     }
+}
 
-    /// Reads a provider-owned probe through the fixture and checks exact bytes.
-    ///
-    /// # Parameters
-    ///
-    /// * `path` - Provider path to observe.
-    /// * `expected` - Exact expected content.
-    /// * `message` - Assertion message used when content differs.
-    ///
-    /// # Panics
-    ///
-    /// Panics when observation fails, is unsupported, or returns different
-    /// content.
-    #[allow(dead_code)]
-    pub(super) fn assert_bytes(&self, path: &Path, expected: &[u8], message: &str) {
-        match self
-            .fixture
-            .read_file(path)
-            .expect("copy contract: fixture observation failed")
-        {
-            FixtureSupport::Supported(actual) => {
-                assert_eq!(actual, expected, "{message}")
+#[cfg(test)]
+mod tests {
+    use qubit_fs::FileSystem;
+    use qubit_fs::path::Path;
+
+    use crate::FileSystemContract;
+    use crate::FileSystemContractSuite;
+    use crate::FileSystemFixture;
+    use crate::FixtureError;
+    use crate::FixtureResult;
+    use crate::common::MemoryFixture;
+
+    struct TeardownFixture {
+        inner: MemoryFixture,
+        panic: bool,
+    }
+
+    impl FileSystemFixture for TeardownFixture {
+        fn file_system(&self) -> &FileSystem {
+            self.inner.file_system()
+        }
+
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            self.inner.path(relative)
+        }
+
+        fn teardown(&self) -> FixtureResult<()> {
+            if self.panic {
+                panic!("injected fixture teardown panic");
             }
-            FixtureSupport::Unsupported => {
-                panic!("{message}: Copy capability requires fixture.read_file support")
-            }
+            Err(FixtureError::new("injected fixture teardown failure"))
         }
     }
 
-    /// Validates public error context without exposing provider implementation
-    /// details.
-    ///
-    /// # Parameters
-    ///
-    /// * `error` - Actual filesystem error.
-    /// * `kind` - Expected error classification.
-    /// * `operation` - Expected public operation.
-    /// * `path` - Expected source path.
-    /// * `target` - Expected destination path, when applicable.
-    ///
-    /// # Panics
-    ///
-    /// Panics when any expected structured field differs.
-    #[allow(dead_code)]
-    pub(super) fn assert_error(
-        &self,
-        error: &FsError,
-        kind: FsErrorKind,
-        operation: FsOperation,
-        path: &Path,
-        target: Option<&Path>,
-    ) {
-        let provider = Some(self.context.properties().info().provider_id());
-        if kind == FsErrorKind::UnsupportedCapability && target.is_none() {
-            assert_unsupported_error(
-                error,
-                kind,
-                operation,
-                Some(path),
-                provider,
-                error.required_capability(),
-            );
-        } else if kind == FsErrorKind::AlreadyExists
-            && let Some(target) = target
-        {
-            assert_error_with_source_or_target(
-                error,
-                kind,
-                operation,
-                path,
-                target,
-                provider,
-                error.required_capability(),
-            );
-        } else {
-            assert_error_with_target(
-                error,
-                kind,
-                operation,
-                Some(path),
-                target,
-                provider,
-                error.required_capability(),
-            );
+    #[test]
+    fn finish_capture_retains_teardown_error_and_panic() {
+        for panic in [false, true] {
+            let fixture = TeardownFixture {
+                inner: MemoryFixture::new(),
+                panic,
+            };
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_contract(FileSystemContract::ErrorContext);
+            assert!(!run.cleanup().failures().is_empty());
+            assert!(!run.requirements_satisfied());
         }
-    }
-
-    /// Validates an operation error that has no logical input path.
-    #[allow(dead_code)]
-    pub(super) fn assert_pathless_error(&self, error: &FsError, kind: FsErrorKind, operation: FsOperation) {
-        assert_unsupported_error(
-            error,
-            kind,
-            operation,
-            None,
-            Some(self.context.properties().info().provider_id()),
-            error.required_capability(),
-        );
-    }
-
-    /// Validates option-derived capability preflight errors.
-    ///
-    /// # Parameters
-    ///
-    /// * `error` - Actual filesystem error.
-    /// * `operation` - Expected public operation.
-    /// * `capability` - Capability required by the rejected options.
-    /// * `contract` - Contract label used in diagnostics.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the error kind, operation, or required capability differs.
-    #[allow(dead_code)]
-    pub(super) fn assert_requirement_error(
-        &self,
-        error: &FsError,
-        operation: FsOperation,
-        capability: FileSystemCapability,
-        contract: &str,
-    ) {
-        let _ = contract;
-        assert_unsupported_error(
-            error,
-            FsErrorKind::RequirementNotMet,
-            operation,
-            error.path(),
-            Some(self.context.properties().info().provider_id()),
-            Some(capability),
-        );
     }
 }
