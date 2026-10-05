@@ -229,6 +229,7 @@ pub mod rustdoc_provider {
 #[cfg(feature = "async")]
 #[path = "async_recording_spi.rs"]
 pub mod async_recording_spi;
+#[cfg(feature = "async")]
 #[path = "poll_support.rs"]
 pub mod poll_support;
 

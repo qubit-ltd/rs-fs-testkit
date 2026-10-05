@@ -10,9 +10,9 @@
 #[path = "fs_rustdoc_support.rs"]
 mod fs_rustdoc_support;
 
+#[cfg(feature = "async")]
 pub use fs_rustdoc_support::poll_support;
 pub use fs_rustdoc_support::rustdoc_provider;
-#[cfg(feature = "async")]
 use qubit_fs::FileSystem;
 use qubit_fs::path::Path;
 
@@ -111,6 +111,7 @@ mod suite_unit_build_coverage_tests {
     #[cfg(feature = "async")]
     use super::super::common::check_matrix::async_fault_cases;
     use super::super::common::check_matrix::sync_fault_cases;
+    #[cfg(feature = "async")]
     use super::super::rustdoc_support::poll_support;
 
     #[test]
