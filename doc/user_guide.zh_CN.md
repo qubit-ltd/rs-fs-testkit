@@ -35,7 +35,7 @@ native-copy 用例。异步 fixture 提供对应的 future 观察，以及可选
 在 provider crate 中将 testkit 添加为开发依赖：
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.7
+cargo add --dev qubit-fs-testkit@0.8
 ```
 
 为拥有或保留隔离文件系统资源的 fixture 实现 `FileSystemFixture`。至少实现 `file_system`、`path` 和独立的 `teardown`；

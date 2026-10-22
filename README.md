@@ -16,7 +16,7 @@ dependency graphs.
 ## Installation
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.7
+cargo add --dev qubit-fs-testkit@0.8
 ```
 
 The synchronous contract suite is available without features. Add

@@ -40,7 +40,7 @@ including when deletion is unavailable.
 Add the testkit as a development dependency in the provider crate:
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.7
+cargo add --dev qubit-fs-testkit@0.8
 ```
 
 Implement `FileSystemFixture` for a fixture that owns or otherwise retains the

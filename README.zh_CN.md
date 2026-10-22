@@ -14,7 +14,7 @@
 ## 安装
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.7
+cargo add --dev qubit-fs-testkit@0.8
 ```
 
 同步契约套件无需额外 feature 即可使用；使用异步套件时，请在开发依赖中加入
