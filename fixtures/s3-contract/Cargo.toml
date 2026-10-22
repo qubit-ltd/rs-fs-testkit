@@ -6,8 +6,10 @@ rust-version = "1.94"
 publish = false
 
 [dependencies]
-qubit-fs = { version = "0.2", default-features = false, features = ["async"] }
-qubit-io = "0.17"
+qubit-fs = { path = "../../../rs-fs", version = "0.2", default-features = false, features = ["async"] }
+
+qubit-io = { path = "../../../rs-io", version = "0.19" }
+
 object_store = { version = "=0.14.1", features = ["aws"] }
 bytes = "1"
 futures-util = "0.3"
