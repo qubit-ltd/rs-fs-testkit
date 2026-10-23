@@ -963,14 +963,14 @@ dependencies = [
 
 [[package]]
 name = "qubit-budget"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "qubit-fs"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "fluent-uri",
  "qubit-budget",
@@ -993,7 +993,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-fs-testkit"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "qubit-fs",
  "qubit-io",
@@ -1008,7 +1008,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-redact"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "fluent-uri",
  "qubit-budget",
