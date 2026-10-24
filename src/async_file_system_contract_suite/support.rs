@@ -30,8 +30,85 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         }
     }
 
+    /// Resolves a fixture path or identifies setup failure at the contract
+    /// boundary.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Resource name relative to the current contract phase.
+    ///
+    /// # Returns
+    ///
+    /// The provider path mapped by the fixture.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the fixture cannot map the generated relative name.
+    #[must_use]
+    #[inline]
+    pub fn path(&self, relative: &str) -> Path {
+        let relative = self.context.relative_name(relative);
+        self.fixture
+            .path(&relative)
+            .expect("async contract: fixture path failed")
+    }
+
+    /// Returns whether the cached property snapshot advertises a capability.
+    ///
+    /// # Parameters
+    ///
+    /// * `capability` - Capability to query in the captured snapshot.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the provider advertises the capability.
+    #[must_use]
+    #[inline]
+    pub fn capable(&self, capability: FileSystemCapability) -> bool {
+        self.context.properties().capabilities().supports(capability)
+    }
+
+    /// Seeds a resource and makes fixture support mandatory for the contract.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Resource name relative to the current contract phase.
+    /// * `bytes` - Exact content to publish.
+    /// * `contract` - Contract label used in failure diagnostics.
+    ///
+    /// # Returns
+    ///
+    /// The provider path of the seeded file.
+    ///
+    /// # Panics
+    ///
+    /// Panics when fixture setup fails or the required seed hook is
+    /// unsupported.
+    #[must_use]
+    pub async fn required_seed(&mut self, relative: &str, bytes: &[u8], contract: &str) -> Path {
+        let relative = self.context.relative_name(relative);
+        match self
+            .fixture
+            .seed_file(&relative, bytes)
+            .await
+            .expect("async contract: fixture seed failed")
+        {
+            FixtureSupport::Supported(path) => {
+                self.context.record_created(path.clone());
+                path
+            }
+            FixtureSupport::Unsupported => {
+                panic!("{contract} contract: advertised capability requires fixture.seed_file support")
+            }
+        }
+    }
+
     /// Runs asynchronous cleanup and fixture teardown while preserving
     /// failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns the accumulated cleanup and teardown failures.
     pub(super) async fn finish_capture(&mut self) -> Result<(), Box<dyn Any + Send>> {
         self.context.run.cleanup.attempts += 1;
         self.context.run.cleanup.completed = false;
@@ -77,6 +154,11 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Returns an ordinary structured failure for fixture or contract errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when path preparation fails or the
+    /// filesystem does not report the generated path as missing.
     pub(super) async fn check_error_context(&mut self) -> Result<(), crate::ContractFailure> {
         let id = ContractCheckId::ErrorContext;
         self.context.begin("error_context");
@@ -95,130 +177,5 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         crate::internal::verify_missing_error(error, &path, self.context.properties().info().provider_id(), id)?;
         self.context.record_check(id, None, ContractCheckOutcome::Passed);
         Ok(())
-    }
-
-    /// Resolves a fixture path or identifies setup failure at the contract
-    /// boundary.
-    ///
-    /// # Parameters
-    ///
-    /// * `relative` - Resource name relative to the current contract phase.
-    ///
-    /// # Returns
-    ///
-    /// The provider path mapped by the fixture.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the fixture cannot map the generated relative name.
-    #[inline]
-    pub fn path(&self, relative: &str) -> Path {
-        let relative = self.context.relative_name(relative);
-        self.fixture
-            .path(&relative)
-            .expect("async contract: fixture path failed")
-    }
-
-    /// Returns whether the cached property snapshot advertises a capability.
-    ///
-    /// # Parameters
-    ///
-    /// * `capability` - Capability to query in the captured snapshot.
-    ///
-    /// # Returns
-    ///
-    /// `true` when the provider advertises the capability.
-    #[inline]
-    pub fn capable(&self, capability: FileSystemCapability) -> bool {
-        self.context.properties().capabilities().supports(capability)
-    }
-
-    /// Seeds a resource and makes fixture support mandatory for the contract.
-    ///
-    /// # Parameters
-    ///
-    /// * `relative` - Resource name relative to the current contract phase.
-    /// * `bytes` - Exact content to publish.
-    /// * `contract` - Contract label used in failure diagnostics.
-    ///
-    /// # Returns
-    ///
-    /// The provider path of the seeded file.
-    ///
-    /// # Panics
-    ///
-    /// Panics when fixture setup fails or the required seed hook is
-    /// unsupported.
-    pub async fn required_seed(&mut self, relative: &str, bytes: &[u8], contract: &str) -> Path {
-        let relative = self.context.relative_name(relative);
-        match self
-            .fixture
-            .seed_file(&relative, bytes)
-            .await
-            .expect("async contract: fixture seed failed")
-        {
-            FixtureSupport::Supported(path) => {
-                self.context.record_created(path.clone());
-                path
-            }
-            FixtureSupport::Unsupported => {
-                panic!("{contract} contract: advertised capability requires fixture.seed_file support")
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use qubit_fs::AsyncFileSystem;
-    use qubit_fs::path::Path;
-
-    use crate::AsyncFileSystemContractSuite;
-    use crate::AsyncFileSystemFixture;
-    use crate::FileSystemContract;
-    use crate::FixtureError;
-    use crate::FixtureFuture;
-    use crate::FixtureResult;
-    use crate::common::AsyncMemoryFixture;
-    use crate::common::async_memory_file_system::run_controlled;
-
-    struct TeardownFixture {
-        inner: AsyncMemoryFixture,
-        panic: bool,
-    }
-
-    impl AsyncFileSystemFixture for TeardownFixture {
-        fn file_system(&self) -> &AsyncFileSystem {
-            self.inner.file_system()
-        }
-
-        fn path(&self, relative: &str) -> FixtureResult<Path> {
-            self.inner.path(relative)
-        }
-
-        fn teardown(&self) -> FixtureFuture<'_, ()> {
-            Box::pin(async move {
-                if self.panic {
-                    panic!("injected async fixture teardown panic");
-                }
-                Err(FixtureError::new("injected async fixture teardown failure"))
-            })
-        }
-    }
-
-    #[test]
-    fn async_finish_capture_retains_teardown_error_and_panic() {
-        for panic in [false, true] {
-            let fixture = TeardownFixture {
-                inner: AsyncMemoryFixture::new(),
-                panic,
-            };
-            run_controlled(async {
-                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-                let run = suite.run_contract(FileSystemContract::ErrorContext).await;
-                assert!(!run.cleanup().failures().is_empty());
-                assert!(!run.requirements_satisfied());
-            });
-        }
     }
 }

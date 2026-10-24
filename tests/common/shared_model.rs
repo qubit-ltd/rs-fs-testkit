@@ -28,18 +28,20 @@ pub(crate) struct FixtureHookErrorPlan {
 }
 
 impl FixtureHookErrorPlan {
+    #[must_use]
+    pub(crate) fn call_count(&self, hook: FixtureHook) -> usize {
+        self.calls.get(&hook).copied().unwrap_or(0)
+    }
+
     pub(crate) fn fail_at(&mut self, hook: FixtureHook, call: usize) {
         self.target = Some((hook, call));
     }
 
+    #[must_use]
     pub(crate) fn should_fail(&mut self, hook: FixtureHook) -> bool {
         let call = self.calls.entry(hook).or_default();
         *call += 1;
         self.target == Some((hook, *call))
-    }
-
-    pub(crate) fn call_count(&self, hook: FixtureHook) -> usize {
-        self.calls.get(&hook).copied().unwrap_or(0)
     }
 }
 

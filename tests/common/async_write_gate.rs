@@ -129,6 +129,22 @@ impl WriteCancellationProbe for AsyncMemoryWriteCancellationProbe {
             .poll_reached(context)
     }
 
+    /// The legacy gate cannot observe payload acceptance independently.
+    fn accepted_bytes(&self) -> FixtureResult<u64> {
+        Err(FixtureError::new(
+            "legacy write gate has no accepted-byte counter",
+        ))
+    }
+
+    /// The legacy gate cannot observe the target independently.
+    fn observe_target(&self) -> crate::qubit_fs_testkit::FixtureFuture<'_, Option<Vec<u8>>> {
+        Box::pin(async {
+            Err(FixtureError::new(
+                "legacy write gate has no target observation store",
+            ))
+        })
+    }
+
     /// Releases the gate without starting an asynchronous operation.
     fn disarm(&self) -> FixtureResult<()> {
         self.gate.lock().expect("async write gate lock must succeed").disarm()

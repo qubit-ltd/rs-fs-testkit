@@ -28,41 +28,24 @@ use crate::FixtureSupport;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Executes only the selected temporary lifecycle scenario for this kind.
-    pub(super) async fn execute_temp_file(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        let filesystem = self.fixture.file_system();
+    /// Prepares options and validates the independent-parent contract probe.
+    ///
+    /// Parent setup is performed before resource creation so fixture ownership
+    /// is recorded in the same order as the temporary resource lifecycle.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Temporary-file contract scenario being prepared.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the invalid-parent probe or independent fixture
+    /// preparation does not satisfy its contract.
+    async fn temp_file_options(&mut self, id: ContractCheckId) -> Result<TempOptions, ContractFailure> {
         let mut options = TempOptions::default();
         let basic = id == ContractCheckId::TempFile;
         if basic && self.capable(FileSystemCapability::TempFile) {
-            let incompatible = match self.context.properties().info().path_semantics() {
-                PathSemantics::Hierarchical => Path::parse_literal("/temp-invalid-parent"),
-                _ => Path::parse("/temp-invalid-parent"),
-            }
-            .expect("invalid-parent probe path is a valid constant");
-            let error = match filesystem
-                .create_temp_file(TempOptions::default().with_parent(Some(incompatible.clone())))
-                .await
-            {
-                Err(error) => error,
-                Ok(resource) => {
-                    return Err(ContractFailure::with_owned_source(
-                        "invalid temporary parent succeeded",
-                        ContractTempFailure::new(
-                            ContractFailure::message_only("invalid temporary parent was accepted"),
-                            resource,
-                        ),
-                    )
-                    .at(id));
-                }
-            };
-            if error.recovery().is_some()
-                || error.stage() != OpenFailureStage::Preflight
-                || error.error().kind() != FsErrorKind::InvalidPath
-                || error.error().operation() != FsOperation::CreateTemp
-                || error.error().path() != Some(&incompatible)
-            {
-                return Err(ContractFailure::with_owned_source("temporary parent validation differs", error).at(id));
-            }
+            self.verify_invalid_temp_parent(id).await?;
             if self.capable(FileSystemCapability::CreateDirectory) {
                 let relative = self.context.relative_name("temp-file-parent");
                 let parent = self.fixture.seed_empty_directory(&relative).await.map_err(|error| {
@@ -81,6 +64,72 @@ impl AsyncFileSystemContractSuite<'_> {
                 .with_prefix("contract-file-".to_owned())
                 .with_suffix(".tmp".to_owned());
         }
+        Ok(options)
+    }
+
+    /// Confirms that an invalid parent is rejected during preflight.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Temporary-file contract scenario being checked.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provider accepts the path or reports different
+    /// preflight failure details.
+    async fn verify_invalid_temp_parent(&self, id: ContractCheckId) -> Result<(), ContractFailure> {
+        let filesystem = self.fixture.file_system();
+        let incompatible = match self.context.properties().info().path_semantics() {
+            PathSemantics::Hierarchical => Path::parse_literal("/temp-invalid-parent"),
+            _ => Path::parse("/temp-invalid-parent"),
+        }
+        .expect("invalid-parent probe path is a valid constant");
+        let error = match filesystem
+            .create_temp_file(TempOptions::default().with_parent(Some(incompatible.clone())))
+            .await
+        {
+            Err(error) => error,
+            Ok(resource) => {
+                return Err(ContractFailure::with_owned_source(
+                    "invalid temporary parent succeeded",
+                    ContractTempFailure::new(
+                        ContractFailure::message_only("invalid temporary parent was accepted"),
+                        resource,
+                    ),
+                )
+                .at(id));
+            }
+        };
+        if error.recovery().is_some()
+            || error.stage() != OpenFailureStage::Preflight
+            || error.error().kind() != FsErrorKind::InvalidPath
+            || error.error().operation() != FsOperation::CreateTemp
+            || error.error().path() != Some(&incompatible)
+        {
+            return Err(ContractFailure::with_owned_source("temporary parent validation differs", error).at(id));
+        }
+        Ok(())
+    }
+
+    /// Executes the selected temporary-file lifecycle contract scenario.
+    ///
+    /// The scenario creates, publishes, keeps, or cleans up a temporary file
+    /// and uses the fixture's out-of-band observation hooks to verify
+    /// filesystem state. Provider and fixture failures are returned as
+    /// contract failures.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Temporary-file contract scenario to execute.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when an operation fails or observed behavior differs
+    /// from the selected contract.
+    pub(super) async fn execute_temp_file(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+        let filesystem = self.fixture.file_system();
+        let options = self.temp_file_options(id).await?;
+        let basic = id == ContractCheckId::TempFile;
         let requested_parent = options.parent().cloned();
         let mut temporary = match filesystem.create_temp_file(options).await {
             Ok(resource) => resource,

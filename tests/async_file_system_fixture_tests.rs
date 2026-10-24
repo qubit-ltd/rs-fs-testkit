@@ -7,18 +7,17 @@
 // =============================================================================
 #![cfg(feature = "async")]
 
-pub use ::qubit_fs_testkit;
-use qubit_fs_testkit as testkit;
-mod common;
 use std::future::Future;
 use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
 
+pub use ::qubit_fs_testkit;
 use qubit_fs::AsyncFileSystem;
 use qubit_fs::copy::CopyMethod;
 use qubit_fs::copy::CopyOptions;
 use qubit_fs::path::Path;
+use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::AsyncCopyCancellationStage;
 use qubit_fs_testkit::AsyncFileSystemFixture;
 use qubit_fs_testkit::CopyFixtureCase;
@@ -33,6 +32,9 @@ use qubit_fs_testkit::WriteScenario;
 
 use self::common::AsyncMemoryFixture;
 use self::common::async_memory_file_system::run_controlled;
+
+mod common;
+
 /// Fixture that uses every asynchronous optional-hook default.
 struct DefaultAsyncFixture<'a> {
     file_system: &'a AsyncFileSystem,
@@ -337,7 +339,7 @@ fn test_async_file_system_fixture_preparations_build_supported_cases() {
 }
 
 #[test]
-fn async_memory_resource_versions_follow_out_of_band_publication() {
+fn test_async_memory_resource_versions_follow_out_of_band_publication() {
     let fixture = AsyncMemoryFixture::new();
     let path = match run_controlled(fixture.seed_file("versioned", b"old")).expect("seed versioned file") {
         FixtureSupport::Supported(path) => path,

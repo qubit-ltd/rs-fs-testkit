@@ -49,30 +49,61 @@ pub struct AsyncWriteFixtureCase {
 }
 
 impl AsyncWriteFixtureCase {
-    /// Creates a prepared write request.
+    /// Creates a prepared write request from owned operation arguments.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Destination path passed to the operation.
+    /// * `bytes` - Payload transferred into the write operation.
+    /// * `options` - Publication and durability options.
+    ///
+    /// # Returns
+    ///
+    /// A prepared request containing the supplied arguments.
+    #[inline]
     pub fn new(path: Path, bytes: Vec<u8>, options: WriteOptions) -> Self {
         Self { path, bytes, options }
     }
 
-    /// Returns the destination path.
+    /// Returns the destination path without transferring ownership.
+    ///
+    /// # Returns
+    ///
+    /// The prepared destination path.
+    #[inline]
     #[must_use]
     pub const fn path(&self) -> &Path {
         &self.path
     }
 
-    /// Returns the payload.
+    /// Returns the payload without transferring ownership.
+    ///
+    /// # Returns
+    ///
+    /// The prepared payload.
     #[must_use]
+    #[inline]
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
 
-    /// Returns the write options.
+    /// Returns the write options without transferring ownership.
+    ///
+    /// # Returns
+    ///
+    /// The publication and durability options.
+    #[inline]
     #[must_use]
     pub const fn options(&self) -> &WriteOptions {
         &self.options
     }
 
     /// Decomposes the request into owned parts.
+    ///
+    /// # Returns
+    ///
+    /// The destination path, payload, and write options in that order.
+    #[inline]
     #[must_use]
     pub fn into_parts(self) -> (Path, Vec<u8>, WriteOptions) {
         (self.path, self.bytes, self.options)

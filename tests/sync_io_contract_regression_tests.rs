@@ -5,10 +5,9 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-pub use ::qubit_fs_testkit;
-mod common;
 use std::panic::AssertUnwindSafe;
 
+pub use ::qubit_fs_testkit;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
@@ -21,7 +20,10 @@ use qubit_fs_testkit::FileSystemFixture;
 
 use self::common::MemoryFault;
 use self::common::MemoryFixture;
-use crate::common::UnavailableScenario;
+use self::common::UnavailableScenario;
+
+mod common;
+
 fn assert_panics_at<F>(run: F, check_id: &str)
 where
     F: FnOnce(),

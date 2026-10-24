@@ -20,6 +20,15 @@ use crate::internal::verify_fs_error;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes both metadata entries through their independent drivers.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after both metadata checks complete.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first failure raised while preparing or verifying either
+    /// check.
     pub(super) async fn check_stat(&mut self) -> Result<(), ContractFailure> {
         for id in [ContractCheckId::StatBasic, ContractCheckId::StatFileKind] {
             self.check_stat_item(id).await?;
@@ -28,6 +37,19 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 
     /// Records exactly the selected metadata entry.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Metadata check to execute and record.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the selected check's outcome is recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure raised while preparing or verifying the check, with
+    /// its identity attached to the failure.
     pub(super) async fn check_stat_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let spec = crate::internal::check_catalog::specification(id);

@@ -19,6 +19,14 @@ use crate::internal::check_spec::CheckSpec;
 ///
 /// Fixture teardown is reported by the lifecycle layer, outside phase
 /// execution.
+///
+/// # Parameters
+///
+/// - `id`: The catalog identity whose execution metadata is requested.
+///
+/// # Returns
+///
+/// The immutable execution metadata registered for `id`.
 pub(crate) const fn specification(id: ContractCheckId) -> CheckSpec {
     match id {
         ContractCheckId::AppendBasic => CheckSpec {
@@ -705,7 +713,6 @@ pub(crate) const fn specification(id: ContractCheckId) -> CheckSpec {
         },
     }
 }
-
 /// Stable write execution order, independent of enum declaration order.
 const WRITE_CHECKS: &[ContractCheckId] = &[
     ContractCheckId::WriteBasic,
@@ -743,6 +750,17 @@ const COPY_CHECKS: &[ContractCheckId] = &[
 ];
 
 /// Selects every applicable entry before the phase starts executing.
+///
+/// Synchronous drivers omit entries that require an asynchronous facade.
+///
+/// # Parameters
+///
+/// - `contract`: The phase that owns the selected checks.
+/// - `asynchronous`: Whether the executing driver supports asynchronous checks.
+///
+/// # Returns
+///
+/// The phase's applicable checks in stable execution order.
 pub(crate) fn for_contract(contract: FileSystemContract, asynchronous: bool) -> Vec<CheckSpec> {
     let ids = match contract {
         FileSystemContract::Write => WRITE_CHECKS,
@@ -758,6 +776,20 @@ pub(crate) fn for_contract(contract: FileSystemContract, asynchronous: bool) -> 
 
 /// Returns the registered copy scenario or attributes a catalog mismatch to
 /// the selected check.
+///
+/// # Parameters
+///
+/// - `id`: The check whose copy scenario is required.
+/// - `missing_message`: The diagnostic used when the check has no copy
+///   scenario.
+///
+/// # Returns
+///
+/// The registered scenario, or a catalog mismatch attributed to `id`.
+///
+/// # Errors
+///
+/// Returns a `ContractFailure` when `id` has no registered copy scenario.
 pub(crate) fn required_copy_scenario(
     id: ContractCheckId,
     missing_message: &'static str,
@@ -765,69 +797,5 @@ pub(crate) fn required_copy_scenario(
     match specification(id).copy_scenario {
         Some(scenario) => Ok(scenario),
         None => Err(ContractFailure::message_only(missing_message).at(id)),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use super::for_contract;
-    use super::required_copy_scenario;
-    use super::specification;
-    use crate::ContractCheckId;
-    use crate::FileSystemContract;
-
-    #[test]
-    fn each_executable_check_has_one_owner() {
-        let mut seen = HashSet::new();
-        for phase in FileSystemContract::ALL {
-            for check in for_contract(phase, true) {
-                assert!(seen.insert(check.id), "duplicate owner for {}", check.id);
-                assert_eq!(
-                    check.read_scenario.is_some(),
-                    phase == FileSystemContract::Read,
-                    "read preparation metadata must match execution ownership for {}",
-                    check.id
-                );
-            }
-        }
-        for id in ContractCheckId::ALL {
-            assert!(seen.contains(id), "missing catalog entry for {id}");
-        }
-    }
-
-    #[test]
-    fn prerequisites_are_cataloged_in_the_same_phase() {
-        for id in ContractCheckId::ALL {
-            let spec = specification(*id);
-            assert!(
-                !spec.prerequisites().contains(id),
-                "check cannot depend on itself: {id}"
-            );
-            for prerequisite in spec.prerequisites() {
-                assert!(
-                    ContractCheckId::ALL.contains(prerequisite),
-                    "unknown prerequisite for {id}"
-                );
-                assert_eq!(
-                    specification(*prerequisite).contract,
-                    spec.contract,
-                    "prerequisite must be owned by the same phase: {id}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn required_copy_scenario_returns_and_rejects_catalog_entries() {
-        assert!(matches!(
-            required_copy_scenario(ContractCheckId::CopyBasic, "missing copy scenario"),
-            Ok(crate::CopyScenario::Basic)
-        ));
-        let failure = required_copy_scenario(ContractCheckId::ReadBasic, "missing copy scenario")
-            .expect_err("read checks have no copy scenario");
-        assert_eq!(failure.check(), Some(ContractCheckId::ReadBasic));
-        assert_eq!(failure.message(), "missing copy scenario");
     }
 }

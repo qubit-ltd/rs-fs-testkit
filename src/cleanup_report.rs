@@ -27,30 +27,15 @@ use crate::ContractFailure;
 /// ```
 #[must_use]
 pub struct CleanupReport {
+    /// Number of cleanup attempts that started, including cancelled attempts.
     pub(crate) attempts: usize,
+    /// Whether the latest cleanup attempt returned successfully.
     pub(crate) completed: bool,
+    /// Failures observed across all cleanup attempts, in observation order.
     pub(crate) failures: Vec<ContractFailure>,
 }
 
 impl CleanupReport {
-    /// Returns the number of cleanup attempts started, including cancelled
-    /// ones.
-    #[must_use]
-    pub const fn attempts(&self) -> usize {
-        self.attempts
-    }
-
-    /// Returns whether the latest cleanup attempt returned successfully.
-    #[must_use]
-    pub const fn completed(&self) -> bool {
-        self.completed
-    }
-
-    /// Returns every observed failure, including failures before a retry.
-    pub fn failures(&self) -> &[ContractFailure] {
-        &self.failures
-    }
-
     /// Creates an empty cleanup history.
     pub(crate) const fn new() -> Self {
         Self {
@@ -58,5 +43,37 @@ impl CleanupReport {
             completed: false,
             failures: Vec::new(),
         }
+    }
+
+    /// Returns the number of cleanup attempts started, including cancelled
+    /// ones.
+    ///
+    /// # Returns
+    /// The number of attempts that began before this report was observed.
+    #[must_use = "inspect the retained cleanup failures"]
+    #[inline]
+    pub const fn attempts(&self) -> usize {
+        self.attempts
+    }
+
+    /// Returns whether the latest cleanup attempt returned successfully.
+    ///
+    /// # Returns
+    /// `true` when the latest attempt returned successfully, and `false` when
+    /// it failed or was cancelled.
+    #[must_use = "inspect the retained cleanup failures"]
+    #[inline]
+    pub const fn completed(&self) -> bool {
+        self.completed
+    }
+
+    /// Returns every observed failure, including failures before a retry.
+    ///
+    /// # Returns
+    /// The failures from all attempts in the order they were observed.
+    #[must_use = "inspect the retained cleanup failures"]
+    #[inline]
+    pub fn failures(&self) -> &[ContractFailure] {
+        &self.failures
     }
 }

@@ -7,15 +7,18 @@
 // =============================================================================
 //! Failed persistence keeps the resource available through the borrowed report.
 
-pub use ::qubit_fs_testkit;
 mod common;
 
+pub use ::qubit_fs_testkit;
 use qubit_fs::temp::PersistFailure;
 use qubit_fs::temp::PersistFailureState;
 use qubit_fs::temp::TempResourceState;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractSource;
 use qubit_fs_testkit::ContractTempFailure;
+
+use self::common::MemoryFault;
+use self::common::MemoryFixture;
 
 /// A failed required-atomic persist retains both its snapshot and cleanup
 /// handle.
@@ -24,8 +27,6 @@ fn test_sync_temp_failure_retains_cleanup_handle() {
     use qubit_fs::temp::TempFile;
     use qubit_fs_testkit::FileSystemContractSuite;
 
-    use self::common::MemoryFault;
-    use self::common::MemoryFixture;
     let fixture = MemoryFixture::with_fault(MemoryFault::AtomicTempPersistNonAtomic);
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::TempAtomic);

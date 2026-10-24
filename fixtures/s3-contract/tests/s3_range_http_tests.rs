@@ -1,3 +1,10 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Range conversion is validated against actual HTTP status errors from the
 //! SDK.
 
@@ -15,7 +22,7 @@ use tokio::io::AsyncWriteExt;
 
 /// Only 416 followed by a successful HEAD proving EOF may become an empty read.
 #[tokio::test]
-async fn http_range_conversion_requires_metadata_evidence() {
+async fn test_http_range_conversion_requires_metadata_evidence() {
     for (first_status, head_status, offset, empty, missing) in [
         (416, Some(200), 3, true, false),
         (416, Some(200), 2, false, false),
@@ -24,7 +31,9 @@ async fn http_range_conversion_requires_metadata_evidence() {
         (500, None, 3, false, false),
         (404, None, 3, false, true),
     ] {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
         let address = listener.local_addr().expect("address");
         let server = tokio::spawn(async move {
             let mut statuses = vec![first_status];
@@ -38,7 +47,9 @@ async fn http_range_conversion_requires_metadata_evidence() {
                     assert!(count > 0);
                     request.extend_from_slice(&chunk[..count]);
                 }
-                let headers = String::from_utf8(request).expect("HTTP headers").to_ascii_lowercase();
+                let headers = String::from_utf8(request)
+                    .expect("HTTP headers")
+                    .to_ascii_lowercase();
                 if index == 0 {
                     assert!(headers.starts_with("get "));
                     assert!(headers.contains("range: bytes="));
@@ -57,7 +68,10 @@ async fn http_range_conversion_requires_metadata_evidence() {
                 let response = format!(
                     "HTTP/1.1 {status} {reason}\r\nContent-Length: {length}\r\nETag: \"version\"\r\nLast-Modified: Wed, 21 Oct 2015 07:28:00 GMT\r\nConnection: close\r\n\r\n"
                 );
-                socket.write_all(response.as_bytes()).await.expect("response");
+                socket
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("response");
             }
         });
         let config = S3ContractConfig {
@@ -88,7 +102,9 @@ async fn http_range_conversion_requires_metadata_evidence() {
         let result = filesystem
             .read_all(
                 &Path::parse_literal("key").expect("path"),
-                ReadOptions::default().with_offset(Some(offset)).with_length(Some(1)),
+                ReadOptions::default()
+                    .with_offset(Some(offset))
+                    .with_length(Some(1)),
                 1,
             )
             .await;

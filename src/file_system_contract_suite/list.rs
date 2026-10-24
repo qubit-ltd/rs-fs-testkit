@@ -25,6 +25,11 @@ use crate::internal::verify_fs_error;
 
 impl FileSystemContractSuite<'_> {
     /// Runs one isolated request for each listing requirement.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first setup, provider, stream, or assertion failure from a
+    /// listing check.
     pub(super) fn check_list(&mut self) -> Result<(), ContractFailure> {
         for id in [
             ContractCheckId::ListBasic,
@@ -39,8 +44,20 @@ impl FileSystemContractSuite<'_> {
         Ok(())
     }
 
-    /// Fixes expected entries from fixture preparation before reading the
-    /// stream.
+    /// Prepares the expected entries and verifies one listing requirement.
+    ///
+    /// Flat-scope requirements are delegated to the corresponding helper;
+    /// path-scope requirements seed entries, read the provider stream, and
+    /// compare the observed paths with the expected set.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Listing check to execute.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when setup, provider listing, stream reading, or a
+    /// listing assertion fails.
     pub(super) fn check_list_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         if matches!(id, ContractCheckId::ListNamespace | ContractCheckId::ListRawRootPrefix) {
             return self.check_flat_scope_item(id);

@@ -21,8 +21,20 @@ use crate::internal::verify_condition;
 use crate::internal::verify_fs_error;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Prepares the tree through fixture channels, never through the tested
-    /// facade.
+    /// Seeds and verifies recursive deletion through independent fixture
+    /// channels, never through the tested facade.
+    ///
+    /// When recursive deletion is unsupported, this check verifies that the
+    /// provider rejects the operation as required. Otherwise, it seeds a tree
+    /// and confirms through out-of-band observations that every entry is gone
+    /// after deletion.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure if fixture preparation or observation fails,
+    /// if the provider's deletion operation fails, if a seeded entry is missing
+    /// before deletion or remains afterward, or if rejection of an unsupported
+    /// capability is incorrect.
     pub(super) async fn check_delete_tree(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::DeleteTree;
         self.context.begin(id.as_str());
@@ -67,7 +79,6 @@ impl AsyncFileSystemContractSuite<'_> {
                 );
                 return Ok(());
             };
-            self.context.record_created(path.clone());
             paths.push(path);
         }
         for file in [format!("{relative}/child"), format!("{relative}/nested/child")] {
@@ -84,7 +95,6 @@ impl AsyncFileSystemContractSuite<'_> {
                 );
                 return Ok(());
             };
-            self.context.record_created(path.clone());
             paths.push(path);
         }
         for path in &paths {

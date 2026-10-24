@@ -22,6 +22,11 @@ use crate::internal::verify_fs_error;
 
 impl FileSystemContractSuite<'_> {
     /// Runs each directory creation check with its own fresh target.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when either creation mode violates its
+    /// contract.
     pub(super) fn check_create_directory(&mut self) -> Result<(), ContractFailure> {
         for id in [ContractCheckId::DirectoryCreate, ContractCheckId::DirectoryRecursive] {
             self.check_create_directory_item(id)?;
@@ -30,6 +35,16 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Checks publication and existing-directory handling for one request mode.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - The directory creation check to run; only ordinary and
+    ///   recursive creation checks are accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when path preparation, provider I/O, or
+    /// verification fails.
     pub(super) fn check_create_directory_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let recursive = match id {
             ContractCheckId::DirectoryCreate => false,

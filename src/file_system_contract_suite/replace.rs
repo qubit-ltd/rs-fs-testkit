@@ -21,6 +21,16 @@ use crate::internal::verify_condition;
 impl FileSystemContractSuite<'_> {
     /// Executes one replacement scenario and attributes preparation or I/O
     /// failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] when preparation, observation,
+    /// publication, or a replacement invariant fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the replacement check has no preparation scenario in the
+    /// internal check catalog.
     pub(super) fn check_replace(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::WriteReplace;
         let outcome = self.execute_replace().map_err(|failure| failure.at(id))?;
@@ -31,6 +41,16 @@ impl FileSystemContractSuite<'_> {
 
     /// Requires a longer seed so a missing truncation cannot masquerade as
     /// replacement.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] when preparation or I/O fails, or when
+    /// the fixture does not preserve the requested replacement semantics.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the replacement check has no preparation scenario in the
+    /// internal check catalog.
     fn execute_replace(&mut self) -> Result<ContractCheckOutcome, ContractFailure> {
         let id = ContractCheckId::WriteReplace;
         let relative = self.context.relative_name("write-replace");

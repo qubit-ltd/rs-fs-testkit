@@ -25,6 +25,11 @@ use crate::internal::verify_condition;
 impl FileSystemContractSuite<'_> {
     /// Executes one abort check and retains the writer if streaming or cleanup
     /// fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns the attributed failure when fixture preparation, writer
+    /// operations, or the abort contract check fails.
     pub(super) fn check_abort(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::WriteAbort;
         let outcome = self.execute_abort().map_err(|failure| failure.at(id))?;
@@ -34,6 +39,11 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Checks the abort outcome against state and independent target existence.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when fixture preparation, writer operations, or
+    /// independently observed publication state violates the abort contract.
     fn execute_abort(&mut self) -> Result<ContractCheckOutcome, ContractFailure> {
         let id = ContractCheckId::WriteAbort;
         if !self.capable(FileSystemCapability::Write) {

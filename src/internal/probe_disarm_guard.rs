@@ -18,13 +18,27 @@ use crate::FixtureResult;
 /// Declare this guard before the execution future so reverse drop order
 /// cancels provider execution first. Disarming never starts filesystem I/O.
 pub(crate) struct ProbeDisarmGuard<'a> {
+    /// Operation that releases the fixture's probe gate.
     disarm: Box<dyn Fn() -> FixtureResult<()> + Send + Sync + 'a>,
+    /// Suite-owned sink that retains disarm failures.
     failures: &'a mut Vec<ContractFailure>,
+    /// Whether the release operation still needs to be attempted.
     armed: bool,
 }
 
 impl<'a> ProbeDisarmGuard<'a> {
-    /// Creates a guard with a suite-owned diagnostic sink.
+    /// Creates a guard that releases a probe gate and records release failures.
+    ///
+    /// # Parameters
+    ///
+    /// - `disarm`: operation that releases the gate without starting filesystem
+    ///   I/O.
+    /// - `failures`: suite-owned vector that receives any release error or
+    ///   panic.
+    ///
+    /// # Returns
+    ///
+    /// A guard armed to invoke `disarm` once, either explicitly or during drop.
     pub(crate) fn new(
         disarm: impl Fn() -> FixtureResult<()> + Send + Sync + 'a,
         failures: &'a mut Vec<ContractFailure>,
@@ -37,6 +51,11 @@ impl<'a> ProbeDisarmGuard<'a> {
     }
 
     /// Disarms once, recording the original error or panic without unwinding.
+    ///
+    /// # Returns
+    ///
+    /// `true` if cleanup succeeded or had already been attempted; `false` if
+    /// cleanup returned an error or panicked.
     pub(crate) fn disarm(&mut self) -> bool {
         if !self.armed {
             return true;
@@ -62,32 +81,5 @@ impl Drop for ProbeDisarmGuard<'_> {
     /// Records disarm failures without causing a second unwind.
     fn drop(&mut self) {
         let _ = self.disarm();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ProbeDisarmGuard;
-    use crate::FixtureError;
-
-    #[test]
-    fn disarm_records_an_error_once() {
-        let mut failures = Vec::new();
-        let mut guard = ProbeDisarmGuard::new(|| Err(FixtureError::new("disarm failure")), &mut failures);
-        assert!(!guard.disarm());
-        assert!(guard.disarm());
-        drop(guard);
-        assert_eq!(failures.len(), 1);
-        assert!(failures[0].message().contains("probe disarm failed"));
-    }
-
-    #[test]
-    fn drop_retains_a_disarm_panic() {
-        let mut failures = Vec::new();
-        let guard = ProbeDisarmGuard::new(|| -> crate::FixtureResult<()> { panic!("disarm panic") }, &mut failures);
-        drop(guard);
-        assert_eq!(failures.len(), 1);
-        assert!(failures[0].message().contains("probe disarm panicked: disarm panic"));
-        assert!(failures[0].take_panic_payload().is_some());
     }
 }

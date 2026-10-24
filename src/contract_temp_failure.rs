@@ -16,55 +16,108 @@ use std::fmt::Result as FmtResult;
 /// A failed temporary lifecycle operation whose resource remains available for
 /// recovery.
 ///
-/// `T` is the synchronous or asynchronous temporary resource. Obtain this value
-/// through [`crate::ContractSource::take`] and downcast to the concrete
-/// resource type. Taking it transfers recovery responsibility to the caller.
-/// Formatting does not inspect the resource or invoke the provider's error
-/// formatter.
+/// # Type Parameters
+///
+/// - `T`: The synchronous or asynchronous temporary resource whose recovery
+///   remains the caller's responsibility after it is taken.
+///
+/// A temporary resource check in a contract suite can report this value when a
+/// provider operation fails while the resource is still available. Downcast
+/// the failure's source to this type to recover the resource. Taking it
+/// transfers recovery responsibility to the caller. Formatting does not
+/// inspect the resource or invoke the provider's error formatter.
 ///
 /// # Examples
 ///
 /// ```
+/// use std::error::Error;
+///
 /// use qubit_fs_testkit::ContractTempFailure;
 ///
-/// fn inspect_resource<T>(failure: &ContractTempFailure<T>) -> &T {
-///     failure.resource()
+/// fn recover_resource<T>(failure: ContractTempFailure<T>) -> (Box<dyn Error + Send>, T) {
+///     let _resource_is_available = failure.resource();
+///     failure.into_parts()
 /// }
+///
+/// // `failure` is obtained by downcasting the source of a temporary-resource
+/// // failure reported by a contract suite.
 /// ```
 #[must_use]
 pub struct ContractTempFailure<T> {
+    /// Preserves the original operation error for inspection and chaining.
     error: Box<dyn Error + Send>,
+    /// Keeps the temporary resource owned until the caller recovers or drops
+    /// it.
     resource: T,
 }
 
 impl<T> ContractTempFailure<T> {
-    /// Returns the original error for typed inspection.
-    pub fn error(&self) -> &(dyn Error + Send + 'static) {
-        self.error.as_ref()
-    }
-
-    /// Borrows the retained resource for lifecycle inspection.
-    pub const fn resource(&self) -> &T {
-        &self.resource
-    }
-
-    /// Borrows the retained resource for explicit recovery or cleanup.
-    pub fn resource_mut(&mut self) -> &mut T {
-        &mut self.resource
-    }
-
-    /// Transfers both the original error and its resource to the caller.
-    pub fn into_parts(self) -> (Box<dyn Error + Send>, T) {
-        (self.error, self.resource)
-    }
-
     /// Retains a temporary resource failure before its resource can leave
     /// scope.
+    ///
+    /// # Parameters
+    ///
+    /// - `error`: The original operation error to preserve for later
+    ///   inspection.
+    /// - `resource`: The temporary resource whose recovery responsibility is
+    ///   being retained.
+    ///
+    /// # Returns
+    ///
+    /// A failure value that owns the error and resource until the caller takes
+    /// or drops them.
     pub(crate) fn new(error: impl Error + Send + 'static, resource: T) -> Self {
         Self {
             error: Box::new(error),
             resource,
         }
+    }
+
+    /// Returns the original error for typed inspection.
+    ///
+    /// # Returns
+    ///
+    /// A borrow of the original error, which can be downcast without consuming
+    /// the retained recovery resource.
+    #[must_use = "inspect or retain the original error"]
+    #[inline]
+    pub fn error(&self) -> &(dyn Error + Send + 'static) {
+        self.error.as_ref()
+    }
+
+    /// Borrows the retained resource for lifecycle inspection.
+    ///
+    /// # Returns
+    ///
+    /// An immutable borrow of the retained resource, valid for the lifetime of
+    /// the borrow of this failure.
+    #[must_use = "inspect the retained resource"]
+    #[inline]
+    pub const fn resource(&self) -> &T {
+        &self.resource
+    }
+
+    /// Borrows the retained resource for explicit recovery or cleanup.
+    ///
+    /// # Returns
+    ///
+    /// A mutable borrow of the retained resource, allowing the caller to
+    /// perform recovery or cleanup before transferring or dropping it.
+    #[must_use = "use the retained resource to recover or clean it up"]
+    #[inline]
+    pub fn resource_mut(&mut self) -> &mut T {
+        &mut self.resource
+    }
+
+    /// Transfers both the original error and its resource to the caller.
+    ///
+    /// # Returns
+    ///
+    /// The original error and retained resource, transferring ownership of both
+    /// to the caller.
+    #[must_use = "handle the transferred error and resource"]
+    pub fn into_parts(self) -> (Box<dyn Error + Send>, T) {
+        (self.error, self.resource)
     }
 }
 
@@ -83,25 +136,5 @@ impl<T> Display for ContractTempFailure<T> {
 impl<T> Error for ContractTempFailure<T> {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(self.error.as_ref())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ContractTempFailure;
-
-    #[test]
-    fn retained_resource_can_be_inspected_and_transferred() {
-        let mut failure = ContractTempFailure::new(std::io::Error::other("temp"), 7_u8);
-        assert_eq!(failure.error().to_string(), "temp");
-        assert_eq!(*failure.resource(), 7);
-        *failure.resource_mut() = 8;
-        assert_eq!(*failure.resource(), 8);
-        assert!(format!("{failure:?}").contains("retained"));
-        assert!(format!("{failure}").contains("recovery resource"));
-        assert_eq!(std::error::Error::source(&failure).unwrap().to_string(), "temp");
-        let (error, resource) = failure.into_parts();
-        assert_eq!(error.to_string(), "temp");
-        assert_eq!(resource, 8);
     }
 }

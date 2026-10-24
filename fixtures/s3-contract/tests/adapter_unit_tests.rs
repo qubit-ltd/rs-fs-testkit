@@ -1,3 +1,10 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 use qubit_fs::Path;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs_s3_contract::S3ContractConfig;
@@ -7,7 +14,7 @@ use qubit_fs_s3_contract::validate_key;
 use qubit_io::AsyncOutput;
 
 #[test]
-fn object_keys_are_preserved_and_prefixed() {
+fn test_object_keys_are_preserved_and_prefixed() {
     let config = S3ContractConfig {
         endpoint: "https://example.invalid".into(),
         bucket: "bucket".into(),
@@ -22,14 +29,14 @@ fn object_keys_are_preserved_and_prefixed() {
 }
 
 #[test]
-fn dot_segments_are_rejected() {
+fn test_dot_segments_are_rejected() {
     assert!(validate_key("a/../b").is_err());
     assert!(validate_key("a/./b").is_err());
     assert!(validate_key("a/%2e%2e/b").is_ok());
 }
 
 #[test]
-fn invalid_prefix_is_rejected_without_normalizing_object_keys() {
+fn test_invalid_prefix_is_rejected_without_normalizing_object_keys() {
     let config = S3ContractConfig {
         prefix: "run/../bad".into(),
         endpoint: "https://example.invalid".into(),
@@ -49,7 +56,7 @@ fn invalid_prefix_is_rejected_without_normalizing_object_keys() {
 }
 
 #[test]
-fn configuration_debug_does_not_expose_credentials() {
+fn test_configuration_debug_does_not_expose_credentials() {
     let config = S3ContractConfig {
         endpoint: "https://example.invalid".into(),
         bucket: "bucket".into(),
@@ -68,7 +75,7 @@ mod common;
 
 /// Each supported contract runs against a fresh independent SDK fixture.
 #[tokio::test]
-async fn in_memory_adapter_runs_the_supported_contract_matrix() {
+async fn test_in_memory_adapter_runs_the_supported_contract_matrix() {
     use qubit_fs_testkit::AsyncFileSystemContractSuite;
     use qubit_fs_testkit::ContractCheckId;
     use qubit_fs_testkit::FileSystemContract;
@@ -102,7 +109,7 @@ async fn in_memory_adapter_runs_the_supported_contract_matrix() {
 }
 
 #[tokio::test]
-async fn create_only_collision_is_not_published_and_keeps_payload() {
+async fn test_create_only_collision_is_not_published_and_keeps_payload() {
     use qubit_fs::write::WriteDisposition;
     use qubit_fs::write::WriteFailureState;
     use qubit_fs::write::WriteOptions;
@@ -127,7 +134,7 @@ async fn create_only_collision_is_not_published_and_keeps_payload() {
 }
 
 #[tokio::test]
-async fn empty_object_reports_zero_length() {
+async fn test_empty_object_reports_zero_length() {
     use qubit_fs::write::WriteDisposition;
     use qubit_fs::write::WriteOptions;
 
@@ -140,7 +147,7 @@ async fn empty_object_reports_zero_length() {
 }
 
 #[tokio::test]
-async fn in_memory_listing_preserves_literal_object_prefixes() {
+async fn test_in_memory_listing_preserves_literal_object_prefixes() {
     use qubit_fs::directory::ListOptions;
     use qubit_fs::write::WriteDisposition;
     use qubit_fs::write::WriteOptions;
@@ -166,7 +173,7 @@ async fn in_memory_listing_preserves_literal_object_prefixes() {
 }
 
 #[tokio::test]
-async fn unsupported_writer_options_fail_before_publication() {
+async fn test_unsupported_writer_options_fail_before_publication() {
     use qubit_fs::write::WriteDisposition;
     use qubit_fs::write::WriteOptions;
     let filesystem = open_in_memory("writer-options").unwrap();
@@ -181,7 +188,7 @@ async fn unsupported_writer_options_fail_before_publication() {
 
 /// The same recovery matrix used by opt-in real-service tests runs locally.
 #[tokio::test]
-async fn shared_recovery_matrix_runs_in_memory() {
+async fn test_shared_recovery_matrix_runs_in_memory() {
     use futures_util::FutureExt;
     use qubit_fs_testkit::AsyncFileSystemFixture;
     let fixture = common::Fixture::memory("shared-recovery");
@@ -196,7 +203,7 @@ async fn shared_recovery_matrix_runs_in_memory() {
 }
 
 #[tokio::test]
-async fn expected_conditional_failures_abort_the_retained_session() {
+async fn test_expected_conditional_failures_abort_the_retained_session() {
     use qubit_fs_testkit::AsyncFileSystemContractSuite;
     use qubit_fs_testkit::ContractCheckId;
     for id in [ContractCheckId::WriteIfAbsent, ContractCheckId::WriteIfMatch] {
@@ -214,7 +221,7 @@ async fn expected_conditional_failures_abort_the_retained_session() {
 }
 
 #[tokio::test]
-async fn conditional_cleanup_failure_retains_original_snapshot_and_session() {
+async fn test_conditional_cleanup_failure_retains_original_snapshot_and_session() {
     use qubit_fs::write::AsyncWriterRecovery;
     use qubit_fs::write::WriteAbortOutcome;
     use qubit_fs::write::WriteFailureState;
@@ -258,7 +265,7 @@ async fn conditional_cleanup_failure_retains_original_snapshot_and_session() {
 }
 
 #[tokio::test]
-async fn cancelling_expected_rejection_cleanup_preserves_session_in_run() {
+async fn test_cancelling_expected_rejection_cleanup_preserves_session_in_run() {
     use std::future::Future;
 
     use qubit_fs::write::AsyncWriterRecovery;

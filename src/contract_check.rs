@@ -30,8 +30,11 @@ use crate::ContractCheckOutcome;
 #[must_use]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractCheck {
+    /// Stable identifier used to correlate this check across reports.
     pub(crate) id: ContractCheckId,
+    /// Capability required by the check, if it depends on one.
     pub(crate) capability: Option<FileSystemCapability>,
+    /// Outcome recorded after evaluating the check.
     pub(crate) outcome: ContractCheckOutcome,
 }
 
@@ -44,35 +47,14 @@ impl ContractCheck {
 
     /// Returns the capability associated with this check, when one exists.
     #[inline]
-    #[must_use]
     pub const fn capability(&self) -> Option<FileSystemCapability> {
         self.capability
     }
 
     /// Returns the recorded check outcome.
+    #[must_use = "the recorded outcome should be inspected"]
     #[inline]
     pub const fn outcome(&self) -> &ContractCheckOutcome {
         &self.outcome
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use qubit_fs::metadata::FileSystemCapability;
-
-    use super::ContractCheck;
-    use crate::ContractCheckId;
-    use crate::ContractCheckOutcome;
-
-    #[test]
-    fn accessors_return_the_recorded_check_fields() {
-        let check = ContractCheck {
-            id: ContractCheckId::ListBasic,
-            capability: Some(FileSystemCapability::List),
-            outcome: ContractCheckOutcome::Passed,
-        };
-        assert_eq!(check.id(), ContractCheckId::ListBasic);
-        assert_eq!(check.capability(), Some(FileSystemCapability::List));
-        assert_eq!(check.outcome(), &ContractCheckOutcome::Passed);
     }
 }

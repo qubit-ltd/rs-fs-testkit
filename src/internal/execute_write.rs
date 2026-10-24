@@ -14,8 +14,28 @@ use qubit_fs::write::WriteOptions;
 
 use crate::ContractAsyncWriteFailure;
 
-/// Keeps admission and execution failures distinguishable through the
-/// operation.
+/// Executes a prepared whole-file write while retaining its recovery operation
+/// when execution fails.
+///
+/// Admission failures are returned without an operation because no write
+/// session was created. Execution failures retain the operation, including
+/// any recovery writer, in [`ContractAsyncWriteFailure`].
+///
+/// # Parameters
+///
+/// - `filesystem`: filesystem that admits and executes the write.
+/// - `path`: destination path for the complete byte buffer.
+/// - `bytes`: contents to publish at the destination.
+/// - `options`: write disposition and other write policy.
+///
+/// # Returns
+///
+/// The write outcome when execution succeeds; otherwise, the failure snapshot
+/// and any admitted operation needed for recovery.
+///
+/// # Errors
+///
+/// Returns [`ContractAsyncWriteFailure`] if admission or execution fails.
 pub(crate) async fn execute_write(
     filesystem: &AsyncFileSystem,
     path: Path,

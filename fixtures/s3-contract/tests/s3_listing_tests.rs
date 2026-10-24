@@ -1,17 +1,39 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+use bytes::Bytes;
+use object_store::ObjectStoreExt;
+use object_store::path::Path as ObjectPath;
 use qubit_fs::Path;
 use qubit_fs::directory::ListFilter;
 use qubit_fs::directory::ListOptions;
 use qubit_fs::directory::ListScope;
+use qubit_fs::error::FsErrorKind;
 use qubit_fs::write::WriteDisposition;
 use qubit_fs::write::WriteOptions;
 use qubit_fs_s3_contract::open_in_memory;
+use qubit_fs_s3_contract::validate_key;
+use qubit_fs_testkit::AsyncFileSystemFixture;
+use qubit_fs_testkit::FixtureSupport;
+
 mod common;
 
 /// The SDK component prefix must not omit matching raw logical keys.
 #[tokio::test]
-async fn raw_scope_and_relative_filter_select_exact_keys() {
+async fn test_raw_scope_and_relative_filter_select_exact_keys() {
     let filesystem = open_in_memory("raw-list").unwrap();
-    for key in ["folder", "folder/a", "folder/ab", "folder/b", "folderish", "other"] {
+    for key in [
+        "folder",
+        "folder/a",
+        "folder/ab",
+        "folder/b",
+        "folderish",
+        "other",
+    ] {
         let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
         filesystem
             .begin_write_all(Path::parse_literal(key).unwrap(), b"x".to_vec(), options)
@@ -32,7 +54,8 @@ async fn raw_scope_and_relative_filter_select_exact_keys() {
             vec!["folder/a", "folder/ab"],
         ),
     ] {
-        let options = ListOptions::object_keys().with_filter(Some(ListFilter::LiteralPrefix(filter.into())));
+        let options = ListOptions::object_keys()
+            .with_filter(Some(ListFilter::LiteralPrefix(filter.into())));
         let mut stream = filesystem.list(&scope, options).await.unwrap();
         let mut actual = Vec::new();
         while let Some(entry) = stream.next_entry_async().await.unwrap() {
@@ -45,30 +68,28 @@ async fn raw_scope_and_relative_filter_select_exact_keys() {
 
 /// Resource keys must round-trip through the SDK without changing identity.
 #[test]
-fn ambiguous_sdk_resource_keys_are_rejected() {
+fn test_ambiguous_sdk_resource_keys_are_rejected() {
     for key in ["a/", "/a", "a//b", "a/./b", "a/../b"] {
-        assert!(qubit_fs_s3_contract::validate_key(key).is_err(), "{key}");
+        assert!(validate_key(key).is_err(), "{key}");
     }
 }
 
 /// Whole-namespace listing includes unrelated keys without exposing SDK
 /// prefixes.
 #[tokio::test]
-async fn namespace_is_exact_and_scoped_to_configuration() {
-    use object_store::ObjectStoreExt;
-    use qubit_fs_testkit::AsyncFileSystemFixture;
+async fn test_namespace_is_exact_and_scoped_to_configuration() {
     let fixture = common::Fixture::memory("namespace-boundary");
     for key in ["top", "folder/a", "folderish"] {
         assert!(matches!(
             fixture.seed_file(key, b"x").await.unwrap(),
-            qubit_fs_testkit::FixtureSupport::Supported(_)
+            FixtureSupport::Supported(_)
         ));
     }
     fixture
         .store
         .put(
-            &object_store::path::Path::from("outside/leak"),
-            bytes::Bytes::from_static(b"x").into(),
+            &ObjectPath::from("outside/leak"),
+            Bytes::from_static(b"x").into(),
         )
         .await
         .unwrap();
@@ -87,17 +108,16 @@ async fn namespace_is_exact_and_scoped_to_configuration() {
 
 /// Scan budgets count unmatched SDK entries rather than only returned entries.
 #[tokio::test]
-async fn unmatched_entries_still_exhaust_scan_budget() {
-    use qubit_fs::error::FsErrorKind;
-    use qubit_fs_testkit::AsyncFileSystemFixture;
+async fn test_unmatched_entries_still_exhaust_scan_budget() {
     let fixture = common::Fixture::memory("scan-budget");
     for index in 0..1025 {
         assert!(matches!(
             fixture.seed_file(&format!("decoy-{index:04}"), b"x").await.unwrap(),
-            qubit_fs_testkit::FixtureSupport::Supported(_)
+            FixtureSupport::Supported(_)
         ));
     }
-    let options = ListOptions::object_keys().with_filter(Some(ListFilter::LiteralPrefix("no-match".into())));
+    let options = ListOptions::object_keys()
+        .with_filter(Some(ListFilter::LiteralPrefix("no-match".into())));
     let mut stream = fixture.filesystem.list(&ListScope::Namespace, options).await.unwrap();
     assert_eq!(
         stream.next_entry_async().await.unwrap_err().kind(),
@@ -107,8 +127,7 @@ async fn unmatched_entries_still_exhaust_scan_budget() {
 
 /// Unsupported resource spellings are rejected by every resource operation.
 #[tokio::test]
-async fn ambiguous_resources_are_rejected_before_sdk_dispatch() {
-    use qubit_fs::error::FsErrorKind;
+async fn test_ambiguous_resources_are_rejected_before_sdk_dispatch() {
     let filesystem = open_in_memory("ambiguous-keys").unwrap();
     for key in ["a/", "/a", "a//b", "a/./b", "a/../b"] {
         let path = Path::parse_literal(key).unwrap();
@@ -126,7 +145,12 @@ async fn ambiguous_resources_are_rejected_before_sdk_dispatch() {
         );
         let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
         assert_eq!(
-            filesystem.open_writer(&path, options).await.unwrap_err().error().kind(),
+            filesystem
+                .open_writer(&path, options)
+                .await
+                .unwrap_err()
+                .error()
+                .kind(),
             FsErrorKind::InvalidPath
         );
     }

@@ -19,6 +19,10 @@ use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
     /// Executes representation entries without sharing fixture preparation.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first failure reported while checking either representation.
     pub(super) fn check_representations(&mut self) -> Result<(), ContractFailure> {
         for id in [
             ContractCheckId::RepresentationEmpty,
@@ -29,7 +33,16 @@ impl FileSystemContractSuite<'_> {
         Ok(())
     }
 
-    /// Requires a real seeded representation for every advertised capability.
+    /// Requires a seeded representation and verifies its observed metadata.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - The empty-directory or symbolic-link representation check.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `id` is not a representation check or fixture
+    /// preparation, metadata observation, or verification fails.
     pub(super) fn check_representation_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let (capability, name) = match id {
             ContractCheckId::RepresentationEmpty => (FileSystemCapability::EmptyDirectory, "empty-directory"),

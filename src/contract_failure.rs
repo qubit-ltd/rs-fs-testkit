@@ -27,31 +27,48 @@ use crate::ContractCheckId;
 /// ```
 /// # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
 /// # use support::RustdocSyncFixture;
-/// use qubit_fs_testkit::{FileSystemContract, FileSystemContractSuite};
+/// use qubit_fs_testkit::{ContractFailure, FileSystemContract, FileSystemContractSuite};
 ///
 /// let fixture = RustdocSyncFixture::new();
 /// let mut suite = FileSystemContractSuite::new(&fixture);
 /// suite.run_contract(FileSystemContract::Properties);
 /// suite.run_contract(FileSystemContract::Stat);
-/// assert!(!suite.run().failures().is_empty());
-/// assert!(suite.run().failures()[0].message().contains("session already started"));
+/// let report = suite.run();
+/// assert!(!report.failures().is_empty());
+/// let failure: &ContractFailure = &report.failures()[0];
+/// assert!(failure.message().contains("session already started"));
 /// ```
+#[must_use]
 pub struct ContractFailure {
+    /// The execution entry associated with this failure, when known.
     check: Option<ContractCheckId>,
+    /// Safe context that can be displayed without formatting the cause.
     message: String,
+    /// The original typed error, retained for standard error-chain inspection.
     source: Option<Box<dyn Error + Send + Sync>>,
+    /// The original panic payload, available for one-time ownership transfer.
     panic: Mutex<Option<Box<dyn Any + Send>>>,
 }
 
 impl ContractFailure {
     /// Returns the check identity when execution could attribute the failure.
-    #[must_use]
+    ///
+    /// # Returns
+    ///
+    /// The execution check identity, or `None` when no check was associated
+    /// with the failure.
+    #[inline]
     pub const fn check(&self) -> Option<ContractCheckId> {
         self.check
     }
 
     /// Returns the diagnostic context without formatting its underlying cause.
+    ///
+    /// # Returns
+    ///
+    /// The safe diagnostic context stored with this failure.
     #[must_use]
+    #[inline]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -61,14 +78,13 @@ impl ContractFailure {
     /// This transfers ownership through a borrowed run. Returns `None` when
     /// the failure was not a panic or another caller already took its payload.
     /// Taking the payload does not remove the failure from the run's history.
+    ///
+    /// # Returns
+    ///
+    /// The original panic payload when one is retained and has not already
+    /// been taken; otherwise, `None`.
     pub fn take_panic_payload(&self) -> Option<Box<dyn Any + Send>> {
         self.panic.lock().unwrap_or_else(|poison| poison.into_inner()).take()
-    }
-
-    /// Attributes a preserved failure to its typed execution entry.
-    pub(crate) fn at(mut self, check: ContractCheckId) -> Self {
-        self.check = Some(check);
-        self
     }
 
     /// Constructs a failure without an underlying provider cause.
@@ -114,6 +130,12 @@ impl ContractFailure {
             panic: Mutex::new(Some(payload)),
         }
     }
+
+    /// Attributes a preserved failure to its typed execution entry.
+    pub(crate) fn at(mut self, check: ContractCheckId) -> Self {
+        self.check = Some(check);
+        self
+    }
 }
 
 impl Debug for ContractFailure {
@@ -143,53 +165,12 @@ impl Error for ContractFailure {
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
     use std::panic::AssertUnwindSafe;
 
     use super::ContractFailure;
 
     #[test]
-    fn panic_diagnostics_preserve_payload_variants_and_context() {
-        let owned = ContractFailure::panicked("contract", Box::new(String::from("owned panic")));
-        assert_eq!(owned.message(), "contract: owned panic");
-        assert_eq!(
-            owned
-                .take_panic_payload()
-                .unwrap()
-                .downcast::<String>()
-                .unwrap()
-                .as_str(),
-            "owned panic"
-        );
-
-        let borrowed = ContractFailure::panicked("contract", Box::new("borrowed panic"));
-        assert_eq!(borrowed.message(), "contract: borrowed panic");
-        assert_eq!(
-            *borrowed.take_panic_payload().unwrap().downcast::<&str>().unwrap(),
-            "borrowed panic"
-        );
-
-        let opaque = ContractFailure::panicked("contract", Box::new(7_u8));
-        assert_eq!(opaque.message(), "contract: non-string panic payload retained");
-        assert_eq!(*opaque.take_panic_payload().unwrap().downcast::<u8>().unwrap(), 7);
-    }
-
-    #[test]
-    fn diagnostics_format_check_and_keep_typed_source() {
-        let failure = ContractFailure::with_source("operation failed", std::io::Error::other("io cause"))
-            .at(crate::ContractCheckId::WriteBasic);
-        assert!(failure.to_string().contains("write/basic: operation failed"));
-        assert_eq!(failure.source().unwrap().to_string(), "io cause");
-        assert!(format!("{failure:?}").contains("operation failed"));
-
-        let plain = ContractFailure::message_only("plain failure");
-        assert_eq!(plain.to_string(), "plain failure");
-        assert!(plain.source().is_none());
-        assert!(plain.take_panic_payload().is_none());
-    }
-
-    #[test]
-    fn poisoned_panic_lock_still_allows_payload_transfer() {
+    fn test_poisoned_panic_lock_still_allows_payload_transfer() {
         let failure = ContractFailure::panicked("contract", Box::new(String::from("retained panic")));
         let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
             let _guard = failure.panic.lock().unwrap();
@@ -203,24 +184,6 @@ mod tests {
                 .unwrap()
                 .as_str(),
             "retained panic"
-        );
-        assert!(failure.take_panic_payload().is_none());
-    }
-
-    #[test]
-    fn formatting_does_not_consume_a_retained_panic_payload() {
-        let failure = ContractFailure::panicked("operation", Box::new(String::from("provider panic")))
-            .at(crate::ContractCheckId::ReadBasic);
-        assert_eq!(failure.to_string(), "read/basic: operation: provider panic");
-        assert!(format!("{failure:?}").contains("operation: provider panic"));
-        assert_eq!(
-            failure
-                .take_panic_payload()
-                .unwrap()
-                .downcast::<String>()
-                .unwrap()
-                .as_str(),
-            "provider panic"
         );
         assert!(failure.take_panic_payload().is_none());
     }

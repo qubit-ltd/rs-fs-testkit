@@ -14,6 +14,15 @@ use crate::ContractCheckOutcome;
 
 impl<'a> FileSystemContractSuite<'a> {
     /// Executes all synchronous temporary-resource checks in catalog order.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after every temporary-resource entry has been recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first failure reported while executing a temporary-resource
+    /// entry.
     pub(super) fn check_temp_resources(&mut self) -> Result<(), crate::ContractFailure> {
         for id in [
             ContractCheckId::TempFile,
@@ -27,6 +36,19 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Executes exactly one temporary-resource catalog entry.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Catalog entry identifying the temporary-resource scenario.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the selected entry has been recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure if `id` is not a temporary-resource entry or its
+    /// scenario fails.
     pub(super) fn check_temp_item(&mut self, id: ContractCheckId) -> Result<(), crate::ContractFailure> {
         self.context.begin(id.as_str());
         let file = self.capable(FileSystemCapability::TempFile);

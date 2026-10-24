@@ -23,8 +23,23 @@ use crate::FixtureSupport;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Executes one basic copy requirement with independently prepared
+    /// Executes one basic copy requirement using independently prepared
     /// contents.
+    ///
+    /// The check may create source and target paths, execute asynchronous
+    /// filesystem I/O, and read files to observe the copied contents. It
+    /// records the resulting check outcome in the suite context.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Catalog identifier selecting the basic or repeated-execution
+    ///   copy requirement.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] if preparation, copy execution, expected
+    /// capability rejection, operation state, statistics, or observed contents
+    /// do not satisfy the selected contract.
     pub(super) async fn check_basic_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let source_relative = self.context.relative_name("copy-source");
@@ -34,6 +49,59 @@ impl AsyncFileSystemContractSuite<'_> {
             .path(&target_relative)
             .map_err(|error| ContractFailure::with_source("copy target preparation failed", error).at(id))?;
         self.context.record_created(target.clone());
+        if self.check_copy_capability(id, &source_relative, &target).await? {
+            return Ok(());
+        }
+        let bytes = b"copy bytes";
+        let Some(case) = self
+            .prepare_basic_copy(id, &source_relative, &target_relative, bytes)
+            .await?
+        else {
+            return Ok(());
+        };
+        let (source, target, options) = case.into_parts();
+        self.context.record_created(target.clone());
+        verify_condition(
+            options == CopyOptions::file(),
+            id,
+            "basic copy preparation changed required options",
+        )?;
+        self.context.record_created(source.clone());
+        verify_condition(source != target, id, "copy source and target alias")?;
+        self.verify_copy_contents(
+            id,
+            &source,
+            bytes,
+            "copy source observation failed",
+            "copy source evidence is unavailable or differs",
+        )
+        .await?;
+        self.execute_basic_copy(id, source, target, bytes).await
+    }
+
+    /// Handles the capability branch before any copy input is prepared.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Catalog identifier for the copy check.
+    /// * `source_relative` - Fixture-relative name for the source path.
+    /// * `target` - Prepared target path used to probe capability rejection.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` when missing capabilities make the check complete or
+    /// inapplicable, and `false` when copy preparation may proceed.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] if the expected capability rejection
+    /// cannot be observed or has inconsistent error context.
+    async fn check_copy_capability(
+        &mut self,
+        id: ContractCheckId,
+        source_relative: &str,
+        target: &qfs::path::Path,
+    ) -> Result<bool, ContractFailure> {
         let missing = [
             FileSystemCapability::Read,
             FileSystemCapability::Write,
@@ -50,11 +118,11 @@ impl AsyncFileSystemContractSuite<'_> {
                         reason: "copy prerequisites are unavailable".to_owned(),
                     },
                 );
-                return Ok(());
+                return Ok(true);
             }
             let source = self
                 .fixture
-                .path(&source_relative)
+                .path(source_relative)
                 .map_err(|error| ContractFailure::with_source("copy source path preparation failed", error).at(id))?;
             let (failure, retained_operation) =
                 match self
@@ -71,7 +139,7 @@ impl AsyncFileSystemContractSuite<'_> {
                     },
                 };
             let path = if required == FileSystemCapability::Write {
-                &target
+                target
             } else {
                 &source
             };
@@ -79,7 +147,7 @@ impl AsyncFileSystemContractSuite<'_> {
             if error.kind() != FsErrorKind::UnsupportedCapability
                 || error.operation() != FsOperation::Copy
                 || error.path() != Some(path)
-                || error.target() != Some(&target)
+                || error.target() != Some(target)
                 || error.required_capability() != Some(required)
                 || error.provider() != Some(self.context.properties().info().provider_id())
                 || failure.state() != CopyFailureState::Unchanged
@@ -95,14 +163,41 @@ impl AsyncFileSystemContractSuite<'_> {
                 Some(FileSystemCapability::Copy),
                 ContractCheckOutcome::RejectedAsExpected,
             );
-            return Ok(());
+            return Ok(true);
         }
-        let bytes = b"copy bytes";
+        Ok(false)
+    }
+
+    /// Prepares the independent source and target state for one copy check.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Catalog identifier selecting the copy scenario to prepare.
+    /// * `source_relative` - Fixture-relative name for the source file.
+    /// * `target_relative` - Fixture-relative name for the target file.
+    /// * `bytes` - Expected source contents supplied to the fixture.
+    ///
+    /// # Returns
+    ///
+    /// Returns the prepared case when the fixture can provide it, or `None`
+    /// after recording an unavailable or inapplicable preparation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] if the scenario is absent from the catalog
+    /// or fixture preparation fails.
+    async fn prepare_basic_copy(
+        &mut self,
+        id: ContractCheckId,
+        source_relative: &str,
+        target_relative: &str,
+        bytes: &[u8],
+    ) -> Result<Option<crate::CopyFixtureCase>, ContractFailure> {
         let scenario =
             crate::internal::check_catalog::required_copy_scenario(id, "copy preparation missing from catalog")?;
         let prepared = self
             .fixture
-            .prepare_copy(scenario, &source_relative, &target_relative, bytes)
+            .prepare_copy(scenario, source_relative, target_relative, bytes)
             .await
             .map_err(|error| ContractFailure::with_source("copy source preparation failed", error).at(id))?;
         let case = match prepared {
@@ -113,28 +208,33 @@ impl AsyncFileSystemContractSuite<'_> {
                     Some(FileSystemCapability::Copy),
                     ContractCheckOutcome::Unverified { reason },
                 );
-                return Ok(());
+                return Ok(None);
             }
         };
-        let (source, target, options) = case.into_parts();
-        self.context.record_created(target.clone());
-        verify_condition(
-            options == CopyOptions::file(),
-            id,
-            "basic copy preparation changed required options",
-        )?;
-        self.context.record_created(source.clone());
-        verify_condition(source != target, id, "copy source and target alias")?;
-        let before = self
-            .fixture
-            .read_file(&source)
-            .await
-            .map_err(|error| ContractFailure::with_source("copy source observation failed", error).at(id))?;
-        verify_condition(
-            matches!(before, FixtureSupport::Supported(actual) if actual == bytes),
-            id,
-            "copy source evidence is unavailable or differs",
-        )?;
+        Ok(Some(case))
+    }
+
+    /// Executes an admitted copy and verifies its outcome and retained state.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Catalog identifier for the copy contract being checked.
+    /// * `source` - Prepared source path to copy.
+    /// * `target` - Prepared destination path.
+    /// * `bytes` - Expected contents and byte count for the copy.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] if admission or execution fails, the
+    /// operation state or statistics differ, or observed contents are
+    /// incorrect.
+    async fn execute_basic_copy(
+        &mut self,
+        id: ContractCheckId,
+        source: qfs::path::Path,
+        target: qfs::path::Path,
+        bytes: &[u8],
+    ) -> Result<(), ContractFailure> {
         let mut operation = self
             .fixture
             .file_system()
@@ -184,17 +284,15 @@ impl AsyncFileSystemContractSuite<'_> {
         )?;
         if id == ContractCheckId::CopyRepeatedExecute {
             for path in [&source, &target] {
-                let observed =
-                    self.fixture.read_file(path).await.map_err(|error| {
-                        ContractFailure::with_source("initial copy observation failed", error).at(id)
-                    })?;
-                verify_condition(
-                    matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
+                self.verify_copy_contents(
                     id,
+                    path,
+                    bytes,
+                    "initial copy observation failed",
                     "initial copy contents differ or evidence is unavailable",
-                )?;
+                )
+                .await?;
             }
-
             let repeated = match operation.execute().await {
                 Err(error) => error,
                 Ok(_) => return Err(ContractFailure::message_only("copy executed twice").at(id)),
@@ -216,19 +314,54 @@ impl AsyncFileSystemContractSuite<'_> {
             )?;
         }
         for path in [&source, &target] {
-            let observed = self
-                .fixture
-                .read_file(path)
-                .await
-                .map_err(|error| ContractFailure::with_source("copy contents observation failed", error).at(id))?;
-            verify_condition(
-                matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
+            self.verify_copy_contents(
                 id,
+                path,
+                bytes,
+                "copy contents observation failed",
                 "copy source or target contents differ or evidence is unavailable",
-            )?;
+            )
+            .await?;
         }
         self.context
             .record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Passed);
         Ok(())
+    }
+
+    /// Reads one path and verifies that the fixture exposes the expected bytes.
+    ///
+    /// The asynchronous read is an observation side effect on the fixture and
+    /// converts provider errors into failures associated with the active check.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Catalog identifier for the active copy check.
+    /// * `path` - Fixture path whose contents are observed.
+    /// * `expected` - Bytes that the fixture is expected to return.
+    /// * `read_error` - Failure message used when the fixture read fails.
+    /// * `mismatch` - Failure message used when observed bytes do not match.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] if the read fails or the observed contents
+    /// are unsupported or differ from `expected`.
+    async fn verify_copy_contents(
+        &self,
+        id: ContractCheckId,
+        path: &qfs::path::Path,
+        expected: &[u8],
+        read_error: &'static str,
+        mismatch: &'static str,
+    ) -> Result<(), ContractFailure> {
+        let observed = self
+            .fixture
+            .read_file(path)
+            .await
+            .map_err(|error| ContractFailure::with_source(read_error, error).at(id))?;
+        verify_condition(
+            matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
+            id,
+            mismatch,
+        )
     }
 }

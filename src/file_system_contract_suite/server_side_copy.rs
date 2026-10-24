@@ -28,6 +28,16 @@ use crate::internal::verify_condition;
 impl FileSystemContractSuite<'_> {
     /// Requires an actual server-side outcome or an actual capability
     /// rejection.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when the requirement passes, is rejected as expected,
+    /// or cannot be independently verified.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when preparation, execution, or an
+    /// independent observation contradicts the server-side copy requirement.
     pub(super) fn check_server_side_copy(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::CopyServerSide;
         let capability = FileSystemCapability::ServerSideCopy;

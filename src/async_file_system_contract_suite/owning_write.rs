@@ -23,7 +23,25 @@ use crate::FixtureSupport;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Exercises publication, unpolled drop, and repeated execution.
+    /// Verifies the owning-write lifecycle selected by the check ID.
+    ///
+    /// Repeated execution is checked only for
+    /// [`ContractCheckId::WriteRepeatedExecute`].
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Identifies the owning-write contract check to execute.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when the owning-write contract is verified or
+    /// unsupported writing is rejected as expected. Returns `Err` when setup,
+    /// execution, observation, or a contract assertion fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when setup, provider execution, independent
+    /// observation, or a lifecycle assertion fails.
     pub(super) async fn check_owning_write(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let relative = self
             .context

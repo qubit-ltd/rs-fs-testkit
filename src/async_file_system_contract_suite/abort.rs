@@ -33,7 +33,19 @@ impl AsyncFileSystemContractSuite<'_> {
         Ok(())
     }
 
-    /// Checks the abort outcome against state and independent target existence.
+    /// Exercises explicit abort after writing a bounded payload to a new file.
+    ///
+    /// The check prepares an absent destination, writes the payload, and
+    /// compares the reported abort outcome with both the writer state and
+    /// an independent existence observation. A published outcome requires
+    /// the destination to exist, while a not-published outcome requires it
+    /// to remain absent. An indeterminate outcome is accepted without
+    /// asserting either state.
+    ///
+    /// # Returns
+    ///
+    /// The observed contract result, or a failure retaining the writer when an
+    /// operation fails before its state can be safely discarded.
     async fn execute_abort(&mut self) -> Result<ContractCheckOutcome, ContractFailure> {
         let id = ContractCheckId::WriteAbort;
         if !self.capable(FileSystemCapability::Write) {

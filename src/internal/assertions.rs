@@ -157,7 +157,27 @@ pub(crate) fn assert_unsupported_error(
     );
 }
 
-/// Validates a missing-resource error while preserving a mismatched source.
+/// Validates that a missing-resource error matches the stat contract while
+/// preserving the original error as the failure source.
+///
+/// # Parameters
+///
+/// * `error` - Owned filesystem error to validate and retain on failure.
+/// * `path` - Requested path that the error must identify.
+/// * `provider` - Provider identifier that reported the operation; an absent
+///   provider in the error is accepted.
+/// * `check` - Contract check identifier attached to any failure.
+///
+/// # Returns
+///
+/// Returns `Ok(())` when the error is a path-matching `NotFound` result from a
+/// `Stat` operation with no target or required capability. Otherwise returns
+/// an attributed contract failure containing the original filesystem error.
+///
+/// # Errors
+///
+/// Returns `ContractFailure` when the kind, operation, path, target,
+/// capability, or reported provider differs from the required contract.
 pub(crate) fn verify_missing_error(
     error: FsError,
     path: &Path,
@@ -180,7 +200,28 @@ pub(crate) fn verify_missing_error(
     }
 }
 
-/// Checks structured fields using an ordinary error return and owned source.
+/// Checks structured filesystem error fields against the expected contract.
+///
+/// # Parameters
+///
+/// * `error` - Owned filesystem error to validate and retain on failure.
+/// * `kind` - Required error classification.
+/// * `operation` - Required filesystem operation.
+/// * `path` - Required path associated with the operation.
+/// * `provider` - Expected provider identifier; an absent provider in the error
+///   is accepted.
+/// * `capability` - Required capability context, if any.
+/// * `check` - Contract check identifier attached to any failure.
+///
+/// # Returns
+///
+/// Returns `Ok(())` when all checked fields match. Otherwise returns an
+/// attributed contract failure containing the original filesystem error.
+///
+/// # Errors
+///
+/// Returns `ContractFailure` when the error kind, operation, path,
+/// capability, or reported provider differs from the expected value.
 pub(crate) fn verify_fs_error(
     error: FsError,
     kind: FsErrorKind,
@@ -202,8 +243,24 @@ pub(crate) fn verify_fs_error(
     }
 }
 
-/// Returns a check-attributed failure without formatting observed provider
-/// data.
+/// Validates a condition and attributes failure to its contract check without
+/// formatting observed provider data.
+///
+/// # Parameters
+///
+/// * `condition` - Whether the checked contract condition holds.
+/// * `check` - Contract check identifier attached to any failure.
+/// * `message` - Explanation included in the failure when the condition is
+///   false.
+///
+/// # Returns
+///
+/// Returns `Ok(())` when `condition` is true; otherwise returns a
+/// check-attributed failure containing `message`.
+///
+/// # Errors
+///
+/// Returns `ContractFailure` when `condition` is false.
 pub(crate) fn verify_condition(
     condition: bool,
     check: crate::ContractCheckId,
@@ -233,7 +290,7 @@ mod tests {
     use super::verify_missing_error;
 
     #[test]
-    fn error_assertions_accept_matching_structured_context() {
+    fn test_error_assertions_accept_matching_structured_context() {
         let path = Path::parse("/source").unwrap();
         let target = Path::parse("/target").unwrap();
         let capability = FileSystemCapability::Read;
@@ -283,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn error_verifiers_accept_and_reject_structured_context() {
+    fn test_error_verifiers_accept_and_reject_structured_context() {
         let path = Path::parse("/missing").unwrap();
         let check = crate::ContractCheckId::ReadBasic;
         let missing = FsError::new(FsErrorKind::NotFound, FsOperation::Stat, "missing").with_path(path.clone());

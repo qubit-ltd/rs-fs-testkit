@@ -7,14 +7,16 @@
 // =============================================================================
 //! Focused selection must execute only the requested check and its own setup.
 
+mod common;
+
 pub use ::qubit_fs_testkit;
 use qubit_fs as qfs;
 use qubit_fs_testkit as testkit;
-mod common;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::FileSystemContractSuite;
 
 use self::common::MemoryFixture;
+
 /// Every synchronous catalog entry can provide evidence in isolation.
 #[test]
 fn test_focused_sync_all_checks() {

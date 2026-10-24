@@ -6,6 +6,8 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::error::Error;
+
 use qubit_fs_testkit::FixtureError;
 
 /// Fixture errors retain messages and sources while redacting source debug
@@ -14,16 +16,11 @@ use qubit_fs_testkit::FixtureError;
 fn test_fixture_error_preserves_message_and_source() {
     let plain = FixtureError::new("plain failure");
     assert_eq!(plain.to_string(), "plain failure");
-    assert!(std::error::Error::source(&plain).is_none());
+    assert!(Error::source(&plain).is_none());
 
     let sourced = FixtureError::with_source("outer failure", std::io::Error::other("inner"));
     assert_eq!(sourced.to_string(), "outer failure");
-    assert_eq!(
-        std::error::Error::source(&sourced)
-            .expect("preserved source")
-            .to_string(),
-        "inner"
-    );
+    assert_eq!(Error::source(&sourced).expect("preserved source").to_string(), "inner");
     let debug = format!("{sourced:?}");
     assert!(debug.contains("outer failure"));
     assert!(!debug.contains("inner"));

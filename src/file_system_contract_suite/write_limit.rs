@@ -24,6 +24,15 @@ use crate::internal::verify_condition;
 impl FileSystemContractSuite<'_> {
     /// Executes the boundary and successor requests, preserving typed failures.
     /// Prepared destinations remain in the suite cleanup ledger until teardown.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after recording the bounded write-limit outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when fixture preparation, either write request, or
+    /// independent observation violates the write-limit contract.
     pub(super) fn check_write_limit(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::WriteLimit;
         let outcome = self.execute_write_limit()?;

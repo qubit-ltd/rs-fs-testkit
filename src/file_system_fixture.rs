@@ -43,11 +43,27 @@ pub trait FileSystemFixture {
     /// Independently prepares a copy source and a scenario-specific target.
     ///
     /// File scenarios contain the supplied bytes and use file options, with
-    /// Required atomicity or durability for the respective strong scenario.
-    /// ServerSide cases use provider-selected observable bytes and require
+    /// required atomicity or durability for the respective strong scenario.
+    /// `ServerSide` cases use provider-selected observable bytes and require
     /// server-side copy. Ready cases have distinct paths,
     /// and Conflict targets contain `b"existing"`.
     /// Teardown must clean partial setup even when preparation fails.
+    ///
+    /// # Parameters
+    ///
+    /// * `scenario` - Copy behavior the contract suite will exercise.
+    /// * `source_relative` - Testkit-relative source path to prepare.
+    /// * `target_relative` - Testkit-relative destination path to prepare.
+    /// * `bytes` - File content used to seed file copy scenarios.
+    ///
+    /// # Returns
+    ///
+    /// A ready copy case or an unavailable result when the fixture cannot
+    /// independently prepare the requested scenario.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when fixture setup fails.
     fn prepare_copy(
         &self,
         scenario: crate::CopyScenario,
@@ -126,6 +142,21 @@ pub trait FileSystemFixture {
     /// Independently prepares an existing file for a selected deletion
     /// scenario. Version hooks must provide evidence for
     /// `DeleteScenario::IfMatch`.
+    ///
+    /// # Parameters
+    ///
+    /// * `_scenario` - Deletion behavior the contract suite will exercise.
+    /// * `relative` - Testkit-relative path for the file to seed.
+    /// * `bytes` - Exact initial content of the file.
+    ///
+    /// # Returns
+    ///
+    /// A ready file path or an unavailable result when independent seeding is
+    /// unsupported.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when fixture setup fails.
     fn prepare_delete(
         &self,
         _scenario: crate::DeleteScenario,
@@ -145,6 +176,21 @@ pub trait FileSystemFixture {
     /// A Ready path must contain the supplied bytes, except for the explicit
     /// corruption scenario. Version observations remain independent fixture
     /// hooks. Preparation errors must not become inapplicability declarations.
+    ///
+    /// # Parameters
+    ///
+    /// * `scenario` - Read behavior for which the resource is prepared.
+    /// * `relative` - Testkit-relative path for the resource.
+    /// * `bytes` - Expected initial content except in the corruption scenario.
+    ///
+    /// # Returns
+    ///
+    /// A ready resource path or an unavailable result when independent setup
+    /// is unsupported.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when fixture setup fails.
     fn prepare_read(
         &self,
         scenario: crate::ReadScenario,
@@ -169,6 +215,21 @@ pub trait FileSystemFixture {
     /// The default prepares CreateNew and durable creation requests. Atomic
     /// replacement, creation conflicts and append use independent seeding.
     /// Other scenarios require provider-specific setup and evidence.
+    ///
+    /// # Parameters
+    ///
+    /// * `scenario` - Write behavior the contract suite will exercise.
+    /// * `relative` - Testkit-relative path for the resource.
+    /// * `bytes` - Content the write case supplies to the tested operation.
+    ///
+    /// # Returns
+    ///
+    /// A ready write case or an unavailable result when the fixture cannot
+    /// independently prepare the requested scenario.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when fixture setup fails.
     fn prepare_write(
         &self,
         scenario: crate::WriteScenario,
@@ -267,7 +328,16 @@ pub trait FileSystemFixture {
     /// represented by the provider's path model.
     fn path(&self, relative: &str) -> FixtureResult<Path>;
 
-    /// Reports whether copy is intentionally limited to the stream fallback.
+    /// Reports whether copy requests must use the stream fallback.
+    ///
+    /// Override this when the fixture is designed to exercise only fallback
+    /// copying, so contract checks do not expect provider-native fast paths.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the suite must restrict copy checks to stream fallback;
+    /// otherwise, `false`.
+    #[must_use]
     #[inline]
     fn copy_fallback_only(&self) -> bool {
         false
@@ -338,6 +408,23 @@ pub trait FileSystemFixture {
     }
 
     /// Observes whether a resource exists without using the tested facade.
+    ///
+    /// This independent observation lets a contract check distinguish the
+    /// operation's effect from the facade's own reported result.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Logical resource path to inspect.
+    ///
+    /// # Returns
+    ///
+    /// `Supported(true)` or `Supported(false)` when existence can be observed,
+    /// or `Unsupported` when no independent observation is available.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when the provider's
+    /// independent observation fails.
     #[inline]
     fn exists_out_of_band(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
         let _ = path;
@@ -345,6 +432,24 @@ pub trait FileSystemFixture {
     }
 
     /// Writes a complete resource through fixture-owned setup facilities.
+    ///
+    /// This hook prepares or restores state without exercising the facade
+    /// operation whose contract is under test.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Logical resource path to write.
+    /// * `bytes` - Exact content to publish.
+    ///
+    /// # Returns
+    ///
+    /// `Supported(())` when the out-of-band write is available, or
+    /// `Unsupported` when the fixture cannot write independently.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when fixture-owned setup
+    /// fails.
     #[inline]
     fn write_file_out_of_band(&self, path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
         let _ = (path, bytes);
@@ -352,6 +457,23 @@ pub trait FileSystemFixture {
     }
 
     /// Observes the current provider version outside the operation under test.
+    ///
+    /// The returned token is evidence for version-conditional contract checks
+    /// and must come from an observation independent of the tested operation.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Logical resource path whose version is observed.
+    ///
+    /// # Returns
+    ///
+    /// `Supported(version)` when a provider version is available, or
+    /// `Unsupported` when it cannot be observed independently.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when version observation
+    /// fails.
     #[inline]
     fn resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let _ = path;
@@ -359,6 +481,23 @@ pub trait FileSystemFixture {
     }
 
     /// Returns a valid version that does not match the current resource.
+    ///
+    /// The token must be valid for the provider's conditional operation while
+    /// being guaranteed not to identify the resource's current version.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Logical resource path whose current version must not match.
+    ///
+    /// # Returns
+    ///
+    /// `Supported(version)` with a valid stale token, or `Unsupported` when
+    /// the fixture cannot establish that condition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when stale-token
+    /// preparation fails.
     #[inline]
     fn stale_resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         let _ = path;
@@ -366,6 +505,22 @@ pub trait FileSystemFixture {
     }
 
     /// Supplies an independently prepared resource whose checksum is invalid.
+    ///
+    /// The resource must be readable as a checksum-corruption scenario without
+    /// using the read operation under test to create the corruption.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Testkit-relative path for the corrupted resource.
+    ///
+    /// # Returns
+    ///
+    /// `Supported(path)` when an invalid-checksum resource is prepared, or
+    /// `Unsupported` when the provider cannot offer this scenario.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when preparation fails.
     #[inline]
     fn checksum_failure_case(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let _ = relative;
@@ -379,9 +534,35 @@ pub trait FileSystemFixture {
     /// the suite. Use a native or out-of-band channel independent of the
     /// facade under test. Return an error if cleanup could not be confirmed.
     /// A cancelled asynchronous attempt must remain safe to retry.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when cleanup is confirmed; otherwise, a fixture error
+    /// describing the cleanup failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when any owned resource
+    /// or staging state could not be reclaimed or confirmed.
     fn teardown(&self) -> FixtureResult<()>;
 
     /// Seeds an empty directory or prefix outside the operation under test.
+    ///
+    /// Providers may represent directories as explicit resources or prefixes;
+    /// the returned path identifies the seeded logical root in either model.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Testkit-relative path for the empty directory.
+    ///
+    /// # Returns
+    ///
+    /// `Supported(path)` when setup succeeds, or `Unsupported` when this
+    /// provider cannot seed an empty directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when setup fails.
     #[inline]
     fn seed_empty_directory(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let _ = relative;
@@ -389,6 +570,22 @@ pub trait FileSystemFixture {
     }
 
     /// Seeds a symbolic link outside the operation under test.
+    ///
+    /// The link target is chosen by the provider; this hook reports support
+    /// only when the resulting link can be used by the relevant contract.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Testkit-relative path at which to create the link.
+    ///
+    /// # Returns
+    ///
+    /// `Supported(path)` when the link is prepared, or `Unsupported` when the
+    /// provider cannot create a suitable symbolic link.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError`](crate::FixtureError) when link setup fails.
     #[inline]
     fn seed_symlink(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
         let _ = relative;

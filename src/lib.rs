@@ -59,6 +59,10 @@ mod write_cancellation_probe;
 mod write_fixture_case;
 mod write_scenario;
 
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
+
 #[cfg(feature = "async")]
 pub use async_copy_cancellation_stage::AsyncCopyCancellationStage;
 #[cfg(feature = "async")]

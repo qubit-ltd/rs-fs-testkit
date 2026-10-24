@@ -1,41 +1,21 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Deterministic fixture-only gates at the adapter/SDK boundary.
 
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
-use std::task::Waker;
 
-/// The exact adapter stage held pending by a test.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TestStage {
-    Open,
-    Write,
-    Flush,
-    BeforePut,
-    AfterPutBeforeResult,
-    Abort,
-}
+use crate::TestStage;
+use crate::test_control::internal::ControlState;
 
-#[derive(Default)]
-struct Gate {
-    stage: Option<TestStage>,
-    reached: bool,
-    observer: Option<Waker>,
-    operation: Option<Waker>,
-}
-
-#[derive(Default)]
-struct ControlState {
-    gate: Mutex<Gate>,
-    puts: AtomicUsize,
-    accepted: AtomicUsize,
-    aborts: AtomicUsize,
-    fail_abort: AtomicBool,
-}
+mod internal;
 
 /// Shared explicit test control; the default allows every stage immediately.
 ///
@@ -45,10 +25,69 @@ struct ControlState {
 pub struct TestControl(Arc<ControlState>);
 
 impl TestControl {
+    /// Returns bytes acknowledged by the provider since the current gate was
+    /// armed.
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes acknowledged since the most recent call to `arm`.
+    #[must_use]
+    pub fn accepted_bytes(&self) -> u64 {
+        self.0.accepted.load(Ordering::SeqCst) as u64
+    }
+
+    /// Returns the number of actual SDK PUT dispatches by this adapter.
+    ///
+    /// # Returns
+    ///
+    /// The number of PUT futures dispatched by the adapter.
+    #[must_use]
+    pub fn put_calls(&self) -> usize {
+        self.0.puts.load(Ordering::SeqCst)
+    }
+
+    /// Returns the number of abort futures polled at least once.
+    ///
+    /// # Returns
+    ///
+    /// The number of abort futures polled by the adapter.
+    #[must_use]
+    pub fn abort_calls(&self) -> usize {
+        self.0.aborts.load(Ordering::SeqCst)
+    }
+
+    /// Acknowledges arrival at the armed stage without advancing the operation.
+    ///
+    /// # Parameters
+    ///
+    /// * `cx` — task context used to register the observer's waker while the
+    ///   armed stage has not been reached.
+    ///
+    /// # Returns
+    ///
+    /// `Poll::Ready(())` when the stage has been reached; otherwise,
+    /// `Poll::Pending` after registering the observer's waker.
+    pub fn poll_reached(&self, cx: &mut Context<'_>) -> Poll<()> {
+        let mut gate = self.0.gate.lock().expect("test gate lock");
+        if gate.reached {
+            Poll::Ready(())
+        } else {
+            gate.observer = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+
     /// Arms one stage before starting the operation; release an old gate first.
+    ///
+    /// # Parameters
+    ///
+    /// * `stage` — operation boundary at which the adapter should pause.
     pub fn arm(&self, stage: TestStage) {
         let mut gate = self.0.gate.lock().expect("test gate lock");
-        assert!(gate.stage.is_none(), "release the previous test gate before rearming");
+        assert!(
+            gate.stage.is_none(),
+            "release the previous test gate before rearming"
+        );
         self.0.accepted.store(0, Ordering::SeqCst);
         gate.stage = Some(stage);
         gate.reached = false;
@@ -66,41 +105,14 @@ impl TestControl {
         }
     }
 
-    /// Acknowledges arrival at the armed stage without advancing the operation.
-    pub fn poll_reached(&self, cx: &mut Context<'_>) -> Poll<()> {
-        let mut gate = self.0.gate.lock().expect("test gate lock");
-        if gate.reached {
-            Poll::Ready(())
-        } else {
-            gate.observer = Some(cx.waker().clone());
-            Poll::Pending
-        }
-    }
-
     /// Makes the next polled abort fail once, retaining its session.
     pub fn fail_next_abort(&self) {
         self.0.fail_abort.store(true, Ordering::SeqCst);
     }
 
-    /// Returns bytes acknowledged by the provider since the current gate was
-    /// armed.
-    pub fn accepted_bytes(&self) -> u64 {
-        self.0.accepted.load(Ordering::SeqCst) as u64
-    }
-
     /// Records accepted bytes independently of facade counters.
     pub(crate) fn record_write(&self, count: usize) {
         self.0.accepted.fetch_add(count, Ordering::SeqCst);
-    }
-
-    /// Returns the number of actual SDK PUT dispatches by this adapter.
-    pub fn put_calls(&self) -> usize {
-        self.0.puts.load(Ordering::SeqCst)
-    }
-
-    /// Returns the number of abort futures polled at least once.
-    pub fn abort_calls(&self) -> usize {
-        self.0.aborts.load(Ordering::SeqCst)
     }
 
     /// Parks at the selected boundary, acknowledging arrival exactly once.

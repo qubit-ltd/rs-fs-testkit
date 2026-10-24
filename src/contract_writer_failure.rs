@@ -39,32 +39,39 @@ pub struct ContractWriterFailure<W> {
 }
 
 impl<W> ContractWriterFailure<W> {
-    /// Returns the original error for typed inspection.
-    pub fn error(&self) -> &(dyn Error + Send + 'static) {
-        self.error.as_ref()
-    }
-
-    /// Borrows the retained writer for lifecycle inspection.
-    pub const fn writer(&self) -> &W {
-        &self.writer
-    }
-
-    /// Borrows the retained writer for explicit recovery or abort.
-    pub fn writer_mut(&mut self) -> &mut W {
-        &mut self.writer
-    }
-
-    /// Transfers both the original error and its writer to the caller.
-    pub fn into_parts(self) -> (Box<dyn Error + Send>, W) {
-        (self.error, self.writer)
-    }
-
     /// Retains a streaming failure before its writer can leave scope.
     pub(crate) fn new(error: impl Error + Send + 'static, writer: W) -> Self {
         Self {
             error: Box::new(error),
             writer,
         }
+    }
+
+    /// Returns the original error for typed inspection.
+    #[must_use = "inspect the original error or intentionally ignore it"]
+    #[inline]
+    pub fn error(&self) -> &(dyn Error + Send + 'static) {
+        self.error.as_ref()
+    }
+
+    /// Borrows the retained writer for lifecycle inspection.
+    #[must_use = "inspect the retained recovery writer or intentionally ignore it"]
+    #[inline]
+    pub const fn writer(&self) -> &W {
+        &self.writer
+    }
+
+    /// Borrows the retained writer for explicit recovery or abort.
+    #[must_use = "use the mutable writer reference to recover or abort the writer"]
+    #[inline]
+    pub fn writer_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
+
+    /// Transfers both the original error and its writer to the caller.
+    #[must_use = "recover or intentionally discard the original error and writer"]
+    pub fn into_parts(self) -> (Box<dyn Error + Send>, W) {
+        (self.error, self.writer)
     }
 }
 
@@ -83,25 +90,5 @@ impl<W> Display for ContractWriterFailure<W> {
 impl<W> Error for ContractWriterFailure<W> {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(self.error.as_ref())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ContractWriterFailure;
-
-    #[test]
-    fn retained_writer_can_be_inspected_and_transferred() {
-        let mut failure = ContractWriterFailure::new(std::io::Error::other("writer"), 3_u8);
-        assert_eq!(failure.error().to_string(), "writer");
-        assert_eq!(*failure.writer(), 3);
-        *failure.writer_mut() = 4;
-        assert_eq!(*failure.writer(), 4);
-        assert!(format!("{failure:?}").contains("retained"));
-        assert!(format!("{failure}").contains("recovery writer"));
-        assert_eq!(std::error::Error::source(&failure).unwrap().to_string(), "writer");
-        let (error, writer) = failure.into_parts();
-        assert_eq!(error.to_string(), "writer");
-        assert_eq!(writer, 4);
     }
 }

@@ -24,6 +24,19 @@ use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
     /// Checks a flat scope without deriving expectations from the tested list.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - The namespace completeness check to execute.
+    ///
+    /// # Returns
+    ///
+    /// Returns `()` after the check completes successfully.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure if fixture preparation, namespace snapshotting, list
+    /// streaming, or verification fails.
     pub(super) fn check_flat_scope_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let capability = FileSystemCapability::List;

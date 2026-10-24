@@ -1,3 +1,11 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::sync::Arc;
 
 use object_store::ObjectStore;
@@ -43,13 +51,24 @@ use crate::s3_directory_stream::filter as list_filter;
 use crate::s3_reader::S3Reader;
 use crate::s3_write_session::S3WriteSession;
 
+/// Implements the asynchronous filesystem SPI for an S3-compatible object store.
 pub struct S3FileSystemSpi {
+    /// Sends object operations to the configured S3-compatible backend.
     store: Arc<dyn ObjectStore>,
+    /// Supplies the bucket, credentials, and key namespace for requests.
     config: S3ContractConfig,
+    /// Caches the filesystem capabilities and limits exposed through the SPI.
     properties: ProviderProperties,
+    /// Gates fixture-controlled operations at configured test stages.
     control: TestControl,
 }
 
+/// Opens an S3-backed filesystem using the configured endpoint and credentials.
+///
+/// # Errors
+///
+/// Returns an error if the S3 client cannot be built, the prefix is invalid,
+/// or the filesystem properties cannot be initialized.
 pub fn open(config: S3ContractConfig) -> Result<AsyncFileSystem, FsError> {
     let mut builder = AmazonS3Builder::new()
         .with_endpoint(&config.endpoint)
@@ -77,6 +96,10 @@ pub fn open(config: S3ContractConfig) -> Result<AsyncFileSystem, FsError> {
 ///
 /// This is used by the local contract matrix; the ignored test remains the
 /// end-to-end harness for a real S3-compatible service.
+///
+/// # Errors
+///
+/// Returns an error if filesystem properties cannot be initialized.
 pub fn open_in_memory(prefix: impl Into<String>) -> Result<AsyncFileSystem, FsError> {
     let config = S3ContractConfig {
         endpoint: "memory://".into(),
@@ -90,11 +113,25 @@ pub fn open_in_memory(prefix: impl Into<String>) -> Result<AsyncFileSystem, FsEr
     open_with_store(config, Arc::new(object_store::memory::InMemory::new()))
 }
 
-pub fn open_with_store(config: S3ContractConfig, store: Arc<dyn ObjectStore>) -> Result<AsyncFileSystem, FsError> {
+/// Opens an S3-backed filesystem using a caller-supplied object store.
+///
+/// # Errors
+///
+/// Returns an error if the prefix is invalid or filesystem properties cannot
+/// be initialized.
+pub fn open_with_store(
+    config: S3ContractConfig,
+    store: Arc<dyn ObjectStore>,
+) -> Result<AsyncFileSystem, FsError> {
     open_with_control(config, store, TestControl::default())
 }
 
 /// Builds an adapter with explicitly supplied fixture-only stage control.
+///
+/// # Errors
+///
+/// Returns an error if the prefix is invalid or filesystem properties cannot
+/// be initialized.
 pub fn open_with_control(
     config: S3ContractConfig,
     store: Arc<dyn ObjectStore>,
@@ -119,7 +156,8 @@ pub fn open_with_control(
         .with_conditional(FileSystemCapability::RangeRead)
         .with_conditional(FileSystemCapability::Write)
         .with_conditional(FileSystemCapability::ConditionalWrite);
-    let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1_048_576));
+    let limits =
+        FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1_048_576));
     let properties = ProviderProperties::new(
         info,
         operations,
@@ -141,27 +179,40 @@ impl AsyncFileSystemSpi for S3FileSystemSpi {
         self.properties.clone()
     }
 
-    fn list<'a>(&'a self, request: ListRequest<'a>) -> SpiFuture<'a, qubit_fs::FsResult<OpenedAsyncDirectoryStream>> {
+    fn list<'a>(
+        &'a self,
+        request: ListRequest<'a>,
+    ) -> SpiFuture<'a, qubit_fs::FsResult<OpenedAsyncDirectoryStream>> {
         Box::pin(async move {
             let prefix = path_mapper::configured_prefix(&self.config)?;
             let filter = list_filter(request.options())?;
             // SDK listing uses component prefixes. Query only the configured
             // namespace here, then apply raw caller prefix matching locally.
             let stream = self.store.list(Some(&prefix));
-            Ok(OpenedAsyncDirectoryStream::new(Box::new(S3DirectoryStream::new(
-                self.config.clone(),
-                request.scope().clone(),
-                stream,
-                filter,
-                request.options().options().include_metadata(),
-            ))))
+            Ok(OpenedAsyncDirectoryStream::new(Box::new(
+                S3DirectoryStream::new(
+                    self.config.clone(),
+                    request.scope().clone(),
+                    stream,
+                    filter,
+                    request.options().options().include_metadata(),
+                ),
+            )))
         })
     }
-    fn stat<'a>(&'a self, request: StatRequest<'a>) -> SpiFuture<'a, qubit_fs::FsResult<qubit_fs::spi::StatResponse>> {
+    fn stat<'a>(
+        &'a self,
+        request: StatRequest<'a>,
+    ) -> SpiFuture<'a, qubit_fs::FsResult<qubit_fs::spi::StatResponse>> {
         Box::pin(async move {
             let key = path_mapper::map(&self.config, request.path())?;
             let object_key = object_store::path::Path::parse(key).map_err(|e| {
-                FsError::with_source(FsErrorKind::InvalidPath, FsOperation::Stat, "invalid S3 object key", e)
+                FsError::with_source(
+                    FsErrorKind::InvalidPath,
+                    FsOperation::Stat,
+                    "invalid S3 object key",
+                    e,
+                )
             })?;
             let meta = self
                 .store
@@ -182,7 +233,8 @@ impl AsyncFileSystemSpi for S3FileSystemSpi {
         Box::pin(async move {
             let key = path_mapper::map(&self.config, request.path())?;
             let options = request.options().options();
-            let reader = S3Reader::open(self.store.clone(), key, request.path().clone(), options).await?;
+            let reader =
+                S3Reader::open(self.store.clone(), key, request.path().clone(), options).await?;
             let info = reader.info().clone();
             Ok(OpenedAsyncReader::new(info, Box::new(reader)))
         })
@@ -199,8 +251,10 @@ impl AsyncFileSystemSpi for S3FileSystemSpi {
                 request.options().options(),
                 self.control.clone(),
             )?;
-            let info =
-                qubit_fs::metadata::OpenedFileInfo::new(self.properties.info().id().clone(), request.path().clone());
+            let info = qubit_fs::metadata::OpenedFileInfo::new(
+                self.properties.info().id().clone(),
+                request.path().clone(),
+            );
             Ok(OpenedAsyncWriter::new(info, Box::new(session)))
         })
     }

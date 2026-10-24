@@ -6,8 +6,12 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-pub use ::qubit_fs_testkit;
 mod common;
+
+use std::io::Error;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+
 use qubit_fs::FileSystem;
 use qubit_fs::error::FsError;
 use qubit_fs::error::FsErrorKind;
@@ -17,11 +21,21 @@ use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs::path::Path;
 use qubit_fs_testkit as testkit;
+use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
 use qubit_fs_testkit::FixtureError;
 use qubit_fs_testkit::FixtureResult;
+
+use self::common::MemoryFault;
+use self::common::MemoryFixture;
+use self::common::check_matrix::assert_panics_at;
+use self::common::check_matrix::sync_fault_cases;
+use self::common::shared_model::FixtureHook;
+use crate::common::UnavailableScenario;
+
+extern crate qubit_fs_testkit;
 
 /// Fixture using all trait-default setup and observation hooks.
 struct DefaultHooksSyncFixture<'a> {
@@ -41,12 +55,6 @@ impl FileSystemFixture for DefaultHooksSyncFixture<'_> {
         Path::parse(&format!("/default-hooks/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
     }
 }
-
-use self::common::MemoryFault;
-use self::common::MemoryFixture;
-use self::common::check_matrix::assert_panics_at;
-use self::common::check_matrix::sync_fault_cases;
-use crate::common::UnavailableScenario;
 
 /// Both suites intentionally cover every capability in this stable order.
 const COVERED_CAPABILITIES: [FileSystemCapability; 28] = [
@@ -132,6 +140,43 @@ fn test_conforming_memory_provider_satisfies_sync_suite() {
     assert!(fixture.is_empty(), "suite must clean up created resources");
 }
 
+/// Teardown errors and panics are retained in the public suite result.
+struct TeardownFixture {
+    inner: MemoryFixture,
+    panic: bool,
+}
+
+impl FileSystemFixture for TeardownFixture {
+    fn file_system(&self) -> &FileSystem {
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+
+    fn teardown(&self) -> FixtureResult<()> {
+        if self.panic {
+            panic!("injected fixture teardown panic");
+        }
+        Err(FixtureError::new("injected fixture teardown failure"))
+    }
+}
+
+#[test]
+fn test_suite_retains_teardown_error_and_panic() {
+    for panic in [false, true] {
+        let fixture = TeardownFixture {
+            inner: MemoryFixture::new(),
+            panic,
+        };
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_contract(FileSystemContract::ErrorContext);
+        assert!(!run.cleanup().failures().is_empty());
+        assert!(!run.requirements_satisfied());
+    }
+}
+
 #[test]
 fn test_sync_phase_matrix_exercises_declared_profiles() {
     for contract in FileSystemContract::ALL {
@@ -143,7 +188,7 @@ fn test_sync_phase_matrix_exercises_declared_profiles() {
                 3 => MemoryFixture::fallback_only(),
                 _ => MemoryFixture::read_only(),
             };
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let result = catch_unwind(AssertUnwindSafe(|| {
                 FileSystemContractSuite::new(&fixture)
                     .run_contract(contract)
                     .assert_satisfied();
@@ -170,7 +215,7 @@ fn test_sync_suite_classifies_default_hooks_as_unverified() {
         run.report()
             .checks()
             .iter()
-            .any(|check| matches!(check.outcome(), testkit::ContractCheckOutcome::Unverified { .. }))
+            .any(|check| { matches!(check.outcome(), testkit::ContractCheckOutcome::Unverified { .. }) })
     );
     assert!(memory.is_empty());
 }
@@ -209,7 +254,7 @@ fn test_sync_faults_exercise_full_suite_paths() {
     for case in sync_fault_cases() {
         for contract in FileSystemContract::ALL {
             let fixture = MemoryFixture::with_fault(case.fault);
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = catch_unwind(AssertUnwindSafe(|| {
                 FileSystemContractSuite::new(&fixture)
                     .run_contract(contract)
                     .assert_satisfied();
@@ -266,7 +311,7 @@ fn test_sync_property_profiles_cover_all_limit_outcomes() {
             .with_max_component_text_bytes(limit)
             .with_max_write_bytes(limit)
             .with_max_list_page_entries(limit);
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
             let fixture = MemoryFixture::with_limits(snapshot);
             let mut suite = FileSystemContractSuite::new(&fixture);
             suite.run_contract(FileSystemContract::Properties).assert_satisfied();
@@ -305,8 +350,6 @@ fn test_sync_bounded_read_and_write_limits_are_verified() {
 
 #[test]
 fn test_sync_bounded_write_limit_reports_setup_and_observation_errors() {
-    use self::common::shared_model::FixtureHook;
-
     let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4));
     let id = testkit::ContractCheckId::WriteLimit;
     for fixture in [
@@ -365,7 +408,7 @@ fn test_sync_unavailable_fixture_cases_are_exercised() {
     ];
     for case in cases {
         let fixture = MemoryFixture::with_conditional_case_unavailable(case);
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
             FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
         }));
     }
@@ -555,7 +598,6 @@ fn test_sync_checks_handle_seed_preparation_errors() {
 /// Optional observation failures remain explicit across every contract check.
 #[test]
 fn test_sync_checks_handle_optional_fixture_hook_errors() {
-    use self::common::shared_model::FixtureHook;
     for hook in [
         FixtureHook::Snapshot,
         FixtureHook::ReadFile,
@@ -676,7 +718,7 @@ fn test_sync_recursive_delete_does_not_require_create_directory() {
 #[test]
 fn test_sync_suite_cleans_resources_before_resuming_panic() {
     let fixture = MemoryFixture::with_fault(MemoryFault::WriteDropsBytes);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let result = catch_unwind(AssertUnwindSafe(|| {
         FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
     }));
     assert!(result.is_err(), "injected write fault must fail the suite");
@@ -719,7 +761,6 @@ fn test_core_capability_negative_branches_are_exercised() {
 /// preflight before a provider primitive is reached.
 #[test]
 fn test_stronger_capability_negative_branches_are_exercised() {
-    use qubit_fs_testkit::ContractCheckId;
     for id in [
         ContractCheckId::AppendBasic,
         ContractCheckId::DeleteTree,
@@ -768,7 +809,7 @@ fn test_error_formatting_redacts_nested_secret() {
         FsErrorKind::Io,
         FsOperation::Stat,
         "safe provider message",
-        std::io::Error::other("token=contract-secret"),
+        Error::other("token=contract-secret"),
     );
     assert!(!format!("{error}").contains("contract-secret"));
     assert!(!format!("{error:?}").contains("contract-secret"));

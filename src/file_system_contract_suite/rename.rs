@@ -13,8 +13,10 @@ use qubit_fs::metadata::AchievedAtomicity;
 use qubit_fs::metadata::AtomicityRequirement;
 use qubit_fs::metadata::DurabilityRequirement;
 use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::path::Path;
 use qubit_fs::rename::RenameFailureState;
 use qubit_fs::rename::RenameOptions;
+use qubit_fs::rename::RenameOutcome;
 
 use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
@@ -25,6 +27,13 @@ use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
     /// Runs each rename requirement against independently prepared paths.
+    ///
+    /// # Returns
+    /// Returns `Ok(())` after every rename check has been recorded.
+    ///
+    /// # Errors
+    /// Returns the first failure to prepare fixtures or verify a rename
+    /// requirement.
     pub(super) fn check_rename(&mut self) -> Result<(), ContractFailure> {
         for id in [
             ContractCheckId::RenameBasic,
@@ -39,6 +48,16 @@ impl FileSystemContractSuite<'_> {
 
     /// Records only the selected requirement and retains original rename
     /// errors.
+    ///
+    /// # Parameters
+    /// * `id` - Rename check to execute and record.
+    ///
+    /// # Returns
+    /// Returns `Ok(())` after recording the selected check outcome.
+    ///
+    /// # Errors
+    /// Returns a failure when `id` is not a rename check, fixture operations
+    /// fail, or the provider violates the selected rename requirement.
     pub(super) fn check_rename_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let (capability, mut options) = match id {
@@ -155,42 +174,7 @@ impl FileSystemContractSuite<'_> {
             "rename source fixture contents differ",
         )?;
         if id == ContractCheckId::RenameConflict {
-            let initial_target = self.fixture.read_file(&target).map_err(|error| {
-                ContractFailure::with_source("rename initial target observation failed", error).at(id)
-            })?;
-            verify_condition(
-                matches!(initial_target, FixtureSupport::Supported(actual) if actual == b"old target"),
-                id,
-                "rename conflict target fixture contents differ",
-            )?;
-            let failure = match self.fixture.file_system().rename(&source, &target, options.clone()) {
-                Err(failure) => failure,
-                Ok(_) => {
-                    return Err(
-                        ContractFailure::message_only("rename contract: default conflict replaced target").at(id),
-                    );
-                }
-            };
-            let error = failure.error();
-            if failure.state() != RenameFailureState::Unchanged
-                || error.kind() != FsErrorKind::AlreadyExists
-                || error.operation() != FsOperation::Rename
-                || error.path() != Some(&source)
-                || error.target() != Some(&target)
-                || error.provider() != Some(self.context.properties().info().provider_id())
-            {
-                return Err(ContractFailure::with_source("rename conflict rejection differs", failure).at(id));
-            }
-            for (path, expected) in [(&source, bytes.as_slice()), (&target, b"old target".as_slice())] {
-                let observed = self.fixture.read_file(path).map_err(|error| {
-                    ContractFailure::with_source("rename conflict observation failed", error).at(id)
-                })?;
-                verify_condition(
-                    matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
-                    id,
-                    "rename conflict changed source or target",
-                )?;
-            }
+            self.check_rename_conflict(id, &source, &target, bytes, &options)?;
             options = options.with_overwrite(true);
         } else {
             let before = self.fixture.exists_out_of_band(&target).map_err(|error| {
@@ -207,8 +191,72 @@ impl FileSystemContractSuite<'_> {
             .file_system()
             .rename(&source, &target, options)
             .map_err(|error| ContractFailure::with_source("rename/basic: rename failed", error).at(id))?;
+        self.verify_rename_publication(id, &source, &target, bytes, &outcome)?;
+        self.context
+            .record_check(id, Some(capability), ContractCheckOutcome::Passed);
+        Ok(())
+    }
+
+    /// Verifies that the default conflict preserves both independently seeded
+    /// files.
+    fn check_rename_conflict(
+        &self,
+        id: ContractCheckId,
+        source: &Path,
+        target: &Path,
+        bytes: &[u8],
+        options: &RenameOptions,
+    ) -> Result<(), ContractFailure> {
+        let initial_target = self
+            .fixture
+            .read_file(target)
+            .map_err(|error| ContractFailure::with_source("rename initial target observation failed", error).at(id))?;
         verify_condition(
-            outcome.source() == &source && outcome.target() == &target,
+            matches!(initial_target, FixtureSupport::Supported(actual) if actual == b"old target"),
+            id,
+            "rename conflict target fixture contents differ",
+        )?;
+        let failure = match self.fixture.file_system().rename(source, target, options.clone()) {
+            Err(failure) => failure,
+            Ok(_) => {
+                return Err(ContractFailure::message_only("rename contract: default conflict replaced target").at(id));
+            }
+        };
+        let error = failure.error();
+        if failure.state() != RenameFailureState::Unchanged
+            || error.kind() != FsErrorKind::AlreadyExists
+            || error.operation() != FsOperation::Rename
+            || error.path() != Some(source)
+            || error.target() != Some(target)
+            || error.provider() != Some(self.context.properties().info().provider_id())
+        {
+            return Err(ContractFailure::with_source("rename conflict rejection differs", failure).at(id));
+        }
+        for (path, expected) in [(source, bytes), (target, b"old target".as_slice())] {
+            let observed = self
+                .fixture
+                .read_file(path)
+                .map_err(|error| ContractFailure::with_source("rename conflict observation failed", error).at(id))?;
+            verify_condition(
+                matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
+                id,
+                "rename conflict changed source or target",
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Checks the reported publication guarantees and observes the final paths.
+    fn verify_rename_publication(
+        &self,
+        id: ContractCheckId,
+        source: &Path,
+        target: &Path,
+        bytes: &[u8],
+        outcome: &RenameOutcome,
+    ) -> Result<(), ContractFailure> {
+        verify_condition(
+            outcome.source() == source && outcome.target() == target,
             id,
             "rename/basic: source context mismatch or target context mismatch",
         )?;
@@ -228,7 +276,7 @@ impl FileSystemContractSuite<'_> {
         }
         let exists = self
             .fixture
-            .exists_out_of_band(&source)
+            .exists_out_of_band(source)
             .map_err(|error| ContractFailure::with_source("rename source removal observation failed", error).at(id))?;
         verify_condition(
             matches!(exists, FixtureSupport::Supported(false)),
@@ -237,15 +285,13 @@ impl FileSystemContractSuite<'_> {
         )?;
         let observed = self
             .fixture
-            .read_file(&target)
+            .read_file(target)
             .map_err(|error| ContractFailure::with_source("rename target content observation failed", error).at(id))?;
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
             id,
             "rename/basic: target bytes mismatch",
         )?;
-        self.context
-            .record_check(id, Some(capability), ContractCheckOutcome::Passed);
         Ok(())
     }
 }

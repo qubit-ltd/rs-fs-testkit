@@ -22,6 +22,10 @@ use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
     /// Executes one independently prepared conflict and records its evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when preparing or checking the conflict fails.
     pub(super) fn check_create_conflict(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::WriteCreateConflict;
         let outcome = self.execute_create_conflict().map_err(|failure| failure.at(id))?;
@@ -32,6 +36,11 @@ impl FileSystemContractSuite<'_> {
 
     /// Requires both real rejection and preservation of independently seeded
     /// bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the provider accepts the conflicting write,
+    /// reports an unexpected failure, or changes the seeded target bytes.
     fn execute_create_conflict(&mut self) -> Result<ContractCheckOutcome, ContractFailure> {
         let id = ContractCheckId::WriteCreateConflict;
         if !self.capable(FileSystemCapability::Write) {

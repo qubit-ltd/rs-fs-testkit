@@ -1,3 +1,10 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! SDK-boundary recovery and atomic conditional-write evidence.
 use std::sync::Arc;
 
@@ -26,15 +33,21 @@ fn setup() -> (qubit_fs::AsyncFileSystem, Arc<dyn ObjectStore>) {
         prefix: "recovery".into(),
         allow_http: false,
     };
-    (open_with_store(config, Arc::clone(&store)).expect("facade"), store)
+    (
+        open_with_store(config, Arc::clone(&store)).expect("facade"),
+        store,
+    )
 }
 
 /// Two writers using one observed ETag cannot both replace the object.
 #[tokio::test]
-async fn conditional_update_rejects_stale_etag_without_overwriting() {
+async fn test_conditional_update_rejects_stale_etag_without_overwriting() {
     let (fs, store) = setup();
     let key = ObjectPath::from("recovery/conditional");
-    let seed = store.put(&key, Bytes::from_static(b"old").into()).await.expect("seed");
+    let seed = store
+        .put(&key, Bytes::from_static(b"old").into())
+        .await
+        .expect("seed");
     let version = ResourceVersion::new(seed.e_tag.expect("ETag"));
     let path = Path::parse_literal("conditional").expect("path");
     let options = WriteOptions::default()
@@ -43,12 +56,20 @@ async fn conditional_update_rejects_stale_etag_without_overwriting() {
     let mut first = fs
         .begin_write_all(path.clone(), b"new".to_vec(), options.clone())
         .expect("first");
-    let mut stale = fs.begin_write_all(path, b"stale".to_vec(), options).expect("stale");
+    let mut stale = fs
+        .begin_write_all(path, b"stale".to_vec(), options)
+        .expect("stale");
     first.execute().await.expect("matching ETag");
     let failure = stale.execute().await.expect_err("stale ETag");
     assert_eq!(failure.state(), WriteFailureState::NotPublished);
     assert_eq!(
-        store.get(&key).await.expect("observe").bytes().await.expect("bytes"),
+        store
+            .get(&key)
+            .await
+            .expect("observe")
+            .bytes()
+            .await
+            .expect("bytes"),
         b"new".as_slice()
     );
 }
@@ -70,7 +91,12 @@ fn controlled() -> (
         prefix: "recovery".into(),
         allow_http: false,
     };
-    let fs = qubit_fs_s3_contract::open_with_control(config, Arc::clone(&store), control.clone()).expect("facade");
+    let fs = qubit_fs_s3_contract::open_with_control(
+        config,
+        Arc::clone(&store),
+        control.clone(),
+    )
+    .expect("facade");
     (fs, store, control)
 }
 
@@ -90,7 +116,7 @@ async fn reach<F: std::future::Future + ?Sized>(
 /// Cancellation at each SDK boundary freezes facts and never dispatches an
 /// automatic retry.
 #[tokio::test]
-async fn stage_cancellation_preserves_operation_and_independent_publication_evidence() {
+async fn test_stage_cancellation_preserves_operation_and_independent_publication_evidence() {
     use qubit_fs::write::AsyncWriteAllOperationState;
     use qubit_fs::write::AsyncWriterRecovery;
     use qubit_fs::write::WriteAbortOutcome;
@@ -188,7 +214,7 @@ async fn stage_cancellation_preserves_operation_and_independent_publication_evid
 /// Cleanup cancellation and one-shot failure never delete a confirmed
 /// publication.
 #[tokio::test]
-async fn sdk_result_suppression_then_abort_failure_retains_target_and_snapshot() {
+async fn test_sdk_result_suppression_then_abort_failure_retains_target_and_snapshot() {
     use qubit_fs::write::AsyncWriterRecovery;
     use qubit_fs::write::WriteAbortOutcome;
     use qubit_fs_s3_contract::TestStage;
@@ -242,7 +268,7 @@ async fn sdk_result_suppression_then_abort_failure_retains_target_and_snapshot()
 
 /// Empty and beyond-EOF windows still validate resource existence.
 #[tokio::test]
-async fn empty_ranges_keep_full_metadata_and_missing_errors() {
+async fn test_empty_ranges_keep_full_metadata_and_missing_errors() {
     use qubit_fs::read::ReadOptions;
     let (fs, store) = setup();
     let key = ObjectPath::from("recovery/range");
@@ -258,10 +284,20 @@ async fn empty_ranges_keep_full_metadata_and_missing_errors() {
         (u64::MAX, None, b"".as_slice()),
         (4, Some(8), b"ef".as_slice()),
     ] {
-        let options = ReadOptions::default().with_offset(Some(offset)).with_length(length);
-        let reader = fs.open_reader(&path, options.clone()).await.expect("range reader");
+        let options = ReadOptions::default()
+            .with_offset(Some(offset))
+            .with_length(length);
+        let reader = fs
+            .open_reader(&path, options.clone())
+            .await
+            .expect("range reader");
         assert_eq!(reader.info().metadata().expect("metadata").len(), Some(6));
-        assert_eq!(fs.read_all(&path, options, 32).await.expect("range bytes"), expected);
+        assert_eq!(
+            fs.read_all(&path, options, 32)
+                .await
+                .expect("range bytes"),
+            expected
+        );
     }
     let error = fs
         .open_reader(

@@ -75,6 +75,16 @@ impl AsyncFileSystemContractSuite<'_> {
 
     /// Stops execution before releasing the gate, then validates recovery
     /// facts.
+    ///
+    /// # Parameters
+    ///
+    /// * `stage` - Cancellation stage whose acknowledgement must be reached.
+    /// * `probe` - Fixture probe that gates the selected copy stage.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] if the copy cannot be observed, cancelled,
+    /// or recovered according to the stage contract.
     async fn run_cancellation_probe(
         &mut self,
         stage: AsyncCopyCancellationStage,
@@ -262,6 +272,7 @@ impl AsyncFileSystemContractSuite<'_> {
 }
 
 /// Returns the stable identity for one cancellation stage.
+#[inline]
 const fn cancellation_check_id(stage: AsyncCopyCancellationStage) -> ContractCheckId {
     match stage {
         AsyncCopyCancellationStage::NativeAttempt => ContractCheckId::AsyncCopyCancelNativeAttempt,
@@ -272,6 +283,22 @@ const fn cancellation_check_id(stage: AsyncCopyCancellationStage) -> ContractChe
 }
 
 /// Requires independent absence or complete file-content evidence.
+///
+/// # Parameters
+///
+/// * `fixture` - Fixture providing independent filesystem observations.
+/// * `path` - File path whose existence and contents are observed.
+/// * `id` - Contract check identity attached to observation failures.
+///
+/// # Returns
+///
+/// `Ok(None)` when the path is independently confirmed absent, or `Ok(Some)`
+/// with its complete contents when present.
+///
+/// # Errors
+///
+/// Returns a [`ContractFailure`] when an observation fails or the fixture does
+/// not support the evidence required for the path.
 async fn observe_file(
     fixture: &dyn AsyncFileSystemFixture,
     path: &Path,
@@ -308,12 +335,12 @@ mod tests {
     use crate::common::async_memory_file_system::run_controlled;
 
     #[test]
-    fn rejects_a_non_cancellation_check_identity() {
+    fn test_rejects_a_non_cancellation_check_identity() {
         let fixture = AsyncMemoryFixture::new();
         run_controlled(async {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let result = suite.check_copy_cancellation_item(ContractCheckId::ReadBasic).await;
-            assert!(result.is_err());
+            assert!(result.is_err(), "non-cancellation check identity was accepted");
         });
     }
 }

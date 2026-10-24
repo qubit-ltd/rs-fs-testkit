@@ -7,11 +7,11 @@
 // =============================================================================
 
 pub use ::qubit_fs_testkit;
-mod common;
-
 #[cfg(feature = "async")]
 use qubit_fs_testkit::register_async_file_system_contract_tests;
 use qubit_fs_testkit::register_file_system_contract_tests;
+
+mod common;
 
 #[cfg(feature = "async")]
 use self::common::AsyncMemoryFixture;
@@ -43,7 +43,7 @@ fn registration_fixture() -> MemoryFixture {
 /// Default macro registration must reject missing evidence without a strict
 /// flag.
 #[test]
-fn default_registration_rejects_missing_evidence() {
+fn test_default_registration_rejects_missing_evidence() {
     let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
         .args(["--exact", "registered_sync_contracts::read", "--nocapture"])
         .env("FS_TESTKIT_REGISTRATION_MISSING_EVIDENCE", "1")

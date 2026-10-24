@@ -5,8 +5,12 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+use std::any::Any;
 use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 
+#[cfg(feature = "async")]
+use super::async_memory_file_system::AsyncMemoryFault;
 use super::memory_file_system::MemoryFault;
 use crate::qubit_fs_testkit::FileSystemContract;
 
@@ -273,9 +277,6 @@ pub const fn sync_fault_cases() -> &'static [SyncFaultCase] {
         },
     ]
 }
-
-#[cfg(feature = "async")]
-use super::async_memory_file_system::AsyncMemoryFault;
 
 /// One asynchronous provider fault and the contract check that must expose it.
 #[cfg(feature = "async")]
@@ -620,7 +621,8 @@ pub const fn async_fault_cases() -> &'static [AsyncFaultCase] {
 
 /// Extracts a panic payload into a stable searchable message.
 #[allow(dead_code)]
-pub fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+#[must_use]
+pub fn panic_message(payload: Box<dyn Any + Send>) -> String {
     payload
         .downcast_ref::<String>()
         .cloned()
@@ -634,7 +636,7 @@ pub fn assert_panics_at<F>(run: F, check_id: &str)
 where
     F: FnOnce(),
 {
-    let result = std::panic::catch_unwind(AssertUnwindSafe(run));
+    let result = catch_unwind(AssertUnwindSafe(run));
     let payload = result.expect_err("faulty contract unexpectedly passed");
     let message = panic_message(payload);
     assert!(

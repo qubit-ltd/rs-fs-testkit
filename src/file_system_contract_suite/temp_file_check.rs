@@ -17,6 +17,7 @@ use qubit_fs::path::Path;
 use qubit_fs::path::PathSemantics;
 use qubit_fs::temp::PersistFailureState;
 use qubit_fs::temp::PersistOptions;
+use qubit_fs::temp::PersistOutcome;
 use qubit_fs::temp::TempOptions;
 use qubit_fs::temp::TempResourceState;
 
@@ -28,7 +29,11 @@ use crate::FixtureSupport;
 use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
-    /// Executes only the selected temporary lifecycle scenario for this kind.
+    /// Verifies temporary-file creation, cleanup, retention, and publication.
+    ///
+    /// The selected check determines which lifecycle transitions are exercised;
+    /// capability snapshots gate unsupported operations, while fixture hooks
+    /// independently observe whether each source and publication target exists.
     pub(super) fn execute_temp_file(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let filesystem = self.fixture.file_system();
         let mut options = TempOptions::default();
@@ -341,7 +346,20 @@ impl FileSystemContractSuite<'_> {
                 .at(id));
             }
         };
-        verify_condition(outcome.target() == &target, id, "temporary persist target mismatch")?;
+        self.verify_temp_publication(&outcome, &source, &target, atomic, id)
+    }
+
+    /// Checks the published target identity, achieved atomicity, and externally
+    /// observed source and target states after temporary-file persistence.
+    fn verify_temp_publication(
+        &self,
+        outcome: &PersistOutcome,
+        source: &Path,
+        target: &Path,
+        atomic: bool,
+        id: ContractCheckId,
+    ) -> Result<(), ContractFailure> {
+        verify_condition(outcome.target() == target, id, "temporary persist target mismatch")?;
         if atomic {
             verify_condition(
                 outcome.atomicity() == AchievedAtomicity::Atomic,
@@ -349,7 +367,7 @@ impl FileSystemContractSuite<'_> {
                 "temp/atomic: non-atomic publication",
             )?;
         }
-        for (path, expected) in [(&source, false), (&target, true)] {
+        for (path, expected) in [(source, false), (target, true)] {
             let observed = self
                 .fixture
                 .exists_out_of_band(path)

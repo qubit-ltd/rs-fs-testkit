@@ -13,6 +13,10 @@
 /// backend error into an inapplicability declaration. The suite validates
 /// declarations against the provider's capability guarantees.
 ///
+/// # Type Parameters
+///
+/// * `T` is the prepared request data the fixture provides to the scenario.
+///
 /// # Examples
 ///
 /// ```

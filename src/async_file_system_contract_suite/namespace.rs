@@ -23,7 +23,12 @@ use crate::FixtureSupport;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Checks a flat scope without deriving expectations from the tested list.
+    /// Prepares independent fixture evidence before checking a flat listing.
+    ///
+    /// The check compares the provider's asynchronous listing with seeded paths
+    /// and, for namespace checks, a complete fixture snapshot. Unsupported
+    /// requests and unavailable preparation evidence are recorded as outcomes
+    /// instead of being inferred from the listing itself.
     pub(super) async fn check_flat_scope_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let capability = FileSystemCapability::List;

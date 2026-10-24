@@ -60,6 +60,16 @@ pub trait AsyncFileSystemFixture: Sync {
     /// Use the underlying SDK or fixture model, never the facade list method.
     /// Include resources created by earlier checks, not only the current seed.
     /// Returns unsupported when independent completeness cannot be established.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to every path in the isolated namespace, or
+    /// `Unsupported` when the fixture cannot establish a complete snapshot.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when the
+    /// independent snapshot operation fails.
     fn snapshot_namespace_paths(&self) -> FixtureFuture<'_, FixtureSupport<Vec<Path>>> {
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
@@ -72,6 +82,24 @@ pub trait AsyncFileSystemFixture: Sync {
     /// server-side copy. Ready cases have distinct paths,
     /// and Conflict targets contain `b"existing"`.
     /// Teardown must clean partial setup even when preparation fails.
+    ///
+    /// # Parameters
+    ///
+    /// * `scenario` - Copy behavior and guarantees to prepare.
+    /// * `source_relative` - Testkit-relative source name.
+    /// * `target_relative` - Testkit-relative destination name.
+    /// * `bytes` - Source content for file-copy scenarios and the child file
+    ///   for tree-copy scenarios.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to `Ready(case)` when setup succeeds, or
+    /// `Unavailable` when required fixture setup is unsupported.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when path
+    /// mapping or an out-of-band preparation operation fails.
     fn prepare_copy<'a>(
         &'a self,
         scenario: crate::CopyScenario,
@@ -81,14 +109,12 @@ pub trait AsyncFileSystemFixture: Sync {
     ) -> FixtureFuture<'a, crate::FixturePreparation<crate::CopyFixtureCase>> {
         Box::pin(async move {
             if scenario == crate::CopyScenario::ServerSide {
-                return Ok(
-                    match self.copy_fast_path_case(qfs::copy::CopyMethod::ServerSide).await? {
-                        FixtureSupport::Supported(case) => crate::FixturePreparation::Ready(case),
-                        FixtureSupport::Unsupported => crate::FixturePreparation::Unavailable {
-                            reason: "fixture has no server-side copy case".to_owned(),
-                        },
+                return Ok(match self.copy_fast_path_case(CopyMethod::ServerSide).await? {
+                    FixtureSupport::Supported(case) => crate::FixturePreparation::Ready(case),
+                    FixtureSupport::Unsupported => crate::FixturePreparation::Unavailable {
+                        reason: "fixture has no server-side copy case".to_owned(),
                     },
-                );
+                });
             }
             if matches!(
                 scenario,
@@ -160,6 +186,22 @@ pub trait AsyncFileSystemFixture: Sync {
     /// Independently prepares an existing file for a selected deletion
     /// scenario. Version hooks must provide evidence for
     /// `DeleteScenario::IfMatch`.
+    ///
+    /// # Parameters
+    ///
+    /// * `scenario` - Deletion behavior to prepare.
+    /// * `relative` - Testkit-relative name of the file to seed.
+    /// * `bytes` - Exact initial file content.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to the prepared path, or `Unavailable` when the
+    /// fixture cannot seed the file.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when seeding
+    /// fails.
     fn prepare_delete<'a>(
         &'a self,
         _scenario: crate::DeleteScenario,
@@ -181,6 +223,22 @@ pub trait AsyncFileSystemFixture: Sync {
     /// A Ready path must contain the supplied bytes, except for the explicit
     /// corruption scenario. Version observations remain independent fixture
     /// hooks. Preparation errors must not become inapplicability declarations.
+    ///
+    /// # Parameters
+    ///
+    /// * `scenario` - Read behavior to prepare.
+    /// * `relative` - Testkit-relative name of the resource.
+    /// * `bytes` - Exact initial content, except for checksum corruption.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to the prepared path, or `Unavailable` when the
+    /// fixture cannot independently prepare the selected scenario.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when setup or
+    /// checksum-case preparation fails.
     fn prepare_read<'a>(
         &'a self,
         scenario: crate::ReadScenario,
@@ -208,6 +266,22 @@ pub trait AsyncFileSystemFixture: Sync {
     /// targets for atomic replacement, creation conflicts and append
     /// independently. Missing setup remains explicit and is never counted
     /// as successful testing.
+    ///
+    /// # Parameters
+    ///
+    /// * `scenario` - Write behavior and guarantees to prepare.
+    /// * `relative` - Testkit-relative target name.
+    /// * `bytes` - Payload submitted by the write operation.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to the prepared write request, or `Unavailable`
+    /// when required setup is unsupported.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when path
+    /// mapping or out-of-band seeding fails.
     fn prepare_write<'a>(
         &'a self,
         scenario: crate::WriteScenario,
@@ -309,7 +383,12 @@ pub trait AsyncFileSystemFixture: Sync {
     fn path(&self, relative: &str) -> FixtureResult<Path>;
 
     /// Reports whether copy is intentionally limited to the stream fallback.
+    ///
+    /// # Returns
+    ///
+    /// `true` when copy contract checks must use the stream fallback.
     #[inline]
+    #[must_use]
     fn copy_fallback_only(&self) -> bool {
         false
     }
@@ -380,6 +459,20 @@ pub trait AsyncFileSystemFixture: Sync {
     }
 
     /// Asynchronously observes whether a resource exists out of band.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Resource to observe independently of the facade under test.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to `Supported(true/false)` when observable, or
+    /// `Unsupported` when independent observation is unavailable.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when
+    /// observation fails.
     #[inline]
     fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
         let _ = path;
@@ -387,6 +480,21 @@ pub trait AsyncFileSystemFixture: Sync {
     }
 
     /// Asynchronously writes a complete resource through fixture setup.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Resource to seed independently of the facade under test.
+    /// * `bytes` - Complete content to write.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to `Supported(())` when setup succeeds, or
+    /// `Unsupported` when out-of-band writing is unavailable.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when setup
+    /// fails.
     #[inline]
     fn write_file_out_of_band<'a>(&'a self, path: &'a Path, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<()>> {
         let _ = (path, bytes);
@@ -394,6 +502,20 @@ pub trait AsyncFileSystemFixture: Sync {
     }
 
     /// Asynchronously observes the current provider resource version.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Resource whose provider version is observed.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to the current version, or `Unsupported` when the
+    /// fixture cannot independently obtain it.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when version
+    /// observation fails.
     #[inline]
     fn resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         let _ = path;
@@ -401,6 +523,21 @@ pub trait AsyncFileSystemFixture: Sync {
     }
 
     /// Asynchronously returns a valid version that cannot match the resource.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Resource whose current version the supplied token must not
+    ///   match.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to a valid stale version, or `Unsupported` when the
+    /// fixture cannot produce one.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when producing
+    /// or validating the version fails.
     #[inline]
     fn stale_resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         let _ = path;
@@ -408,6 +545,20 @@ pub trait AsyncFileSystemFixture: Sync {
     }
 
     /// Asynchronously supplies a resource whose checksum is invalid.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Testkit-relative name for the corrupted resource.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to the prepared path, or `Unsupported` when the
+    /// fixture cannot create a checksum-corrupt resource.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when
+    /// preparation fails.
     #[inline]
     fn checksum_failure_case<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = relative;
@@ -421,9 +572,33 @@ pub trait AsyncFileSystemFixture: Sync {
     /// the suite. Use a native or out-of-band channel independent of the
     /// facade under test. Return an error if cleanup could not be confirmed.
     /// A cancelled asynchronous attempt must remain safe to retry.
+    ///
+    /// # Returns
+    ///
+    /// A future completing after fixture-owned resources and staging state
+    /// have been independently reclaimed.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when cleanup
+    /// cannot be confirmed.
     fn teardown(&self) -> FixtureFuture<'_, ()>;
 
     /// Asynchronously seeds an empty directory or prefix.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Testkit-relative name of the directory or prefix.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to its path, or `Unsupported` when independent
+    /// seeding is unavailable.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when seeding
+    /// fails.
     #[inline]
     fn seed_empty_directory<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = relative;
@@ -431,6 +606,20 @@ pub trait AsyncFileSystemFixture: Sync {
     }
 
     /// Asynchronously seeds a symbolic link.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Testkit-relative name for the symbolic link.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to the link path, or `Unsupported` when the fixture
+    /// cannot seed symbolic links.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when seeding
+    /// fails.
     #[inline]
     fn seed_symlink<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let _ = relative;
@@ -438,6 +627,20 @@ pub trait AsyncFileSystemFixture: Sync {
     }
 
     /// Supplies an asynchronously prepared native copy fast-path case.
+    ///
+    /// # Parameters
+    ///
+    /// * `method` - Provider-native copy method the case must exercise.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to a case for that method, or `Unsupported` when
+    /// the fixture cannot provide the native path.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when case
+    /// preparation fails.
     #[inline]
     fn copy_fast_path_case<'a>(&'a self, method: CopyMethod) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
         let _ = method;
@@ -448,6 +651,24 @@ pub trait AsyncFileSystemFixture: Sync {
     ///
     /// A supported probe must also support independent `read_file` and
     /// `exists_out_of_band` observations for its source and destination.
+    /// The source must contain a complete file and the destination must have
+    /// a known initial state; otherwise return `Unsupported`.
+    ///
+    /// # Parameters
+    ///
+    /// * `stage` - Provider-owned copy stage that must be held pending.
+    /// * `relative` - Testkit-relative name used to isolate probe resources.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to a probe for the requested stage, or
+    /// `Unsupported` when stage control or independent observations are
+    /// unavailable.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when probe
+    /// setup fails; setup errors must not be reported as `Unsupported`.
     #[inline]
     fn prepare_copy_cancellation<'a>(
         &'a self,
@@ -458,7 +679,26 @@ pub trait AsyncFileSystemFixture: Sync {
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 
-    /// Prepares a stage-aware whole-file write cancellation probe.
+    /// Prepares a stage-aware whole-file write cancellation probe. A supported
+    /// probe independently observes the target and reports bytes accepted by
+    /// the provider writer. Return `Unsupported` when reliable stage
+    /// acknowledgement or evidence is unavailable.
+    ///
+    /// # Parameters
+    ///
+    /// * `stage` - Provider-owned write stage that must be held pending.
+    /// * `relative` - Testkit-relative target name used to isolate the probe.
+    ///
+    /// # Returns
+    ///
+    /// A future resolving to a probe for the requested stage, or
+    /// `Unsupported` when reliable stage control or independent evidence is
+    /// unavailable.
+    ///
+    /// # Errors
+    ///
+    /// The future returns [`FixtureError`](crate::FixtureError) when probe
+    /// setup fails; setup errors must not be reported as `Unsupported`.
     #[inline]
     fn prepare_write_cancellation<'a>(
         &'a self,

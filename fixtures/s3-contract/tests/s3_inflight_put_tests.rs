@@ -1,3 +1,10 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Deterministic local HTTP boundary evidence for a PUT awaiting its response.
 
 use std::sync::Arc;
@@ -17,7 +24,7 @@ use tokio::io::AsyncWriteExt;
 
 /// Cancellation after the HTTP request was received cannot prove NotPublished.
 #[tokio::test]
-async fn cancelled_inflight_put_remains_indeterminate_during_abort() {
+async fn test_cancelled_inflight_put_remains_indeterminate_during_abort() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("local listener");

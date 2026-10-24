@@ -7,25 +7,26 @@
 // =============================================================================
 //! Namespace and raw-root checks must be independently selectable contracts.
 
-pub use ::qubit_fs_testkit;
-mod common;
 use std::error::Error;
 
+pub use ::qubit_fs_testkit;
+use namespace_support::Fault;
+use namespace_support::FlatFixture;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::ContractRun;
 use qubit_fs_testkit::FileSystemContractSuite;
+
+mod common;
 #[path = "support/flat_listing.rs"]
 mod namespace_support;
-use namespace_support::Fault;
-use namespace_support::FlatFixture;
 
 /// Hierarchical providers reject flat namespace requests with explicit
 /// evidence.
 #[test]
-fn hierarchical_namespace_is_rejected_as_expected() {
+fn test_hierarchical_namespace_is_rejected_as_expected() {
     let fixture = common::MemoryFixture::with_all_capabilities();
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::ListNamespace);
@@ -36,7 +37,7 @@ fn hierarchical_namespace_is_rejected_as_expected() {
 
 /// Complete namespace snapshots include keys that predate the selected check.
 #[test]
-fn flat_checks_accept_complete_results_and_reject_defects() {
+fn test_flat_checks_accept_complete_results_and_reject_defects() {
     for (id, fault, satisfied) in [
         (ContractCheckId::ListNamespace, Fault::None, true),
         (ContractCheckId::ListRawRootPrefix, Fault::None, true),
@@ -64,7 +65,7 @@ fn flat_checks_accept_complete_results_and_reject_defects() {
 
 /// Missing independent evidence must remain unverified instead of passing.
 #[test]
-fn absent_snapshot_cannot_prove_namespace_completeness() {
+fn test_absent_snapshot_cannot_prove_namespace_completeness() {
     let fixture = FlatFixture::new(Fault::None, false);
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::ListNamespace);
@@ -77,7 +78,7 @@ fn absent_snapshot_cannot_prove_namespace_completeness() {
 
 /// Preparation and provider failures retain their check identity and cause.
 #[test]
-fn flat_check_failures_preserve_diagnostics() {
+fn test_flat_check_failures_preserve_diagnostics() {
     for (id, fault, message) in [
         (
             ContractCheckId::ListRawRootPrefix,
@@ -127,7 +128,7 @@ fn flat_check_failures_preserve_diagnostics() {
 /// Unsupported preparation differs from a snapshot that contradicts known
 /// seeds.
 #[test]
-fn flat_check_missing_evidence_never_passes() {
+fn test_flat_check_missing_evidence_never_passes() {
     for (fault, snapshot, unverified) in [
         (Fault::SeedUnsupported, true, true),
         (Fault::None, false, true),

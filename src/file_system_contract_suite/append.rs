@@ -24,6 +24,11 @@ use crate::internal::verify_open_failure;
 
 impl FileSystemContractSuite<'_> {
     /// Executes one append scenario and attributes preparation or I/O failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when preparation, verification, or provider
+    /// I/O fails.
     pub(super) fn check_append(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::AppendBasic;
         self.context.begin("append");
@@ -34,6 +39,11 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Requires a nonempty seed so overwriting cannot masquerade as appending.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure if fixture preparation, verification, or a
+    /// filesystem operation fails.
     fn execute_append(&mut self) -> Result<ContractCheckOutcome, ContractFailure> {
         let id = ContractCheckId::AppendBasic;
         let relative = self.context.relative_name("append-target");

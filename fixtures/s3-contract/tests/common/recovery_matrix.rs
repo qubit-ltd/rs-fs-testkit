@@ -1,3 +1,10 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Shared InMemory and explicit real-service recovery observations.
 
 use std::future::Future;
@@ -50,7 +57,10 @@ pub async fn verify(fixture: &Fixture) {
         .read_file(&path)
         .await
         .expect("independent SDK GET before result delivery");
-    assert!(matches!(observed, FixtureSupport::Supported(bytes) if bytes == b"published evidence"));
+    assert!(
+        matches!(observed, FixtureSupport::Supported(bytes) if bytes == b"published evidence"),
+        "independent SDK GET before result delivery should observe the published bytes"
+    );
     drop(execute);
     fixture.control.release();
     let state = operation.state();
@@ -76,7 +86,10 @@ pub async fn verify(fixture: &Fixture) {
         .read_file(&path)
         .await
         .expect("independent SDK GET after recovery");
-    assert!(matches!(observed, FixtureSupport::Supported(bytes) if bytes == b"published evidence"));
+    assert!(
+        matches!(observed, FixtureSupport::Supported(bytes) if bytes == b"published evidence"),
+        "independent SDK GET after recovery should observe the published bytes"
+    );
 }
 
 /// Polls the actual SDK operation until adapter acknowledgement, without

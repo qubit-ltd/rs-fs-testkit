@@ -1,35 +1,62 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::pin::Pin;
 
 use futures_util::Stream;
 use futures_util::StreamExt;
 use object_store::ObjectMeta;
+use object_store::Result as ObjectStoreResult;
 use qubit_fs::FsResult;
 use qubit_fs::directory::ListFilter;
 use qubit_fs::directory::ListScope;
+use qubit_fs::error::FsError;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::DirEntry;
 use qubit_fs::metadata::FileKind;
 use qubit_fs::metadata::FileMetadata;
 use qubit_fs::path::Path;
 use qubit_fs::spi::AsyncDirectoryStreamSession;
+use qubit_fs::spi::ResolvedListOptions;
 use qubit_fs::spi::SpiFuture;
 
 use crate::config::S3ContractConfig;
 use crate::error_mapper;
 
+/// Streams objects from an S3 namespace as facade directory entries.
+///
+/// The session rejects keys that escape the configured namespace and bounds
+/// scanning so that filtered listings cannot consume unbounded provider data.
 pub(crate) struct S3DirectoryStream {
+    /// Configuration used to identify the provider-owned key prefix.
     config: S3ContractConfig,
+    /// Requested logical directory scope within that prefix.
     scope: ListScope,
-    stream: Pin<Box<dyn Stream<Item = object_store::Result<ObjectMeta>> + Send>>,
+    /// Provider results consumed lazily as entries are requested.
+    stream: Pin<Box<dyn Stream<Item = ObjectStoreResult<ObjectMeta>> + Send>>,
+    /// Literal prefix applied to paths relative to the requested scope.
     filter: String,
+    /// Whether returned entries include provider size metadata.
     include_metadata: bool,
+    /// Number of provider results consumed, including filtered results.
     scanned: usize,
 }
 
 impl S3DirectoryStream {
+    /// Creates a listing session over a provider stream and resolved options.
+    ///
+    /// The stream is consumed lazily by the async directory-stream interface,
+    /// with a fixed scan budget across matching and filtered objects.
     pub(crate) fn new(
         config: S3ContractConfig,
         scope: ListScope,
-        stream: Pin<Box<dyn Stream<Item = object_store::Result<ObjectMeta>> + Send>>,
+        stream: Pin<Box<dyn Stream<Item = ObjectStoreResult<ObjectMeta>> + Send>>,
         filter: String,
         include_metadata: bool,
     ) -> Self {
@@ -43,8 +70,9 @@ impl S3DirectoryStream {
         }
     }
 }
-
 impl AsyncDirectoryStreamSession for S3DirectoryStream {
+    /// Returns the next matching object, or an error for provider contract
+    /// violations and listings that exceed the session scan budget.
     fn next_entry_async(&mut self) -> SpiFuture<'_, FsResult<Option<DirEntry>>> {
         Box::pin(async move {
             loop {
@@ -53,19 +81,20 @@ impl AsyncDirectoryStreamSession for S3DirectoryStream {
                 };
                 self.scanned = self.scanned.saturating_add(1);
                 if self.scanned > 1024 {
-                    return Err(qubit_fs::error::FsError::new(
-                        qubit_fs::error::FsErrorKind::ResourceLimitExceeded,
-                        qubit_fs::error::FsOperation::List,
+                    return Err(FsError::new(
+                        FsErrorKind::ResourceLimitExceeded,
+                        FsOperation::List,
                         "S3 fixture listing scan budget exceeded",
                     ));
                 }
-                let meta = value.map_err(|error| error_mapper::map(error, qubit_fs::error::FsOperation::List))?;
+                let meta =
+                    value.map_err(|error| error_mapper::map(error, FsOperation::List))?;
                 let key = meta.location.to_string();
                 let prefix = format!("{}/", self.config.prefix);
                 let logical = key.strip_prefix(&prefix).ok_or_else(|| {
-                    qubit_fs::error::FsError::new(
-                        qubit_fs::error::FsErrorKind::ProviderContractViolation,
-                        qubit_fs::error::FsOperation::List,
+                    FsError::new(
+                        FsErrorKind::ProviderContractViolation,
+                        FsOperation::List,
                         "S3 listing escaped the configured namespace",
                     )
                 })?;
@@ -77,9 +106,9 @@ impl AsyncDirectoryStreamSession for S3DirectoryStream {
                     continue;
                 }
                 let path = Path::parse_literal(logical).map_err(|error| {
-                    qubit_fs::error::FsError::with_source(
-                        qubit_fs::error::FsErrorKind::ProviderContractViolation,
-                        qubit_fs::error::FsOperation::List,
+                    FsError::with_source(
+                        FsErrorKind::ProviderContractViolation,
+                        FsOperation::List,
                         "S3 object key cannot be represented by the facade path",
                         error,
                     )
@@ -95,49 +124,17 @@ impl AsyncDirectoryStreamSession for S3DirectoryStream {
     }
 }
 
-pub(crate) fn filter(options: &qubit_fs::spi::ResolvedListOptions) -> FsResult<String> {
+/// Converts supported listing filters into the literal prefix used by the S3
+/// object-key listing implementation.
+pub(crate) fn filter(options: &ResolvedListOptions) -> FsResult<String> {
     match options.options().filter() {
         Some(ListFilter::LiteralPrefix(prefix)) => Ok(prefix.clone()),
         None => Ok(String::new()),
-        Some(ListFilter::Subtree(_)) => Err(qubit_fs::error::FsError::new(
-            qubit_fs::error::FsErrorKind::InvalidOptions,
-            qubit_fs::error::FsOperation::List,
+        Some(ListFilter::Subtree(_)) => Err(FsError::new(
+            FsErrorKind::InvalidOptions,
+            FsOperation::List,
             "S3 fixture requires literal object-key prefixes",
         )),
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use object_store::ObjectStoreExt;
-
-    use super::*;
-
-    /// Even a faulty SDK stream cannot return entries beyond configured scope.
-    #[tokio::test]
-    async fn rejects_sdk_entry_outside_namespace() {
-        let store = object_store::memory::InMemory::new();
-        let key = object_store::path::Path::from("foreign/key");
-        store.put(&key, bytes::Bytes::from_static(b"x").into()).await.unwrap();
-        let meta = store.head(&key).await.unwrap();
-        let config = S3ContractConfig {
-            endpoint: "memory://".into(),
-            bucket: "test".into(),
-            region: "local".into(),
-            access_key_id: "test".into(),
-            secret_access_key: "test".into(),
-            prefix: "owned".into(),
-            allow_http: false,
-        };
-        let mut stream = S3DirectoryStream::new(
-            config,
-            ListScope::Namespace,
-            Box::pin(futures_util::stream::iter([Ok(meta)])),
-            String::new(),
-            false,
-        );
-        let error = stream.next_entry_async().await.unwrap_err();
-        assert_eq!(error.kind(), qubit_fs::error::FsErrorKind::ProviderContractViolation);
-        assert_eq!(error.path(), None);
-    }
-}

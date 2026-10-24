@@ -13,6 +13,7 @@ use std::task::Poll;
 
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::write::AsyncWriteAllOperation;
 use qubit_fs::write::AsyncWriteAllOperationState;
 use qubit_fs::write::AsyncWriterRecovery;
 use qubit_fs::write::WriteAbortOutcome;
@@ -182,6 +183,19 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "repeated execution lost writer",
         )?;
+        self.verify_write_cancellation_recovery(id, probe.as_ref(), operation, before, bytes)
+            .await
+    }
+
+    /// Aborts a retained writer and checks the resulting publication evidence.
+    async fn verify_write_cancellation_recovery(
+        &mut self,
+        id: ContractCheckId,
+        probe: &dyn WriteCancellationProbe,
+        mut operation: AsyncWriteAllOperation,
+        before: Option<Vec<u8>>,
+        bytes: Vec<u8>,
+    ) -> Result<(), ContractFailure> {
         if let Some(recovery) = operation.take_recovery() {
             let mut writer = match recovery {
                 AsyncWriterRecovery::Opened(writer) => *writer,
@@ -243,7 +257,7 @@ mod tests {
     use crate::common::async_memory_file_system::run_controlled;
 
     #[test]
-    fn rejects_a_non_cancellation_check_identity() {
+    fn test_rejects_a_non_cancellation_check_identity() {
         let fixture = AsyncMemoryFixture::new();
         run_controlled(async {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);

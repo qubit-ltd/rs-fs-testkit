@@ -10,7 +10,9 @@
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::ResourceVersion;
+use qubit_fs::path::Path;
 use qubit_fs::read::ReadOptions;
 
 use crate::AsyncFileSystemContractSuite;
@@ -30,6 +32,14 @@ use crate::internal::verify_fs_error;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes each registered read entry with its own request and setup.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after every registered read check completes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first failure raised while executing a read check.
     pub(super) async fn check_read(&mut self) -> Result<(), ContractFailure> {
         self.context.begin("read");
         for spec in check_catalog::for_contract(FileSystemContract::Read, true) {
@@ -39,6 +49,19 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 
     /// Executes exactly one read check; it never completes another check.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Registered read check to execute.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the selected check's outcome is recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure raised while preparing or verifying the selected
+    /// check.
     pub(super) async fn check_read_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let spec = check_catalog::specification(id);
@@ -48,7 +71,9 @@ impl AsyncFileSystemContractSuite<'_> {
         Ok(())
     }
 
-    /// Keeps observation and request failures attached to their actual entry.
+    /// Prepares, observes, and verifies one read scenario independently.
+    ///
+    /// Observation and request failures remain attached to their actual entry.
     async fn execute_read_scenario(
         &mut self,
         id: ContractCheckId,
@@ -155,7 +180,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 verify_condition(stale != current, id, "fixture stale version equals current version")?;
                 version = stale;
             }
-        }
+        };
         if scenario == ReadScenario::RangeLimit {
             let (maximum, over) =
                 boundary.ok_or_else(|| ContractFailure::message_only("bounded range check has no boundary").at(id))?;
@@ -235,6 +260,18 @@ impl AsyncFileSystemContractSuite<'_> {
                 "read bytes differ from independent seed",
             )?;
         }
+        self.check_read_result(id, scenario, limit, &path).await?;
+        Ok(ContractCheckOutcome::Passed)
+    }
+
+    /// Verifies additional range and caller-buffer-limit read requirements.
+    async fn check_read_result(
+        &self,
+        id: ContractCheckId,
+        scenario: ReadScenario,
+        limit: FileSystemLimit,
+        path: &Path,
+    ) -> Result<(), ContractFailure> {
         if scenario == ReadScenario::Range {
             let eof = read_expectations::CONTENT.len() as u64;
             let length = limit.maximum().unwrap_or(1).min(1);
@@ -248,7 +285,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 let actual = self
                     .fixture
                     .file_system()
-                    .read_all(&path, options, 64)
+                    .read_all(path, options, 64)
                     .await
                     .map_err(|error| ContractFailure::with_source("empty range observation failed", error).at(id))?;
                 verify_condition(actual.is_empty(), id, "empty or beyond-EOF range returned bytes")?;
@@ -258,7 +295,7 @@ impl AsyncFileSystemContractSuite<'_> {
             let error = match self
                 .fixture
                 .file_system()
-                .read_all(&path, ReadOptions::default(), 4)
+                .read_all(path, ReadOptions::default(), 4)
                 .await
             {
                 Err(error) => error,
@@ -270,12 +307,12 @@ impl AsyncFileSystemContractSuite<'_> {
                 error,
                 FsErrorKind::ResourceLimitExceeded,
                 FsOperation::Read,
-                &path,
+                path,
                 self.context.properties().info().provider_id(),
                 None,
                 id,
             )?;
         }
-        Ok(ContractCheckOutcome::Passed)
+        Ok(())
     }
 }

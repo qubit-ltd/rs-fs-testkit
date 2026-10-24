@@ -13,7 +13,18 @@ use crate::ContractFailure;
 use crate::FileSystemContract;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Runs every applicable copy check using the catalog's registered order.
+    /// Runs each copy check in the order registered by the contract catalog.
+    ///
+    /// Checks that do not apply to the fixture record their applicability
+    /// outcome and allow the remaining checks to continue.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after every registered copy check completes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ContractFailure`] produced by a copy check.
     pub(super) async fn check_copy(&mut self) -> Result<(), ContractFailure> {
         for spec in crate::internal::check_catalog::for_contract(FileSystemContract::Copy, true) {
             self.check_copy_item(spec.id).await?;
@@ -21,7 +32,22 @@ impl AsyncFileSystemContractSuite<'_> {
         Ok(())
     }
 
-    /// Executes only the selected copy requirement.
+    /// Executes the selected copy requirement without running sibling checks.
+    ///
+    /// The identifier must select a check handled by this copy driver.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Identifier of the copy requirement to execute.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when the selected check completes successfully.
+    ///
+    /// # Errors
+    ///
+    /// Returns the check's [`ContractFailure`], or a failure identifying an
+    /// unsupported check identifier.
     pub(super) async fn check_copy_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         match id {
             ContractCheckId::CopyBasic => self.check_basic_copy(id).await,

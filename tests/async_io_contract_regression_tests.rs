@@ -14,6 +14,7 @@ use std::task::Poll;
 use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
+use qubit_fs_testkit::AsyncFileSystemFixture;
 use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContract;
 
@@ -21,8 +22,9 @@ use self::common::AsyncMemoryFault;
 use self::common::AsyncMemoryFixture;
 use self::common::async_memory_file_system::run_controlled;
 use crate::common::UnavailableScenario;
+
 #[test]
-fn controlled_runner_accepts_real_pending_then_completion() {
+fn test_controlled_runner_accepts_real_pending_then_completion() {
     let mut first = true;
     let future = std::future::poll_fn(move |context| {
         if first {
@@ -37,7 +39,7 @@ fn controlled_runner_accepts_real_pending_then_completion() {
 }
 
 #[test]
-fn controlled_runner_does_not_treat_first_pending_as_completion() {
+fn test_controlled_runner_does_not_treat_first_pending_as_completion() {
     let mut remaining = 2_u8;
     let future = std::future::poll_fn(move |context| {
         if remaining != 0 {
@@ -52,7 +54,7 @@ fn controlled_runner_does_not_treat_first_pending_as_completion() {
 }
 
 #[test]
-fn async_limits_allow_single_byte_write() {
+fn test_async_limits_allow_single_byte_write() {
     let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1));
     let fixture = AsyncMemoryFixture::with_limits(limits);
     run_controlled(async {
@@ -64,7 +66,7 @@ fn async_limits_allow_single_byte_write() {
 }
 
 #[test]
-fn async_write_limit_small_boundaries_are_reported() {
+fn test_async_write_limit_small_boundaries_are_reported() {
     for limit in [
         FileSystemLimit::Maximum(1),
         FileSystemLimit::Maximum(4),
@@ -86,7 +88,7 @@ fn async_write_limit_small_boundaries_are_reported() {
 }
 
 #[test]
-fn async_property_limit_boundaries_are_reported() {
+fn test_async_property_limit_boundaries_are_reported() {
     let limits = FileSystemLimits::unknown()
         .with_max_component_text_bytes(FileSystemLimit::Maximum(4))
         .with_max_list_page_entries(FileSystemLimit::Maximum(2));
@@ -102,7 +104,7 @@ fn async_property_limit_boundaries_are_reported() {
 }
 
 #[test]
-fn conditional_case_unavailability_is_reported_as_unverified() {
+fn test_conditional_case_unavailability_is_reported_as_unverified() {
     let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(UnavailableScenario::ReadIfMatch);
     let report = run_controlled(async {
         AsyncFileSystemContractSuite::new(&fixture)
@@ -118,7 +120,7 @@ fn conditional_case_unavailability_is_reported_as_unverified() {
 }
 
 #[test]
-fn async_conditional_delete_case_unavailability_is_unverified() {
+fn test_async_conditional_delete_case_unavailability_is_unverified() {
     let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(UnavailableScenario::DeleteIfMatch);
     let report = run_controlled(async {
         AsyncFileSystemContractSuite::new(&fixture)
@@ -133,7 +135,7 @@ fn async_conditional_delete_case_unavailability_is_unverified() {
 }
 
 #[test]
-fn async_fault_profiles_are_exercised_by_the_real_suite() {
+fn test_async_fault_profiles_are_exercised_by_the_real_suite() {
     for fault in [
         AsyncMemoryFault::IgnoreReadIfMatch,
         AsyncMemoryFault::IgnoreReadIfNoneMatch,
@@ -158,7 +160,7 @@ fn async_fault_profiles_are_exercised_by_the_real_suite() {
 /// A deliberately invalid request must be observed by the real facade call;
 /// recording RejectedAsExpected without issuing it cannot pass this regression.
 #[test]
-fn async_negative_write_guarantees_issue_real_requests() {
+fn test_async_negative_write_guarantees_issue_real_requests() {
     let fixture = AsyncMemoryFixture::without_optional_capabilities();
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
@@ -173,7 +175,6 @@ fn async_negative_write_guarantees_issue_real_requests() {
             })
         }));
         assert!(result.is_err(), "{suffix}: the incompatible request was never checked");
-        use qubit_fs_testkit::AsyncFileSystemFixture;
         run_controlled(fixture.teardown()).expect("independent teardown");
     }
 }

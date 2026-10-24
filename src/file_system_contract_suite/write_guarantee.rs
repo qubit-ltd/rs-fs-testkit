@@ -28,6 +28,20 @@ use crate::internal::verify_open_failure;
 
 impl FileSystemContractSuite<'_> {
     /// Executes one strong guarantee check and retains its exact identity.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - The atomic-replacement or durable-write contract check to run.
+    ///
+    /// # Returns
+    ///
+    /// Returns `()` after recording the check outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure if `id` is not a write-guarantee check, the provider
+    /// violates an unavailable guarantee, or fixture preparation or
+    /// verification fails.
     pub(super) fn check_write_guarantee(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let (scenario, capability, name, options) = match id {
             ContractCheckId::WriteAtomicReplaceExisting => (
@@ -83,6 +97,22 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Verifies the advertised outcome against independently observed contents.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - The contract check whose identity is used for paths and errors.
+    /// * `scenario` - The atomic-replacement or durable-write fixture to
+    ///   execute.
+    ///
+    /// # Returns
+    ///
+    /// Returns the outcome recorded for the prepared fixture, including an
+    /// unverified result when the fixture cannot be prepared.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure if fixture preparation, publication, independent
+    /// observation, or any contract verification fails.
     fn execute_write_guarantee(
         &mut self,
         id: ContractCheckId,

@@ -167,6 +167,7 @@ impl AsyncRecordingProbe {
         self.calls.lock().expect("calls lock should succeed").clone()
     }
     /// Returns local writer cancellation notifications.
+    #[must_use]
     #[allow(dead_code)]
     pub(crate) fn writer_cancellations(&self) -> usize {
         *self
@@ -175,6 +176,7 @@ impl AsyncRecordingProbe {
             .expect("cancellation lock should succeed")
     }
     /// Returns local temporary-resource cancellation notifications.
+    #[must_use]
     #[allow(dead_code)]
     pub(crate) fn temp_cancellations(&self) -> usize {
         *self

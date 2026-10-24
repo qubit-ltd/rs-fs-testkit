@@ -21,11 +21,22 @@ use crate::ContractCheckOutcome;
 use crate::ContractFailure;
 use crate::FixturePreparation;
 use crate::FixtureSupport;
+use crate::internal::check_catalog;
+use crate::internal::execute_write;
+use crate::internal::finish_expected_write_failure;
 use crate::internal::verify_condition;
 use crate::internal::verify_open_failure;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Records only the If-Match check, retaining original errors on failure.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after recording the outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ContractFailure` when the contract check cannot be completed.
     pub(super) async fn check_write_if_match(&mut self) -> Result<(), ContractFailure> {
         let outcome = self.execute_write_if_match().await?;
         self.context.record_check(
@@ -38,6 +49,19 @@ impl AsyncFileSystemContractSuite<'_> {
 
     /// Publishes with the current version, rejects a stale one, and observes
     /// bytes.
+    ///
+    /// # Returns
+    ///
+    /// The outcome observed for the If-Match contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ContractFailure` when preparation, publication, or evidence
+    /// verification fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the write check's catalog entry has no preparation scenario.
     async fn execute_write_if_match(&mut self) -> Result<ContractCheckOutcome, ContractFailure> {
         let id = ContractCheckId::WriteIfMatch;
         let relative = self.context.relative_name("write-if-match");
@@ -70,7 +94,7 @@ impl AsyncFileSystemContractSuite<'_> {
         let prepared = self
             .fixture
             .prepare_write(
-                crate::internal::check_catalog::specification(id)
+                check_catalog::specification(id)
                     .write_scenario
                     .expect("write check has a preparation scenario"),
                 &relative,
@@ -101,7 +125,7 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "fixture changed If-Match request semantics",
         )?;
-        let first = crate::internal::execute_write::execute_write(
+        let first = execute_write::execute_write(
             self.fixture.file_system(),
             path.clone(),
             bytes.clone(),
@@ -137,13 +161,8 @@ impl AsyncFileSystemContractSuite<'_> {
             .clone()
             .with_precondition(WritePrecondition::IfMatch(stale));
         let unexpected = super::write::bounded_payload(limit, b"unexpected", b'u');
-        let retry = crate::internal::execute_write::execute_write(
-            self.fixture.file_system(),
-            path.clone(),
-            unexpected,
-            retry_options,
-        )
-        .await;
+        let retry =
+            execute_write::execute_write(self.fixture.file_system(), path.clone(), unexpected, retry_options).await;
         let failure = match retry {
             Err(failure) => failure,
             Ok(_) => {
@@ -158,12 +177,8 @@ impl AsyncFileSystemContractSuite<'_> {
         {
             return Err(ContractFailure::with_owned_source("conditional write rejection differs", failure).at(id));
         }
-        crate::internal::finish_expected_write_failure::finish_expected_async_write_failure(
-            failure,
-            id,
-            &mut self.context.run.failures,
-        )
-        .await?;
+        finish_expected_write_failure::finish_expected_async_write_failure(failure, id, &mut self.context.run.failures)
+            .await?;
         let observed = self.fixture.read_file(&path).await.map_err(|error| {
             ContractFailure::with_source("conditional write rejection observation failed", error).at(id)
         })?;

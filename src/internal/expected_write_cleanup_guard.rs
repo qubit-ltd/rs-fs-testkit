@@ -37,6 +37,7 @@ impl<'a> ExpectedWriteCleanupGuard<'a> {
     }
 
     /// Borrows the operation while its cleanup future is active.
+    #[inline]
     pub(crate) fn failure_mut(&mut self) -> &mut ContractAsyncWriteFailure {
         self.failure
             .as_mut()

@@ -22,6 +22,15 @@ use crate::FixtureSupport;
 
 impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Returns ordinary errors without dropping original recovery failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first failure from an applicable write check. Provider and
+    /// cleanup errors remain attached to that failure for later inspection.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after all applicable write checks pass, or the first failure.
     pub(super) async fn check_write(&mut self) -> Result<(), crate::ContractFailure> {
         for spec in crate::internal::check_catalog::for_contract(FileSystemContract::Write, true) {
             self.check_write_item(spec.id).await?;
@@ -30,6 +39,19 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Executes exactly one write check with its own applicability decision.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Catalog identifier selecting a write contract check.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `id` does not select a write check or when the
+    /// selected check fails. Recovery ownership is preserved in the failure.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the check passes or is not applicable.
     pub(super) async fn check_write_item(&mut self, id: ContractCheckId) -> Result<(), crate::ContractFailure> {
         self.context.begin(id.as_str());
         let spec = crate::internal::check_catalog::specification(id);
@@ -72,6 +94,19 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Records creation evidence without gating independently prepared checks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when fixture preparation, writer operations, cleanup,
+    /// or publication observation fails to satisfy the write contract.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the provider publishes the prepared bytes as requested.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the write check catalog entry has no preparation scenario.
     pub(super) async fn check_write_basic(&mut self) -> Result<(), crate::ContractFailure> {
         let id = ContractCheckId::WriteBasic;
         if !self.capable(FileSystemCapability::Write) {
@@ -202,6 +237,19 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 }
 
 /// Selects a write payload that fits the declared provider limit.
+///
+/// # Parameters
+///
+/// * `limit` - Provider's declared maximum payload size, if known.
+/// * `preferred` - Payload to use when it fits the declared limit.
+/// * `fill` - Byte used to create a payload when the limit truncates the
+///   preferred payload.
+///
+/// # Returns
+///
+/// The preferred payload when it fits, otherwise a payload of the maximum
+/// permitted length filled with `fill`.
+#[must_use]
 pub(super) fn bounded_payload(limit: FileSystemLimit, preferred: &[u8], fill: u8) -> Vec<u8> {
     let length = limit
         .maximum()

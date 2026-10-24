@@ -25,6 +25,14 @@ use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Runs each rename requirement against independently prepared paths.
+    ///
+    /// Checks stop at the first failure, which is returned with its original
+    /// provider error when one is available.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ContractFailure`] produced by a selected rename
+    /// check, including the check identifier and any retained provider error.
     pub(super) async fn check_rename(&mut self) -> Result<(), ContractFailure> {
         for id in [
             ContractCheckId::RenameBasic,
@@ -39,6 +47,16 @@ impl AsyncFileSystemContractSuite<'_> {
 
     /// Records only the selected requirement and retains original rename
     /// errors.
+    ///
+    /// The selected identifier must name a rename check. Fixture paths and
+    /// observations are prepared independently so the recorded result reflects
+    /// the provider's rename behavior rather than assumptions about its state.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] if the identifier is not a rename check,
+    /// fixture preparation or observation fails, or the provider violates the
+    /// selected rename requirement. Provider failures are retained as sources.
     pub(super) async fn check_rename_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let (capability, mut options) = match id {
@@ -209,14 +227,32 @@ impl AsyncFileSystemContractSuite<'_> {
                 "rename target must initially be absent",
             )?;
         }
+        self.verify_rename_publication(id, capability, &source, &target, bytes, options)
+            .await
+    }
+
+    /// Executes a prepared rename and verifies its publication evidence.
+    ///
+    /// The caller supplies distinct paths and confirms the source bytes and
+    /// the target's initial state. This stage checks the operation result,
+    /// requirement-specific guarantees, and the resulting filesystem state.
+    async fn verify_rename_publication(
+        &mut self,
+        id: ContractCheckId,
+        capability: FileSystemCapability,
+        source: &super::Path,
+        target: &super::Path,
+        bytes: &[u8],
+        options: RenameOptions,
+    ) -> Result<(), ContractFailure> {
         let outcome = self
             .fixture
             .file_system()
-            .rename(&source, &target, options)
+            .rename(source, target, options)
             .await
             .map_err(|error| ContractFailure::with_source("rename/basic: rename failed", error).at(id))?;
         verify_condition(
-            outcome.source() == &source && outcome.target() == &target,
+            outcome.source() == source && outcome.target() == target,
             id,
             "rename/basic: source context mismatch or target context mismatch",
         )?;
@@ -235,7 +271,7 @@ impl AsyncFileSystemContractSuite<'_> {
             )?;
         }
         let exists =
-            self.fixture.exists_out_of_band(&source).await.map_err(|error| {
+            self.fixture.exists_out_of_band(source).await.map_err(|error| {
                 ContractFailure::with_source("rename source removal observation failed", error).at(id)
             })?;
         verify_condition(
@@ -244,7 +280,7 @@ impl AsyncFileSystemContractSuite<'_> {
             "rename/basic: source remained after success",
         )?;
         let observed =
-            self.fixture.read_file(&target).await.map_err(|error| {
+            self.fixture.read_file(target).await.map_err(|error| {
                 ContractFailure::with_source("rename target content observation failed", error).at(id)
             })?;
         verify_condition(

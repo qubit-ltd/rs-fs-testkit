@@ -6,14 +6,16 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-pub use ::qubit_fs_testkit;
-mod common;
 use std::panic::AssertUnwindSafe;
 
+pub use ::qubit_fs_testkit;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 
+mod common;
+
 use self::common::MemoryFixture;
+
 /// An empty report has no phase evidence and therefore cannot be complete.
 #[test]
 fn test_empty_report_is_incomplete() {

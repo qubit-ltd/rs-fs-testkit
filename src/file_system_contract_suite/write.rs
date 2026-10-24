@@ -20,7 +20,14 @@ use crate::ContractCheckOutcome;
 use crate::FixtureSupport;
 
 impl<'a> FileSystemContractSuite<'a> {
-    /// Returns ordinary errors without dropping original recovery failures.
+    /// Runs each applicable check in the synchronous write contract phase.
+    ///
+    /// This method uses the catalog order and propagates the first check
+    /// failure, preserving any recovery failure recorded by that check.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first `ContractFailure` produced by a write check.
     pub(super) fn check_write(&mut self) -> Result<(), crate::ContractFailure> {
         for spec in crate::internal::check_catalog::for_contract(FileSystemContract::Write, false) {
             self.check_write_item(spec.id)?;
@@ -63,7 +70,18 @@ impl<'a> FileSystemContractSuite<'a> {
         }
     }
 
-    /// Records creation evidence without gating independently prepared checks.
+    /// Checks whether basic creation publishes exactly the requested bytes.
+    ///
+    /// When write capability is absent, this instead records whether opening
+    /// a writer is rejected as unsupported. When capability is present, the
+    /// check prepares and publishes a bounded payload, then observes the
+    /// resulting file without gating independently prepared checks.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ContractFailure` if path or scenario preparation fails,
+    /// writing or observation fails, or the provider violates the expected
+    /// creation or unsupported-capability behavior.
     pub(super) fn check_write_basic(&mut self) -> Result<(), crate::ContractFailure> {
         let id = ContractCheckId::WriteBasic;
         if !self.capable(FileSystemCapability::Write) {
@@ -176,6 +194,7 @@ impl<'a> FileSystemContractSuite<'a> {
 /// Unknown, inapplicable, and unbounded dimensions use the preferred payload.
 /// A finite limit truncates the payload without ever allocating beyond the
 /// preferred test vector; zero permits an empty publication probe.
+#[must_use]
 pub(super) fn bounded_payload(limit: FileSystemLimit, preferred: &[u8], fill: u8) -> Vec<u8> {
     let length = limit
         .maximum()

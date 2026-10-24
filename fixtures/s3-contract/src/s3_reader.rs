@@ -1,3 +1,11 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
@@ -5,6 +13,8 @@ use std::task::Poll;
 
 use bytes::Bytes;
 use futures_util::Stream;
+use futures_util::stream::empty as empty_stream;
+use object_store::Error as ObjectStoreError;
 use object_store::GetOptions;
 use object_store::GetRange;
 use object_store::GetResult;
@@ -23,15 +33,40 @@ use qubit_io::AsyncInput;
 
 use crate::error_mapper;
 
-type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, object_store::Error>> + Send>>;
+/// A boxed object-store stream that can be polled across threads.
+type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, ObjectStoreError>> + Send>>;
+
+/// Reads an S3 object's byte stream while retaining its filesystem metadata.
 pub struct S3Reader {
+    /// Metadata for the opened object, including its full object length.
     info: OpenedFileInfo,
+    /// Remaining payload chunks returned by object storage.
     stream: ByteStream,
+    /// The current chunk being copied to the caller.
     chunk: Bytes,
+    /// The next unread byte within `chunk`.
     offset: usize,
 }
 
 impl S3Reader {
+    /// Opens an object or a requested byte range for asynchronous reading.
+    ///
+    /// # Parameters
+    ///
+    /// - `store`: object store used to retrieve the object.
+    /// - `key`: object-store key to open.
+    /// - `path`: filesystem path recorded in the returned reader's metadata.
+    /// - `options`: read range and conditional request options.
+    ///
+    /// # Returns
+    ///
+    /// A reader that yields the requested bytes and retains full-object
+    /// metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns a filesystem error when the options, key, or object-store
+    /// request is invalid or fails.
     pub async fn open(
         store: Arc<dyn ObjectStore>,
         key: String,
@@ -83,16 +118,19 @@ impl S3Reader {
         Ok(Self::from_result(result, path, empty))
     }
 
-    /// Retains full-object metadata; an empty window never polls a payload
-    /// stream.
+    /// Creates a reader from an object-store result.
+    ///
+    /// The metadata describes the full object. An empty window uses an empty
+    /// stream so reading it never polls a payload stream.
     fn from_result(result: GetResult, path: Path, empty: bool) -> Self {
         let metadata = FileMetadata::new(FileKind::Object)
             .with_len(Some(result.meta.size))
             .with_etag(result.meta.e_tag.clone().map(Into::into));
         Self {
-            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path).with_metadata(metadata),
+            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path)
+                .with_metadata(metadata),
             stream: if empty {
-                Box::pin(futures_util::stream::empty())
+                Box::pin(empty_stream())
             } else {
                 Box::pin(result.into_stream())
             },
@@ -100,6 +138,15 @@ impl S3Reader {
             offset: 0,
         }
     }
+
+    /// Returns metadata for the opened object.
+    ///
+    /// # Returns
+    ///
+    /// Metadata borrowed from this reader for as long as the reader is
+    /// immutably borrowed.
+    #[must_use]
+    #[inline]
     pub fn info(&self) -> &OpenedFileInfo {
         &self.info
     }
@@ -107,6 +154,14 @@ impl S3Reader {
 
 impl AsyncInput for S3Reader {
     type Item = u8;
+
+    /// Copies available bytes into the caller's buffer without moving the
+    /// pinned reader.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `index..index + count` is a valid range in
+    /// `output`, as required by [`AsyncInput::poll_read_unchecked`].
     unsafe fn poll_read_unchecked(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -132,7 +187,9 @@ impl AsyncInput for S3Reader {
                     self.offset = 0;
                 }
                 Poll::Ready(Some(Err(error))) => {
-                    return Poll::Ready(Err(error_mapper::map(error, FsOperation::Read).into_io_error()));
+                    return Poll::Ready(Err(
+                        error_mapper::map(error, FsOperation::Read).into_io_error(),
+                    ));
                 }
             }
         }
@@ -145,7 +202,7 @@ impl AsyncInput for S3Reader {
 /// types. Infer the former from GetRange and compare its exact variant through
 /// the source chain. For HTTP, the pinned SDK's status source exposes 416 only
 /// through Display. This narrow fixture boundary must be rechecked on upgrades.
-fn is_range_rejection(error: &object_store::Error) -> bool {
+fn is_range_rejection(error: &ObjectStoreError) -> bool {
     let expected = GetRange::Offset(0)
         .as_range(0)
         .expect_err("empty object has no nonempty offset range");
@@ -180,13 +237,23 @@ fn same_error_variant<T: std::error::Error + 'static>(
 mod tests {
     use std::error::Error;
 
-    use super::*;
+    use bytes::Bytes;
+    use futures_util::stream::iter;
+    use object_store::Error as ObjectStoreError;
+    use qubit_fs::FsError;
+    use qubit_fs::Path;
+    use qubit_fs::error::FsErrorKind;
+    use qubit_fs::metadata::FileSystemId;
+    use qubit_fs::metadata::OpenedFileInfo;
+    use qubit_io::AsyncInput;
+
+    use super::S3Reader;
 
     /// Stream failures retain their filesystem category and original SDK
     /// source.
     #[tokio::test]
-    async fn stream_error_retains_typed_source() {
-        let error = object_store::Error::Precondition {
+    async fn test_stream_error_retains_typed_source() {
+        let error = ObjectStoreError::Precondition {
             path: "key".into(),
             source: Box::new(std::io::Error::other("SDK source")),
         };
@@ -195,7 +262,7 @@ mod tests {
                 FileSystemId::new("s3-contract").unwrap(),
                 Path::parse_literal("key").unwrap(),
             ),
-            stream: Box::pin(futures_util::stream::iter([Err(error)])),
+            stream: Box::pin(iter([Err(error)])),
             chunk: Bytes::new(),
             offset: 0,
         };
@@ -206,7 +273,7 @@ mod tests {
         let mut cause: &dyn Error = error;
         let mut found_sdk = false;
         while let Some(source) = cause.source() {
-            found_sdk |= source.is::<object_store::Error>();
+            found_sdk |= source.is::<ObjectStoreError>();
             cause = source;
         }
         assert!(found_sdk);

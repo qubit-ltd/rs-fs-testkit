@@ -37,39 +37,71 @@ use qubit_fs::write::AsyncWriteAllOperationFailure;
 /// ```
 #[must_use]
 pub struct ContractAsyncWriteFailure {
+    /// Original failure state and accepted byte count captured at failure.
     failure: AsyncWriteAllOperationFailure,
+    /// Operation retaining any recovery session after execution failure.
     operation: Option<AsyncWriteAllOperation>,
 }
 
 impl ContractAsyncWriteFailure {
-    /// Returns the original filesystem error.
+    /// Returns the original filesystem error retained by the failure snapshot.
+    ///
+    /// # Returns
+    ///
+    /// A borrow of the contextual filesystem error.
+    #[inline]
     pub const fn error(&self) -> &FsError {
         self.failure.error()
     }
 
     /// Returns the failure's publication state and accepted byte count
     /// snapshot.
+    ///
+    /// # Returns
+    ///
+    /// A borrow of the immutable failure snapshot.
+    #[must_use = "inspect or retain the write failure snapshot"]
+    #[inline]
     pub const fn failure(&self) -> &AsyncWriteAllOperationFailure {
         &self.failure
     }
 
     /// Borrows the operation if request admission succeeded.
+    ///
+    /// # Returns
+    ///
+    /// `Some` when the request was admitted and has an operation, or `None`
+    /// when admission failed before an operation was created.
+    #[inline]
     pub const fn operation(&self) -> Option<&AsyncWriteAllOperation> {
         self.operation.as_ref()
     }
 
     /// Borrows the operation for explicit recovery writer transfer or
     /// inspection.
+    ///
+    /// # Returns
+    ///
+    /// `Some` when an operation was retained, or `None` when admission failed.
+    #[inline]
     pub fn operation_mut(&mut self) -> Option<&mut AsyncWriteAllOperation> {
         self.operation.as_mut()
     }
 
-    /// Transfers the failure snapshot and optional operation to the caller.
+    /// Transfers the failure snapshot and optional recovery operation.
+    ///
+    /// # Returns
+    ///
+    /// The failure facts and the operation when request admission succeeded.
     pub fn into_parts(self) -> (AsyncWriteAllOperationFailure, Option<AsyncWriteAllOperation>) {
         (self.failure, self.operation)
     }
 
     /// Pairs a failure with the operation that owns its recovery session.
+    ///
+    /// # Returns
+    ///
+    /// A wrapper that preserves the failure and optional operation together.
     pub(crate) fn new(failure: AsyncWriteAllOperationFailure, operation: Option<AsyncWriteAllOperation>) -> Self {
         Self { failure, operation }
     }

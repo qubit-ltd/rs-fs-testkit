@@ -14,7 +14,7 @@ use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::task::Poll;
 
-/// Polls a future while converting an assertion panic into a result.
+/// Polls a future and returns any panic payload as an error.
 pub(crate) async fn catch_unwind_future<F>(future: F) -> Result<F::Output, Box<dyn Any + Send>>
 where
     F: Future,

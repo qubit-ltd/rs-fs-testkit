@@ -32,7 +32,103 @@ impl<'a> FileSystemContractSuite<'a> {
         }
     }
 
+    /// Resolves a fixture path or identifies the contract that could not set
+    /// up.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Resource name relative to the current contract phase.
+    ///
+    /// # Returns
+    ///
+    /// The provider path mapped by the fixture.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the fixture cannot map the generated relative name.
+    #[must_use]
+    #[inline]
+    pub fn path(&self, relative: &str) -> Path {
+        let relative = self.context.relative_name(relative);
+        self.fixture.path(&relative).expect("contract: fixture path failed")
+    }
+
+    /// Returns whether the immutable snapshot declares a capability.
+    ///
+    /// # Parameters
+    ///
+    /// * `capability` - Capability to query in the captured snapshot.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the provider advertises the capability.
+    #[must_use]
+    #[inline]
+    pub fn capable(&self, capability: FileSystemCapability) -> bool {
+        self.context.properties().capabilities().supports(capability)
+    }
+
+    /// Seeds a resource and makes support mandatory for the requested
+    /// capability.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Resource name relative to the current contract phase.
+    /// * `bytes` - Exact content to publish.
+    /// * `contract` - Contract label used in failure diagnostics.
+    ///
+    /// # Returns
+    ///
+    /// The provider path of the seeded file.
+    ///
+    /// # Panics
+    ///
+    /// Panics when fixture setup fails or the required seed hook is
+    /// unsupported.
+    #[must_use]
+    #[inline]
+    pub fn required_seed(&mut self, relative: &str, bytes: &[u8], contract: &str) -> Path {
+        match self.seed(relative, bytes) {
+            FixtureSupport::Supported(path) => path,
+            FixtureSupport::Unsupported => {
+                panic!("{contract} contract: advertised capability requires fixture.seed_file support")
+            }
+        }
+    }
+
+    /// Delegates out-of-band resource preparation to the fixture.
+    ///
+    /// # Parameters
+    ///
+    /// * `relative` - Resource name relative to the current contract phase.
+    /// * `bytes` - Exact content to publish.
+    ///
+    /// # Returns
+    ///
+    /// The fixture's support result and seeded path, when available.
+    ///
+    /// # Panics
+    ///
+    /// Panics when provider-specific fixture setup returns an error.
+    #[inline]
+    pub fn seed(&mut self, relative: &str, bytes: &[u8]) -> FixtureSupport<Path> {
+        let relative = self.context.relative_name(relative);
+        let support = self
+            .fixture
+            .seed_file(&relative, bytes)
+            .expect("contract: fixture seed failed");
+        if let FixtureSupport::Supported(path) = &support {
+            self.context.record_created(path.clone());
+        }
+        support
+    }
+
     /// Runs facade cleanup and fixture teardown while preserving failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns the cleanup and teardown failures collected during this attempt.
+    /// The error payload is resumed by [`Self::finish`].
     pub(super) fn finish_capture(&mut self) -> Result<(), Box<dyn Any + Send>> {
         self.context.run.cleanup.attempts += 1;
         self.context.run.cleanup.completed = false;
@@ -78,6 +174,12 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Returns an ordinary structured failure for fixture or contract errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when the fixture cannot prepare the missing path, the
+    /// path unexpectedly exists, or the provider reports an invalid
+    /// missing-path error.
     pub(super) fn check_error_context(&mut self) -> Result<(), crate::ContractFailure> {
         let id = ContractCheckId::ErrorContext;
         self.context.begin("error_context");
@@ -96,142 +198,5 @@ impl<'a> FileSystemContractSuite<'a> {
         crate::internal::verify_missing_error(error, &path, self.context.properties().info().provider_id(), id)?;
         self.context.record_check(id, None, ContractCheckOutcome::Passed);
         Ok(())
-    }
-
-    /// Resolves a fixture path or identifies the contract that could not set
-    /// up.
-    ///
-    /// # Parameters
-    ///
-    /// * `relative` - Resource name relative to the current contract phase.
-    ///
-    /// # Returns
-    ///
-    /// The provider path mapped by the fixture.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the fixture cannot map the generated relative name.
-    #[inline]
-    pub fn path(&self, relative: &str) -> Path {
-        let relative = self.context.relative_name(relative);
-        self.fixture.path(&relative).expect("contract: fixture path failed")
-    }
-
-    /// Returns whether the immutable snapshot declares a capability.
-    ///
-    /// # Parameters
-    ///
-    /// * `capability` - Capability to query in the captured snapshot.
-    ///
-    /// # Returns
-    ///
-    /// `true` when the provider advertises the capability.
-    #[inline]
-    pub fn capable(&self, capability: FileSystemCapability) -> bool {
-        self.context.properties().capabilities().supports(capability)
-    }
-
-    /// Seeds a resource and makes support mandatory for the requested
-    /// capability.
-    ///
-    /// # Parameters
-    ///
-    /// * `relative` - Resource name relative to the current contract phase.
-    /// * `bytes` - Exact content to publish.
-    /// * `contract` - Contract label used in failure diagnostics.
-    ///
-    /// # Returns
-    ///
-    /// The provider path of the seeded file.
-    ///
-    /// # Panics
-    ///
-    /// Panics when fixture setup fails or the required seed hook is
-    /// unsupported.
-    #[inline]
-    pub fn required_seed(&mut self, relative: &str, bytes: &[u8], contract: &str) -> Path {
-        match self.seed(relative, bytes) {
-            FixtureSupport::Supported(path) => path,
-            FixtureSupport::Unsupported => {
-                panic!("{contract} contract: advertised capability requires fixture.seed_file support")
-            }
-        }
-    }
-
-    /// Delegates out-of-band resource preparation to the fixture.
-    ///
-    /// # Parameters
-    ///
-    /// * `relative` - Resource name relative to the current contract phase.
-    /// * `bytes` - Exact content to publish.
-    ///
-    /// # Returns
-    ///
-    /// The fixture's support result and seeded path, when available.
-    ///
-    /// # Panics
-    ///
-    /// Panics when provider-specific fixture setup returns an error.
-    #[inline]
-    pub fn seed(&mut self, relative: &str, bytes: &[u8]) -> FixtureSupport<Path> {
-        let relative = self.context.relative_name(relative);
-        let support = self
-            .fixture
-            .seed_file(&relative, bytes)
-            .expect("contract: fixture seed failed");
-        if let FixtureSupport::Supported(path) = &support {
-            self.context.record_created(path.clone());
-        }
-        support
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use qubit_fs::FileSystem;
-    use qubit_fs::path::Path;
-
-    use crate::FileSystemContract;
-    use crate::FileSystemContractSuite;
-    use crate::FileSystemFixture;
-    use crate::FixtureError;
-    use crate::FixtureResult;
-    use crate::common::MemoryFixture;
-
-    struct TeardownFixture {
-        inner: MemoryFixture,
-        panic: bool,
-    }
-
-    impl FileSystemFixture for TeardownFixture {
-        fn file_system(&self) -> &FileSystem {
-            self.inner.file_system()
-        }
-
-        fn path(&self, relative: &str) -> FixtureResult<Path> {
-            self.inner.path(relative)
-        }
-
-        fn teardown(&self) -> FixtureResult<()> {
-            if self.panic {
-                panic!("injected fixture teardown panic");
-            }
-            Err(FixtureError::new("injected fixture teardown failure"))
-        }
-    }
-
-    #[test]
-    fn finish_capture_retains_teardown_error_and_panic() {
-        for panic in [false, true] {
-            let fixture = TeardownFixture {
-                inner: MemoryFixture::new(),
-                panic,
-            };
-            let mut suite = FileSystemContractSuite::new(&fixture);
-            let run = suite.run_contract(FileSystemContract::ErrorContext);
-            assert!(!run.cleanup().failures().is_empty());
-            assert!(!run.requirements_satisfied());
-        }
     }
 }

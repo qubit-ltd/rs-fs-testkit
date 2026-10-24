@@ -27,51 +27,77 @@ use qubit_fs::error::FsError;
 ///
 /// # Examples
 ///
-/// ```
-/// use qubit_fs::error::FsError;
-/// use qubit_fs_testkit::ContractAsyncCopyFailure;
+/// When an asynchronous copy check reports a failure, retrieve the retained
+/// operation from its source chain and inspect the filesystem error:
 ///
-/// fn inspect_error(failure: &ContractAsyncCopyFailure) -> &FsError {
-///     failure.error()
+/// ```
+/// use std::error::Error;
+///
+/// use qubit_fs::error::FsErrorKind;
+/// use qubit_fs_testkit::AsyncFileSystemContractSuite;
+/// use qubit_fs_testkit::AsyncFileSystemFixture;
+/// use qubit_fs_testkit::ContractAsyncCopyFailure;
+/// use qubit_fs_testkit::ContractCheckId;
+/// use qubit_fs_testkit::ContractSource;
+///
+/// fn inspect_error(failure: &ContractAsyncCopyFailure) {
+///     let original_error: &FsError = failure.error();
+///     assert!(!original_error.to_string().is_empty());
 /// }
 /// ```
 #[must_use]
 pub struct ContractAsyncCopyFailure {
+    /// Preserves the original error and the partial copy statistics.
     failure: AsyncCopyFailure,
+    /// Retains the copy operation after admission, when one is available.
     operation: Option<AsyncCopyOperation>,
 }
 
 impl ContractAsyncCopyFailure {
+    /// Pairs a failure with the operation that owns its recovery session.
+    ///
+    /// # Returns
+    ///
+    /// A wrapper that retains the failure and optional operation together.
+    pub(crate) fn new(failure: AsyncCopyFailure, operation: Option<AsyncCopyOperation>) -> Self {
+        Self { failure, operation }
+    }
+
     /// Returns the original filesystem error.
+    #[inline]
     pub const fn error(&self) -> &FsError {
         self.failure.error()
     }
 
     /// Returns the failure's publication state and partial transfer statistics
     /// snapshot.
+    #[inline]
     pub const fn failure(&self) -> &AsyncCopyFailure {
         &self.failure
     }
 
     /// Borrows the operation if request admission succeeded.
+    #[inline]
     pub const fn operation(&self) -> Option<&AsyncCopyOperation> {
         self.operation.as_ref()
     }
 
     /// Borrows the operation for explicit recovery writer transfer or
     /// inspection.
+    #[inline]
     pub fn operation_mut(&mut self) -> Option<&mut AsyncCopyOperation> {
         self.operation.as_mut()
     }
 
     /// Transfers the failure snapshot and optional operation to the caller.
+    ///
+    /// # Returns
+    ///
+    /// The immutable failure facts and the operation when request admission
+    /// succeeded.
+    #[must_use = "retain the failure and operation for inspection or recovery"]
     pub fn into_parts(self) -> (AsyncCopyFailure, Option<AsyncCopyOperation>) {
         (self.failure, self.operation)
-    }
-
-    /// Pairs a failure with the operation that owns its recovery session.
-    pub(crate) fn new(failure: AsyncCopyFailure, operation: Option<AsyncCopyOperation>) -> Self {
-        Self { failure, operation }
     }
 }
 

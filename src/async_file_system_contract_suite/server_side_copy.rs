@@ -26,8 +26,22 @@ use crate::FixtureSupport;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Requires an actual server-side outcome or an actual capability
-    /// rejection.
+    /// Verifies that a copy requiring server-side execution uses that method,
+    /// or that an unavailable capability is rejected with the expected
+    /// context. If fixture preparation or independent observation is
+    /// unavailable, records the check as unverified instead of treating it as
+    /// a pass or failure.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when the requirement is verified, is not applicable,
+    /// or cannot be independently verified and is recorded as unverified.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] if fixture evidence contradicts the
+    /// requirement, an independent observation fails, or the required
+    /// capability is incorrectly accepted or rejected.
     pub(super) async fn check_server_side_copy(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::CopyServerSide;
         let capability = FileSystemCapability::ServerSideCopy;

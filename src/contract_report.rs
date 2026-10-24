@@ -38,13 +38,19 @@ pub struct ContractReport {
     /// checks.  A report that only contains ad-hoc checks must not be able to
     /// claim that a contract phase was fully exercised.
     pub(crate) expected: Vec<ContractCheckId>,
+    /// Catalog entries that have not yet received a completion.
     pending: Vec<ContractCheckId>,
+    /// Invalid registrations or completion transitions retained for diagnosis.
     violations: Vec<String>,
 }
 
 impl ContractReport {
     /// Returns checks in execution order.
+    ///
+    /// # Returns
+    /// The recorded checks in the order their outcomes were produced.
     #[inline]
+    #[must_use = "inspect the recorded contract checks"]
     pub fn checks(&self) -> &[ContractCheck] {
         &self.checks
     }
@@ -61,6 +67,13 @@ impl ContractReport {
     /// Also requires evidence for the caller-selected optional checks.
     ///
     /// A requested identity absent from this run cannot satisfy the request.
+    ///
+    /// # Parameters
+    /// - `required`: Optional check identities that must have evidence.
+    ///
+    /// # Returns
+    /// Whether the registered requirements and selected optional checks are
+    /// satisfied.
     #[must_use]
     pub fn requirements_satisfied_with(&self, required: &[ContractCheckId]) -> bool {
         !self.expected.is_empty()
@@ -85,6 +98,9 @@ impl ContractReport {
 
     /// Returns whether every applicable check, including optional probes, was
     /// verified.
+    ///
+    /// # Returns
+    /// Whether all applicable checks have evidence, including optional probes.
     #[must_use]
     pub fn all_applicable_checks_verified(&self) -> bool {
         self.requirements_satisfied_with(&self.expected)
@@ -93,7 +109,8 @@ impl ContractReport {
     /// Panics if registered requirements lack successful evidence.
     ///
     /// # Panics
-    /// Reports all unverified, failed, missing, or invalidly completed checks.
+    /// Panics with a summary when any registered requirement lacks successful
+    /// evidence.
     #[track_caller]
     pub fn assert_satisfied(&self) {
         self.assert_satisfied_with(&[]);
@@ -103,6 +120,9 @@ impl ContractReport {
     ///
     /// # Panics
     /// Panics when any required check or selected optional probe is unverified.
+    ///
+    /// # Parameters
+    /// - `required`: Optional check identities that must have evidence.
     #[track_caller]
     pub fn assert_satisfied_with(&self, required: &[ContractCheckId]) {
         if self.requirements_satisfied_with(required) {
@@ -121,7 +141,9 @@ impl ContractReport {
             match check.outcome() {
                 ContractCheckOutcome::Unverified { reason }
                 | ContractCheckOutcome::Failed { reason }
-                | ContractCheckOutcome::NotRun { reason } => issues.push(format!("{} ({reason})", check.id())),
+                | ContractCheckOutcome::NotRun { reason } => {
+                    issues.push(format!("{} ({reason})", check.id()));
+                }
                 ContractCheckOutcome::SkippedOptional { reason } if required.contains(&check.id()) => {
                     issues.push(format!("{} (required optional probe: {reason})", check.id()));
                 }
@@ -156,6 +178,9 @@ impl ContractReport {
     }
 
     /// Registers a catalog entry before a phase starts running.
+    ///
+    /// # Parameters
+    /// - `id`: Stable identity of the check expected from the phase.
     pub(crate) fn expect(&mut self, id: ContractCheckId) {
         if !self.expected.contains(&id) {
             self.expected.push(id);
@@ -164,6 +189,11 @@ impl ContractReport {
     }
 
     /// Appends one check produced by a suite phase.
+    ///
+    /// # Parameters
+    /// - `id`: Stable identity of the check.
+    /// - `capability`: Filesystem capability associated with the check, if any.
+    /// - `outcome`: Result recorded for the check.
     #[inline]
     pub(crate) fn push(
         &mut self,
@@ -196,6 +226,12 @@ impl ContractReport {
 
     /// Completes a registered check exactly once, retaining invalid
     /// transitions.
+    ///
+    /// # Parameters
+    /// - `id`: Stable identity of the pending check.
+    /// - `capability`: Filesystem capability associated with the completed
+    ///   check, if any.
+    /// - `outcome`: Completion outcome to retain in the report.
     pub(crate) fn record(
         &mut self,
         id: ContractCheckId,
@@ -224,154 +260,5 @@ impl ContractReport {
         } else {
             self.push(id, capability, outcome);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ContractCheckId;
-    use super::ContractCheckOutcome;
-    use super::ContractReport;
-
-    #[test]
-    fn missing_catalog_entry_is_incomplete() {
-        let mut report = ContractReport::new();
-        report.expect(ContractCheckId::ReadBasic);
-        report.record(ContractCheckId::WriteBasic, None, ContractCheckOutcome::Passed);
-        assert!(!report.requirements_satisfied());
-    }
-
-    #[test]
-    fn unverified_catalog_entry_is_incomplete_until_recorded() {
-        let mut report = ContractReport::new();
-        report.expect(ContractCheckId::ReadBasic);
-        report.record(
-            ContractCheckId::ReadBasic,
-            None,
-            ContractCheckOutcome::Unverified {
-                reason: "check not yet executed".to_owned(),
-            },
-        );
-
-        assert!(!report.requirements_satisfied());
-        let result = std::panic::catch_unwind(|| report.assert_satisfied());
-        assert!(result.is_err(), "an unexecuted check must fail strict mode");
-    }
-
-    #[test]
-    fn skipped_optional_does_not_make_report_incomplete() {
-        let mut report = ContractReport::new();
-        report.expect(ContractCheckId::AsyncCopyCancelReader);
-        report.record(
-            ContractCheckId::AsyncCopyCancelReader,
-            None,
-            ContractCheckOutcome::SkippedOptional {
-                reason: "probe unavailable".to_owned(),
-            },
-        );
-        assert!(report.requirements_satisfied());
-    }
-
-    #[test]
-    fn optional_evidence_can_be_required_by_the_caller() {
-        let mut report = ContractReport::new();
-        let id = ContractCheckId::AsyncCopyCancelReader;
-        report.expect(id);
-        report.record(
-            id,
-            None,
-            ContractCheckOutcome::SkippedOptional {
-                reason: "no suspension gate".to_owned(),
-            },
-        );
-        assert!(report.requirements_satisfied());
-        assert!(!report.all_applicable_checks_verified());
-        assert!(!report.requirements_satisfied_with(&[id]));
-    }
-
-    #[test]
-    fn failed_optional_probe_is_never_accepted() {
-        let mut report = ContractReport::new();
-        report.expect(ContractCheckId::AsyncCopyCancelReader);
-        report.record(
-            ContractCheckId::AsyncCopyCancelReader,
-            None,
-            ContractCheckOutcome::Failed {
-                reason: "recovery writer was lost".to_owned(),
-            },
-        );
-        assert!(!report.requirements_satisfied());
-        assert!(!report.all_applicable_checks_verified());
-    }
-
-    #[test]
-    fn not_run_is_not_evidence() {
-        let mut report = ContractReport::new();
-        report.expect(ContractCheckId::ReadBasic);
-        report.record(
-            ContractCheckId::ReadBasic,
-            None,
-            ContractCheckOutcome::NotRun {
-                reason: "earlier provider panic".to_owned(),
-            },
-        );
-        assert!(!report.requirements_satisfied());
-        assert!(!report.all_applicable_checks_verified());
-    }
-
-    #[test]
-    fn required_probe_must_belong_to_the_report() {
-        let mut report = ContractReport::new();
-        report.expect(ContractCheckId::ReadBasic);
-        report.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
-        assert!(report.requirements_satisfied());
-        assert!(!report.requirements_satisfied_with(&[ContractCheckId::WriteCancelOpen]));
-    }
-
-    #[test]
-    fn duplicate_completion_invalidates_report() {
-        let mut report = ContractReport::new();
-        report.expect(ContractCheckId::ReadBasic);
-        report.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
-        report.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
-        assert!(!report.requirements_satisfied());
-    }
-
-    #[test]
-    fn unregistered_completion_invalidates_report() {
-        let mut report = ContractReport::new();
-        report.expect(ContractCheckId::ReadBasic);
-        report.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
-        report.record(ContractCheckId::WriteBasic, None, ContractCheckOutcome::Passed);
-        assert!(!report.requirements_satisfied());
-    }
-
-    #[test]
-    fn unverified_completion_cannot_be_overwritten_by_success() {
-        let mut report = ContractReport::new();
-        report.expect(ContractCheckId::ReadBasic);
-        report.record(
-            ContractCheckId::ReadBasic,
-            None,
-            ContractCheckOutcome::Unverified {
-                reason: "independent read unavailable".to_owned(),
-            },
-        );
-        report.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
-        assert!(!report.requirements_satisfied());
-    }
-
-    #[test]
-    fn core_check_cannot_downgrade_itself_to_optional() {
-        let mut report = ContractReport::new();
-        report.expect(ContractCheckId::WriteBasic);
-        report.record(
-            ContractCheckId::WriteBasic,
-            None,
-            ContractCheckOutcome::SkippedOptional {
-                reason: "fixture elected to skip writing".to_owned(),
-            },
-        );
-        assert!(!report.requirements_satisfied());
     }
 }

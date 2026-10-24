@@ -27,7 +27,23 @@ use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Verifies exactly one required guarantee against independently observed
-    /// bytes.
+    /// bytes, including both the copy result and the resulting file contents.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Registered contract check identifying the atomic or durable
+    ///   file-copy guarantee to verify.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the selected guarantee and resulting source and
+    /// destination contents have been verified and recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when the check is not a file-copy guarantee, a
+    /// required capability is accepted despite being unavailable, or the
+    /// provider violates the selected guarantee or its observable contract.
     pub(super) async fn check_strong_file_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let scenario =
@@ -95,10 +111,47 @@ impl AsyncFileSystemContractSuite<'_> {
                 .record_check(id, Some(capability), ContractCheckOutcome::RejectedAsExpected);
             return Ok(());
         }
+        self.verify_available_copy_guarantee(id, scenario, capability, &source_relative, &target_relative, options)
+            .await
+    }
+
+    /// Prepares, executes, and independently observes an advertised copy
+    /// guarantee.
+    ///
+    /// Independent fixture observations establish the initial source bytes and
+    /// destination absence, then verify both files after the copy completes.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Catalog check identifying the guarantee being verified.
+    /// * `scenario` - Copy scenario used to prepare the fixture and request.
+    /// * `capability` - Guarantee advertised by the provider.
+    /// * `source_relative` - Fixture-relative name for the copy source.
+    /// * `target_relative` - Fixture-relative name for the copy destination.
+    /// * `options` - Copy request containing the required guarantee.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the check is recorded as passed or unverified after
+    /// independent observations; otherwise returns a contract failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure if preparation, observation, execution, or
+    /// any required guarantee or content check fails.
+    async fn verify_available_copy_guarantee(
+        &mut self,
+        id: ContractCheckId,
+        scenario: CopyScenario,
+        capability: FileSystemCapability,
+        source_relative: &str,
+        target_relative: &str,
+        options: CopyOptions,
+    ) -> Result<(), ContractFailure> {
         let bytes = b"strong copy contents";
         let prepared = self
             .fixture
-            .prepare_copy(scenario, &source_relative, &target_relative, bytes)
+            .prepare_copy(scenario, source_relative, target_relative, bytes)
             .await
             .map_err(|error| ContractFailure::with_source("strong copy preparation failed", error).at(id))?;
         let case = match prepared {

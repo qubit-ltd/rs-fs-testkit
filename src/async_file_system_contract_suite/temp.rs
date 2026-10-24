@@ -11,10 +11,20 @@ use super::AsyncFileSystemContractSuite;
 use super::FileSystemCapability;
 use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
+use crate::ContractFailure;
 
 impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Executes all asynchronous temporary-resource checks in catalog order.
-    pub(super) async fn check_temp_resources(&mut self) -> Result<(), crate::ContractFailure> {
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after every temporary-resource check completes, or a
+    /// `ContractFailure` when a check cannot complete.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ContractFailure` if any temporary-resource check fails.
+    pub(super) async fn check_temp_resources(&mut self) -> Result<(), ContractFailure> {
         for id in [
             ContractCheckId::TempFile,
             ContractCheckId::TempDirectory,
@@ -27,7 +37,21 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Executes exactly one temporary-resource catalog entry.
-    pub(super) async fn check_temp_item(&mut self, id: ContractCheckId) -> Result<(), crate::ContractFailure> {
+    ///
+    /// The selected identifier must belong to the temporary lifecycle
+    /// contract; execution records the resulting check outcome in the suite
+    /// context.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after recording the check outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ContractFailure` if `id` does not select a temporary
+    /// lifecycle entry, or if the selected provider operation or observation
+    /// fails to satisfy its contract.
+    pub(super) async fn check_temp_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let file = self.capable(FileSystemCapability::TempFile);
         let directory = self.capable(FileSystemCapability::TempDirectory);
@@ -66,7 +90,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 }
             }
             _ => {
-                return Err(crate::ContractFailure::message_only("selected entry is not temporary lifecycle").at(id));
+                return Err(ContractFailure::message_only("selected entry is not temporary lifecycle").at(id));
             }
         };
         self.context.record_check(

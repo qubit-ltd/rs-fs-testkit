@@ -8,19 +8,27 @@
 
 #![cfg(feature = "async")]
 
-pub use ::qubit_fs_testkit;
-use qubit_fs_testkit as testkit;
-mod common;
 use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
 
+pub use ::qubit_fs_testkit;
+use qubit_fs::metadata::FileSystemLimit;
+use qubit_fs::metadata::FileSystemLimits;
+use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
+use qubit_fs_testkit::AsyncWriteCancellationStage;
+use qubit_fs_testkit::ContractCheckId;
+use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContract;
+use qubit_fs_testkit::FixtureSupport;
 
 use self::common::AsyncMemoryFixture;
 use self::common::async_memory_file_system::run_controlled;
+
+mod common;
+
 /// Every stage is acknowledged after multiple real provider suspensions.
 #[test]
 fn test_async_copy_cancellation_waits_for_each_stage() {
@@ -85,8 +93,6 @@ fn test_run_can_require_optional_cancellation_evidence() {
 /// be required explicitly for each stage.
 #[test]
 fn test_unavailable_write_cancellation_stages_are_optional() {
-    use qubit_fs_testkit::ContractCheckOutcome;
-
     let fixture = AsyncMemoryFixture::without_cancellation_cases();
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
@@ -103,7 +109,10 @@ fn test_unavailable_write_cancellation_stages_are_optional() {
                 .iter()
                 .find(|check| check.id() == id)
                 .expect("write cancellation check must be recorded");
-            assert!(matches!(check.outcome(), ContractCheckOutcome::SkippedOptional { reason } if !reason.is_empty()));
+            assert!(matches!(
+                check.outcome(),
+                ContractCheckOutcome::SkippedOptional { reason } if !reason.is_empty()
+            ));
         }
         assert!(run.requirements_satisfied());
         assert!(!run.all_applicable_checks_verified());
@@ -119,8 +128,6 @@ fn test_unavailable_write_cancellation_stages_are_optional() {
 /// One missing stage does not suppress the other three write probes.
 #[test]
 fn test_single_unavailable_write_cancellation_stage_is_independent() {
-    use qubit_fs_testkit::ContractCheckOutcome;
-
     for missing in [
         testkit::AsyncWriteCancellationStage::Open,
         testkit::AsyncWriteCancellationStage::Write,
@@ -163,10 +170,18 @@ fn test_single_unavailable_write_cancellation_stage_is_independent() {
             }
             assert!(run.requirements_satisfied());
             assert!(!run.requirements_satisfied_with(&[match missing {
-                testkit::AsyncWriteCancellationStage::Open => testkit::ContractCheckId::WriteCancelOpen,
-                testkit::AsyncWriteCancellationStage::Write => testkit::ContractCheckId::WriteCancelWrite,
-                testkit::AsyncWriteCancellationStage::Flush => testkit::ContractCheckId::WriteCancelFlush,
-                testkit::AsyncWriteCancellationStage::Commit => testkit::ContractCheckId::WriteCancelCommit,
+                testkit::AsyncWriteCancellationStage::Open => {
+                    testkit::ContractCheckId::WriteCancelOpen
+                }
+                testkit::AsyncWriteCancellationStage::Write => {
+                    testkit::ContractCheckId::WriteCancelWrite
+                }
+                testkit::AsyncWriteCancellationStage::Flush => {
+                    testkit::ContractCheckId::WriteCancelFlush
+                }
+                testkit::AsyncWriteCancellationStage::Commit => {
+                    testkit::ContractCheckId::WriteCancelCommit
+                }
             }]));
         });
         assert!(fixture.is_empty(), "independent stage probes must be cleaned");
@@ -192,11 +207,6 @@ fn test_write_cancellation_rejects_abort_that_publishes() {
 /// Preparing a probe must not request a payload that the facade must reject.
 #[test]
 fn test_write_cancellation_probe_respects_declared_write_limits() {
-    use qubit_fs::metadata::FileSystemLimit;
-    use qubit_fs::metadata::FileSystemLimits;
-    use qubit_fs_testkit::AsyncWriteCancellationStage;
-    use qubit_fs_testkit::FixtureSupport;
-
     for maximum in [1, 4] {
         let fixture = AsyncMemoryFixture::with_cancellation_limits(
             FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(maximum)),
@@ -256,10 +266,6 @@ fn test_unavailable_copy_does_not_require_cancellation_probes() {
 /// An executed optional probe failure invalidates the entire run.
 #[test]
 fn test_failed_optional_write_probe_invalidates_run() {
-    use qubit_fs_testkit::ContractCheckId;
-    use qubit_fs_testkit::ContractCheckOutcome;
-    use qubit_fs_testkit::FileSystemContract;
-
     let fixture =
         AsyncMemoryFixture::with_fault(self::common::async_memory_file_system::AsyncMemoryFault::WriteAbortPublishes);
     run_controlled(async {
@@ -288,10 +294,6 @@ fn test_failed_optional_write_probe_invalidates_run() {
 /// Copy cancellation must verify an abort's claim against the actual target.
 #[test]
 fn test_failed_optional_copy_probe_invalidates_run() {
-    use qubit_fs_testkit::ContractCheckId;
-    use qubit_fs_testkit::ContractCheckOutcome;
-    use qubit_fs_testkit::FileSystemContract;
-
     let fixture =
         AsyncMemoryFixture::with_fault(self::common::async_memory_file_system::AsyncMemoryFault::CopyAbortPublishes);
     run_controlled(async {

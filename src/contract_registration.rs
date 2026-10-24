@@ -28,18 +28,18 @@ macro_rules! register_file_system_contract_tests {
                 };
             }
 
-            contract_test!(properties, Properties);
-            contract_test!(stat, Stat);
-            contract_test!(read, Read);
-            contract_test!(write, Write);
-            contract_test!(list, List);
-            contract_test!(create_directory, CreateDirectory);
-            contract_test!(representations, Representations);
-            contract_test!(delete, Delete);
-            contract_test!(copy, Copy);
-            contract_test!(rename, Rename);
-            contract_test!(temp_resources, TempResources);
-            contract_test!(error_context, ErrorContext);
+            contract_test!(test_properties, Properties);
+            contract_test!(test_stat, Stat);
+            contract_test!(test_read, Read);
+            contract_test!(test_write, Write);
+            contract_test!(test_list, List);
+            contract_test!(test_create_directory, CreateDirectory);
+            contract_test!(test_representations, Representations);
+            contract_test!(test_delete, Delete);
+            contract_test!(test_copy, Copy);
+            contract_test!(test_rename, Rename);
+            contract_test!(test_temp_resources, TempResources);
+            contract_test!(test_error_context, ErrorContext);
         }
     };
 }
@@ -73,18 +73,18 @@ macro_rules! register_async_file_system_contract_tests {
                 };
             }
 
-            contract_test!(properties, Properties);
-            contract_test!(stat, Stat);
-            contract_test!(read, Read);
-            contract_test!(write, Write);
-            contract_test!(list, List);
-            contract_test!(create_directory, CreateDirectory);
-            contract_test!(representations, Representations);
-            contract_test!(delete, Delete);
-            contract_test!(copy, Copy);
-            contract_test!(rename, Rename);
-            contract_test!(temp_resources, TempResources);
-            contract_test!(error_context, ErrorContext);
+            contract_test!(test_properties, Properties);
+            contract_test!(test_stat, Stat);
+            contract_test!(test_read, Read);
+            contract_test!(test_write, Write);
+            contract_test!(test_list, List);
+            contract_test!(test_create_directory, CreateDirectory);
+            contract_test!(test_representations, Representations);
+            contract_test!(test_delete, Delete);
+            contract_test!(test_copy, Copy);
+            contract_test!(test_rename, Rename);
+            contract_test!(test_temp_resources, TempResources);
+            contract_test!(test_error_context, ErrorContext);
         }
     };
 }

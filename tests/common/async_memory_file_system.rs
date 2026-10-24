@@ -190,6 +190,7 @@ pub(crate) fn run_controlled<T>(future: impl Future<Output = T>) -> T {
 
 /// Async fixture whose copy pipeline exposes one real pending point per stage.
 #[cfg(feature = "async")]
+#[must_use]
 pub struct AsyncMemoryFixture {
     file_system: AsyncFileSystem,
     fault: AsyncMemoryFault,
@@ -237,6 +238,7 @@ struct CopyGate {
 #[cfg(feature = "async")]
 impl CopyGate {
     /// Creates a disarmed gate with no retained caller waker.
+    #[must_use]
     fn new() -> Self {
         Self {
             stage: AsyncCopyCancellationStage::NativeAttempt,
@@ -832,6 +834,7 @@ impl AsyncMemoryFixture {
         )
     }
 
+    /// Creates a fixture advertising every supported asynchronous capability.
     pub fn with_all_capabilities() -> Self {
         Self::with_configuration(
             AsyncMemoryFault::None,
@@ -927,13 +930,6 @@ impl AsyncMemoryFixture {
             .expect("async fixture hook error lock must succeed")
             .fail_at(hook, call);
         fixture
-    }
-
-    fn fixture_hook_fails(&self, hook: FixtureHook) -> bool {
-        self.fixture_hook_errors
-            .lock()
-            .expect("async fixture hook error lock must succeed")
-            .should_fail(hook)
     }
 
     /// Creates a fixture with selected copy and fault behavior.
@@ -1037,28 +1033,22 @@ impl AsyncMemoryFixture {
         }
     }
 
-    /// Injects an incompatible logical path into one selected negative probe.
-    pub fn with_invalid_probe_path(mut self, suffix: &'static str) -> Self {
-        self.invalid_probe_path = Some(suffix);
-        self
-    }
-
     /// Reports whether a write probe still owns an armed gate.
+    #[must_use]
+    #[inline]
     pub fn write_cancellation_is_armed(&self) -> bool {
         self.write_gate.lock().expect("write gate lock").is_armed()
     }
 
-    /// Toggles a stat panic that can be activated after a contract body.
-    pub fn set_cleanup_stat_panics(&self, panics: bool) {
-        self.cleanup_stat_panics.store(panics, Ordering::Release);
-    }
-
     /// Returns stages acknowledged by the provider's actual write gate.
+    #[inline]
     pub fn write_cancellation_stages(&self) -> Vec<AsyncWriteCancellationStage> {
         self.write_gate.lock().expect("write gate lock").observed.clone()
     }
 
     /// Returns whether the fixture namespace contains no resources.
+    #[must_use]
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.entries
             .lock()
@@ -1067,31 +1057,69 @@ impl AsyncMemoryFixture {
     }
 
     /// Returns how many contract paths the suite requested from this fixture.
+    #[must_use]
+    #[inline]
     pub fn path_call_count(&self) -> usize {
         self.path_calls.load(Ordering::Relaxed)
     }
 
+    /// Returns how many file-seed operations contract checks requested.
+    #[must_use]
+    #[inline]
     pub fn seed_file_call_count(&self) -> usize {
         self.seed_file_calls.load(Ordering::Relaxed)
     }
 
+    /// Returns how many directory-seed operations contract checks requested.
+    #[must_use]
+    #[inline]
     pub fn seed_directory_call_count(&self) -> usize {
         self.seed_directory_calls.load(Ordering::Relaxed)
     }
 
+    /// Returns how many independent existence observations contract checks
+    /// requested.
+    #[must_use]
+    #[inline]
     pub fn exists_call_count(&self) -> usize {
         self.exists_calls.load(Ordering::Relaxed)
     }
 
+    /// Returns how many temporary-resource creation requests the fixture
+    /// handled.
+    #[must_use]
+    #[inline]
     pub fn temp_creation_call_count(&self) -> usize {
         self.temp_creation_calls.load(Ordering::Relaxed)
     }
 
+    /// Returns how many times contract checks invoked the selected fixture
+    /// hook.
+    #[must_use]
+    #[inline]
     pub fn fixture_hook_call_count(&self, hook: FixtureHook) -> usize {
         self.fixture_hook_errors
             .lock()
             .expect("fixture hook error lock must succeed")
             .call_count(hook)
+    }
+
+    /// Injects an incompatible logical path into one selected negative probe.
+    pub fn with_invalid_probe_path(mut self, suffix: &'static str) -> Self {
+        self.invalid_probe_path = Some(suffix);
+        self
+    }
+
+    /// Toggles a stat panic that can be activated after a contract body.
+    pub fn set_cleanup_stat_panics(&self, panics: bool) {
+        self.cleanup_stat_panics.store(panics, Ordering::Release);
+    }
+
+    fn fixture_hook_fails(&self, hook: FixtureHook) -> bool {
+        self.fixture_hook_errors
+            .lock()
+            .expect("async fixture hook error lock must succeed")
+            .should_fail(hook)
     }
 }
 
@@ -1734,11 +1762,14 @@ struct AsyncMemorySpi {
 #[cfg(feature = "async")]
 impl AsyncMemorySpi {
     /// Reads the currently selected pending stage.
+    #[inline]
     fn stage(&self) -> AsyncCopyCancellationStage {
         *self.stage.lock().expect("async stage lock must succeed")
     }
 
     /// Returns whether a cancellation probe currently controls this stage.
+    #[must_use]
+    #[inline]
     fn gate_controls(&self, stage: AsyncCopyCancellationStage) -> bool {
         self.copy_gate
             .lock()

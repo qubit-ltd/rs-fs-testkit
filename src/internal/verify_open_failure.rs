@@ -23,6 +23,28 @@ use crate::ContractFailure;
 /// Unexpected context, stage, or recovery ownership produces a contract failure
 /// retaining the complete original opening failure. Callers can take its source
 /// and explicitly recover; validation never silently drops an isolated session.
+///
+/// # Type Parameters
+///
+/// * `R` — the recovery resource type owned by the opening failure. It must be
+///   transferable between threads and live for the `'static` lifetime so the
+///   complete failure can be retained as a contract failure source.
+///
+/// # Parameters
+///
+/// * `failure` — the opening failure to validate and retain on mismatch.
+/// * `kind` — the required filesystem error kind.
+/// * `operation` — the filesystem operation that was expected to fail.
+/// * `path` — the path at which the operation was expected to fail.
+/// * `provider` — the provider name expected when the error identifies one.
+/// * `capability` — the required capability recorded by the error, if any.
+/// * `check` — the contract check identifier attached to a mismatch.
+///
+/// # Errors
+///
+/// Returns a [`ContractFailure`] containing the original `failure` when its
+/// stage, recovery ownership, or error context differs from the expected
+/// rejection.
 pub(crate) fn verify_open_failure<R: Send + 'static>(
     failure: OpenFailure<R>,
     kind: FsErrorKind,

@@ -21,7 +21,22 @@ use crate::FixtureSupport;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Executes one independently prepared conflict and records its evidence.
+    /// Checks that create-new writes reject an existing target and records the
+    /// evidence.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after recording the check outcome, including when the
+    /// check is not applicable or cannot be verified.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the check catalog has no preparation scenario for this check.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] if the check cannot be executed or the
+    /// observed contract outcome is invalid.
     pub(super) async fn check_create_conflict(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::WriteCreateConflict;
         let outcome = self.execute_create_conflict().await.map_err(|failure| failure.at(id))?;
@@ -30,8 +45,26 @@ impl AsyncFileSystemContractSuite<'_> {
         Ok(())
     }
 
-    /// Requires both real rejection and preservation of independently seeded
-    /// bytes.
+    /// Runs the create-new conflict contract against an independently seeded
+    /// target.
+    ///
+    /// The check requires the write to be rejected as already existing and the
+    /// target's original bytes to remain unchanged.
+    ///
+    /// # Returns
+    ///
+    /// Returns `RejectedAsExpected` when the conflict is verified, or an
+    /// unverified or not-applicable outcome when fixture support or write
+    /// capability is unavailable.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the check catalog has no preparation scenario for this check.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] when fixture preparation or observation
+    /// fails, or when the write violates the conflict contract.
     async fn execute_create_conflict(&mut self) -> Result<ContractCheckOutcome, ContractFailure> {
         let id = ContractCheckId::WriteCreateConflict;
         if !self.capable(FileSystemCapability::Write) {

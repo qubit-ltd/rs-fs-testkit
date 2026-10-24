@@ -6,8 +6,9 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-pub use ::qubit_fs_testkit;
 mod common;
+
+pub use ::qubit_fs_testkit;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::AtomicityRequirement;
 use qubit_fs::path::Path;
@@ -21,6 +22,7 @@ use qubit_fs_testkit::FixtureSupport;
 
 use self::common::MemoryFault;
 use self::common::MemoryFixture;
+
 fn assert_fixture_file(fixture: &MemoryFixture, path: &Path, expected: &[u8]) {
     match fixture.read_file(path).expect("fixture file observation must succeed") {
         FixtureSupport::Supported(actual) => assert_eq!(actual, expected),

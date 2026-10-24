@@ -21,6 +21,20 @@ use crate::internal::verify_condition;
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes one replacement scenario and attributes preparation or I/O
     /// failures.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after recording the replacement outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ContractFailure` attributed to `WriteReplace` if fixture
+    /// preparation or replacement verification fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `WriteReplace` catalog entry has no write preparation
+    /// scenario.
     pub(super) async fn check_replace(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::WriteReplace;
         let outcome = self.execute_replace().await.map_err(|failure| failure.at(id))?;

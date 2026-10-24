@@ -23,7 +23,26 @@ use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
     /// Executes one basic copy requirement with independently prepared
-    /// contents.
+    /// contents. The check records whether the fixture can copy distinct file
+    /// contents with the required options and reports capability rejection
+    /// when the basic copy contract requires it.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Identity of the copy contract check whose evidence is recorded.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the check records passing, expected rejection, or
+    /// non-applicable/unverified evidence. Returns `ContractFailure` when path
+    /// or source preparation, copy execution, or a required contract
+    /// observation fails.
+    ///
+    /// # Errors
+    ///
+    /// The failure retains the underlying fixture or filesystem error when
+    /// available, or describes the contract mismatch that prevented reliable
+    /// evidence from being recorded. The failure is attributed to `id`.
     pub(super) fn check_basic_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let source_relative = self.context.relative_name("copy-source");

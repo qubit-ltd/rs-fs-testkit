@@ -22,6 +22,14 @@ use crate::internal::verify_fs_error;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes the catalog's property entries in independent scopes.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after all catalog entries pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first contract failure reported while checking an entry.
     pub(super) async fn check_properties(&mut self) -> Result<(), ContractFailure> {
         for spec in check_catalog::for_contract(FileSystemContract::Properties, true) {
             self.check_properties_item(spec.id).await?;
@@ -30,6 +38,18 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 
     /// Records one selected property check without preparing sibling checks.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: identifies the property contract check to validate and record.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the selected check is recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure if the selected check cannot be validated.
     pub(super) async fn check_properties_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let expected = self.context.properties();

@@ -8,15 +8,17 @@
 //! A capability claim cannot be satisfied by skipping its positive scenario.
 
 pub use ::qubit_fs_testkit;
-use qubit_fs as qfs;
-use qubit_fs_testkit as testkit;
+
 mod common;
+
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
+use qubit_fs as qfs;
 use qubit_fs::FileSystem;
 use qubit_fs::path::Path;
 use qubit_fs::write::WriteDisposition;
+use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContract;

@@ -18,7 +18,19 @@ use crate::FixtureSupport;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Executes representation entries without sharing fixture preparation.
+    /// Executes the empty-directory and symbolic-link checks independently.
+    ///
+    /// Each entry prepares its own fixture and may perform asynchronous
+    /// filesystem I/O. Preparation and observation failures stop the sequence.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after both checks complete, including checks recorded as
+    /// not applicable or unverified.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first contract failure from either representation check.
     pub(super) async fn check_representations(&mut self) -> Result<(), ContractFailure> {
         for id in [
             ContractCheckId::RepresentationEmpty,
@@ -29,7 +41,28 @@ impl AsyncFileSystemContractSuite<'_> {
         Ok(())
     }
 
-    /// Requires a real seeded representation for every advertised capability.
+    /// Seeds and verifies the representation selected by `id` when its
+    /// capability is advertised by the provider.
+    ///
+    /// Unsupported fixture preparation is recorded as unverified. Successful
+    /// preparation is observed through asynchronous metadata I/O. A non-
+    /// representation identifier or a failed preparation, observation, or
+    /// verification returns a contract failure.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Identifier selecting the empty-directory or symbolic-link
+    ///   representation check.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the check passes or is recorded as not applicable or
+    /// unverified.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure if `id` is not a representation check or
+    /// fixture preparation, metadata observation, or verification fails.
     pub(super) async fn check_representation_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let (capability, name) = match id {
             ContractCheckId::RepresentationEmpty => (FileSystemCapability::EmptyDirectory, "empty-directory"),

@@ -14,6 +14,14 @@ use crate::FileSystemContractSuite;
 
 impl FileSystemContractSuite<'_> {
     /// Runs every applicable copy check using the catalog's registered order.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after all applicable checks complete.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first failure produced by a copy check.
     pub(super) fn check_copy(&mut self) -> Result<(), ContractFailure> {
         for spec in crate::internal::check_catalog::for_contract(FileSystemContract::Copy, false) {
             self.check_copy_item(spec.id)?;
@@ -22,6 +30,15 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Executes only the selected copy requirement.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when the selected check completes successfully.
+    ///
+    /// # Errors
+    ///
+    /// Returns the selected check's failure, or a failure identifying an
+    /// unsupported check identifier.
     pub(super) fn check_copy_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         match id {
             ContractCheckId::CopyBasic => self.check_basic_copy(id),

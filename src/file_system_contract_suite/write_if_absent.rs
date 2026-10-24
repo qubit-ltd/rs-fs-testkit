@@ -25,6 +25,12 @@ use crate::internal::verify_open_failure;
 
 impl FileSystemContractSuite<'_> {
     /// Records only the If-Absent check, retaining original errors on failure.
+    ///
+    /// # Returns
+    /// Returns successfully after recording the check outcome.
+    ///
+    /// # Errors
+    /// Returns the contract failure produced while executing the check.
     pub(super) fn check_write_if_absent(&mut self) -> Result<(), ContractFailure> {
         let outcome = self.execute_write_if_absent()?;
         self.context.record_check(
@@ -37,6 +43,17 @@ impl FileSystemContractSuite<'_> {
 
     /// Publishes once, rejects a second publication, and observes retained
     /// bytes.
+    ///
+    /// # Returns
+    /// Returns the observed outcome when the conditional-write contract can be
+    /// evaluated.
+    ///
+    /// # Errors
+    /// Returns a contract failure if setup, publication, or observation
+    /// violates the If-Absent contract.
+    ///
+    /// # Panics
+    /// Panics if the write-check catalog entry has no preparation scenario.
     fn execute_write_if_absent(&mut self) -> Result<ContractCheckOutcome, ContractFailure> {
         let id = ContractCheckId::WriteIfAbsent;
         let relative = self.context.relative_name("write-conditional");

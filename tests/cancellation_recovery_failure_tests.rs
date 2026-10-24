@@ -8,22 +8,26 @@
 //! Cancellation failures transfer usable recovery ownership through the report.
 #![cfg(feature = "async")]
 
-pub use ::qubit_fs_testkit;
-use qubit_fs::write::AsyncWriterRecovery;
+use std::error::Error;
 
-use crate::qubit_fs_testkit as testkit;
-mod common;
+pub use ::qubit_fs_testkit;
+use qubit_fs::error::FsErrorKind;
 use qubit_fs::write::AsyncFileWriter;
+use qubit_fs::write::AsyncWriterRecovery;
 use qubit_fs::write::WriteAbortOutcome;
+use qubit_fs_testkit::AsyncFileSystemContractSuite;
+use qubit_fs_testkit::ContractAsyncCopyFailure;
+use qubit_fs_testkit::ContractCheckId;
+use qubit_fs_testkit::ContractSource;
+use qubit_fs_testkit::ContractWriterFailure;
 
 use self::common::AsyncMemoryFault;
 use self::common::AsyncMemoryFixture;
 use self::common::async_memory_file_system::run_controlled;
-use crate::qubit_fs_testkit::AsyncFileSystemContractSuite;
-use crate::qubit_fs_testkit::ContractAsyncCopyFailure;
-use crate::qubit_fs_testkit::ContractCheckId;
-use crate::qubit_fs_testkit::ContractSource;
-use crate::qubit_fs_testkit::ContractWriterFailure;
+use crate::qubit_fs_testkit as testkit;
+
+mod common;
+
 /// Both probe drivers retain a writer when explicit recovery abort fails.
 #[test]
 fn test_failed_cancellation_abort_retains_writer() {
@@ -37,7 +41,7 @@ fn test_failed_cancellation_abort_retains_writer() {
             let run = suite.run_check(id).await;
             let failure = &run.failures()[0];
             assert_eq!(failure.check(), Some(id));
-            let source = std::error::Error::source(failure)
+            let source = Error::source(failure)
                 .expect("source")
                 .downcast_ref::<ContractSource>()
                 .expect("recovery source");
@@ -71,7 +75,7 @@ fn test_copy_error_before_requested_stage_retains_operation() {
             let run = suite.run_check(id).await;
             let failure = &run.failures()[0];
             assert_eq!(failure.check(), Some(id));
-            let source = std::error::Error::source(failure)
+            let source = Error::source(failure)
                 .expect("source")
                 .downcast_ref::<ContractSource>()
                 .expect("operation source");
@@ -80,11 +84,11 @@ fn test_copy_error_before_requested_stage_retains_operation() {
                 .expect("operation ownership")
                 .downcast::<ContractAsyncCopyFailure>()
                 .expect("copy failure");
-            assert_eq!(retained.error().kind(), qubit_fs::error::FsErrorKind::PermissionDenied);
+            assert_eq!(retained.error().kind(), FsErrorKind::PermissionDenied);
             assert_eq!(retained.failure().partial_stats().bytes, 0);
             assert!(format!("{retained:?}").contains("has_operation"));
             assert!(format!("{retained}").contains("original failure"));
-            assert!(std::error::Error::source(&*retained).is_some());
+            assert!(Error::source(&*retained).is_some());
             assert!(retained.operation().expect("admitted operation").has_recovery());
             let mut writer = retained
                 .operation_mut()
@@ -119,7 +123,7 @@ fn test_write_error_before_requested_stage_retains_operation() {
         let run = suite.run_check(ContractCheckId::WriteCancelCommit).await;
         let failure = &run.failures()[0];
         assert_eq!(failure.check(), Some(ContractCheckId::WriteCancelCommit));
-        let source = std::error::Error::source(failure)
+        let source = Error::source(failure)
             .expect("source")
             .downcast_ref::<ContractSource>()
             .expect("operation source");
@@ -128,11 +132,11 @@ fn test_write_error_before_requested_stage_retains_operation() {
             .expect("operation ownership")
             .downcast::<testkit::ContractAsyncWriteFailure>()
             .expect("copy failure");
-        assert_eq!(retained.error().kind(), qubit_fs::error::FsErrorKind::PermissionDenied);
+        assert_eq!(retained.error().kind(), FsErrorKind::PermissionDenied);
         assert_eq!(retained.failure().written_bytes(), 0);
         assert!(format!("{retained:?}").contains("has_operation"));
         assert!(format!("{retained}").contains("original failure"));
-        assert!(std::error::Error::source(&*retained).is_some());
+        assert!(Error::source(&*retained).is_some());
         assert!(retained.operation().expect("admitted operation").has_recovery());
         let mut writer = retained
             .operation_mut()

@@ -64,6 +64,7 @@ pub mod rustdoc_provider {
     type Files = Arc<Mutex<BTreeMap<String, Vec<u8>>>>;
 
     /// Creates isolated storage containing `/report` with six bytes.
+    #[must_use]
     pub fn filesystem() -> FileSystem {
         let files = BTreeMap::from([("/report".to_owned(), b"report".to_vec())]);
         FileSystem::from_spi(Memory {
@@ -227,7 +228,7 @@ pub mod rustdoc_provider {
 }
 
 #[cfg(feature = "async")]
-#[path = "async_recording_spi.rs"]
+#[path = "internal/async_recording_spi.rs"]
 pub mod async_recording_spi;
 #[cfg(feature = "async")]
 #[path = "poll_support.rs"]
@@ -235,6 +236,7 @@ pub mod poll_support;
 
 /// Creates the shared asynchronous facade used by Rustdoc examples.
 #[cfg(feature = "async")]
+#[must_use]
 pub fn async_filesystem() -> AsyncFileSystem {
     async_recording_spi::async_recording_file_system(async_recording_spi::AsyncRecordingConfig::default()).0
 }

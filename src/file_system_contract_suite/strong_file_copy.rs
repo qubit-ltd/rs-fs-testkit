@@ -28,6 +28,17 @@ use crate::internal::verify_condition;
 impl FileSystemContractSuite<'_> {
     /// Verifies exactly one required guarantee against independently observed
     /// bytes.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when the guarantee is met, rejected as expected, or
+    /// cannot be independently verified.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ContractFailure` when the selected check is not a file-copy
+    /// guarantee, fixture operations fail, or observed copy behavior violates
+    /// the required contract.
     pub(super) fn check_strong_file_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let scenario =

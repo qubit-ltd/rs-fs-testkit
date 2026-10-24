@@ -246,6 +246,10 @@ impl ContractCheckId {
     ];
 
     /// Returns the sole phase responsible for this check.
+    ///
+    /// # Returns
+    ///
+    /// The contract phase that owns this check.
     #[must_use]
     pub const fn contract(self) -> crate::FileSystemContract {
         crate::internal::check_catalog::specification(self).contract
@@ -255,12 +259,20 @@ impl ContractCheckId {
     ///
     /// Executed failures are never optional. Callers can require these probes
     /// through the report's explicit requirement selection.
+    ///
+    /// # Returns
+    ///
+    /// `true` when missing instrumentation may skip this probe.
     #[must_use]
     pub const fn is_optional(self) -> bool {
         crate::internal::check_catalog::specification(self).optional
     }
 
     /// Returns whether the synchronous driver can execute this check.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the synchronous driver supports this check.
     #[must_use]
     pub const fn supports_synchronous(self) -> bool {
         !crate::internal::check_catalog::specification(self).asynchronous_only

@@ -9,9 +9,13 @@
 
 #![allow(dead_code)]
 
+use std::panic::catch_unwind;
+use std::panic::UnwindSafe;
+
 /// Runs `operation` and returns its panic payload as text.
-pub fn catch_message(operation: impl FnOnce() + std::panic::UnwindSafe) -> String {
-    match std::panic::catch_unwind(operation) {
+#[must_use]
+pub fn catch_message(operation: impl FnOnce() + UnwindSafe) -> String {
+    match catch_unwind(operation) {
         Ok(()) => panic!("operation unexpectedly succeeded"),
         Err(payload) => payload
             .downcast_ref::<String>()

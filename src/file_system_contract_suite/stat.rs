@@ -15,11 +15,21 @@ use crate::ContractCheckOutcome;
 use crate::ContractFailure;
 use crate::FileSystemContractSuite;
 use crate::FixtureSupport;
+use crate::internal::check_catalog::specification;
 use crate::internal::verify_condition;
 use crate::internal::verify_fs_error;
 
 impl FileSystemContractSuite<'_> {
     /// Executes both metadata entries through their independent drivers.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after both entries are recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] when either metadata check cannot prepare
+    /// or verify its filesystem evidence.
     pub(super) fn check_stat(&mut self) -> Result<(), ContractFailure> {
         for id in [ContractCheckId::StatBasic, ContractCheckId::StatFileKind] {
             self.check_stat_item(id)?;
@@ -28,9 +38,22 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Records exactly the selected metadata entry.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Metadata check to execute and record.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the selected entry is recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ContractFailure`] if fixture preparation or evidence
+    /// verification fails, or if `id` does not identify a metadata check.
     pub(super) fn check_stat_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
-        let spec = crate::internal::check_catalog::specification(id);
+        let spec = specification(id);
         let outcome = match id {
             ContractCheckId::StatBasic => {
                 let relative = self.context.relative_name("stat-missing");

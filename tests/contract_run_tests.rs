@@ -8,14 +8,16 @@
 //! A suite retains its completed result and rejects another execution session.
 
 pub use ::qubit_fs_testkit;
+mod common;
+
 use qubit_fs as qfs;
 use qubit_fs_testkit as testkit;
-mod common;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 
 use self::common::MemoryFault;
 use self::common::MemoryFixture;
+
 #[test]
 fn test_result_remains_in_the_suite() {
     let fixture = MemoryFixture::new();

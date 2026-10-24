@@ -42,7 +42,6 @@ mod create_conflict;
 mod replace;
 // Implements independently prepared explicit abort.
 mod abort;
-// Implements namespace and metadata contracts.
 // Implements independently prepared metadata checks.
 mod stat;
 // Implements independently observed directory creation.
@@ -57,17 +56,20 @@ mod delete_tree;
 mod rename;
 // Implements independent hierarchy and object listing.
 mod list;
+// Implements independent namespace completeness checks.
 mod namespace;
 // Implements copy contracts.
 mod basic_copy;
 mod copy;
 mod copy_conflict;
 mod server_side_copy;
+// Implements independently observed file-copy guarantees.
 mod strong_file_copy;
 mod strong_tree_copy;
 // Implements temporary resource contracts.
 mod temp;
 mod temp_directory_check;
+// Implements temporary file lifecycle and publication evidence.
 mod temp_file_check;
 // Implements fixture adaptation and suite lifecycle support.
 mod support;
@@ -96,6 +98,7 @@ pub struct FileSystemContractSuite<'a> {
     fixture: &'a dyn FileSystemFixture,
     /// Property snapshot and cleanup state for the current suite run.
     context: ContractContext,
+    /// Whether cleanup has already been attempted for this suite.
     teardown_completed: bool,
 }
 
@@ -119,23 +122,50 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Returns the result retained by this suite, including a failed session.
+    #[must_use = "inspect the retained contract run"]
+    #[inline]
     pub const fn run(&self) -> &crate::ContractRun {
         &self.context.run
     }
 
+    /// Returns the report currently accumulated by this suite.
+    #[must_use = "inspect the accumulated contract report"]
+    #[inline]
+    pub fn report(&self) -> &ContractReport {
+        self.context.report()
+    }
+
     /// Executes all phases once and retains both execution and cleanup
     /// failures.
+    ///
+    /// # Returns
+    /// The retained execution result after the suite finishes.
+    #[must_use = "inspect the retained contract run"]
     pub fn run_all(&mut self) -> &crate::ContractRun {
         self.run_selected(&FileSystemContract::ALL, None)
     }
 
     /// Executes one phase once and retains its result in the suite.
+    ///
+    /// # Parameters
+    /// * `contract` - Contract phase to execute.
+    ///
+    /// # Returns
+    /// The retained execution result after the phase finishes.
+    #[must_use = "inspect the retained contract run"]
     pub fn run_contract(&mut self, contract: FileSystemContract) -> &crate::ContractRun {
         self.run_selected(&[contract], None)
     }
 
     /// Executes one selected check in a fresh session and retains its cleanup
     /// result.
+    ///
+    /// # Parameters
+    /// * `id` - Check identity to execute.
+    ///
+    /// # Returns
+    /// The retained execution result after the check finishes.
+    #[must_use = "inspect the retained contract run"]
     pub fn run_check(&mut self, id: crate::ContractCheckId) -> &crate::ContractRun {
         self.run_selected(&[id.contract()], Some(id))
     }
@@ -195,12 +225,6 @@ impl<'a> FileSystemContractSuite<'a> {
         }
         self.context.run.completed = true;
         &self.context.run
-    }
-
-    /// Returns the report currently accumulated by this suite.
-    #[inline]
-    pub fn report(&self) -> &ContractReport {
-        self.context.report()
     }
 
     /// Resolves focused execution without running sibling checks.

@@ -27,8 +27,26 @@ use crate::FixtureSupport;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
-    /// Verifies exactly one required guarantee against independently observed
-    /// bytes.
+    /// Verifies one required tree-copy guarantee using independent filesystem
+    /// observations.
+    ///
+    /// Unsupported guarantees must be rejected without changing the target;
+    /// supported guarantees must publish the prepared tree with the requested
+    /// atomicity or durability and preserve the observed contents.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Catalog entry identifying the tree-copy guarantee to check.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after recording the result, including when the check is not
+    /// applicable or cannot be independently verified.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when preparation, copy execution, or an
+    /// observed guarantee does not match the selected contract.
     pub(super) async fn check_strong_tree_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let spec = crate::internal::check_catalog::specification(id);
@@ -208,8 +226,6 @@ impl AsyncFileSystemContractSuite<'_> {
                 "strong copy changed source or published incorrect target contents",
             )?;
         }
-        self.context
-            .record_check(id, Some(capability), ContractCheckOutcome::Passed);
         Ok(())
     }
 }

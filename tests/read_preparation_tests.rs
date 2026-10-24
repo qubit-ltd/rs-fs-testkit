@@ -8,6 +8,7 @@
 //! Read scenarios retain precise ordinary failures and independent setup.
 
 pub use ::qubit_fs_testkit;
+
 mod common;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractCheckOutcome;

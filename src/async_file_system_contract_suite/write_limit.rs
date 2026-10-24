@@ -24,6 +24,16 @@ use crate::internal::verify_condition;
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes the boundary and successor requests, preserving typed failures.
     /// Cancellation leaves prepared destinations in the suite cleanup ledger.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when fixture preparation, either write request, or
+    /// independent boundary observation violates the write-limit contract.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after recording the check outcome, including an
+    /// optional skip when a finite bounded probe cannot be made.
     pub(super) async fn check_write_limit(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::WriteLimit;
         let outcome = self.execute_write_limit().await?;
@@ -33,6 +43,23 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 
     /// Requires independently observed boundary bytes and a rejected successor.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when preparation or execution fails, the successor is
+    /// accepted, the boundary result differs, or independent observation does
+    /// not confirm the published bytes.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Passed` when both bounded requests satisfy the write-limit
+    /// contract, or `SkippedOptional` when no bounded finite probe is
+    /// available.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the write-limit check catalog entry has no preparation
+    /// scenario.
     async fn execute_write_limit(&mut self) -> Result<ContractCheckOutcome, ContractFailure> {
         let id = ContractCheckId::WriteLimit;
         let limit = self.context.properties().limits().max_write_bytes();

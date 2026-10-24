@@ -25,6 +25,15 @@ use crate::internal::verify_open_failure;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Records only the If-Absent check, retaining original errors on failure.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after recording the check outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns the original contract failure if the check cannot verify the
+    /// conditional creation behavior.
     pub(super) async fn check_write_if_absent(&mut self) -> Result<(), ContractFailure> {
         let outcome = self.execute_write_if_absent().await?;
         self.context.record_check(
@@ -37,6 +46,20 @@ impl AsyncFileSystemContractSuite<'_> {
 
     /// Publishes once, rejects a second publication, and observes retained
     /// bytes.
+    ///
+    /// # Returns
+    ///
+    /// The outcome of checking the If-Absent contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when request preparation, publication, or
+    /// independent observation fails to satisfy the If-Absent contract.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the write check has no preparation scenario in the internal
+    /// check catalog.
     async fn execute_write_if_absent(&mut self) -> Result<ContractCheckOutcome, ContractFailure> {
         let id = ContractCheckId::WriteIfAbsent;
         let relative = self.context.relative_name("write-conditional");

@@ -28,18 +28,35 @@ use crate::FixtureError;
 use crate::internal::cleanup_failure::CleanupFailure;
 use crate::internal::tracked_resource::TrackedResource;
 
-/// Holds the immutable snapshot, report, and cleanup ledger for one run.
+/// Holds the immutable filesystem snapshot, accumulated report, and cleanup
+/// ledger for one contract-suite run.
 pub(crate) struct ContractContext {
+    /// Immutable capabilities and limits captured when the suite starts.
     properties: FileSystemProperties,
+    /// Counter used to make names unique within the current run.
     name_counter: u64,
+    /// Resources still owned by the suite's cleanup process.
     resources: Vec<TrackedResource>,
+    /// Check name attached to newly created diagnostic paths.
     current_contract: &'static str,
+    /// Report, cleanup history, and failures accumulated during this run.
     pub(crate) run: crate::ContractRun,
+    /// Monotonic creation order assigned to tracked resources.
     resource_index: u64,
 }
 
 impl ContractContext {
     /// Creates context from the facade's cached immutable property snapshot.
+    ///
+    /// # Parameters
+    ///
+    /// `properties` is the immutable property snapshot already read by the
+    /// facade.
+    ///
+    /// # Returns
+    ///
+    /// A context initialized for a new contract-suite run.
+    #[must_use]
     #[inline]
     pub(crate) fn new(properties: &FileSystemProperties) -> Self {
         Self {
@@ -53,19 +70,14 @@ impl ContractContext {
     }
 
     /// Returns the suite's immutable property snapshot.
+    #[must_use = "the filesystem property snapshot must be inspected"]
     #[inline]
     pub(crate) const fn properties(&self) -> &FileSystemProperties {
         &self.properties
     }
 
-    /// Starts a named contract assertion and advances the unique-name counter.
-    #[inline]
-    pub(crate) fn begin(&mut self, contract: &'static str) {
-        self.current_contract = contract;
-        self.name_counter = self.name_counter.saturating_add(1);
-    }
-
     /// Returns a suite-unique relative name for the current contract phase.
+    #[must_use]
     #[inline]
     pub(crate) fn relative_name(&self, relative: &str) -> String {
         format!(
@@ -76,13 +88,56 @@ impl ContractContext {
         )
     }
 
+    /// Returns the contract currently producing diagnostics.
+    ///
+    /// # Returns
+    ///
+    /// The static contract name currently assigned to this context.
+    #[must_use]
+    #[inline]
+    pub(crate) const fn current_contract(&self) -> &'static str {
+        self.current_contract
+    }
+
+    /// Returns the report accumulated by the suite.
+    ///
+    /// # Returns
+    ///
+    /// The report borrowed from the run state.
+    #[must_use = "inspect the report when deciding whether the suite passed"]
+    #[inline]
+    pub(crate) const fn report(&self) -> &ContractReport {
+        &self.run.report
+    }
+
+    /// Starts a named contract assertion and advances the unique-name counter.
+    ///
+    /// # Parameters
+    ///
+    /// `contract` is the static name attributed to subsequent diagnostics and
+    /// resources.
+    #[inline]
+    pub(crate) fn begin(&mut self, contract: &'static str) {
+        self.current_contract = contract;
+        self.name_counter = self.name_counter.saturating_add(1);
+    }
+
     /// Records a path with its owning check, retaining only the first owner.
+    ///
+    /// # Parameters
+    ///
+    /// `path` is the resource path created by the current contract.
     #[inline]
     pub(crate) fn record_created(&mut self, path: Path) {
         self.record_resource(path, self.current_contract);
     }
 
     /// Records a path with an explicit check owner.
+    ///
+    /// # Parameters
+    ///
+    /// `path` is the resource path to retain for cleanup.
+    /// `owner_check` is the static check name responsible for that resource.
     #[inline]
     pub(crate) fn record_resource(&mut self, path: Path, owner_check: &'static str) {
         if self.resources.iter().any(|resource| resource.path == path) {
@@ -96,19 +151,12 @@ impl ContractContext {
         });
     }
 
-    /// Returns the contract currently producing diagnostics.
-    #[inline]
-    pub(crate) const fn current_contract(&self) -> &'static str {
-        self.current_contract
-    }
-
-    /// Returns the report accumulated by the suite.
-    #[inline]
-    pub(crate) const fn report(&self) -> &ContractReport {
-        &self.run.report
-    }
-
     /// Records one stable check outcome after its phase has executed.
+    ///
+    /// # Parameters
+    ///
+    /// `id` identifies the check, `capability` records its required capability,
+    /// and `outcome` is the observed result.
     #[inline]
     pub(crate) fn record_check(
         &mut self,
@@ -120,6 +168,11 @@ impl ContractContext {
     }
 
     /// Registers every check expected for a phase before it executes.
+    ///
+    /// # Parameters
+    ///
+    /// `contract` selects the phase's checks. `asynchronous` selects the
+    /// asynchronous check catalog when true.
     pub(crate) fn prepare_phase(&mut self, contract: FileSystemContract, asynchronous: bool) {
         for spec in crate::internal::check_catalog::for_contract(contract, asynchronous) {
             self.run.report.register(spec.id, spec.capability);
@@ -127,6 +180,10 @@ impl ContractContext {
     }
 
     /// Records a failed check without erasing the original typed cause.
+    ///
+    /// # Parameters
+    ///
+    /// `failure` is the diagnostic and optional check attribution to retain.
     pub(crate) fn fail(&mut self, failure: crate::ContractFailure) {
         if let Some(id) = failure.check() {
             self.run.report.record(
@@ -140,21 +197,15 @@ impl ContractContext {
         self.run.failures.push(failure);
     }
 
-    /// Saves an observed failure before any later I/O can suspend.
-    fn record_cleanup_failure(&mut self, failure: CleanupFailure) {
-        self.run.cleanup.failures.push(crate::ContractFailure::with_source(
-            format!(
-                "[fs-testkit:cleanup/{}] owner={} path={:?}: {}",
-                failure.operation, failure.owner_check, failure.path, failure.cause
-            ),
-            failure.cause,
-        ));
-    }
-
     /// Attempts every recorded synchronous resource and collects failures.
     ///
     /// Missing paths count as already cleaned. Failed resources remain in the
     /// ledger so a later explicit `finish` can retry them.
+    ///
+    /// # Parameters
+    ///
+    /// `file_system` performs the stat and deletion operations for each
+    /// resource.
     pub(crate) fn cleanup(&mut self, file_system: &FileSystem) {
         if !self.properties.capabilities().supports(FileSystemCapability::Delete) {
             return;
@@ -270,6 +321,10 @@ impl ContractContext {
     /// leave a deletion unconfirmed, but a subsequent attempt can observe
     /// `NotFound` and release that entry without losing any other resource.
     /// Failed entries remain in creation order and are retried by `finish`.
+    ///
+    /// # Parameters
+    ///
+    /// `file_system` performs the asynchronous stat and deletion operations.
     #[cfg(feature = "async")]
     pub(crate) async fn cleanup_async(&mut self, file_system: &AsyncFileSystem) {
         if !self.properties.capabilities().supports(FileSystemCapability::Delete) {
@@ -374,9 +429,28 @@ impl ContractContext {
             }
         }
     }
+
+    /// Saves an observed failure before any later I/O can suspend.
+    fn record_cleanup_failure(&mut self, failure: CleanupFailure) {
+        self.run.cleanup.failures.push(crate::ContractFailure::with_source(
+            format!(
+                "[fs-testkit:cleanup/{}] owner={} path={:?}: {}",
+                failure.operation, failure.owner_check, failure.path, failure.cause
+            ),
+            failure.cause,
+        ));
+    }
 }
 
 /// Converts an arbitrary provider panic into a safe fixture error.
+///
+/// # Parameters
+///
+/// `payload` is the panic payload returned by the provider operation.
+///
+/// # Returns
+///
+/// A fixture error that retains the panic as a typed source.
 fn panic_error(payload: Box<dyn Any + Send>) -> FixtureError {
     FixtureError::with_source(
         "provider panicked during cleanup",
@@ -394,7 +468,7 @@ mod tests {
     use crate::common::MemoryFixture;
 
     #[test]
-    fn counters_saturate_and_duplicate_resources_keep_the_first_owner() {
+    fn test_counters_saturate_and_duplicate_resources_keep_the_first_owner() {
         use qubit_fs::path::Path;
 
         let fixture = MemoryFixture::new();
@@ -419,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn created_resources_inherit_the_current_contract_owner() {
+    fn test_created_resources_inherit_the_current_contract_owner() {
         use qubit_fs::path::Path;
 
         let fixture = MemoryFixture::new();
@@ -436,7 +510,7 @@ mod tests {
     }
 
     #[test]
-    fn fail_without_check_keeps_the_failure_without_changing_check_outcomes() {
+    fn test_fail_without_check_keeps_the_failure_without_changing_check_outcomes() {
         let fixture = MemoryFixture::new();
         let mut context = ContractContext::new(fixture.file_system().properties());
         let outcomes_before = context.report().checks().len();
@@ -449,7 +523,7 @@ mod tests {
     }
 
     #[test]
-    fn phase_registration_and_attributed_failure_share_one_report() {
+    fn test_phase_registration_and_attributed_failure_share_one_report() {
         use crate::ContractCheckId;
         use crate::ContractCheckOutcome;
         use crate::FileSystemContract;
@@ -483,7 +557,7 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[test]
-    fn asynchronous_phase_registration_includes_async_only_checks() {
+    fn test_asynchronous_phase_registration_includes_async_only_checks() {
         use crate::ContractCheckId;
         use crate::FileSystemContract;
 
@@ -502,7 +576,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_retains_resource_after_stat_panics_and_retries() {
+    fn test_cleanup_retains_resource_after_stat_panics_and_retries() {
         let fixture = MemoryFixture::new();
         let FixtureSupport::Supported(path) = fixture
             .seed_file("cleanup-stat-panic", b"payload")
@@ -526,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_stat_errors_preserve_owner_path_and_source() {
+    fn test_cleanup_stat_errors_preserve_owner_path_and_source() {
         use crate::common::MemoryFault;
 
         let fixture = MemoryFixture::with_fault(MemoryFault::CleanupStatError);
@@ -551,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_continues_after_a_resource_stat_failure() {
+    fn test_cleanup_continues_after_a_resource_stat_failure() {
         use crate::common::MemoryFault;
 
         let fixture = MemoryFixture::with_fault(MemoryFault::CleanupStatError);
@@ -583,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_retains_resource_when_post_delete_stat_errors_or_panics() {
+    fn test_cleanup_retains_resource_when_post_delete_stat_errors_or_panics() {
         use crate::common::MemoryFault;
 
         for fault in [MemoryFault::CleanupVerifyStatError, MemoryFault::CleanupVerifyStatPanic] {
@@ -606,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_retains_resource_after_delete_errors_and_noop() {
+    fn test_cleanup_retains_resource_after_delete_errors_and_noop() {
         use crate::common::MemoryFault;
 
         for fault in [
@@ -633,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_skips_unsupported_delete_and_releases_missing_paths() {
+    fn test_cleanup_skips_unsupported_delete_and_releases_missing_paths() {
         use qubit_fs::path::Path;
 
         let fixture = MemoryFixture::without_delete();
@@ -659,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_deletes_recorded_directories() {
+    fn test_cleanup_deletes_recorded_directories() {
         let fixture = MemoryFixture::new();
         let FixtureSupport::Supported(path) = fixture
             .seed_empty_directory("cleanup-recorded-directory")
@@ -679,7 +753,7 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[test]
-    fn async_cleanup_retains_resource_after_stat_panics_and_retries() {
+    fn test_async_cleanup_retains_resource_after_stat_panics_and_retries() {
         use crate::AsyncFileSystemFixture;
         use crate::common::AsyncMemoryFixture;
         use crate::common::async_memory_file_system::run_controlled;
@@ -711,7 +785,7 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[test]
-    fn async_cleanup_stat_errors_preserve_owner_path_and_source() {
+    fn test_async_cleanup_stat_errors_preserve_owner_path_and_source() {
         use crate::AsyncFileSystemFixture;
         use crate::common::AsyncMemoryFault;
         use crate::common::AsyncMemoryFixture;
@@ -743,7 +817,7 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[test]
-    fn async_cleanup_retains_resource_when_post_delete_stat_errors_or_panics() {
+    fn test_async_cleanup_retains_resource_when_post_delete_stat_errors_or_panics() {
         use crate::AsyncFileSystemFixture;
         use crate::common::AsyncMemoryFault;
         use crate::common::AsyncMemoryFixture;
@@ -776,7 +850,7 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[test]
-    fn async_cleanup_retains_resource_after_delete_errors_and_noop() {
+    fn test_async_cleanup_retains_resource_after_delete_errors_and_noop() {
         use crate::AsyncFileSystemFixture;
         use crate::common::AsyncMemoryFault;
         use crate::common::AsyncMemoryFixture;
@@ -810,7 +884,7 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[test]
-    fn async_cleanup_skips_unsupported_delete_and_releases_missing_paths() {
+    fn test_async_cleanup_skips_unsupported_delete_and_releases_missing_paths() {
         use qubit_fs::path::Path;
 
         use crate::AsyncFileSystemFixture;
@@ -848,7 +922,7 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[test]
-    fn async_cleanup_deletes_recorded_directories() {
+    fn test_async_cleanup_deletes_recorded_directories() {
         use crate::AsyncFileSystemFixture;
         use crate::common::AsyncMemoryFixture;
         use crate::common::async_memory_file_system::run_controlled;

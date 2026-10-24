@@ -45,7 +45,6 @@ mod abort;
 mod owning_write;
 // Implements stage-acknowledged write cancellation checks.
 mod write_cancellation;
-// Implements namespace and metadata contracts.
 // Implements independently prepared metadata checks.
 mod stat;
 // Implements independently observed directory creation.
@@ -60,18 +59,25 @@ mod delete_tree;
 mod rename;
 // Implements independent hierarchy and object listing.
 mod list;
+// Implements independent configured-namespace completeness checks.
 mod namespace;
 // Implements copy and cancellation contracts.
 mod basic_copy;
 mod copy;
 mod copy_cancellation;
+// Checks conflict policies and verifies source and target contents.
 mod copy_conflict;
+// Implements independently observed server-side copy requirements.
 mod server_side_copy;
+// Implements independently observed strong file-copy guarantees.
 mod strong_file_copy;
+// Implements independently observed strong tree-copy guarantees.
 mod strong_tree_copy;
 // Implements temporary resource contracts.
 mod temp;
+// Implements temporary directory lifecycle checks.
 mod temp_directory_check;
+// Implements temporary-file lifecycle and publication contracts.
 mod temp_file_check;
 // Implements fixture adaptation and suite lifecycle support.
 mod support;
@@ -102,6 +108,7 @@ pub struct AsyncFileSystemContractSuite<'a> {
     fixture: &'a dyn AsyncFileSystemFixture,
     /// Property snapshot and cleanup state for the current suite run.
     context: ContractContext,
+    /// Whether teardown has completed for the current suite run.
     teardown_completed: bool,
 }
 
@@ -124,7 +131,23 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         }
     }
 
+    /// Returns the report currently accumulated by this suite.
+    ///
+    /// # Returns
+    ///
+    /// The checks recorded so far, including checks that are pending or failed.
+    #[inline]
+    pub fn report(&self) -> &ContractReport {
+        self.context.report()
+    }
+
     /// Returns retained evidence, including an interrupted execution session.
+    ///
+    /// # Returns
+    ///
+    /// Evidence currently retained by the suite; an interrupted session remains
+    /// incomplete until cleanup is retried.
+    #[inline]
     pub const fn run(&self) -> &crate::ContractRun {
         &self.context.run
     }
@@ -133,17 +156,37 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Dropping this future stops I/O and preserves the suite's cleanup ledger.
     /// Call `finish` to retry cleanup before dropping the fixture owner.
+    ///
+    /// # Returns
+    ///
+    /// The evidence accumulated so far, including any interrupted execution.
     pub async fn run_all(&mut self) -> &crate::ContractRun {
         self.run_selected(&FileSystemContract::ALL, None).await
     }
 
     /// Executes one phase once and retains its result in the borrowing suite.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract` - Contract phase to execute.
+    ///
+    /// # Returns
+    ///
+    /// Evidence accumulated for the selected phase, including interruption.
     pub async fn run_contract(&mut self, contract: FileSystemContract) -> &crate::ContractRun {
         self.run_selected(&[contract], None).await
     }
 
     /// Executes one selected check in a fresh session and retains its cleanup
     /// result.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Identity of the check to execute.
+    ///
+    /// # Returns
+    ///
+    /// Evidence accumulated for the selected check, including interruption.
     pub async fn run_check(&mut self, id: crate::ContractCheckId) -> &crate::ContractRun {
         self.run_selected(&[id.contract()], Some(id)).await
     }
@@ -152,6 +195,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// A focused check is registered before provider I/O begins so interrupted
     /// execution remains distinguishable from an omitted check.
+    /// `contracts` defines the phase loop; when `selected` is present, that
+    /// identity determines the single focused check dispatched in each selected
+    /// contract phase.
     async fn run_selected(
         &mut self,
         contracts: &[FileSystemContract],
@@ -207,13 +253,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         &self.context.run
     }
 
-    /// Returns the report currently accumulated by this suite.
-    #[inline]
-    pub fn report(&self) -> &ContractReport {
-        self.context.report()
-    }
-
-    /// Resolves focused execution without running sibling checks.
+    /// Resolves the selected check without running sibling checks.
+    ///
+    /// The identity's contract determines the owning check driver. A driver
+    /// failure is returned with the check identity attached when applicable.
     async fn dispatch_check(&mut self, id: crate::ContractCheckId) -> Result<(), crate::ContractFailure> {
         match id.contract() {
             FileSystemContract::Copy => self.check_copy_item(id).await,
@@ -232,6 +275,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Dispatches one complete contract phase to its asynchronous checks.
+    ///
+    /// A check failure stops the phase and is returned with its diagnostic
+    /// context for the suite to record.
     async fn dispatch_contract(&mut self, contract: FileSystemContract) -> Result<(), crate::ContractFailure> {
         match contract {
             FileSystemContract::Properties => self.check_properties().await?,

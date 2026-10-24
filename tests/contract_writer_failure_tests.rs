@@ -8,12 +8,14 @@
 //! Recovery ownership remains available through a borrowed contract result.
 
 pub use ::qubit_fs_testkit;
-use qubit_fs as qfs;
-#[cfg(feature = "async")]
-use qubit_fs::write::AsyncWriterRecovery;
+
 mod common;
+
+use qubit_fs as qfs;
 use qubit_fs::error::FsError;
 use qubit_fs::error::FsErrorKind;
+#[cfg(feature = "async")]
+use qubit_fs::write::AsyncWriterRecovery;
 use qubit_fs::write::FileWriter;
 use qubit_fs::write::WriteAbortOutcome;
 use qubit_fs_testkit::ContractCheckId;
@@ -147,6 +149,8 @@ fn test_failed_abort_retains_writer_for_explicit_retry() {
         .expect("recovery ownership")
         .downcast::<ContractWriterFailure<FileWriter>>()
         .expect("original writer type");
+    assert!(format!("{original:?}").contains("retained"));
+    assert!(format!("{original}").contains("recovery writer"));
     assert_eq!(
         original
             .error()
