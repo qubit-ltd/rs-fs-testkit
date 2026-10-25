@@ -226,6 +226,8 @@ impl AsyncFileSystemContractSuite<'_> {
                 "strong copy changed source or published incorrect target contents",
             )?;
         }
+        self.context
+            .record_check(id, Some(capability), ContractCheckOutcome::Passed);
         Ok(())
     }
 }

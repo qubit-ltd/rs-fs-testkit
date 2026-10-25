@@ -65,7 +65,7 @@ fn test_async_temp_keep_transfers_identity_and_payload() {
 }
 
 #[test]
-fn test_async_temp_failed_atomic_persist_remains_cleanup_recoverable() {
+fn test_async_temp_failed_atomic_persist_has_indeterminate_source() {
     let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::AtomicTempPersistNonAtomic);
     let file_system = fixture.file_system();
     let mut temporary =
@@ -82,17 +82,16 @@ fn test_async_temp_failed_atomic_persist_remains_cleanup_recoverable() {
         PersistOptions::default().with_atomicity(AtomicityRequirement::Required),
     ))
     .expect_err("non-atomic publication must fail a required persist");
-    assert_eq!(PersistFailureState::PublishedSourceRetained, failure.state());
-    assert_eq!(TempResourceState::CleanupRequired, temporary.state());
+    assert_eq!(PersistFailureState::PublishedSourceIndeterminate, failure.state());
+    assert_eq!(TempResourceState::Indeterminate, temporary.state());
     assert!(run_controlled(file_system.exists(&target)).expect("target observation must succeed"));
     assert_fixture_file(&fixture, &target, b"retry-payload");
 
-    run_controlled(temporary.cleanup()).expect("failed persist must leave cleanup available");
-    assert_eq!(TempResourceState::Cleaned, temporary.state());
     assert!(
         run_controlled(temporary.cleanup()).is_err(),
-        "cleanup must not run twice"
+        "indeterminate source must not be cleaned"
     );
+    assert_eq!(TempResourceState::Indeterminate, temporary.state());
 
     run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
     assert!(fixture.is_empty(), "teardown must release the published target");

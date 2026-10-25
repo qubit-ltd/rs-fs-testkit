@@ -33,6 +33,7 @@ use qubit_fs::error::FsError;
 /// ```
 /// use std::error::Error;
 ///
+/// use qubit_fs::error::FsError;
 /// use qubit_fs::error::FsErrorKind;
 /// use qubit_fs_testkit::AsyncFileSystemContractSuite;
 /// use qubit_fs_testkit::AsyncFileSystemFixture;

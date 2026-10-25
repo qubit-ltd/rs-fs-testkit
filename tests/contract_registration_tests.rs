@@ -45,10 +45,12 @@ fn registration_fixture() -> MemoryFixture {
 #[test]
 fn test_default_registration_rejects_missing_evidence() {
     let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
-        .args(["--exact", "registered_sync_contracts::read", "--nocapture"])
+        .args(["--exact", "registered_sync_contracts::test_read", "--nocapture"])
         .env("FS_TESTKIT_REGISTRATION_MISSING_EVIDENCE", "1")
         .output()
         .expect("run isolated contract registration");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("running 1 test"), "exact filter must run one child test: {stdout}");
     assert!(
         !output.status.success(),
         "default registration accepted missing read evidence"

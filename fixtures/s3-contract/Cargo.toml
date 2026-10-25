@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 qubit-fs = { path = "../../../rs-fs", version = "0.3", default-features = false, features = ["async"] }
 
-qubit-io = { path = "../../../rs-io", version = "0.19" }
+qubit-io = "0.19"
 
 object_store = { version = "=0.14.1", features = ["aws"] }
 bytes = "1"

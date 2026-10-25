@@ -5,11 +5,12 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Failed persistence keeps the resource available through the borrowed report.
+//! Failed persistence keeps the resource handle available through the report.
 
 mod common;
 
 pub use ::qubit_fs_testkit;
+use qubit_fs::error::FsErrorKind;
 use qubit_fs::temp::PersistFailure;
 use qubit_fs::temp::PersistFailureState;
 use qubit_fs::temp::TempResourceState;
@@ -20,10 +21,10 @@ use qubit_fs_testkit::ContractTempFailure;
 use self::common::MemoryFault;
 use self::common::MemoryFixture;
 
-/// A failed required-atomic persist retains both its snapshot and cleanup
-/// handle.
+/// A failed required-atomic persist retains its snapshot without claiming
+/// source cleanup authority.
 #[test]
-fn test_sync_temp_failure_retains_cleanup_handle() {
+fn test_sync_temp_failure_retains_indeterminate_resource() {
     use qubit_fs::temp::TempFile;
     use qubit_fs_testkit::FileSystemContractSuite;
 
@@ -42,27 +43,30 @@ fn test_sync_temp_failure_retains_cleanup_handle() {
         .expect("resource ownership")
         .downcast::<ContractTempFailure<TempFile>>()
         .expect("temporary file failure");
-    assert_eq!(retained.resource().state(), TempResourceState::CleanupRequired);
+    assert_eq!(retained.resource().state(), TempResourceState::Indeterminate);
     assert_eq!(
         retained
             .error()
             .downcast_ref::<PersistFailure>()
             .expect("original failure")
             .state(),
-        PersistFailureState::PublishedSourceRetained
+        PersistFailureState::PublishedSourceIndeterminate
     );
-    retained.resource_mut().cleanup().expect("explicit recovery cleanup");
+    assert_eq!(
+        FsErrorKind::InvalidState,
+        retained.resource_mut().cleanup().expect_err("uncertain source cannot be cleaned").kind()
+    );
     let (error, resource) = retained.into_parts();
     assert!(error.downcast_ref::<PersistFailure>().is_some());
-    assert_eq!(resource.state(), TempResourceState::Cleaned);
+    assert_eq!(resource.state(), TempResourceState::Indeterminate);
     assert!(source.take().is_none());
     assert!(!run.requirements_satisfied());
 }
 
-/// Async persistence transfers cleanup responsibility without async Drop.
+/// Async persistence retains an indeterminate resource handle without async Drop.
 #[cfg(feature = "async")]
 #[test]
-fn test_async_temp_failure_retains_cleanup_handle() {
+fn test_async_temp_failure_retains_indeterminate_resource() {
     use qubit_fs::temp::AsyncTempFile;
     use qubit_fs_testkit::AsyncFileSystemContractSuite;
 
@@ -85,21 +89,20 @@ fn test_async_temp_failure_retains_cleanup_handle() {
             .expect("resource ownership")
             .downcast::<ContractTempFailure<AsyncTempFile>>()
             .expect("temporary file failure");
-        assert_eq!(retained.resource().state(), TempResourceState::CleanupRequired);
+        assert_eq!(retained.resource().state(), TempResourceState::Indeterminate);
         assert_eq!(
             retained
                 .error()
                 .downcast_ref::<PersistFailure>()
                 .expect("original failure")
                 .state(),
-            PersistFailureState::PublishedSourceRetained
+            PersistFailureState::PublishedSourceIndeterminate
         );
-        retained
-            .resource_mut()
-            .cleanup()
-            .await
-            .expect("explicit recovery cleanup");
-        assert_eq!(retained.resource().state(), TempResourceState::Cleaned);
+        assert_eq!(
+            FsErrorKind::InvalidState,
+            retained.resource_mut().cleanup().await.expect_err("uncertain source cannot be cleaned").kind()
+        );
+        assert_eq!(retained.resource().state(), TempResourceState::Indeterminate);
         assert!(source.take().is_none());
         assert!(!run.requirements_satisfied());
     });

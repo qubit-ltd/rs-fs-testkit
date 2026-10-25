@@ -35,8 +35,8 @@ default = []
 async = ["qubit-fs/async"]
 
 [dependencies]
-qubit-fs = { version = "0.3", default-features = false }
-qubit-io = { path = "../rs-io", version = "0.19" }
+qubit-fs = { path = "../rs-fs", version = "0.3", default-features = false }
+qubit-io = { version = "0.19.1" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
