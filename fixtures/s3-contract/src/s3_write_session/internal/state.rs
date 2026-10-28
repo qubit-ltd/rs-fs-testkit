@@ -7,7 +7,7 @@
 // =============================================================================
 
 /// Tracks whether the buffered write has been published or may have been published.
-pub(super) enum State {
+pub(in crate::s3_write_session) enum State {
     /// The session accepts bytes or can retry after a non-publication failure.
     Open,
     /// The PUT completed successfully.

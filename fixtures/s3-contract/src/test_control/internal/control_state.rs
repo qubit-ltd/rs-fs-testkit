@@ -6,15 +6,15 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
-use std::sync::Mutex;
 
 use super::gate::Gate;
 
 /// Shared counters and gate state used by a test control handle.
 #[derive(Default)]
-pub(super) struct ControlState {
+pub(in crate::test_control) struct ControlState {
     /// Explicitly controlled adapter gate.
     pub(in crate::test_control) gate: Mutex<Gate>,
     /// Number of SDK PUT dispatches.

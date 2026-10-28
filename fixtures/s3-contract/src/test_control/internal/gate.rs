@@ -11,7 +11,7 @@ use crate::TestStage;
 
 /// State for a single explicitly armed adapter gate.
 #[derive(Default)]
-pub(super) struct Gate {
+pub(in crate::test_control) struct Gate {
     /// Stage currently held by the gate, if any.
     pub(in crate::test_control) stage: Option<TestStage>,
     /// Whether an operation has reached the armed stage.
