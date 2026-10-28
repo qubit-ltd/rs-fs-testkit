@@ -97,7 +97,7 @@ impl FileSystemContractSuite<'_> {
                             "stat/file-kind: seeded resource is not file-like",
                         )?;
                         verify_condition(
-                            metadata.len() == Some(bytes.len() as u64),
+                            metadata.len().is_none_or(|length| length == bytes.len() as u64),
                             id,
                             "stat file length mismatch",
                         )?;

@@ -15,6 +15,7 @@ use qubit_fs::metadata::AtomicityRequirement;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::path::Path;
 use qubit_fs::path::PathSemantics;
+use qubit_fs::path::RelativePath;
 use qubit_fs::temp::PersistFailureState;
 use qubit_fs::temp::PersistOptions;
 use qubit_fs::temp::TempOptions;
@@ -145,6 +146,7 @@ impl FileSystemContractSuite<'_> {
                 })?;
             self.context.record_created(temporary.path().clone());
         }
+        let mut content_supported = self.prepare_temp_directory_contents(temporary.path(), id, false)?;
         if id != ContractCheckId::TempAtomic {
             let kept_source = temporary.path().clone();
             let kept = match temporary.keep() {
@@ -173,6 +175,9 @@ impl FileSystemContractSuite<'_> {
                     id,
                     "temporary keep publication differs",
                 )?;
+            }
+            if content_supported {
+                content_supported = self.verify_temp_directory_contents(kept.target(), id, false)?;
             }
             if id == ContractCheckId::TempRepeatedLifecycle {
                 let failure = match temporary.keep() {
@@ -217,6 +222,9 @@ impl FileSystemContractSuite<'_> {
                     id,
                     "kept publication disappeared",
                 )?;
+                if content_supported {
+                    self.verify_temp_directory_contents(kept.target(), id, false)?;
+                }
                 let mut cleaned = filesystem
                     .create_temp_directory(TempOptions::default())
                     .map_err(|error| {
@@ -262,6 +270,7 @@ impl FileSystemContractSuite<'_> {
                     ContractFailure::with_owned_source("temporary persistence preparation failed", error).at(id)
                 })?;
             self.context.record_created(temporary.path().clone());
+            content_supported = self.prepare_temp_directory_contents(temporary.path(), id, false)?;
         }
         let source = temporary.path().clone();
         let target = self
@@ -367,6 +376,9 @@ impl FileSystemContractSuite<'_> {
                 "temporary persistence source release or target publication differs",
             )?;
         }
+        if content_supported {
+            self.verify_temp_directory_contents(outcome.target(), id, false)?;
+        }
         if basic {
             let relative = self.context.relative_name("temp-overwritten-directory");
             let prepared = self.fixture.seed_empty_directory(&relative).map_err(|error| {
@@ -379,6 +391,7 @@ impl FileSystemContractSuite<'_> {
                 .at(id));
             };
             self.context.record_created(target.clone());
+            let old_contents = self.prepare_temp_directory_contents(&target, id, true)?;
             let mut replacement = filesystem
                 .create_temp_directory(TempOptions::default())
                 .map_err(|error| {
@@ -386,6 +399,7 @@ impl FileSystemContractSuite<'_> {
                 })?;
             let source = replacement.path().clone();
             self.context.record_created(source.clone());
+            let replacement_contents = self.prepare_temp_directory_contents(&source, id, false)?;
             let outcome = match replacement.persist(
                 &target,
                 PersistOptions::default()
@@ -412,7 +426,124 @@ impl FileSystemContractSuite<'_> {
                     "temporary overwrite did not release source and publish target",
                 )?;
             }
+            if replacement_contents {
+                self.verify_temp_directory_contents(outcome.target(), id, false)?;
+            }
+            if old_contents {
+                self.verify_temp_directory_contents(&target, id, false)?;
+            }
         }
         Ok(())
+    }
+
+    fn prepare_temp_directory_contents(
+        &mut self,
+        root: &Path,
+        id: ContractCheckId,
+        old: bool,
+    ) -> Result<bool, ContractFailure> {
+        const DIRECT: &[u8] = b"old-direct";
+        const NESTED: &[u8] = b"old-nested";
+        const NEW_DIRECT: &[u8] = b"temp-direct";
+        const NEW_NESTED: &[u8] = b"temp-nested";
+        let entries = if old {
+            [("payload", DIRECT), ("nested/payload", NESTED)]
+        } else {
+            [("payload", NEW_DIRECT), ("nested/payload", NEW_NESTED)]
+        };
+        let paths = entries.map(|(relative, bytes)| {
+            let relative = RelativePath::parse(relative).expect("constant temporary child path");
+            (root.join(&relative), bytes)
+        });
+        for (path, bytes) in &paths {
+            match self.fixture.write_file_out_of_band(path, bytes).map_err(|error| {
+                ContractFailure::with_source("temporary directory content preparation failed", error).at(id)
+            })? {
+                FixtureSupport::Supported(()) => {}
+                FixtureSupport::Unsupported => {
+                    self.record_temp_directory_content_unverified(
+                        id,
+                        "fixture write_file_out_of_band hook is unsupported",
+                    );
+                    return Ok(false);
+                }
+            }
+        }
+        for (path, bytes) in &paths {
+            if matches!(
+                self.fixture.exists_out_of_band(path).map_err(|error| {
+                    ContractFailure::with_source("temporary directory setup existence check failed", error).at(id)
+                })?,
+                FixtureSupport::Supported(false)
+            ) {
+                verify_condition(false, id, "temporary directory child disappeared during setup")?;
+            }
+            match self.fixture.read_file(path).map_err(|error| {
+                ContractFailure::with_source("temporary directory setup observation failed", error).at(id)
+            })? {
+                FixtureSupport::Supported(actual) => {
+                    verify_condition(actual == *bytes, id, "temporary directory setup bytes differ")?;
+                }
+                FixtureSupport::Unsupported => {
+                    self.record_temp_directory_content_unverified(id, "fixture read_file hook is unsupported");
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    fn verify_temp_directory_contents(
+        &mut self,
+        root: &Path,
+        id: ContractCheckId,
+        old: bool,
+    ) -> Result<bool, ContractFailure> {
+        const DIRECT: &[u8] = b"old-direct";
+        const NESTED: &[u8] = b"old-nested";
+        const NEW_DIRECT: &[u8] = b"temp-direct";
+        const NEW_NESTED: &[u8] = b"temp-nested";
+        let entries = if old {
+            [("payload", DIRECT), ("nested/payload", NESTED)]
+        } else {
+            [("payload", NEW_DIRECT), ("nested/payload", NEW_NESTED)]
+        };
+        for (relative, bytes) in entries {
+            let relative = RelativePath::parse(relative).expect("constant temporary child path");
+            let path = root.join(&relative);
+            if matches!(
+                self.fixture.exists_out_of_band(&path).map_err(|error| {
+                    ContractFailure::with_source("temporary directory content existence check failed", error).at(id)
+                })?,
+                FixtureSupport::Supported(false)
+            ) {
+                verify_condition(false, id, "temporary directory publication dropped a child")?;
+            }
+            match self.fixture.read_file(&path).map_err(|error| {
+                ContractFailure::with_source("temporary directory content observation failed", error).at(id)
+            })? {
+                FixtureSupport::Supported(actual) => {
+                    verify_condition(actual == bytes, id, "temporary directory publication changed contents")?;
+                }
+                FixtureSupport::Unsupported => {
+                    self.record_temp_directory_content_unverified(
+                        id,
+                        "fixture read_file hook is unsupported after publication",
+                    );
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    fn record_temp_directory_content_unverified(&mut self, id: ContractCheckId, reason: &str) {
+        self.context.record_check(
+            id,
+            crate::internal::check_catalog::specification(id).capability,
+            crate::ContractCheckOutcome::Unverified {
+                reason: reason.to_owned(),
+            },
+        );
     }
 }

@@ -13,6 +13,7 @@ use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs::path::Path;
 use qubit_fs::read::ReadOptions;
+use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
@@ -173,6 +174,73 @@ fn test_sync_contracts_adapt_to_declared_limit_profiles() {
             .clone();
         read_report.assert_satisfied();
     }
+}
+
+#[test]
+fn test_sync_stat_accepts_unknown_file_length() {
+    let fixture = MemoryFixture::with_fault(MemoryFault::StatUnknownLength);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::StatFileKind);
+    assert!(run.requirements_satisfied(), "{:?}", run.failures());
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Passed
+    ));
+}
+
+#[test]
+fn test_sync_stat_accepts_matching_known_file_length() {
+    let fixture = MemoryFixture::with_fault(MemoryFault::None);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::StatFileKind);
+    assert!(run.requirements_satisfied(), "{:?}", run.failures());
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Passed
+    ));
+}
+
+#[test]
+fn test_sync_stat_rejects_wrong_known_file_length() {
+    let fixture = MemoryFixture::with_fault(MemoryFault::StatWrongLength);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::StatFileKind);
+    assert!(!run.requirements_satisfied());
+    assert!(
+        run.failures()
+            .iter()
+            .any(|failure| failure.check() == Some(ContractCheckId::StatFileKind))
+    );
+}
+
+#[test]
+fn test_sync_fallback_copy_adapts_to_write_limits() {
+    for limit in [
+        FileSystemLimit::Maximum(1),
+        FileSystemLimit::Maximum(4),
+        FileSystemLimit::Unknown,
+        FileSystemLimit::Unbounded,
+    ] {
+        let limits = FileSystemLimits::unknown().with_max_write_bytes(limit);
+        let fixture = MemoryFixture::fallback_only_with_limits(limits);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::CopyBasic);
+        assert!(run.requirements_satisfied(), "{limit:?}: {:?}", run.failures());
+    }
+}
+
+#[test]
+fn test_sync_fallback_copy_detects_dropped_bytes_under_small_limit() {
+    let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4));
+    let fixture = MemoryFixture::fallback_only_with_fault_and_limits(MemoryFault::WriteDropsBytes, limits);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::CopyBasic);
+    assert!(!run.requirements_satisfied());
+    assert!(
+        run.failures()
+            .iter()
+            .any(|failure| failure.check() == Some(ContractCheckId::CopyBasic))
+    );
 }
 
 #[test]

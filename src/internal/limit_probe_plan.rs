@@ -9,6 +9,21 @@
 
 use qubit_fs::metadata::FileSystemLimit;
 
+/// Selects a fixed sample prefix that fits a declared write maximum.
+///
+/// Unknown and non-finite limits retain the complete sample. The returned
+/// slice borrows `sample` and does not allocate.
+#[inline]
+pub(crate) fn bounded_payload(sample: &[u8], limit: FileSystemLimit) -> &[u8] {
+    match limit {
+        FileSystemLimit::Maximum(maximum) => {
+            let maximum = usize::try_from(maximum).unwrap_or(usize::MAX);
+            &sample[..sample.len().min(maximum)]
+        }
+        FileSystemLimit::Unknown | FileSystemLimit::NotApplicable | FileSystemLimit::Unbounded => sample,
+    }
+}
+
 /// Maximum payload allocated by one contract limit probe.
 pub(crate) const MAX_PROBE_BYTES: u64 = 64 * 1024;
 /// Maximum page-entry hint used by bounded list probes.

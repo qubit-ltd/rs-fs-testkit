@@ -7,6 +7,9 @@
 // =============================================================================
 //! Explicit cleanup before accepting an expected whole-file write rejection.
 
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+
 use qubit_fs::write::WriteAbortOutcome;
 use qubit_fs::write::WriteAllFailure;
 use qubit_fs::write::WriteFailureState;
@@ -37,13 +40,23 @@ pub(crate) fn finish_expected_write_failure(
             ContractFailure::with_owned_source("write rejection did not prove non-publication", failure).at(id),
         );
     }
-    let result = match failure.recovery_mut() {
+    let writer = match failure.recovery_mut() {
         None => return Ok(()),
-        Some(WriterRecovery::Opened(writer)) => writer.abort(),
+        Some(WriterRecovery::Opened(writer)) => writer,
         Some(WriterRecovery::Rejected(_)) => {
             return Err(
                 ContractFailure::with_owned_source("write rejection retained an invalid session", failure).at(id),
             );
+        }
+    };
+    let result = match catch_unwind(AssertUnwindSafe(|| writer.abort())) {
+        Ok(result) => result,
+        Err(payload) => {
+            return Err(ContractFailure::with_owned_source(
+                "expected write rejection cleanup panicked",
+                ContractWriterFailure::new(ContractFailure::panicked("writer abort panicked", payload), failure),
+            )
+            .at(id));
         }
     };
     match result {

@@ -64,7 +64,10 @@ impl AsyncFileSystemContractSuite<'_> {
         }
         let source_relative = self.context.relative_name("copy-conflict-source");
         let target_relative = self.context.relative_name("copy-conflict-target");
-        let bytes = b"copy bytes";
+        let bytes = crate::internal::limit_probe_plan::bounded_payload(
+            b"copy bytes",
+            self.context.properties().limits().max_write_bytes(),
+        );
         let scenario =
             crate::internal::check_catalog::required_copy_scenario(id, "copy preparation missing from catalog")?;
         let prepared = self
@@ -91,7 +94,7 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "copy conflict preparation changed required paths or options",
         )?;
-        for (path, expected) in [(&source, bytes.as_slice()), (&target, b"existing".as_slice())] {
+        for (path, expected) in [(&source, bytes), (&target, b"existing".as_slice())] {
             let observed = self.fixture.read_file(path).await.map_err(|error| {
                 ContractFailure::with_source("copy conflict initial observation failed", error).at(id)
             })?;

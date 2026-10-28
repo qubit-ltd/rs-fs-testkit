@@ -46,7 +46,7 @@ pub(super) async fn verify_repeated_temp_directory_lifecycle(
     id: ContractCheckId,
     mut temporary: AsyncTempDirectory,
     kept_target: &Path,
-) -> Result<(), ContractFailure> {
+) -> Result<Option<String>, ContractFailure> {
     let filesystem = suite.fixture.file_system();
     let failure = match temporary.keep().await {
         Err(failure) => failure,
@@ -87,6 +87,9 @@ pub(super) async fn verify_repeated_temp_directory_lifecycle(
         id,
         "kept publication disappeared",
     )?;
+    if let Some(reason) = super::super::persistence::verify_temp_directory_contents(suite, id, kept_target).await? {
+        return Ok(Some(reason));
+    }
     let mut cleaned = filesystem
         .create_temp_directory(TempOptions::default())
         .await
@@ -123,5 +126,5 @@ pub(super) async fn verify_repeated_temp_directory_lifecycle(
         )
         .at(id));
     }
-    Ok(())
+    Ok(None)
 }

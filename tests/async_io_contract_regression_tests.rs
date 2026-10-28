@@ -15,6 +15,7 @@ use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
+use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContract;
 
@@ -177,4 +178,83 @@ fn test_async_negative_write_guarantees_issue_real_requests() {
         assert!(result.is_err(), "{suffix}: the incompatible request was never checked");
         run_controlled(fixture.teardown()).expect("independent teardown");
     }
+}
+
+#[test]
+fn test_async_stat_accepts_unknown_file_length() {
+    let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::StatUnknownLength);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::StatFileKind).await;
+        assert!(run.requirements_satisfied(), "{:?}", run.failures());
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Passed
+        ));
+    });
+}
+
+#[test]
+fn test_async_stat_accepts_matching_known_file_length() {
+    let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::None);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::StatFileKind).await;
+        assert!(run.requirements_satisfied(), "{:?}", run.failures());
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Passed
+        ));
+    });
+}
+
+#[test]
+fn test_async_stat_rejects_wrong_known_file_length() {
+    let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::StatWrongLength);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::StatFileKind).await;
+        assert!(!run.requirements_satisfied());
+        assert!(
+            run.failures()
+                .iter()
+                .any(|failure| failure.check() == Some(ContractCheckId::StatFileKind))
+        );
+    });
+}
+
+#[test]
+fn test_async_fallback_copy_adapts_to_write_limits_and_repeated_execute() {
+    for limit in [
+        FileSystemLimit::Maximum(1),
+        FileSystemLimit::Maximum(4),
+        FileSystemLimit::Unknown,
+        FileSystemLimit::Unbounded,
+    ] {
+        let limits = FileSystemLimits::unknown().with_max_write_bytes(limit);
+        let fixture = AsyncMemoryFixture::fallback_only_with_limits(limits);
+        for id in [ContractCheckId::CopyBasic, ContractCheckId::CopyRepeatedExecute] {
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                assert!(run.requirements_satisfied(), "{limit:?}, {id}: {:?}", run.failures());
+            });
+        }
+    }
+}
+
+#[test]
+fn test_async_fallback_copy_detects_dropped_bytes_under_small_limit() {
+    let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4));
+    let fixture = AsyncMemoryFixture::fallback_only_with_fault_and_limits(AsyncMemoryFault::CopyDropsTarget, limits);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::CopyBasic).await;
+        assert!(!run.requirements_satisfied());
+        assert!(
+            run.failures()
+                .iter()
+                .any(|failure| failure.check() == Some(ContractCheckId::CopyBasic))
+        );
+    });
 }

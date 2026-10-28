@@ -20,6 +20,7 @@ use qubit_fs::write::WriterRecovery;
 
 use crate::qubit_fs_testkit::ContractCheckId;
 use crate::qubit_fs_testkit::ContractSource;
+use crate::qubit_fs_testkit::ContractWriterFailure;
 use crate::qubit_fs_testkit::FileSystemContractSuite;
 
 /// A real facade failure crosses the report wrapper without losing frozen
@@ -117,4 +118,47 @@ fn test_conditional_cleanup_failure_preserves_sync_recovery() {
         assert_eq!(retained.writer().state(), state);
         assert_eq!(retained.writer().written_bytes(), bytes);
     }
+}
+
+/// A panic in expected-rejection cleanup must retain the original writer.
+#[test]
+fn test_expected_sync_abort_panic_preserves_failure_and_recovery() {
+    use std::error::Error;
+
+    let fixture = MemoryFixture::with_fault(MemoryFault::ConditionalAbortPanicsOnce);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::WriteIfAbsent);
+    assert!(!run.requirements_satisfied());
+    let source = Error::source(&run.failures()[0])
+        .expect("panic failure must retain an owned source")
+        .downcast_ref::<ContractSource>()
+        .expect("owned panic failure");
+    let mut retained = source
+        .take()
+        .expect("panic failure must be transferable")
+        .downcast::<ContractWriterFailure<WriteAllFailure>>()
+        .expect("original write failure and writer recovery");
+    let failure = retained
+        .error()
+        .downcast_ref::<crate::qubit_fs_testkit::ContractFailure>()
+        .expect("abort panic must be retained as a contract failure");
+    let payload = failure
+        .take_panic_payload()
+        .expect("original panic payload must be retained");
+    assert_eq!(
+        payload.downcast_ref::<&str>().copied(),
+        Some("conditional abort panicked once")
+    );
+    let state = retained.writer().state();
+    let bytes = retained.writer().written_bytes();
+    let Some(WriterRecovery::Opened(writer)) = retained.writer_mut().recovery_mut() else {
+        panic!("opened writer recovery must survive abort panic")
+    };
+    assert_eq!(
+        writer.abort().expect("explicit retry must release writer"),
+        qubit_fs::write::WriteAbortOutcome::NotPublished
+    );
+    assert_eq!(retained.writer().state(), state);
+    assert_eq!(retained.writer().written_bytes(), bytes);
+    assert!(!run.requirements_satisfied());
 }

@@ -55,9 +55,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.context.begin(id.as_str());
         let file = self.capable(FileSystemCapability::TempFile);
         let directory = self.capable(FileSystemCapability::TempDirectory);
+        let mut unverified_reason = None;
         let outcome = match id {
             ContractCheckId::TempFile => {
-                self.execute_temp_file(id).await?;
+                unverified_reason = self.execute_temp_file(id).await?;
                 if file {
                     ContractCheckOutcome::Passed
                 } else {
@@ -65,7 +66,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 }
             }
             ContractCheckId::TempDirectory => {
-                self.execute_temp_directory(id).await?;
+                unverified_reason = self.execute_temp_directory(id).await?;
                 if directory {
                     ContractCheckOutcome::Passed
                 } else {
@@ -74,10 +75,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             }
             ContractCheckId::TempAtomic | ContractCheckId::TempRepeatedLifecycle => {
                 if file {
-                    self.execute_temp_file(id).await?;
+                    unverified_reason = self.execute_temp_file(id).await?;
                 }
                 if directory {
-                    self.execute_temp_directory(id).await?;
+                    if let Some(reason) = self.execute_temp_directory(id).await? {
+                        unverified_reason.get_or_insert(reason);
+                    }
                 }
                 if !file && !directory {
                     ContractCheckOutcome::NotApplicable {
@@ -92,6 +95,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
             _ => {
                 return Err(ContractFailure::message_only("selected entry is not temporary lifecycle").at(id));
             }
+        };
+        let outcome = match unverified_reason {
+            Some(reason) => ContractCheckOutcome::Unverified { reason },
+            None => outcome,
         };
         self.context.record_check(
             id,

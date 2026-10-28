@@ -7,8 +7,6 @@
 // =============================================================================
 //! Verifies temporary-directory keep and cleanup lifecycle contracts.
 
-use qubit_fs::AsyncFileSystem;
-use qubit_fs::path::Path;
 use qubit_fs::temp::AsyncTempDirectory;
 use qubit_fs::temp::TempOptions;
 use qubit_fs::temp::TempResourceState;
@@ -46,12 +44,16 @@ pub(super) async fn prepare_temp_directory_persistence(
     suite: &mut AsyncFileSystemContractSuite<'_>,
     id: ContractCheckId,
     mut temporary: AsyncTempDirectory,
-) -> Result<Option<AsyncTempDirectory>, ContractFailure> {
+) -> Result<(Option<AsyncTempDirectory>, Option<String>), ContractFailure> {
     let filesystem = suite.fixture.file_system();
-    if id == ContractCheckId::TempAtomic {
-        return Ok(Some(temporary));
+    let source = temporary.path().clone();
+    if let Some(reason) = super::persistence::prepare_temp_directory_contents(suite, id, &source).await? {
+        return Ok((None, Some(reason)));
     }
-    let kept_source = temporary.path().clone();
+    if id == ContractCheckId::TempAtomic {
+        return Ok((Some(temporary), None));
+    }
+    let kept_source = source;
     let kept = match temporary.keep().await {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -80,9 +82,14 @@ pub(super) async fn prepare_temp_directory_persistence(
             "temporary keep publication differs",
         )?;
     }
+    if let Some(reason) = super::persistence::verify_temp_directory_contents(suite, id, kept.target()).await? {
+        return Ok((None, Some(reason)));
+    }
     if id == ContractCheckId::TempRepeatedLifecycle {
-        internal::verify_repeated_temp_directory_lifecycle(suite, id, temporary, kept.target()).await?;
-        return Ok(None);
+        return Ok((
+            None,
+            internal::verify_repeated_temp_directory_lifecycle(suite, id, temporary, kept.target()).await?,
+        ));
     }
     let temporary = filesystem
         .create_temp_directory(TempOptions::default())
@@ -91,5 +98,5 @@ pub(super) async fn prepare_temp_directory_persistence(
             ContractFailure::with_owned_source("temporary persistence preparation failed", error).at(id)
         })?;
     suite.context.record_created(temporary.path().clone());
-    Ok(Some(temporary))
+    Ok((Some(temporary), None))
 }

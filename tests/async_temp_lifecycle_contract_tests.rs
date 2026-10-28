@@ -17,12 +17,52 @@ use qubit_fs::temp::PersistOptions;
 use qubit_fs::temp::TempOptions;
 use qubit_fs::temp::TempResourceState;
 use qubit_fs::write::WriteOptions;
+use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
+use qubit_fs_testkit::ContractCheckId;
+use qubit_fs_testkit::FixtureFuture;
 use qubit_fs_testkit::FixtureSupport;
 
 use self::common::AsyncMemoryFault;
 use self::common::AsyncMemoryFixture;
 use self::common::async_memory_file_system::run_controlled;
+
+struct AsyncTempHookFixture {
+    inner: AsyncMemoryFixture,
+    unsupported_write: bool,
+    unsupported_read: bool,
+}
+
+impl AsyncFileSystemFixture for AsyncTempHookFixture {
+    fn file_system(&self) -> &qubit_fs::AsyncFileSystem {
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+
+    fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
+        if self.unsupported_read {
+            Box::pin(async { Ok(FixtureSupport::Unsupported) })
+        } else {
+            self.inner.read_file(path)
+        }
+    }
+
+    fn write_file_out_of_band<'a>(&'a self, path: &'a Path, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<()>> {
+        if self.unsupported_write {
+            Box::pin(async { Ok(FixtureSupport::Unsupported) })
+        } else {
+            self.inner.write_file_out_of_band(path, bytes)
+        }
+    }
+
+    fn teardown(&self) -> FixtureFuture<'_, ()> {
+        self.inner.teardown()
+    }
+}
+
 fn assert_fixture_file(fixture: &AsyncMemoryFixture, path: &Path, expected: &[u8]) {
     match run_controlled(fixture.read_file(path)).expect("fixture file observation must succeed") {
         FixtureSupport::Supported(actual) => assert_eq!(actual, expected),
@@ -95,4 +135,112 @@ fn test_async_temp_failed_atomic_persist_has_indeterminate_source() {
 
     run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
     assert!(fixture.is_empty(), "teardown must release the published target");
+}
+
+#[test]
+fn test_async_temp_publication_contract_rejects_lost_file_contents_and_directory_children() {
+    for (fault, id) in [
+        (AsyncMemoryFault::TempKeepDropsFileContents, ContractCheckId::TempFile),
+        (
+            AsyncMemoryFault::TempPersistDropsFileContents,
+            ContractCheckId::TempFile,
+        ),
+        (
+            AsyncMemoryFault::TempPersistDropsFileContents,
+            ContractCheckId::TempAtomic,
+        ),
+        (
+            AsyncMemoryFault::TempKeepDropsDirectoryChildren,
+            ContractCheckId::TempDirectory,
+        ),
+        (
+            AsyncMemoryFault::TempPersistDropsDirectoryChildren,
+            ContractCheckId::TempDirectory,
+        ),
+        (
+            AsyncMemoryFault::TempPersistDropsDirectoryChildren,
+            ContractCheckId::TempAtomic,
+        ),
+        (
+            AsyncMemoryFault::TempOverwriteDropsDirectoryChildren,
+            ContractCheckId::TempDirectory,
+        ),
+    ] {
+        let fixture = AsyncMemoryFixture::with_fault(fault);
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id).await;
+            assert!(!run.requirements_satisfied(), "{fault:?} must fail {id}");
+            assert!(run.failures().iter().any(|failure| failure.check() == Some(id)));
+        });
+        assert!(fixture.is_empty(), "{fault:?} must clean up after {id}");
+    }
+}
+
+#[test]
+fn test_async_temp_only_capability_does_not_require_facade_write() {
+    let fixture = AsyncMemoryFixture::temp_only();
+    assert!(
+        !fixture
+            .file_system()
+            .properties()
+            .capabilities()
+            .supports(qubit_fs::metadata::FileSystemCapability::Write)
+    );
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempFile).await;
+        assert!(run.requirements_satisfied(), "{:?}", run.failures());
+    });
+    assert!(fixture.is_empty());
+}
+
+#[test]
+fn test_async_temp_missing_content_hooks_are_unverified_with_specific_reasons() {
+    for (unsupported_write, unsupported_read, hook_name) in
+        [(true, false, "write_file_out_of_band"), (false, true, "read_file")]
+    {
+        let fixture = AsyncTempHookFixture {
+            inner: AsyncMemoryFixture::new(),
+            unsupported_write,
+            unsupported_read,
+        };
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::TempRepeatedLifecycle).await;
+            assert!(run.failures().is_empty(), "{:?}", run.failures());
+            assert!(matches!(
+                run.report()
+                    .checks()
+                    .iter()
+                    .find(|check| check.id() == ContractCheckId::TempRepeatedLifecycle)
+                    .expect("temporary lifecycle check must be reported")
+                    .outcome(),
+                qubit_fs_testkit::ContractCheckOutcome::Unverified { reason } if reason.contains(hook_name)
+            ));
+        });
+        assert!(fixture.inner.is_empty());
+    }
+}
+
+#[test]
+fn test_async_temp_content_setup_hook_errors_fail_the_check() {
+    for hook in [
+        common::shared_model::FixtureHook::WriteFile,
+        common::shared_model::FixtureHook::ReadFile,
+    ] {
+        let fixture = AsyncMemoryFixture::with_fixture_hook_error(hook, 1);
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::TempFile).await;
+            assert!(!run.requirements_satisfied(), "{hook:?} setup error must fail");
+            assert!(!run.failures().is_empty());
+            assert!(
+                run.failures()
+                    .iter()
+                    .all(|failure| failure.check() == Some(ContractCheckId::TempFile))
+            );
+        });
+        assert!(fixture.is_empty(), "{hook:?} error requires teardown cleanup");
+    }
 }

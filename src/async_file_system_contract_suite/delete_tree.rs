@@ -79,6 +79,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 );
                 return Ok(());
             };
+            self.context.record_created(path.clone());
             paths.push(path);
         }
         for file in [format!("{relative}/child"), format!("{relative}/nested/child")] {
@@ -95,6 +96,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 );
                 return Ok(());
             };
+            self.context.record_created(path.clone());
             paths.push(path);
         }
         for path in &paths {

@@ -7,12 +7,13 @@
 // =============================================================================
 //! Verifies temporary-directory persistence and overwrite contracts.
 
-use qubit_fs::AsyncFileSystem;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::AchievedAtomicity;
 use qubit_fs::metadata::AtomicityRequirement;
 use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::path::Path;
+use qubit_fs::path::RelativePath;
 use qubit_fs::temp::AsyncTempDirectory;
 use qubit_fs::temp::PersistFailureState;
 use qubit_fs::temp::PersistOptions;
@@ -39,7 +40,8 @@ use crate::internal::verify_condition;
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` after publication or expected capability rejection.
+/// Returns an optional evidence-gap reason after publication or expected
+/// capability rejection.
 ///
 /// # Errors
 ///
@@ -50,8 +52,11 @@ pub(super) async fn persist_temp_directory(
     id: ContractCheckId,
     atomic: bool,
     mut temporary: AsyncTempDirectory,
-) -> Result<(), ContractFailure> {
+) -> Result<Option<String>, ContractFailure> {
     let source = temporary.path().clone();
+    if let Some(reason) = prepare_temp_directory_contents(suite, id, &source).await? {
+        return Ok(Some(reason));
+    }
     let target = suite
         .fixture
         .path(&suite.context.relative_name("persisted-directory"))
@@ -123,7 +128,7 @@ pub(super) async fn persist_temp_directory(
             id,
             "atomic rejection cleanup retained source",
         )?;
-        return Ok(());
+        return Ok(None);
     }
     let outcome = match publication {
         Ok(outcome) => outcome,
@@ -155,7 +160,94 @@ pub(super) async fn persist_temp_directory(
             "temporary persistence source release or target publication differs",
         )?;
     }
-    Ok(())
+    verify_temp_directory_contents(suite, id, outcome.target()).await
+}
+
+pub(super) async fn prepare_temp_directory_contents(
+    suite: &AsyncFileSystemContractSuite<'_>,
+    id: ContractCheckId,
+    root: &Path,
+) -> Result<Option<String>, ContractFailure> {
+    const DIRECT_CONTENT: &[u8] = b"direct-temp-data";
+    const NESTED_CONTENT: &[u8] = b"nested-temp-data";
+    let direct = root.join(&RelativePath::parse("payload").expect("constant child path"));
+    let nested = root.join(&RelativePath::parse("nested/payload").expect("constant nested path"));
+    for (path, content) in [(&direct, DIRECT_CONTENT), (&nested, NESTED_CONTENT)] {
+        match suite
+            .fixture
+            .write_file_out_of_band(path, content)
+            .await
+            .map_err(|error| ContractFailure::with_source("temporary directory content setup failed", error).at(id))?
+        {
+            FixtureSupport::Supported(()) => {}
+            FixtureSupport::Unsupported => {
+                return Ok(Some(
+                    "temporary directory content verification needs fixture.write_file_out_of_band".to_owned(),
+                ));
+            }
+        }
+        if matches!(
+            suite.fixture.exists_out_of_band(path).await.map_err(|error| {
+                ContractFailure::with_source("temporary directory setup existence check failed", error).at(id)
+            })?,
+            FixtureSupport::Supported(false)
+        ) {
+            verify_condition(false, id, "temporary directory child disappeared during setup")?;
+        }
+        match suite.fixture.read_file(path).await.map_err(|error| {
+            ContractFailure::with_source("temporary directory content setup observation failed", error).at(id)
+        })? {
+            FixtureSupport::Supported(actual) => verify_condition(
+                actual == content,
+                id,
+                "temporary directory fixture preparation changed content",
+            )?,
+            FixtureSupport::Unsupported => {
+                return Ok(Some(
+                    "temporary directory content verification needs fixture.read_file".to_owned(),
+                ));
+            }
+        }
+    }
+    Ok(None)
+}
+
+pub(super) async fn verify_temp_directory_contents(
+    suite: &AsyncFileSystemContractSuite<'_>,
+    id: ContractCheckId,
+    root: &Path,
+) -> Result<Option<String>, ContractFailure> {
+    const DIRECT_CONTENT: &[u8] = b"direct-temp-data";
+    const NESTED_CONTENT: &[u8] = b"nested-temp-data";
+    let direct = root.join(&RelativePath::parse("payload").expect("constant child path"));
+    let nested = root.join(&RelativePath::parse("nested/payload").expect("constant nested path"));
+    for (path, expected) in [(&direct, DIRECT_CONTENT), (&nested, NESTED_CONTENT)] {
+        if matches!(
+            suite.fixture.exists_out_of_band(path).await.map_err(|error| {
+                ContractFailure::with_source("temporary directory content existence check failed", error).at(id)
+            })?,
+            FixtureSupport::Supported(false)
+        ) {
+            verify_condition(false, id, "temporary directory publication dropped a child")?;
+        }
+        match suite.fixture.read_file(path).await.map_err(|error| {
+            ContractFailure::with_source("temporary directory content observation failed", error).at(id)
+        })? {
+            FixtureSupport::Supported(actual) => {
+                verify_condition(
+                    actual == expected,
+                    id,
+                    "temporary directory publication changed content",
+                )?;
+            }
+            FixtureSupport::Unsupported => {
+                return Ok(Some(
+                    "temporary directory content verification needs fixture.read_file".to_owned(),
+                ));
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// Verifies overwrite publication using an independently prepared target.
@@ -166,7 +258,8 @@ pub(super) async fn persist_temp_directory(
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` when the replacement is published at the prepared target.
+/// Returns an evidence-gap reason when required independent hooks are
+/// unsupported.
 ///
 /// # Errors
 ///
@@ -175,26 +268,59 @@ pub(super) async fn persist_temp_directory(
 pub(super) async fn verify_temp_directory_overwrite(
     suite: &mut AsyncFileSystemContractSuite<'_>,
     id: ContractCheckId,
-) -> Result<(), ContractFailure> {
+) -> Result<Option<String>, ContractFailure> {
     let filesystem = suite.fixture.file_system();
     let relative = suite.context.relative_name("temp-overwritten-directory");
     let prepared =
         suite.fixture.seed_empty_directory(&relative).await.map_err(|error| {
             ContractFailure::with_source("temporary overwrite target preparation failed", error).at(id)
         })?;
-    let FixtureSupport::Supported(target) = prepared else {
-        return Err(ContractFailure::message_only(
-            "temporary directory overwrite needs independent target preparation",
-        )
-        .at(id));
+    let target = match prepared {
+        FixtureSupport::Supported(target) => target,
+        FixtureSupport::Unsupported => {
+            return Ok(Some(
+                "temporary directory overwrite needs fixture.seed_empty_directory".to_owned(),
+            ));
+        }
     };
     suite.context.record_created(target.clone());
+    let old_payload = target.join(&RelativePath::parse("payload").expect("constant old child path"));
+    match suite
+        .fixture
+        .write_file_out_of_band(&old_payload, b"old-temp-data")
+        .await
+        .map_err(|error| ContractFailure::with_source("temporary overwrite old content setup failed", error).at(id))?
+    {
+        FixtureSupport::Supported(()) => {}
+        FixtureSupport::Unsupported => {
+            return Ok(Some(
+                "temporary directory overwrite needs fixture.write_file_out_of_band".to_owned(),
+            ));
+        }
+    }
+    match suite.fixture.read_file(&old_payload).await.map_err(|error| {
+        ContractFailure::with_source("temporary overwrite old content observation failed", error).at(id)
+    })? {
+        FixtureSupport::Supported(actual) => {
+            verify_condition(
+                actual == b"old-temp-data",
+                id,
+                "temporary overwrite fixture setup changed old content",
+            )?;
+        }
+        FixtureSupport::Unsupported => {
+            return Ok(Some("temporary directory overwrite needs fixture.read_file".to_owned()));
+        }
+    }
     let mut replacement = filesystem
         .create_temp_directory(TempOptions::default())
         .await
         .map_err(|error| ContractFailure::with_owned_source("temporary overwrite preparation failed", error).at(id))?;
     let source = replacement.path().clone();
     suite.context.record_created(source.clone());
+    if let Some(reason) = prepare_temp_directory_contents(suite, id, &source).await? {
+        return Ok(Some(reason));
+    }
     let outcome = match replacement
         .persist(
             &target,
@@ -225,5 +351,5 @@ pub(super) async fn verify_temp_directory_overwrite(
             "temporary overwrite did not release source and publish target",
         )?;
     }
-    Ok(())
+    verify_temp_directory_contents(suite, id, outcome.target()).await
 }

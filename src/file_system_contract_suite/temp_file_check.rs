@@ -147,6 +147,7 @@ impl FileSystemContractSuite<'_> {
             })?;
             self.context.record_created(temporary.path().clone());
         }
+        let mut content_supported = self.prepare_temp_file_content(temporary.path(), id)?;
         if id != ContractCheckId::TempAtomic {
             let kept_source = temporary.path().clone();
             let kept = match temporary.keep() {
@@ -175,6 +176,9 @@ impl FileSystemContractSuite<'_> {
                     id,
                     "temporary keep publication differs",
                 )?;
+            }
+            if content_supported {
+                content_supported = self.verify_temp_file_content(kept.target(), id)?;
             }
             if id == ContractCheckId::TempRepeatedLifecycle {
                 let failure = match temporary.keep() {
@@ -219,6 +223,9 @@ impl FileSystemContractSuite<'_> {
                     id,
                     "kept publication disappeared",
                 )?;
+                if content_supported {
+                    self.verify_temp_file_content(kept.target(), id)?;
+                }
                 let mut cleaned = filesystem.create_temp_file(TempOptions::default()).map_err(|error| {
                     ContractFailure::with_owned_source("repeated cleanup preparation failed", error).at(id)
                 })?;
@@ -260,6 +267,7 @@ impl FileSystemContractSuite<'_> {
                 ContractFailure::with_owned_source("temporary persistence preparation failed", error).at(id)
             })?;
             self.context.record_created(temporary.path().clone());
+            content_supported = self.prepare_temp_file_content(temporary.path(), id)?;
         }
         let source = temporary.path().clone();
         let target = self
@@ -346,17 +354,18 @@ impl FileSystemContractSuite<'_> {
                 .at(id));
             }
         };
-        self.verify_temp_publication(&outcome, &source, &target, atomic, id)
+        self.verify_temp_publication(&outcome, &source, &target, atomic, content_supported, id)
     }
 
     /// Checks the published target identity, achieved atomicity, and externally
     /// observed source and target states after temporary-file persistence.
     fn verify_temp_publication(
-        &self,
+        &mut self,
         outcome: &PersistOutcome,
         source: &Path,
         target: &Path,
         atomic: bool,
+        content_supported: bool,
         id: ContractCheckId,
     ) -> Result<(), ContractFailure> {
         verify_condition(outcome.target() == target, id, "temporary persist target mismatch")?;
@@ -378,6 +387,63 @@ impl FileSystemContractSuite<'_> {
                 "temporary persistence source release or target publication differs",
             )?;
         }
+        if content_supported {
+            self.verify_temp_file_content(outcome.target(), id)?;
+        }
         Ok(())
+    }
+
+    fn prepare_temp_file_content(&mut self, path: &Path, id: ContractCheckId) -> Result<bool, ContractFailure> {
+        const CONTENT: &[u8] = b"temp-data";
+        match self
+            .fixture
+            .write_file_out_of_band(path, CONTENT)
+            .map_err(|error| ContractFailure::with_source("temporary file content preparation failed", error).at(id))?
+        {
+            FixtureSupport::Unsupported => {
+                self.record_temp_file_content_unverified(id, "fixture write_file_out_of_band hook is unsupported");
+                Ok(false)
+            }
+            FixtureSupport::Supported(()) => match self.fixture.read_file(path).map_err(|error| {
+                ContractFailure::with_source("temporary file content setup observation failed", error).at(id)
+            })? {
+                FixtureSupport::Supported(actual) => {
+                    verify_condition(actual == CONTENT, id, "temporary file setup bytes differ")?;
+                    Ok(true)
+                }
+                FixtureSupport::Unsupported => {
+                    self.record_temp_file_content_unverified(id, "fixture read_file hook is unsupported");
+                    Ok(false)
+                }
+            },
+        }
+    }
+
+    fn verify_temp_file_content(&mut self, path: &Path, id: ContractCheckId) -> Result<bool, ContractFailure> {
+        const CONTENT: &[u8] = b"temp-data";
+        match self
+            .fixture
+            .read_file(path)
+            .map_err(|error| ContractFailure::with_source("temporary file content observation failed", error).at(id))?
+        {
+            FixtureSupport::Supported(actual) => {
+                verify_condition(actual == CONTENT, id, "temporary file publication changed contents")?;
+                Ok(true)
+            }
+            FixtureSupport::Unsupported => {
+                self.record_temp_file_content_unverified(id, "fixture read_file hook is unsupported after publication");
+                Ok(false)
+            }
+        }
+    }
+
+    fn record_temp_file_content_unverified(&mut self, id: ContractCheckId, reason: &str) {
+        self.context.record_check(
+            id,
+            crate::internal::check_catalog::specification(id).capability,
+            crate::ContractCheckOutcome::Unverified {
+                reason: reason.to_owned(),
+            },
+        );
     }
 }

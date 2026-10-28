@@ -52,7 +52,10 @@ impl AsyncFileSystemContractSuite<'_> {
         if self.check_copy_capability(id, &source_relative, &target).await? {
             return Ok(());
         }
-        let bytes = b"copy bytes";
+        let bytes = crate::internal::limit_probe_plan::bounded_payload(
+            b"copy bytes",
+            self.context.properties().limits().max_write_bytes(),
+        );
         let Some(case) = self
             .prepare_basic_copy(id, &source_relative, &target_relative, bytes)
             .await?

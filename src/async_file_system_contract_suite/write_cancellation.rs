@@ -135,38 +135,63 @@ impl AsyncFileSystemContractSuite<'_> {
             )
             .at(id));
         }
-        reached?;
-        verify_condition(
+        if let Err(error) = reached {
+            return Err(retain_write_operation(error, operation, id));
+        }
+        if let Err(error) = verify_condition(
             disarmed,
             id,
             "probe disarm failed; original cause is retained in cleanup",
-        )?;
-        let expected_bytes = probe.accepted_bytes().map_err(|error| {
-            ContractFailure::with_source("write cancellation byte observation failed", error).at(id)
-        })?;
-        verify_condition(
+        ) {
+            return Err(retain_write_operation(error, operation, id));
+        }
+        let expected_bytes = match probe.accepted_bytes() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return Err(retain_write_operation(
+                    ContractFailure::with_source("write cancellation byte observation failed", error).at(id),
+                    operation,
+                    id,
+                ));
+            }
+        };
+        if let Err(error) = verify_condition(
             expected_bytes <= bytes.len() as u64,
             id,
             "observed accepted bytes exceed the request",
-        )?;
-        verify_condition(
+        ) {
+            return Err(retain_write_operation(error, operation, id));
+        }
+        if let Err(error) = verify_condition(
             operation.state() == AsyncWriteAllOperationState::Failed(WriteFailureState::Indeterminate),
             id,
             "cancellation state mismatch",
-        )?;
-        verify_condition(
+        ) {
+            return Err(retain_write_operation(error, operation, id));
+        }
+        if let Err(error) = verify_condition(
             operation.written_bytes() == expected_bytes,
             id,
             "accepted byte count mismatch",
-        )?;
-        verify_condition(
+        ) {
+            return Err(retain_write_operation(error, operation, id));
+        }
+        if let Err(error) = verify_condition(
             operation.has_recovery() == (stage != AsyncWriteCancellationStage::Open),
             id,
             "writer recovery responsibility mismatch",
-        )?;
+        ) {
+            return Err(retain_write_operation(error, operation, id));
+        }
         let failure = match operation.execute().await {
             Err(failure) => failure,
-            Ok(_) => return Err(ContractFailure::message_only("cancelled write ran twice").at(id)),
+            Ok(_) => {
+                return Err(retain_write_operation(
+                    ContractFailure::message_only("cancelled write ran twice").at(id),
+                    operation,
+                    id,
+                ));
+            }
         };
         if failure.error().kind() != FsErrorKind::InvalidState
             || failure.state() != WriteFailureState::Indeterminate
@@ -178,11 +203,13 @@ impl AsyncFileSystemContractSuite<'_> {
             )
             .at(id));
         }
-        verify_condition(
+        if let Err(error) = verify_condition(
             operation.has_recovery() == (stage != AsyncWriteCancellationStage::Open),
             id,
             "repeated execution lost writer",
-        )?;
+        ) {
+            return Err(retain_write_operation(error, operation, id));
+        }
         self.verify_write_cancellation_recovery(id, probe.as_ref(), operation, before, bytes)
             .await
     }
@@ -247,6 +274,18 @@ impl AsyncFileSystemContractSuite<'_> {
             .record_check(id, Some(FileSystemCapability::Write), ContractCheckOutcome::Passed);
         Ok(())
     }
+}
+
+fn retain_write_operation(
+    failure: ContractFailure,
+    operation: AsyncWriteAllOperation,
+    id: ContractCheckId,
+) -> ContractFailure {
+    ContractFailure::with_owned_source(
+        "write cancellation diagnostic failed; operation retained",
+        crate::ContractWriterFailure::new(failure, operation),
+    )
+    .at(id)
 }
 
 #[cfg(test)]

@@ -407,6 +407,10 @@ pub enum AsyncMemoryFault {
     MissingPathExists,
     /// Returns directory metadata for an existing file.
     WrongStatMetadata,
+    /// Returns file metadata without a known length.
+    StatUnknownLength,
+    /// Returns a known file length that differs from the seeded content.
+    StatWrongLength,
     /// Claims recursive creation while omitting ancestors.
     RecursiveCreateLeavesParentsMissing,
     /// Fails directory creation before publishing any path.
@@ -457,6 +461,18 @@ pub enum AsyncMemoryFault {
     TempKeepFails,
     /// Fails temporary persist before publishing it.
     TempPersistFails,
+    /// Drops file bytes while publishing a temporary file but keeps the path.
+    TempKeepDropsFileContents,
+    /// Drops temporary-file bytes during persist while keeping the target path.
+    TempPersistDropsFileContents,
+    /// Drops temporary-directory descendants during keep while keeping the
+    /// root.
+    TempKeepDropsDirectoryChildren,
+    /// Drops temporary-directory descendants during persist while keeping the
+    /// root.
+    TempPersistDropsDirectoryChildren,
+    /// Drops descendants only when replacing a temporary-directory target.
+    TempOverwriteDropsDirectoryChildren,
     /// Fails one temporary cleanup attempt.
     TempCleanupFailsOnce,
     /// Fails independent observation in the owning-write cancellation probe.
@@ -785,6 +801,24 @@ impl AsyncMemoryFixture {
         )
     }
 
+    /// Creates a fallback-only copy fixture with an explicit write limit.
+    pub fn fallback_only_with_limits(limits: FileSystemLimits) -> Self {
+        Self::fallback_only_with_fault_and_limits(AsyncMemoryFault::None, limits)
+    }
+
+    /// Creates a fallback-only copy fixture with a fault and write limit.
+    pub fn fallback_only_with_fault_and_limits(fault: AsyncMemoryFault, limits: FileSystemLimits) -> Self {
+        Self::with_configuration_options(
+            fault,
+            false,
+            false,
+            AsyncCapabilityProfile::FALLBACK,
+            "async-memory-fallback-provider",
+            limits,
+            None,
+        )
+    }
+
     /// Creates a conforming fixture whose filesystem and provider identifiers
     /// are identical.
     pub fn with_matching_ids() -> Self {
@@ -856,6 +890,25 @@ impl AsyncMemoryFixture {
                 ..AsyncCapabilityProfile::ALL
             },
             "async-memory-no-atomic-temp-provider",
+        )
+    }
+
+    /// Creates a fixture that advertises temporary resources but not facade
+    /// writes.
+    pub fn temp_only() -> Self {
+        Self::with_configuration(
+            AsyncMemoryFault::None,
+            false,
+            false,
+            AsyncCapabilityProfile {
+                core: false,
+                optional: false,
+                create_directory: false,
+                extended: false,
+                atomic_temp_persist: true,
+                read_only: false,
+            },
+            "async-memory-temp-only-provider",
         )
     }
 
@@ -1508,10 +1561,16 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             if self.fixture_hook_fails(FixtureHook::WriteFile) {
                 return Err(FixtureError::new("injected out-of-band write failure"));
             }
-            self.entries
-                .lock()
-                .expect("async memory state lock must succeed")
-                .insert(path.as_str().to_owned(), Entry::File(bytes.to_vec()));
+            let mut entries = self.entries.lock().expect("async memory state lock must succeed");
+            let mut current = path.as_str();
+            while let Some((parent, _)) = current.rsplit_once('/') {
+                if parent.is_empty() {
+                    break;
+                }
+                entries.entry(parent.to_owned()).or_insert(Entry::Directory);
+                current = parent;
+            }
+            entries.insert(path.as_str().to_owned(), Entry::File(bytes.to_vec()));
             bump_version(&self.versions, path);
             Ok(FixtureSupport::Supported(()))
         })
@@ -1815,6 +1874,11 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 .with_guaranteed(FileSystemCapability::DurableWrite)
                 .with_guaranteed(FileSystemCapability::ServerSideCopy);
         }
+        if self.provider_id == "async-memory-temp-only-provider" {
+            capabilities = capabilities
+                .with_guaranteed(FileSystemCapability::TempFile)
+                .with_guaranteed(FileSystemCapability::TempDirectory);
+        }
         if self.atomic_temp_persist {
             capabilities = capabilities.with_guaranteed(FileSystemCapability::AtomicTempPersist);
         }
@@ -1890,7 +1954,11 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     } else {
                         FileKind::File
                     });
-                    metadata = metadata.with_len(Some(bytes.len() as u64));
+                    metadata = match fault {
+                        AsyncMemoryFault::StatUnknownLength => metadata.with_len(None),
+                        AsyncMemoryFault::StatWrongLength => metadata.with_len(Some(bytes.len() as u64 + 1)),
+                        _ => metadata.with_len(Some(bytes.len() as u64)),
+                    };
                     if fault == AsyncMemoryFault::WrongStatMetadata {
                         metadata = metadata.with_kind(FileKind::Directory).with_len(None);
                     }
@@ -2824,6 +2892,56 @@ struct AsyncTempSession {
 }
 
 #[cfg(feature = "async")]
+fn publish_temp_resource(
+    entries: &mut HashMap<String, Entry>,
+    source: &Path,
+    target: &Path,
+    fault: AsyncMemoryFault,
+    keeping: bool,
+) {
+    let source_prefix = format!("{}/", source.as_str());
+    let target_prefix = format!("{}/", target.as_str());
+    let root = entries.remove(source.as_str()).expect("temporary entry must exist");
+    let descendants: Vec<(String, Entry)> = entries
+        .iter()
+        .filter(|(path, _)| path.starts_with(&source_prefix))
+        .map(|(path, entry)| (path.clone(), entry.clone()))
+        .collect();
+    entries.retain(|path, _| !path.starts_with(&source_prefix));
+    entries.retain(|path, _| path != target.as_str() && !path.starts_with(&target_prefix));
+
+    let drop_file = matches!(
+        (keeping, fault),
+        (true, AsyncMemoryFault::TempKeepDropsFileContents) | (false, AsyncMemoryFault::TempPersistDropsFileContents)
+    );
+    let drop_children = match (keeping, fault) {
+        (true, AsyncMemoryFault::TempKeepDropsDirectoryChildren) => true,
+        (false, AsyncMemoryFault::TempPersistDropsDirectoryChildren) => true,
+        (false, AsyncMemoryFault::TempOverwriteDropsDirectoryChildren) => {
+            target.as_str().contains("temp-overwritten-directory")
+        }
+        _ => false,
+    };
+    let root = if drop_file {
+        match root {
+            Entry::File(_) => Entry::File(Vec::new()),
+            other => other,
+        }
+    } else {
+        root
+    };
+    entries.insert(target.as_str().to_owned(), root);
+    if !drop_children {
+        for (old_path, entry) in descendants {
+            let suffix = old_path
+                .strip_prefix(&source_prefix)
+                .expect("descendant path must have temporary source prefix");
+            entries.insert(format!("{target_prefix}{suffix}"), entry);
+        }
+    }
+}
+
+#[cfg(feature = "async")]
 impl AsyncTempResourceSpi for AsyncTempSession {
     fn cleanup<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, FsResult<()>> {
         let this = self.get_mut();
@@ -2862,8 +2980,7 @@ impl AsyncTempResourceSpi for AsyncTempSession {
             }
             let target = keep_target(&source);
             let mut entries = entries.lock().expect("async memory state lock must succeed");
-            let entry = entries.remove(source.as_str()).expect("temporary entry must exist");
-            entries.insert(target.as_str().to_owned(), entry);
+            publish_temp_resource(&mut entries, &source, &target, fault, true);
             Ok(PersistOutcome::new(
                 target,
                 AchievedAtomicity::Atomic,
@@ -2894,8 +3011,7 @@ impl AsyncTempResourceSpi for AsyncTempSession {
                 ));
             }
             let mut entries = entries.lock().expect("async memory state lock must succeed");
-            let entry = entries.remove(source.as_str()).expect("temporary entry must exist");
-            entries.insert(target.as_str().to_owned(), entry);
+            publish_temp_resource(&mut entries, &source, &target, fault, false);
             let reported_target = if fault == AsyncMemoryFault::TempPersistWrongTarget {
                 Path::parse("/contract/async-wrong-persist-target").expect("generated path must be valid")
             } else {

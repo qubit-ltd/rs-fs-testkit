@@ -103,7 +103,10 @@ impl FileSystemContractSuite<'_> {
             );
             return Ok(());
         }
-        let bytes = b"copy bytes";
+        let bytes = crate::internal::limit_probe_plan::bounded_payload(
+            b"copy bytes",
+            self.context.properties().limits().max_write_bytes(),
+        );
         let scenario =
             crate::internal::check_catalog::required_copy_scenario(id, "copy preparation missing from catalog")?;
         let prepared = self

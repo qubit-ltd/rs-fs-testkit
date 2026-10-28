@@ -189,6 +189,38 @@ fn remove_entry(state: &mut State, path: &str) -> Option<Entry> {
     removed
 }
 
+fn publish_temp_entry(
+    state: &mut State,
+    source: &Path,
+    target: &Path,
+    entry: Entry,
+    overwrite: bool,
+    drop_children: bool,
+) {
+    let source_prefix = format!("{}/", source.as_str().trim_end_matches('/'));
+    let target_prefix = format!("{}/", target.as_str().trim_end_matches('/'));
+    let descendants = state
+        .entries
+        .iter()
+        .filter(|(path, _)| path.starts_with(&source_prefix))
+        .map(|(path, entry)| (path.clone(), entry.clone()))
+        .collect::<Vec<_>>();
+    state.entries.retain(|path, _| !path.starts_with(&source_prefix));
+    state.versions.retain(|path, _| !path.starts_with(&source_prefix));
+    if overwrite {
+        let _ = remove_entry(state, target.as_str());
+        state.entries.retain(|path, _| !path.starts_with(&target_prefix));
+        state.versions.retain(|path, _| !path.starts_with(&target_prefix));
+    }
+    publish_entry(state, target.as_str(), entry);
+    if !drop_children {
+        for (path, entry) in descendants {
+            let relative = &path[source_prefix.len()..];
+            publish_entry(state, &format!("{target_prefix}{relative}"), entry);
+        }
+    }
+}
+
 /// One isolated contract fixture backed by the public synchronous facade.
 #[must_use]
 pub struct MemoryFixture {
@@ -205,6 +237,10 @@ pub enum MemoryFault {
     None,
     /// Returns directory metadata for an existing file.
     WrongStatKind,
+    /// Returns file metadata without a known length.
+    StatUnknownLength,
+    /// Returns a known file length that differs from the seeded content.
+    StatWrongLength,
     /// Claims recursive creation while omitting ancestors.
     RecursiveCreateLeavesParentsMissing,
     /// Fails directory creation before publishing any path.
@@ -245,10 +281,24 @@ pub enum MemoryFault {
     TempCreationFails,
     /// Fails temporary resource keep before publishing it.
     TempKeepFails,
+    /// Reports the independent temp-content write hook as unsupported.
+    TempWriteHookUnsupported,
+    /// Reports the independent temp-content read hook as unsupported.
+    TempReadHookUnsupported,
     /// Fails temporary persist before publishing it.
     TempPersistFails,
     /// Fails one temporary cleanup and then permits cleanup retry.
     TempCleanupFailsOnce,
+    /// Drops file bytes when a temporary file is kept.
+    TempKeepDropsFileContents,
+    /// Drops file bytes when a temporary file is persisted.
+    TempPersistDropsFileContents,
+    /// Drops temporary-directory children when the directory is kept.
+    TempKeepDropsDirectoryChildren,
+    /// Drops temporary-directory children when the directory is persisted.
+    TempPersistDropsDirectoryChildren,
+    /// Drops temporary-directory children during overwrite publication.
+    TempOverwriteDropsDirectoryChildren,
     /// Uses object and prefix metadata kinds for stored resources.
     ObjectKinds,
     /// Overwrites instead of appending to an existing file.
@@ -261,6 +311,8 @@ pub enum MemoryFault {
     AbortFailsOnce,
     /// Fails explicit cleanup of an expected conditional rejection.
     ConditionalAbortFailsOnce,
+    /// Panics once while aborting an expected conditional rejection.
+    ConditionalAbortPanicsOnce,
     /// Claims an expected conditional rejection cleanup published the request.
     ConditionalAbortReportsPublished,
     /// Publishes during explicit abort while claiming the target is unchanged.
@@ -348,6 +400,43 @@ impl MemoryFixture {
         )
     }
 
+    /// Creates a fixture with temporary capabilities but no facade Write
+    /// capability.
+    pub fn temp_only() -> Self {
+        Self::with_configuration(
+            MemoryFault::None,
+            true,
+            false,
+            false,
+            false,
+            false,
+            "memory-temp-only-provider",
+        )
+    }
+
+    /// Creates a fallback-only copy fixture with an explicit write limit.
+    pub fn fallback_only_with_limits(limits: FileSystemLimits) -> Self {
+        Self::with_fallback_and_limits(MemoryFault::None, limits)
+    }
+
+    /// Creates a fallback-only copy fixture with a fault and write limit.
+    pub fn fallback_only_with_fault_and_limits(fault: MemoryFault, limits: FileSystemLimits) -> Self {
+        Self::with_fallback_and_limits(fault, limits)
+    }
+
+    fn with_fallback_and_limits(fault: MemoryFault, limits: FileSystemLimits) -> Self {
+        Self::with_configuration_and_limits(
+            fault,
+            true,
+            true,
+            false,
+            true,
+            false,
+            "memory-fallback-provider",
+            limits,
+        )
+    }
+
     /// Creates a fresh fixture with exactly one provider fault.
     pub fn with_fault(fault: MemoryFault) -> Self {
         let extended = matches!(
@@ -369,6 +458,7 @@ impl MemoryFixture {
                 | MemoryFault::IgnoreReadIfNoneMatch
                 | MemoryFault::IgnoreWriteIfMatch
                 | MemoryFault::ConditionalAbortFailsOnce
+                | MemoryFault::ConditionalAbortPanicsOnce
                 | MemoryFault::ConditionalAbortReportsPublished
                 | MemoryFault::IgnoreDeleteIfMatch
                 | MemoryFault::ChecksumIgnoresCorruption
@@ -1181,6 +1271,9 @@ impl FileSystemFixture for MemoryFixture {
 
     fn read_file(&self, path: &Path) -> FixtureResult<FixtureSupport<Vec<u8>>> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        if state.fault == MemoryFault::TempReadHookUnsupported {
+            return Ok(FixtureSupport::Unsupported);
+        }
         if state.fixture_hook_errors.should_fail(FixtureHook::ReadFile) {
             return Err(FixtureError::new("injected file observation failure"));
         }
@@ -1229,6 +1322,9 @@ impl FileSystemFixture for MemoryFixture {
 
     fn write_file_out_of_band(&self, path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        if state.fault == MemoryFault::TempWriteHookUnsupported {
+            return Ok(FixtureSupport::Unsupported);
+        }
         if state.fixture_hook_errors.should_fail(FixtureHook::WriteFile) {
             return Err(FixtureError::new("injected out-of-band write failure"));
         }
@@ -1404,6 +1500,11 @@ impl FileSystemSpi for MemorySpi {
                 .with_guaranteed(FileSystemCapability::DurableWrite)
                 .with_guaranteed(FileSystemCapability::ServerSideCopy);
         }
+        if self.provider_id == "memory-temp-only-provider" {
+            capabilities = capabilities
+                .with_guaranteed(FileSystemCapability::TempFile)
+                .with_guaranteed(FileSystemCapability::TempDirectory);
+        }
         if state.atomic_temp_persist {
             capabilities = capabilities.with_guaranteed(FileSystemCapability::AtomicTempPersist);
         }
@@ -1500,7 +1601,11 @@ impl FileSystemSpi for MemorySpi {
         };
         let mut metadata = FileMetadata::new(kind);
         if let Entry::File(bytes) = entry {
-            metadata = metadata.with_len(Some(bytes.len() as u64));
+            metadata = match state.fault {
+                MemoryFault::StatUnknownLength => metadata.with_len(None),
+                MemoryFault::StatWrongLength => metadata.with_len(Some(bytes.len() as u64 + 1)),
+                _ => metadata.with_len(Some(bytes.len() as u64)),
+            };
         }
         Ok(StatResponse::new(request.path().clone(), metadata))
     }
@@ -2147,6 +2252,18 @@ impl FileWriterSpi for MemoryWriter {
     }
 
     fn abort(&mut self) -> FsResult<WriteAbortOutcome> {
+        let panic_once = {
+            let mut state = self.state.lock().expect("memory state lock");
+            if state.fault == MemoryFault::ConditionalAbortPanicsOnce {
+                state.fault = MemoryFault::None;
+                true
+            } else {
+                false
+            }
+        };
+        if panic_once {
+            panic!("conditional abort panicked once");
+        }
         if let MemoryFault::WriteCommitState(state) = self.state.lock().expect("memory state lock").fault {
             return Ok(match state {
                 WriteFailureState::Published => WriteAbortOutcome::Published,
@@ -2215,7 +2332,28 @@ impl TempResourceSpi for TempSession {
             ));
         }
         let entry = remove_entry(&mut state, self.path.as_str()).expect("temporary entry must exist");
-        publish_entry(&mut state, request.target().as_str(), entry);
+        let entry = if state.fault == MemoryFault::TempPersistDropsFileContents {
+            match entry {
+                Entry::File(_) => Entry::File(Vec::new()),
+                other => other,
+            }
+        } else {
+            entry
+        };
+        let drop_children = matches!(
+            state.fault,
+            MemoryFault::TempPersistDropsDirectoryChildren
+                | MemoryFault::TempOverwriteDropsDirectoryChildren if request.options().overwrite()
+        ) || (state.fault == MemoryFault::TempPersistDropsDirectoryChildren
+            && !request.options().overwrite());
+        publish_temp_entry(
+            &mut state,
+            &self.path,
+            request.target(),
+            entry,
+            request.options().overwrite(),
+            drop_children,
+        );
         let target = if state.fault == MemoryFault::WrongPersistTarget {
             Path::parse("/contract/wrong-persist-target").expect("generated path must be valid")
         } else {
@@ -2244,7 +2382,16 @@ impl TempResourceSpi for TempSession {
             ));
         }
         let entry = remove_entry(&mut state, self.path.as_str()).expect("temporary entry must exist");
-        publish_entry(&mut state, target.as_str(), entry);
+        let entry = if state.fault == MemoryFault::TempKeepDropsFileContents {
+            match entry {
+                Entry::File(_) => Entry::File(Vec::new()),
+                other => other,
+            }
+        } else {
+            entry
+        };
+        let drop_children = state.fault == MemoryFault::TempKeepDropsDirectoryChildren;
+        publish_temp_entry(&mut state, &self.path, &target, entry, false, drop_children);
         Ok(PersistOutcome::new(
             target,
             AchievedAtomicity::Atomic,

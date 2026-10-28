@@ -126,7 +126,7 @@ impl AsyncFileSystemContractSuite<'_> {
     ///
     /// Returns an error when an operation fails or observed behavior differs
     /// from the selected contract.
-    pub(super) async fn execute_temp_file(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
+    pub(super) async fn execute_temp_file(&mut self, id: ContractCheckId) -> Result<Option<String>, ContractFailure> {
         let filesystem = self.fixture.file_system();
         let options = self.temp_file_options(id).await?;
         let basic = id == ContractCheckId::TempFile;
@@ -144,7 +144,7 @@ impl AsyncFileSystemContractSuite<'_> {
                         ContractFailure::with_owned_source("temporary creation rejection differs", error).at(id),
                     );
                 }
-                return Ok(());
+                return Ok(None);
             }
             Err(error) => {
                 return Err(ContractFailure::with_owned_source("temporary resource creation failed", error).at(id));
@@ -197,6 +197,9 @@ impl AsyncFileSystemContractSuite<'_> {
             self.context.record_created(temporary.path().clone());
         }
         if id != ContractCheckId::TempAtomic {
+            if let Some(reason) = self.prepare_temp_file_content(id, temporary.path()).await? {
+                return Ok(Some(reason));
+            }
             let kept_source = temporary.path().clone();
             let kept = match temporary.keep().await {
                 Ok(outcome) => outcome,
@@ -224,6 +227,9 @@ impl AsyncFileSystemContractSuite<'_> {
                     id,
                     "temporary keep publication differs",
                 )?;
+            }
+            if let Some(reason) = self.verify_temp_file_content(id, kept.target()).await? {
+                return Ok(Some(reason));
             }
             if id == ContractCheckId::TempRepeatedLifecycle {
                 let failure = match temporary.keep().await {
@@ -268,6 +274,9 @@ impl AsyncFileSystemContractSuite<'_> {
                     id,
                     "kept publication disappeared",
                 )?;
+                if let Some(reason) = self.verify_temp_file_content(id, kept.target()).await? {
+                    return Ok(Some(reason));
+                }
                 let mut cleaned = filesystem
                     .create_temp_file(TempOptions::default())
                     .await
@@ -310,7 +319,7 @@ impl AsyncFileSystemContractSuite<'_> {
                     )
                     .at(id));
                 }
-                return Ok(());
+                return Ok(None);
             }
             temporary = filesystem
                 .create_temp_file(TempOptions::default())
@@ -321,6 +330,9 @@ impl AsyncFileSystemContractSuite<'_> {
             self.context.record_created(temporary.path().clone());
         }
         let source = temporary.path().clone();
+        if let Some(reason) = self.prepare_temp_file_content(id, &source).await? {
+            return Ok(Some(reason));
+        }
         let target = self
             .fixture
             .path(&self.context.relative_name("persisted-file"))
@@ -393,7 +405,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 id,
                 "atomic rejection cleanup retained source",
             )?;
-            return Ok(());
+            return Ok(None);
         }
         let outcome = match publication {
             Ok(outcome) => outcome,
@@ -424,6 +436,49 @@ impl AsyncFileSystemContractSuite<'_> {
                 "temporary persistence source release or target publication differs",
             )?;
         }
-        Ok(())
+        self.verify_temp_file_content(id, outcome.target()).await
+    }
+
+    async fn prepare_temp_file_content(
+        &self,
+        id: ContractCheckId,
+        source: &qubit_fs::path::Path,
+    ) -> Result<Option<String>, ContractFailure> {
+        const CONTENT: &[u8] = b"temp-data";
+        match self
+            .fixture
+            .write_file_out_of_band(source, CONTENT)
+            .await
+            .map_err(|error| ContractFailure::with_source("temporary file content setup failed", error).at(id))?
+        {
+            FixtureSupport::Supported(()) => {}
+            FixtureSupport::Unsupported => {
+                return Ok(Some(
+                    "temporary file content verification needs fixture.write_file_out_of_band".to_owned(),
+                ));
+            }
+        }
+        self.verify_temp_file_content(id, source).await
+    }
+
+    async fn verify_temp_file_content(
+        &self,
+        id: ContractCheckId,
+        path: &qubit_fs::path::Path,
+    ) -> Result<Option<String>, ContractFailure> {
+        const CONTENT: &[u8] = b"temp-data";
+        let observed =
+            self.fixture.read_file(path).await.map_err(|error| {
+                ContractFailure::with_source("temporary file content observation failed", error).at(id)
+            })?;
+        match observed {
+            FixtureSupport::Supported(actual) => {
+                verify_condition(actual == CONTENT, id, "temporary file publication changed content")?;
+                Ok(None)
+            }
+            FixtureSupport::Unsupported => Ok(Some(
+                "temporary file content verification needs fixture.read_file".to_owned(),
+            )),
+        }
     }
 }

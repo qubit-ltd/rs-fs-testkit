@@ -17,6 +17,9 @@ use qubit_fs::temp::PersistOptions;
 use qubit_fs::temp::TempOptions;
 use qubit_fs::temp::TempResourceState;
 use qubit_fs::write::WriteOptions;
+use qubit_fs_testkit::ContractCheckId;
+use qubit_fs_testkit::ContractCheckOutcome;
+use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
 use qubit_fs_testkit::FixtureSupport;
 
@@ -97,4 +100,98 @@ fn test_sync_temp_failed_atomic_persist_has_indeterminate_source() {
 
     fixture.teardown().expect("fixture teardown must succeed");
     assert!(fixture.is_empty(), "teardown must release the published target");
+}
+
+#[test]
+fn test_sync_temp_contract_suite_preserves_published_contents() {
+    for id in [
+        ContractCheckId::TempFile,
+        ContractCheckId::TempDirectory,
+        ContractCheckId::TempAtomic,
+        ContractCheckId::TempRepeatedLifecycle,
+    ] {
+        let fixture = MemoryFixture::new();
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        assert!(run.requirements_satisfied(), "{id}: {:?}", run.failures());
+    }
+}
+
+#[test]
+fn test_sync_temp_contract_suite_rejects_lost_file_and_directory_contents() {
+    for (fault, id) in [
+        (MemoryFault::TempKeepDropsFileContents, ContractCheckId::TempFile),
+        (MemoryFault::TempPersistDropsFileContents, ContractCheckId::TempFile),
+        (MemoryFault::TempPersistDropsFileContents, ContractCheckId::TempAtomic),
+        (
+            MemoryFault::TempKeepDropsDirectoryChildren,
+            ContractCheckId::TempDirectory,
+        ),
+        (
+            MemoryFault::TempPersistDropsDirectoryChildren,
+            ContractCheckId::TempDirectory,
+        ),
+        (
+            MemoryFault::TempOverwriteDropsDirectoryChildren,
+            ContractCheckId::TempDirectory,
+        ),
+    ] {
+        let fixture = MemoryFixture::with_fault(fault);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        assert!(!run.requirements_satisfied(), "{fault:?} unexpectedly passed {id}");
+        assert!(
+            run.failures().iter().any(|failure| failure.check() == Some(id)),
+            "{fault:?}: {id}"
+        );
+    }
+}
+
+#[test]
+fn test_sync_temp_content_evidence_is_unverified_when_hooks_are_unsupported() {
+    for fault in [
+        MemoryFault::TempWriteHookUnsupported,
+        MemoryFault::TempReadHookUnsupported,
+    ] {
+        let fixture = MemoryFixture::with_fault(fault);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempFile);
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Unverified { reason } if reason.contains("hook")
+        ));
+        assert!(!run.requirements_satisfied());
+    }
+}
+
+#[test]
+fn test_sync_temp_content_setup_errors_remain_failures() {
+    let fixture = MemoryFixture::with_fixture_hook_error_and_limits(
+        self::common::shared_model::FixtureHook::WriteFile,
+        1,
+        qubit_fs::metadata::FileSystemLimits::unknown(),
+    );
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::TempFile);
+    assert!(!run.requirements_satisfied());
+    assert!(
+        run.failures()
+            .iter()
+            .any(|failure| failure.check() == Some(ContractCheckId::TempFile))
+    );
+}
+
+#[test]
+fn test_sync_temp_content_setup_does_not_require_facade_write_capability() {
+    let fixture = MemoryFixture::temp_only();
+    assert!(
+        !fixture
+            .file_system()
+            .properties()
+            .capabilities()
+            .supports(qubit_fs::metadata::FileSystemCapability::Write)
+    );
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::TempFile);
+    assert!(run.requirements_satisfied(), "{:?}", run.failures());
 }

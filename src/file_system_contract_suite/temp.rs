@@ -91,6 +91,19 @@ impl<'a> FileSystemContractSuite<'a> {
                 return Err(crate::ContractFailure::message_only("selected entry is not temporary lifecycle").at(id));
             }
         };
+        let outcome = self
+            .context
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == id)
+            .and_then(|check| match check.outcome() {
+                ContractCheckOutcome::Unverified { reason } => {
+                    Some(ContractCheckOutcome::Unverified { reason: reason.clone() })
+                }
+                _ => None,
+            })
+            .unwrap_or(outcome);
         self.context.record_check(
             id,
             crate::internal::check_catalog::specification(id).capability,

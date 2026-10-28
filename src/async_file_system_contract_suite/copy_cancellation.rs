@@ -11,6 +11,7 @@ use std::future::Future;
 use std::future::poll_fn;
 use std::task::Poll;
 
+use qubit_fs::copy::AsyncCopyOperation;
 use qubit_fs::copy::AsyncCopyOperationState;
 use qubit_fs::copy::CopyFailureState;
 use qubit_fs::error::FsErrorKind;
@@ -146,30 +147,42 @@ impl AsyncFileSystemContractSuite<'_> {
             )
             .at(id));
         }
-        reached?;
-        verify_condition(
+        if let Err(error) = reached {
+            return Err(retain_copy_operation(error, operation, id));
+        }
+        if let Err(error) = verify_condition(
             disarmed,
             id,
             "probe disarm failed; original cause is retained in cleanup",
-        )?;
-        verify_condition(
+        ) {
+            return Err(retain_copy_operation(error, operation, id));
+        }
+        if let Err(error) = verify_condition(
             operation.state() == AsyncCopyOperationState::Failed(CopyFailureState::Indeterminate),
             id,
             "cancelled copy did not become indeterminate",
-        )?;
+        ) {
+            return Err(retain_copy_operation(error, operation, id));
+        }
         let has_writer = matches!(
             stage,
             AsyncCopyCancellationStage::Writer | AsyncCopyCancellationStage::Commit
         );
-        verify_condition(
+        if let Err(error) = verify_condition(
             operation.has_recovery() == has_writer,
             id,
             "copy recovery writer responsibility differs",
-        )?;
+        ) {
+            return Err(retain_copy_operation(error, operation, id));
+        }
         let repeated = match operation.execute().await {
             Err(error) => error,
             Ok(_) => {
-                return Err(ContractFailure::message_only("cancelled copy executed twice").at(id));
+                return Err(retain_copy_operation(
+                    ContractFailure::message_only("cancelled copy executed twice").at(id),
+                    operation,
+                    id,
+                ));
             }
         };
         if repeated.error().kind() != FsErrorKind::InvalidState || repeated.state() != CopyFailureState::Indeterminate {
@@ -179,15 +192,21 @@ impl AsyncFileSystemContractSuite<'_> {
             )
             .at(id));
         }
-        verify_condition(
+        if let Err(error) = verify_condition(
             repeated.partial_stats().bytes <= source_before.len() as u64,
             id,
             "copy progress exceeds independently observed source bytes",
-        )?;
+        ) {
+            return Err(retain_copy_operation(error, operation, id));
+        }
         let repeated_again = match operation.execute().await {
             Err(error) => error,
             Ok(_) => {
-                return Err(ContractFailure::message_only("cancelled copy executed a third time").at(id));
+                return Err(retain_copy_operation(
+                    ContractFailure::message_only("cancelled copy executed a third time").at(id),
+                    operation,
+                    id,
+                ));
             }
         };
         if repeated_again.error().kind() != FsErrorKind::InvalidState
@@ -200,16 +219,20 @@ impl AsyncFileSystemContractSuite<'_> {
             )
             .at(id));
         }
-        verify_condition(
+        if let Err(error) = verify_condition(
             operation.state() == AsyncCopyOperationState::Failed(CopyFailureState::Indeterminate),
             id,
             "repeat changed cancelled copy state",
-        )?;
-        verify_condition(
+        ) {
+            return Err(retain_copy_operation(error, operation, id));
+        }
+        if let Err(error) = verify_condition(
             operation.has_recovery() == has_writer,
             id,
             "repeat lost copy recovery writer",
-        )?;
+        ) {
+            return Err(retain_copy_operation(error, operation, id));
+        }
         if let Some(recovery) = operation.take_recovery() {
             let mut writer = match recovery {
                 AsyncWriterRecovery::Opened(writer) => *writer,
@@ -269,6 +292,18 @@ impl AsyncFileSystemContractSuite<'_> {
             .record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Passed);
         Ok(())
     }
+}
+
+fn retain_copy_operation(
+    failure: ContractFailure,
+    operation: AsyncCopyOperation,
+    id: ContractCheckId,
+) -> ContractFailure {
+    ContractFailure::with_owned_source(
+        "copy cancellation diagnostic failed; operation retained",
+        crate::ContractWriterFailure::new(failure, operation),
+    )
+    .at(id)
 }
 
 /// Returns the stable identity for one cancellation stage.
