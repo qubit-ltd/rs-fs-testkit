@@ -33,6 +33,3 @@ pub use memory_file_system::MemoryFault;
 #[allow(unused)]
 pub use memory_file_system::MemoryFixture;
 pub use unavailable_scenario::UnavailableScenario;
-
-#[cfg(test)]
-mod coverage_driver_tests;

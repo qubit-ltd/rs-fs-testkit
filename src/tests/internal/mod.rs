@@ -8,5 +8,6 @@
 //! Tests for crate-private internal contracts.
 
 mod check_catalog_tests;
+#[cfg(feature = "async")]
 mod probe_disarm_guard_tests;
 mod property_expectations_tests;

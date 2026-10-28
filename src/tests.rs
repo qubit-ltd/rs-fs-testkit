@@ -20,7 +20,6 @@ mod contract_source_tests;
 mod contract_temp_failure_tests;
 #[path = "tests/contract_writer_failure_tests.rs"]
 mod contract_writer_failure_tests;
-#[cfg(feature = "async")]
 #[path = "tests/internal/mod.rs"]
 mod internal;
 #[path = "tests/suite_unit_build_coverage_tests.rs"]

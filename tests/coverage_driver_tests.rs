@@ -22,9 +22,6 @@ use crate::common::MemoryFixture;
 #[cfg(feature = "async")]
 use crate::common::async_memory_file_system::run_controlled;
 #[cfg(feature = "async")]
-use crate::common::check_matrix::async_fault_cases;
-use crate::common::check_matrix::sync_fault_cases;
-#[cfg(feature = "async")]
 use crate::qubit_fs_testkit::AsyncFileSystemContractSuite;
 #[cfg(feature = "async")]
 use crate::qubit_fs_testkit::AsyncFileSystemFixture;
@@ -428,37 +425,8 @@ fn test_synchronous_checks_execute_under_each_capability_profile() {
 }
 
 #[test]
-fn test_synchronous_provider_faults_are_exercised() {
-    for case in sync_fault_cases() {
-        for contract in FileSystemContract::ALL {
-            let fixture = MemoryFixture::with_fault(case.fault);
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                FileSystemContractSuite::new(&fixture)
-                    .run_contract(contract)
-                    .assert_satisfied();
-            }));
-            let _ = result;
-        }
-    }
-}
-
-#[test]
 fn test_synchronous_focused_faults_and_fixture_errors_are_exercised() {
     use crate::common::shared_model::FixtureHook;
-
-    for case in sync_fault_cases() {
-        let Some(id) = ContractCheckId::ALL
-            .iter()
-            .copied()
-            .find(|id| id.as_str() == case.check_id)
-        else {
-            continue;
-        };
-        let fixture = MemoryFixture::with_fault(case.fault);
-        let _ = catch_unwind(AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).run_check(id).assert_satisfied();
-        }));
-    }
 
     for id in ContractCheckId::ALL
         .iter()
@@ -887,46 +855,8 @@ fn test_asynchronous_checks_execute_under_each_capability_profile() {
 
 #[cfg(feature = "async")]
 #[test]
-fn test_asynchronous_provider_faults_are_exercised() {
-    for case in async_fault_cases() {
-        for contract in FileSystemContract::ALL {
-            let fixture = AsyncMemoryFixture::with_fault(case.fault);
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                run_controlled(async {
-                    AsyncFileSystemContractSuite::new(&fixture)
-                        .run_contract(contract)
-                        .await
-                        .assert_satisfied();
-                });
-            }));
-            let _ = result;
-        }
-    }
-}
-
-#[cfg(feature = "async")]
-#[test]
 fn test_asynchronous_focused_faults_and_fixture_errors_are_exercised() {
     use crate::common::shared_model::FixtureHook;
-
-    for case in async_fault_cases() {
-        let Some(id) = ContractCheckId::ALL
-            .iter()
-            .copied()
-            .find(|id| id.as_str() == case.check_id)
-        else {
-            continue;
-        };
-        let fixture = AsyncMemoryFixture::with_fault(case.fault);
-        let _ = catch_unwind(AssertUnwindSafe(|| {
-            run_controlled(async {
-                AsyncFileSystemContractSuite::new(&fixture)
-                    .run_check(id)
-                    .await
-                    .assert_satisfied();
-            });
-        }));
-    }
 
     for id in ContractCheckId::ALL.iter().copied() {
         let baseline = AsyncMemoryFixture::with_all_capabilities();

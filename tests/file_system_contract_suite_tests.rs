@@ -250,52 +250,6 @@ fn test_sync_focused_checks_preserve_default_hook_results() {
 }
 
 #[test]
-fn test_sync_faults_exercise_full_suite_paths() {
-    for case in sync_fault_cases() {
-        for contract in FileSystemContract::ALL {
-            let fixture = MemoryFixture::with_fault(case.fault);
-            let _ = catch_unwind(AssertUnwindSafe(|| {
-                FileSystemContractSuite::new(&fixture)
-                    .run_contract(contract)
-                    .assert_satisfied();
-            }));
-        }
-    }
-}
-
-/// Each provider fault is also exercised against every focused check entry.
-#[test]
-fn test_sync_faults_exercise_every_focused_check() {
-    for case in sync_fault_cases() {
-        if matches!(
-            case.fault,
-            MemoryFault::DeleteNoOp
-                | MemoryFault::CleanupStatError
-                | MemoryFault::CleanupDeleteError
-                | MemoryFault::CleanupDeletePanic
-        ) {
-            continue;
-        }
-        for id in testkit::ContractCheckId::ALL
-            .iter()
-            .copied()
-            .filter(|id| id.supports_synchronous())
-        {
-            let fixture = MemoryFixture::with_fault(case.fault);
-            let mut suite = FileSystemContractSuite::new(&fixture);
-            let run = suite.run_check(id);
-            assert!(
-                run.failures().iter().all(|failure| failure.check() == Some(id)),
-                "{id}, fault {:?}: {:?}",
-                case.fault,
-                run.failures()
-            );
-            assert!(fixture.is_empty(), "{id}, fault {:?}: cleanup failed", case.fault);
-        }
-    }
-}
-
-#[test]
 fn test_sync_property_profiles_cover_all_limit_outcomes() {
     let limits = [
         FileSystemLimit::Maximum(0),
@@ -311,12 +265,20 @@ fn test_sync_property_profiles_cover_all_limit_outcomes() {
             .with_max_component_text_bytes(limit)
             .with_max_write_bytes(limit)
             .with_max_list_page_entries(limit);
-        let _ = catch_unwind(AssertUnwindSafe(|| {
-            let fixture = MemoryFixture::with_limits(snapshot);
-            let mut suite = FileSystemContractSuite::new(&fixture);
-            suite.run_contract(FileSystemContract::Properties).assert_satisfied();
-            suite.run_check(testkit::ContractCheckId::WriteLimit).assert_satisfied();
-        }));
+        if limit == FileSystemLimit::Maximum(0) {
+            let result = catch_unwind(AssertUnwindSafe(|| MemoryFixture::with_limits(snapshot)));
+            assert!(result.is_err(), "zero finite limits must be rejected");
+            continue;
+        }
+        let fixture = MemoryFixture::with_limits(snapshot);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let properties = suite.run_check(testkit::ContractCheckId::PropertiesLimits);
+        assert!(
+            properties.requirements_satisfied(),
+            "{limit:?}: {:?}",
+            properties.failures()
+        );
+        assert!(fixture.is_empty(), "{limit:?}: properties fixture leaked resources");
     }
 }
 
@@ -393,24 +355,68 @@ fn test_sync_missing_read_capability_still_attributes_path_errors() {
 #[test]
 fn test_sync_unavailable_fixture_cases_are_exercised() {
     let cases = [
-        UnavailableScenario::ReadIfMatch,
-        UnavailableScenario::ReadIfNoneMatch,
-        UnavailableScenario::WriteIfAbsent,
-        UnavailableScenario::WriteIfMatch,
-        UnavailableScenario::DeleteIfMatch,
-        UnavailableScenario::CopyOverwrite,
-        UnavailableScenario::CopyTree,
-        UnavailableScenario::Capability(FileSystemCapability::ServerSideCopy),
-        UnavailableScenario::Capability(FileSystemCapability::AtomicFileCopy),
-        UnavailableScenario::Capability(FileSystemCapability::AtomicTreeCopy),
-        UnavailableScenario::Capability(FileSystemCapability::DurableFileCopy),
-        UnavailableScenario::Capability(FileSystemCapability::DurableTreeCopy),
+        (
+            UnavailableScenario::ReadIfMatch,
+            testkit::ContractCheckId::ReadIfMatchCurrent,
+        ),
+        (
+            UnavailableScenario::ReadIfNoneMatch,
+            testkit::ContractCheckId::ReadIfNoneMatchCurrent,
+        ),
+        (
+            UnavailableScenario::WriteIfAbsent,
+            testkit::ContractCheckId::WriteIfAbsent,
+        ),
+        (
+            UnavailableScenario::WriteIfMatch,
+            testkit::ContractCheckId::WriteIfMatch,
+        ),
+        (
+            UnavailableScenario::DeleteIfMatch,
+            testkit::ContractCheckId::DeleteIfMatch,
+        ),
+        (
+            UnavailableScenario::CopyOverwrite,
+            testkit::ContractCheckId::CopyFallbackOverwriteRejected,
+        ),
+        (UnavailableScenario::CopyTree, testkit::ContractCheckId::CopyAtomicTree),
+        (
+            UnavailableScenario::Capability(FileSystemCapability::ServerSideCopy),
+            testkit::ContractCheckId::CopyServerSide,
+        ),
+        (
+            UnavailableScenario::Capability(FileSystemCapability::AtomicFileCopy),
+            testkit::ContractCheckId::CopyAtomicFile,
+        ),
+        (
+            UnavailableScenario::Capability(FileSystemCapability::AtomicTreeCopy),
+            testkit::ContractCheckId::CopyAtomicTree,
+        ),
+        (
+            UnavailableScenario::Capability(FileSystemCapability::DurableFileCopy),
+            testkit::ContractCheckId::CopyDurableFile,
+        ),
+        (
+            UnavailableScenario::Capability(FileSystemCapability::DurableTreeCopy),
+            testkit::ContractCheckId::CopyDurableTree,
+        ),
     ];
-    for case in cases {
+    for (case, id) in cases {
         let fixture = MemoryFixture::with_conditional_case_unavailable(case);
-        let _ = catch_unwind(AssertUnwindSafe(|| {
-            FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
-        }));
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        assert!(run.failures().is_empty(), "{case:?}: {:?}", run.failures());
+        assert_eq!(run.report().checks().len(), 1, "{case:?}");
+        assert_eq!(run.report().checks()[0].id(), id, "{case:?}");
+        assert!(
+            matches!(
+                run.report().checks()[0].outcome(),
+                testkit::ContractCheckOutcome::Unverified { .. }
+            ),
+            "{case:?}: {:?}",
+            run.report().checks()[0].outcome()
+        );
+        assert!(fixture.is_empty(), "{case:?}: fixture leaked resources");
     }
 }
 

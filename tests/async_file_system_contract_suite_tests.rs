@@ -5,6 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+#![cfg(feature = "async")]
 
 pub use ::qubit_fs_testkit;
 

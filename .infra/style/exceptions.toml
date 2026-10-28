@@ -122,11 +122,6 @@ reason = "This file intentionally uses a legacy import shape required by its mod
 
 [[exceptions]]
 rule = "explicit-imports"
-path = "tests/common/memory_file_system.rs"
-reason = "This file intentionally uses a legacy import shape required by its module boundary."
-
-[[exceptions]]
-rule = "explicit-imports"
 path = "tests/common/mod.rs"
 reason = "This file intentionally uses a legacy import shape required by its module boundary."
 
