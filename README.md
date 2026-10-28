@@ -7,8 +7,8 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
-`qubit-fs-testkit` provides reusable, capability-driven contracts for
-`qubit-fs` provider implementations. Add it to a provider's development
+`qubit-fs-testkit` 0.8 provides reusable, capability-driven contracts for
+`qubit-fs` 0.3 provider implementations. Add it to a provider's development
 dependencies, supply an isolated fixture, and run the synchronous or
 runtime-neutral asynchronous suite without putting test support in production
 dependency graphs.
@@ -25,26 +25,55 @@ asynchronous suite.
 
 ## Quick Start
 
-You are shipping a new provider and need one isolated fixture to prove that
-every advertised capability matches observable behavior. For a provider that
-exposes a fresh test filesystem, implement
-`FileSystemFixture` and register independently named synchronous contracts:
+You are shipping a provider and need an isolated fixture to check its advertised
+capabilities. The provider already depends on `qubit-fs` 0.3; add the testkit
+only as a development dependency:
 
-```rust,ignore
-qubit_fs_testkit::register_file_system_contract_tests! {
-    module: provider_contracts,
-    fixture: super::TestFixture::new,
-}
+```toml
+[dev-dependencies]
+qubit-fs-testkit = "0.8"
 ```
 
-For an asynchronous provider, supply the provider runtime's future runner:
+Implement `FileSystemFixture` around the provider's isolated facade. Its
+`file_system()` returns the configured `FileSystem` whose
+`FileSystemProperties` the suite checks; `path()` maps suite names into the
+fixture namespace, and independent hooks seed, read, observe, and tear down
+resources. The complete executable example is
+[`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs).
+It shows a rooted local facade, independent native-file observations, and the
+`run_all().assert_satisfied()` assertion. The command below builds and runs the
+example; a provider contract violation makes that assertion fail:
+
+```bash
+cargo run --manifest-path ../rs-fs-local/Cargo.toml --example fs_testkit_contract
+```
+
+The example's fixture type is `RootedFixture`. A fresh suite checks the
+provider's `FileSystemProperties` in its first phase; use a separate fixture
+and suite for another run:
 
 ```rust,ignore
-qubit_fs_testkit::register_async_file_system_contract_tests! {
-    module: async_provider_contracts,
-    fixture: super::AsyncTestFixture::new,
-    runner: super::runtime::block_on,
-}
+use qubit_fs_testkit::FileSystemContract;
+use qubit_fs_testkit::FileSystemContractSuite;
+
+let fixture = RootedFixture::new();
+let mut suite = FileSystemContractSuite::new(&fixture);
+suite
+    .run_contract(FileSystemContract::Properties)
+    .assert_satisfied();
+
+let fixture = RootedFixture::new();
+let mut suite = FileSystemContractSuite::new(&fixture);
+suite.run_all().assert_satisfied();
+```
+
+For an asynchronous provider, implement `AsyncFileSystemFixture` and supply the
+provider runtime's future runner to the registration macro. Its development
+dependency enables the feature explicitly:
+
+```toml
+[dev-dependencies]
+qubit-fs-testkit = { version = "0.8", features = ["async"] }
 ```
 
 The suite follows advertised capabilities. It checks supported behavior and
@@ -101,8 +130,9 @@ the suite's current coverage.
 - [API documentation](https://docs.rs/qubit-fs-testkit)
 - [中文 README](README.zh_CN.md)
 
-Version 0.7 targets `qubit-fs` 0.2; list, cancellation, and recovery details
-are documented in the [user guide](doc/user_guide.md).
+Version 0.8 targets `qubit-fs` 0.3. Version 0.7 targeted `qubit-fs` 0.2;
+historical list, cancellation, and recovery details are distinguished in the
+[user guide](doc/user_guide.md).
 
 ## Testing
 

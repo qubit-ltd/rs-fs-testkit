@@ -7,8 +7,22 @@
 // =============================================================================
 //! Stateful contract suites for `qubit-fs` provider implementations.
 //!
-//! ```compile_fail
-//! use testkit::assert_copy_contract;
+//! ```compile_fail,E0432
+//! use qubit_fs_testkit::assert_copy_contract;
+//! ```
+//!
+//! A provider supplies its own isolated fixture and runs the public suite:
+//!
+//! ```
+//! # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
+//! use qubit_fs_testkit::FileSystemContract;
+//! use qubit_fs_testkit::FileSystemContractSuite;
+//!
+//! let fixture = support::RustdocSyncFixture::new();
+//! let mut suite = FileSystemContractSuite::new(&fixture);
+//! let run = suite.run_contract(FileSystemContract::Properties);
+//! run.assert_satisfied();
+//! assert!(run.cleanup().completed());
 //! ```
 
 #![deny(missing_docs)]

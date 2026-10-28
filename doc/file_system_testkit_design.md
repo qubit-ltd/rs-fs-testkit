@@ -1,7 +1,7 @@
 # qubit-fs-testkit design
 
 This document describes the public contract model implemented by
-`qubit-fs-testkit`. The crate is development-only test support: it exercises a
+`qubit-fs-testkit` 0.8 against `qubit-fs` 0.3. The crate is development-only test support: it exercises a
 provider through `qubit_fs::FileSystem` or `qubit_fs::AsyncFileSystem` and never
 depends on provider SPI types.
 
@@ -65,9 +65,10 @@ and target independently.
 
 The repository contains an in-memory provider model for deterministic faults
 and an unpublished S3-compatible fixture under `fixtures/s3-contract/`.
-The latter requires explicit endpoint, bucket, credentials, region, and a
-unique prefix; it never creates remote resources and must not be treated as
-evidence for an unconfigured service.
+The latter requires an explicit endpoint, an existing bucket, credentials,
+region, and a unique prefix. It creates and cleans only objects under a unique
+child of that configured prefix; it never creates a bucket or cleans an entire
+shared prefix. It must not be treated as evidence for an unconfigured service.
 
 Coverage thresholds apply to every source file without exemptions. Provider-
 dependent contract branches must be exercised by deterministic fixture profiles
@@ -97,9 +98,24 @@ cancellation probes are explicit skips; executed probe failures remain failures.
 Existing check IDs remain unchanged; range checks now include zero and EOF
 windows when capability permits.
 
-Temporary-resource checks retain their existing repeated-lifecycle coverage,
-including the publication target after a successful `keep`. Version 0.7 follows
-the qubit-fs 0.2 contract that separates current publication from source
-qualification. Deterministic coverage of the three new source states, cleanup
-errors, invalid retries, and cancellation belongs to `qubit-fs` core and adapter
-regressions rather than this reusable suite.
+Cancellation diagnostics use the following ownership mapping:
+
+| Failure path | Retained source | Recovery |
+| --- | --- | --- |
+| Async write/copy execution fails before the requested stage | `ContractAsyncWriteFailure` / `ContractAsyncCopyFailure` | `operation_mut().take_recovery()` |
+| Acknowledgement, disarm, or operation-state diagnostic fails | `ContractWriterFailure<AsyncWriteAllOperation>` / `ContractWriterFailure<AsyncCopyOperation>` | Downcast `ContractSource`, inspect `error()` as `ContractFailure`, then use `writer_mut().take_recovery()` |
+
+The second form also retains operations without an opened writer, preserving
+their diagnostic state. If recovery is present, the caller explicitly aborts
+the recovered writer; taking the source transfers that responsibility.
+
+Temporary-resource checks independently seed and verify non-empty file bytes
+and directory child contents across keep, persist, overwrite, and repeated
+lifecycle operations. Unsupported content hooks are reported as `Unverified`;
+setup errors remain failures. The suite also retains its typed temporary
+resource recovery path. Testkit 0.7 targeted `qubit-fs` 0.2; that is historical,
+not the compatibility target of this 0.8 design.
+
+Synchronous expected-write cleanup catches an abort panic at the provider
+boundary and retains both the original `WriteAllFailure` and panic payload for
+explicit caller recovery. This does not change the recorded failed run.

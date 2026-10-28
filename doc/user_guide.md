@@ -4,9 +4,10 @@
 
 ## Purpose and Audience
 
-This guide is for authors of synchronous or asynchronous `qubit-fs` providers.
-It covers the current `qubit-fs-testkit` 0.7 contract suites, which are test
-support and therefore belong in provider development dependencies.
+This guide is for authors of synchronous or asynchronous `qubit-fs` 0.3
+providers using the current `qubit-fs-testkit` 0.8 contract suites. The testkit
+is test support and belongs in provider development dependencies. References
+to testkit 0.7 and `qubit-fs` 0.2 below describe historical interfaces.
 
 ## Conceptual Model
 
@@ -43,6 +44,15 @@ Add the testkit as a development dependency in the provider crate:
 cargo add --dev qubit-fs-testkit@0.8
 ```
 
+The provider itself uses `qubit-fs` 0.3. The repository's complete local
+provider fixture, including properties, independent seed/read/exists hooks,
+and teardown, is [`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs).
+With sibling repositories checked out, compile and run that exact example:
+
+```bash
+cargo run --manifest-path ../rs-fs-local/Cargo.toml --example fs_testkit_contract
+```
+
 Implement `FileSystemFixture` for a fixture that owns or otherwise retains the
 resources required to keep its filesystem isolated. At minimum, implement
 `file_system`, `path`, and independent `teardown`; `list_prefix` has a default implementation. Implement
@@ -52,12 +62,14 @@ mapping methods and is `Sync`.
 ## Core Workflow
 
 Use the registration macro to create a fresh fixture and a precise test name for
-each contract phase:
+each contract phase. The synchronous `RootedFixture` below is defined in the
+complete [`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs)
+example linked above:
 
 ```rust,ignore
 qubit_fs_testkit::register_file_system_contract_tests! {
     module: provider_contracts,
-    fixture: super::TestFixture::new,
+    fixture: super::RootedFixture::new,
 }
 ```
 
@@ -65,9 +77,9 @@ For manual control, keep the suite and fixture alive for the entire run, then
 assert both the contract result and independent cleanup:
 
 ```rust,ignore
-use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
+use qubit_fs_testkit::FileSystemContractSuite;
 
-let fixture = TestFixture::new();
+let fixture = RootedFixture::new();
 let mut suite = FileSystemContractSuite::new(&fixture);
 let run = suite.run_all();
 run.assert_satisfied();
@@ -102,13 +114,33 @@ commit or automatically abort the writer, and the published target remains
 observable. A retryable `NotPublished` failure remains the only non-terminal
 case that may be committed again.
 
-For an async facade, pass a runtime-specific future runner:
+For an async facade, implement `AsyncFileSystemFixture` for your provider
+fixture and pass a runner backed by the runtime already used by that provider.
+For example, with Tokio enabled in the provider's dev-dependencies:
+
+```toml
+tokio = { version = "1", features = ["rt"] }
+```
+
+```rust,ignore
+use std::future::Future;
+
+fn run_on_tokio<F: Future<Output = ()>>(future: F) {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("test runtime must start")
+        .block_on(future);
+}
+```
+
+Then register the provider's `AsyncFileSystemFixture` implementation and that
+defined runner:
 
 ```rust,ignore
 qubit_fs_testkit::register_async_file_system_contract_tests! {
     module: async_provider_contracts,
-    fixture: super::AsyncTestFixture::new,
-    runner: super::runtime::block_on,
+    fixture: super::MyAsyncProviderFixture::new,
+    runner: super::run_on_tokio,
 }
 ```
 
@@ -190,11 +222,30 @@ execution future and disarms the probe, then retains the operation for recovery.
 If recovery abort itself fails, `ContractWriterFailure<AsyncFileWriter>` keeps
 the writer available for an explicit retry.
 
+Cancellation acknowledgement, disarm, or state-diagnostic failures retain the
+owning operation as `ContractWriterFailure<AsyncWriteAllOperation>` or
+`ContractWriterFailure<AsyncCopyOperation>`, including stages where no writer
+has opened. Take and downcast the `ContractSource`; `error()` is the original
+diagnostic `ContractFailure`, and `writer_mut()` exposes the operation. If it
+has recovery, call `take_recovery()` and explicitly `abort_async()` the opened
+writer. Execution failures before the requested stage continue to use
+`ContractAsyncWriteFailure` or `ContractAsyncCopyFailure`, whose
+`operation_mut()` exposes the operation. Taking either source transfers the
+recovery duty; dropping the value does not perform async I/O.
+
 Temporary-resource failures retain `ContractTempFailure<T>`, where `T` is the
 concrete synchronous or asynchronous temporary file or directory type. Take and
 downcast the `ContractSource`, inspect the original error with `error()`, then use
 `resource_mut()` for explicit recovery. Ownership transfer does not clear the
 failed run, and dropping the wrapper does not perform asynchronous cleanup.
+
+Before keep or persist, temporary-file checks seed non-empty `b"temp-data"`
+through `write_file_out_of_band` and independently confirm it with `read_file`.
+Directory checks seed two distinct child payloads and verify the same relative
+paths beneath `outcome.target()` after keep, persist, and overwrite. These hooks
+must not depend on the facade's Write or CreateDirectory capability. If either
+hook is unsupported, content evidence is `Unverified` with the missing hook
+named; a setup error remains a failure.
 
 `TempAtomic` executes its own required-atomic persistence requests. Ordinary
 temporary-resource checks use preferred atomicity and verify publication,
@@ -254,7 +305,9 @@ to require selected probes; an executed probe failure always fails the run.
 For a second, remote-provider signal, the repository has a separate unpublished
 validation crate at `fixtures/s3-contract/`. It uses an S3-compatible endpoint
 and the same public testkit to exercise real range reads, create-only writes,
-conflicts, cancellation, and cleanup. It is intentionally outside the
+conflicts, cancellation, and cleanup. The bucket must already exist; tests
+write and remove objects only under a unique child of the configured prefix and
+never create a bucket or clean an entire shared prefix. It is intentionally outside the
 published provider dependency graph. A successful local testkit run does not
 constitute remote-backend evidence: any claim about S3 compatibility must cite
 that crate's environment, backend version, lockfile, and recorded run output.
@@ -263,7 +316,7 @@ remote suite has been run.
 
 ## Whole-file asynchronous write recovery
 
-`qubit-fs` 0.2 requires owned payloads for `begin_write_all`. The async Write
+`qubit-fs` 0.3 requires owned payloads for `begin_write_all`. The async Write
 phase checks `write/owning-operation` and `write/repeated-execute`, and actually
 calls `prepare_write_cancellation` for Open, Write, Flush and Commit.
 Implement `WriteCancellationProbe::poll_reached` to acknowledge that the selected
@@ -330,7 +383,7 @@ cancellation probes are explicit skips; executed probe failures remain failures.
 Existing check IDs remain unchanged; range checks include zero and EOF windows
 when capability permits.
 
-For temporary resources, testkit 0.7 follows the qubit-fs 0.2 contract that keeps
+For temporary resources, testkit 0.8 follows the qubit-fs 0.3 contract that keeps
 publication facts independent from source qualification. This suite checks the
 existing repeated lifecycle, including the publication target after a successful
 `keep`. Core and adapter regressions cover the new source states, invalid retries,

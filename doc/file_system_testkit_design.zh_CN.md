@@ -1,8 +1,7 @@
 # Qubit FS Testkit 设计
 
-> 状态：已批准的目标设计，已按最终版 `qubit-fs` 的门面、copy/rename failure 与
-> `AsyncCopyOperation` 契约复核。本文定义 `qubit-fs-testkit` 在具体门面/SPI
-> 重构后的 provider contract 测试架构；当前实现迁移前可能与本文不同。
+> 状态：当前实现说明。本文描述 `qubit-fs-testkit` 0.8 与 `qubit-fs` 0.3 的
+> provider contract 测试架构；0.7/0.2 仅作为历史版本记录。
 
 ## 1. 定位
 
@@ -478,9 +477,10 @@ Testkit 不重复其他 crate 的白盒测试。
 ### 13.1 真实后端验证边界
 
 第二种真实 provider 的证据由独立、`publish = false` 的验证工程
-`fixtures/s3-contract/` 提供。该工程使用 S3 兼容 SDK 对接由环境变量指定的专用 endpoint，
-通过真实 GET metadata/range、create-only PUT、冲突、取消后的发布状态和清理验证公共契约；它不
-成为 `qubit-fs` 或 testkit 的生产依赖，也不等同于一个可发布的 S3 provider。SDK 无法保真表达的
+`fixtures/s3-contract/` 提供。该工程使用 S3 兼容 SDK 对接由环境变量指定的专用 endpoint，要求
+bucket 已存在，并通过真实 GET metadata/range、create-only PUT、冲突、取消后的发布状态和清理验证
+公共契约；测试只在配置 prefix 下的唯一子路径创建并清理对象，不创建 bucket，也不清理整个共享
+prefix。它不成为 `qubit-fs` 或 testkit 的生产依赖，也不等同于一个可发布的 S3 provider。SDK 无法保真表达的
 object key 子集必须在请求前拒绝，并在验证记录中明确限制范围。
 
 本设计只定义验证入口和证据要求，不把本地 testkit 或编译成功当作远程后端已验证。只有在独立
@@ -545,6 +545,18 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 缺少的可选写取消探针会明确记录为跳过；已执行探针失败仍然失败。既有检查 ID 不变，
 范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
 
-临时资源检查保留既有的重复生命周期覆盖，包括成功 `keep` 后的发布目标。testkit 0.7 遵循
-qubit-fs 0.2 将本次 publication 与源资格分开的契约。三个新增源状态、cleanup 错误、非法
-重试和取消的确定性覆盖属于 `qubit-fs` 核心与 adapter 回归，不属于此可复用套件自身。
+取消诊断的所有权迁移如下：
+
+| 失败路径 | 保留的 source | 恢复方式 |
+| --- | --- | --- |
+| 异步写入／复制在目标阶段前执行失败 | `ContractAsyncWriteFailure`／`ContractAsyncCopyFailure` | `operation_mut().take_recovery()` |
+| ACK、探针解除或 operation 状态诊断失败 | `ContractWriterFailure<AsyncWriteAllOperation>`／`ContractWriterFailure<AsyncCopyOperation>` | 取出并向下转换 `ContractSource`，用 `error()` 检查 `ContractFailure`，再调用 `writer_mut().take_recovery()` |
+
+第二种形式即使没有已打开的 writer，也会保留 operation 的诊断状态。
+存在 recovery 时由调用方取出并显式 abort writer；取出 source 即转移该责任。
+
+临时资源检查通过独立 hook 写入并核对非空文件内容及目录子项，覆盖 keep、persist、覆盖发布和
+重复生命周期。缺少内容 hook 时结果标为 `Unverified`，setup 错误仍然失败；临时资源失败保留
+typed recovery source。同步的 expected-write cleanup 会在 provider abort 边界捕获 panic，同时保留
+原 `WriteAllFailure`、writer recovery 和 panic payload。testkit 0.7 曾对应 qubit-fs 0.2；这只是
+历史版本，不是当前 0.8 的兼容目标。

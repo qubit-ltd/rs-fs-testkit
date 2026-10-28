@@ -4,8 +4,9 @@
 
 ## 手册目标与读者
 
-本手册面向同步或异步 `qubit-fs` provider 作者，覆盖当前 `qubit-fs-testkit` 0.7 契约套件。
-它是测试支持，因此应作为 provider 的开发依赖使用。
+本手册面向使用当前 `qubit-fs-testkit` 0.8 契约套件的同步或异步 `qubit-fs` 0.3
+provider 作者。testkit 属于测试支持，应作为 provider 的开发依赖。下文提到的 testkit 0.7
+和 `qubit-fs` 0.2 均指历史接口。
 
 ## 概念模型
 
@@ -38,27 +39,37 @@ native-copy 用例。异步 fixture 提供对应的 future 观察，以及可选
 cargo add --dev qubit-fs-testkit@0.8
 ```
 
+provider 本身依赖 `qubit-fs` 0.3。仓库中的完整本地 provider fixture 示例
+[`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs)
+包含 properties、独立 seed/read/exists hooks 和 teardown。检出同级仓库后可直接编译并运行：
+
+```bash
+cargo run --manifest-path ../rs-fs-local/Cargo.toml --example fs_testkit_contract
+```
+
 为拥有或保留隔离文件系统资源的 fixture 实现 `FileSystemFixture`。至少实现 `file_system`、`path` 和独立的 `teardown`；
 `list_prefix` 有默认实现。对于异步门面实现 `AsyncFileSystemFixture`；它有相同的必需映射方法，并要求
 `Sync`。
 
 ## 核心工作流
 
-使用注册宏为每个契约阶段创建全新 fixture 和精确测试名：
+使用注册宏为每个契约阶段创建全新 fixture 和精确测试名。下方同步示例中的
+`RootedFixture` 定义于前文链接的完整
+[`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs)：
 
 ```rust,ignore
 qubit_fs_testkit::register_file_system_contract_tests! {
     module: provider_contracts,
-    fixture: super::TestFixture::new,
+    fixture: super::RootedFixture::new,
 }
 ```
 
 如果需要手动选择执行范围，应让 fixture 和 suite 覆盖整个运行周期，并同时断言契约结果与独立清理结果：
 
 ```rust,ignore
-use qubit_fs_testkit::{FileSystemContractSuite, FileSystemFixture};
+use qubit_fs_testkit::FileSystemContractSuite;
 
-let fixture = TestFixture::new();
+let fixture = RootedFixture::new();
 let mut suite = FileSystemContractSuite::new(&fixture);
 let run = suite.run_all();
 run.assert_satisfied();
@@ -85,13 +96,31 @@ writer 成功 commit 后再次 commit，应返回 `InvalidState`，并将 `Write
 `Published`。它不得再次调用 provider commit，也不得自动 abort；已发布目标仍应可观察。
 只有可重试的 `NotPublished` 失败仍允许再次 commit。
 
-对于异步门面，传入 runtime 对应的 future runner：
+异步门面需要由 provider fixture 实现 `AsyncFileSystemFixture`，并使用 provider 已采用的
+runtime 驱动 suite。以下是启用 Tokio 的 provider 可用 runner 示例：
+
+```toml
+tokio = { version = "1", features = ["rt"] }
+```
+
+```rust,ignore
+use std::future::Future;
+
+fn run_on_tokio<F: Future<Output = ()>>(future: F) {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("test runtime must start")
+        .block_on(future);
+}
+```
+
+注册时传入 provider 自己的 `AsyncFileSystemFixture` 实现和上面已定义的 runner：
 
 ```rust,ignore
 qubit_fs_testkit::register_async_file_system_contract_tests! {
     module: async_provider_contracts,
-    fixture: super::AsyncTestFixture::new,
-    runner: super::runtime::block_on,
+    fixture: super::MyAsyncProviderFixture::new,
+    runner: super::run_on_tokio,
 }
 ```
 
@@ -149,9 +178,24 @@ operation，可调用 `take_recovery()` 取出 writer 并显式 abort。
 解除探针，再保留 operation 供恢复使用。若恢复过程中的 abort 失败，
 `ContractWriterFailure<AsyncFileWriter>` 会继续保留 writer，允许显式重试。
 
+取消确认、探针解除或状态诊断失败时，source 会保留
+`ContractWriterFailure<AsyncWriteAllOperation>` 或
+`ContractWriterFailure<AsyncCopyOperation>`，即使该阶段尚未打开 writer 也会保留 operation。
+取出并向下转换 `ContractSource` 后，`error()` 是原始诊断 `ContractFailure`，
+`writer_mut()` 可访问 operation。有 recovery 时，可调用 `take_recovery()` 取出已打开的
+writer 并显式执行 `abort_async()`。请求在目标取消阶段前执行失败时，仍使用
+`ContractAsyncWriteFailure` 或 `ContractAsyncCopyFailure`，其 `operation_mut()` 可访问 operation。
+取出任一种 source 都会转移恢复责任；丢弃对象不会执行异步 I/O。
+
 临时资源失败通过 `ContractTempFailure<T>` 保留，其中 `T` 是具体的同步或异步临时文件、
 临时目录类型。取出 `ContractSource` 并向下转换后，可通过 `error()` 检查原始错误，
 通过 `resource_mut()` 显式恢复。转移所有权不会清除运行失败；丢弃包装对象不会执行异步清理。
+
+临时文件在 keep 或 persist 前通过 `write_file_out_of_band` 写入非空的 `b"temp-data"`，
+再用 `read_file` 独立确认。目录检查写入两个内容不同的子项，并在发布后通过
+`outcome.target()` 下的相同相对路径核对内容，包括覆盖场景。这些 hooks 不得依赖被测门面的
+Write 或 CreateDirectory capability。hook 不支持时，内容证据记录为 `Unverified` 并说明缺少哪个 hook；
+setup 返回错误仍然是失败。
 
 `TempAtomic` 独立执行强制原子持久化请求。普通临时资源检查使用优先原子性，分别验证
 发布、清理、keep、命名选项及目录替换。若任何临时资源类型都不受支持，原子和重复生命周期
@@ -193,13 +237,15 @@ operation，可调用 `take_recovery()` 取出 writer 并显式 abort。
 
 仓库还提供一个独立且不可发布的真实远程后端验证 crate：`fixtures/s3-contract/`。它使用
 S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create-only write、冲突、取消
-以及清理，并且不进入已发布 provider 的依赖图。一次本地 testkit 通过不能作为远程后端证据；
+以及清理，并且不进入已发布 provider 的依赖图。bucket 必须事先存在；测试只在显式配置 prefix
+的唯一子路径下创建并清理对象，不会创建 bucket，也不会清理整个共享 prefix。一次本地 testkit
+通过不能作为远程后端证据；
 任何关于 S3 兼容性的结论都必须同时记录该 crate 的环境、后端版本、lockfile 和运行输出。
 本手册只说明验证边界，不声称远程套件已经运行。
 
 ## 异步整文件写入恢复
 
-`qubit-fs` 0.2 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
+`qubit-fs` 0.3 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
 `write/owning-operation`、`write/repeated-execute`，并真实调用 Open、Write、Flush、Commit
 四阶段的 `prepare_write_cancellation`。`WriteCancellationProbe::poll_reached` 应确认
 提供者已经在指定阶段 Pending，等待时按需唤醒调用方；`disarm` 只释放 gate，不启动文件系统
@@ -249,7 +295,7 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 缺少的可选写取消探针会明确记录为跳过；已执行探针失败仍然失败。既有检查 ID 不变，
 范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
 
-对于临时资源，testkit 0.7 遵循 qubit-fs 0.2 将 publication 事实与源资格分开的契约。本套件
+对于临时资源，testkit 0.8 遵循 qubit-fs 0.3 将 publication 事实与源资格分开的契约。本套件
 检查既有的重复生命周期，包括成功 `keep` 后的发布目标；新增源状态、非法重试、
 cleanup 失败与取消由核心及 adapter 回归覆盖。
 

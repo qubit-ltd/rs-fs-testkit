@@ -32,16 +32,33 @@ use std::fmt::Result as FmtResult;
 /// ```
 /// use std::error::Error;
 ///
+/// use qubit_fs::temp::TempFile;
+/// use qubit_fs_testkit::ContractRun;
+/// use qubit_fs_testkit::ContractSource;
 /// use qubit_fs_testkit::ContractTempFailure;
 ///
-/// fn recover_resource<T>(failure: ContractTempFailure<T>) -> (Box<dyn Error + Send>, T) {
-///     let _resource_is_available = failure.resource();
-///     failure.into_parts()
+/// fn take_temp_failure(
+///     run: &ContractRun,
+/// ) -> Result<Option<Box<ContractTempFailure<TempFile>>>, Box<dyn Error + Send>> {
+///     for failure in run.failures() {
+///         let Some(source) = Error::source(failure)
+///             .and_then(|source| source.downcast_ref::<ContractSource>())
+///         else {
+///             continue;
+///         };
+///         let Some(owned) = source.take() else {
+///             continue;
+///         };
+///         return owned.downcast::<ContractTempFailure<TempFile>>().map(Some);
+///     }
+///     Ok(None)
 /// }
-///
-/// // `failure` is obtained by downcasting the source of a temporary-resource
-/// // failure reported by a contract suite.
 /// ```
+///
+/// If downcasting returns `Err`, it returns the owned source to the caller;
+/// do not discard it because it may carry recovery responsibility. Each source
+/// can be taken only once, and taking it does not remove the historical
+/// failure from the `ContractRun`.
 #[must_use]
 pub struct ContractTempFailure<T> {
     /// Preserves the original operation error for inspection and chaining.

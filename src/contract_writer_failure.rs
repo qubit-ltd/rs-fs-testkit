@@ -15,10 +15,16 @@ use std::fmt::Result as FmtResult;
 
 /// A failed streaming operation whose writer remains available for recovery.
 ///
-/// `W` is the synchronous or asynchronous writer. Obtain this value through
-/// [`crate::ContractSource::take`] and downcast to the concrete writer type.
-/// Taking it transfers recovery responsibility to the caller. Formatting does
-/// not inspect the writer or invoke the provider's error formatter.
+/// `W` is the synchronous or asynchronous writer, or an owning asynchronous
+/// write/copy operation retained after a cancellation diagnostic failure.
+/// Obtain this value through [`crate::ContractSource::take`] and downcast to
+/// the concrete type. For `ContractWriterFailure<AsyncWriteAllOperation>` or
+/// `ContractWriterFailure<AsyncCopyOperation>`, `error()` contains the original
+/// diagnostic [`crate::ContractFailure`], and `writer_mut()` exposes the
+/// operation. Call its `take_recovery()` and explicitly abort the returned
+/// writer when recovery is required. Taking the source transfers recovery
+/// responsibility to the caller. Formatting does not inspect the retained
+/// value or invoke a provider error formatter.
 ///
 /// # Examples
 ///

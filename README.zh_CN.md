@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![English Document](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 
-`qubit-fs-testkit` 为 `qubit-fs` provider 实现提供可复用、由 capability 驱动的契约测试。将它
+`qubit-fs-testkit` 0.8 为 `qubit-fs` 0.3 provider 实现提供可复用、由 capability 驱动的契约测试。将它
 作为 provider 的开发依赖，提供隔离 fixture，并运行同步或运行时无关的异步套件，无需将测试支持
 放入生产依赖图。
 
@@ -22,24 +22,49 @@ cargo add --dev qubit-fs-testkit@0.8
 
 ## 快速开始
 
-你正在交付新的 provider，需要用一次隔离运行证明：已声明的 capability 与可观察行为一致。
-对于能提供全新测试文件系统的 provider，请实现 `FileSystemFixture`，并注册具名同步契约：
+你正在交付 provider，需要用隔离 fixture 检查已声明的 capability。provider 已依赖
+`qubit-fs` 0.3；只需将 testkit 加入开发依赖：
 
-```rust,ignore
-qubit_fs_testkit::register_file_system_contract_tests! {
-    module: provider_contracts,
-    fixture: super::TestFixture::new,
-}
+```toml
+[dev-dependencies]
+qubit-fs-testkit = "0.8"
 ```
 
-对于异步 provider，请提供所用 runtime 的 future runner：
+围绕 provider 的隔离门面实现 `FileSystemFixture`。`file_system()` 返回已配置的
+`FileSystem`，suite 会检查其 `FileSystemProperties`；`path()` 将测试名称映射到隔离命名空间；
+独立 hooks 负责准备、读取、观察和回收资源。完整可运行示例是
+[`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs)，
+其中展示 rooted local facade、独立 native 文件观察以及 `run_all().assert_satisfied()` 断言。
+下面的命令会编译并运行示例；provider 存在契约违例时，该断言会失败：
+
+```bash
+cargo run --manifest-path ../rs-fs-local/Cargo.toml --example fs_testkit_contract
+```
+
+示例中的 fixture 类型为 `RootedFixture`。新建的 suite 会在首个阶段检查 provider 的
+`FileSystemProperties`；另一次运行要使用新的 fixture 和 suite：
 
 ```rust,ignore
-qubit_fs_testkit::register_async_file_system_contract_tests! {
-    module: async_provider_contracts,
-    fixture: super::AsyncTestFixture::new,
-    runner: super::runtime::block_on,
-}
+use qubit_fs_testkit::FileSystemContract;
+use qubit_fs_testkit::FileSystemContractSuite;
+
+let fixture = RootedFixture::new();
+let mut suite = FileSystemContractSuite::new(&fixture);
+suite
+    .run_contract(FileSystemContract::Properties)
+    .assert_satisfied();
+
+let fixture = RootedFixture::new();
+let mut suite = FileSystemContractSuite::new(&fixture);
+suite.run_all().assert_satisfied();
+```
+
+异步 provider 实现 `AsyncFileSystemFixture`，并在注册宏中提供所用 runtime 的 future runner；
+开发依赖需显式启用 async feature：
+
+```toml
+[dev-dependencies]
+qubit-fs-testkit = { version = "0.8", features = ["async"] }
 ```
 
 套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝。
@@ -84,7 +109,8 @@ capability。
 - [API 文档](https://docs.rs/qubit-fs-testkit)
 - [English README](README.md)
 
-0.7 版本对应 `qubit-fs` 0.2；列举、取消与恢复等细节见[用户手册](doc/user_guide.zh_CN.md)。
+当前 0.8 版本对应 `qubit-fs` 0.3。历史 0.7 版本对应 `qubit-fs` 0.2；
+列举、取消与恢复的历史差异见[用户手册](doc/user_guide.zh_CN.md)。
 
 ## 测试
 
