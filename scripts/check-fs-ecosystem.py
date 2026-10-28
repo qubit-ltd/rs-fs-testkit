@@ -31,9 +31,14 @@ def selected_directories() -> tuple[str, ...]:
     return (*PACKAGES, S3_FIXTURE)
 
 
-def validate_root(root: Path) -> None:
-    for directory, expected in PACKAGES.items():
+def validate_root(root: Path, directories=PACKAGES) -> None:
+    for directory in directories:
         manifest = root / directory / "Cargo.toml"
+        if directory == S3_FIXTURE:
+            if not manifest.is_file():
+                raise ValueError(f"missing fixture manifest: {manifest}")
+            continue
+        expected = PACKAGES[directory]
         data = tomllib.loads(manifest.read_text(encoding="utf-8"))
         if data["package"]["name"] != expected:
             raise ValueError(f"wrong package at {manifest}")
@@ -47,7 +52,7 @@ def run(command: list[str], cwd: Path) -> None:
     subprocess.run(command, cwd=cwd, check=True)
 
 
-def validate_core_graph(root: Path, directory: str) -> None:
+def validate_core_graph(root: Path, directory: str, source_mode: str = "local") -> None:
     manifest = root / directory / "Cargo.toml"
     try:
         result = subprocess.run(
@@ -64,7 +69,7 @@ def validate_core_graph(root: Path, directory: str) -> None:
     if len(cores) != 1:
         raise ValueError(f"{directory}: expected exactly one qubit-fs, got {len(cores)}")
     core = cores[0]
-    if directory == "rs-fs":
+    if directory == "rs-fs" or source_mode == "local":
         valid = (core["source"] is None
                  and Path(core["manifest_path"]).resolve() == expected
                  and core["version"] == version)
@@ -80,18 +85,18 @@ def validate_core_graph(root: Path, directory: str) -> None:
         )
 
 
-def selected_files(root: Path, filename: str):
+def selected_files(root: Path, filename: str, directories=None):
     """Return files belonging to the explicit release validation matrix."""
-    for directory in selected_directories():
+    for directory in selected_directories() if directories is None else directories:
         path = root / directory / filename
         if path.is_file() or filename == "Cargo.lock":
             yield path
 
 
-def lock_snapshot(root: Path) -> dict[str, str]:
+def lock_snapshot(root: Path, directories=None) -> dict[str, str]:
     return {str(path): (hashlib.sha256(path.read_bytes()).hexdigest()
                         if path.is_file() else "<missing>")
-            for path in selected_files(root, "Cargo.lock")}
+            for path in selected_files(root, "Cargo.lock", directories)}
 
 
 def run_tests(root: Path) -> None:
@@ -104,31 +109,31 @@ def run_tests(root: Path) -> None:
 
 
 def run_ci(root: Path) -> None:
-    # Each current CI script already runs default and all-feature tests.
-    for directory in PACKAGES:
-        script = root / directory / "ci-check.sh"
-        if not script.is_file():
-            raise ValueError(f"missing CI entry: {script}")
-        run(["bash", str(script)], root / directory)
+    script = root / "rs-fs-testkit/.infra/bin/ci-check.sh"
+    if not script.is_file():
+        raise ValueError(f"missing CI entry: {script}")
+    run(["bash", str(script)], root / "rs-fs-testkit")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sibling-root", type=Path, required=True)
     parser.add_argument("--phase", choices=["tests", "ci"], default="tests")
+    parser.add_argument("--source-mode", choices=["local", "registry"], default="local")
     args = parser.parse_args(argv)
     root = args.sibling_root.resolve(strict=True)
-    validate_root(root)
-    before = lock_snapshot(root)
+    directories = selected_directories() if args.phase == "tests" else ("rs-fs-testkit",)
+    validate_root(root, directories)
+    before = lock_snapshot(root, directories)
     try:
-        for directory in selected_directories():
-            validate_core_graph(root, directory)
+        for directory in directories:
+            validate_core_graph(root, directory, args.source_mode)
         if args.phase == "tests":
             run_tests(root)
         else:
             run_ci(root)
     finally:
-        if lock_snapshot(root) != before:
+        if lock_snapshot(root, directories) != before:
             raise ValueError("validation changed Cargo.lock files; inspect the changes")
     print(json.dumps({"result": "PASS", "phase": args.phase, "root": str(root)}))
     return 0

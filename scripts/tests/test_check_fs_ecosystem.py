@@ -59,10 +59,22 @@ class InputTests(unittest.TestCase):
         core = {"name": "qubit-fs", "source": module.REGISTRY_SOURCE, "manifest_path": str(self.root / "registry/Cargo.toml"), "version": "0.5.0"}
         with patch.object(module.subprocess, "run") as execute:
             execute.return_value.stdout = json.dumps({"packages": [core]})
-            module.validate_core_graph(self.root, "rs-mime")
+            module.validate_core_graph(self.root, "rs-mime", "registry")
             for packages in [[], [core, core], [{**core, "source": "registry+https://example.invalid"}], [{**core, "version": "0.4.0"}]]:
                 execute.return_value.stdout = json.dumps({"packages": packages})
-                with self.assertRaises(ValueError): module.validate_core_graph(self.root, "rs-mime")
+                with self.assertRaises(ValueError): module.validate_core_graph(self.root, "rs-mime", "registry")
+
+    def test_default_source_mode_is_local_and_registry_mode_is_explicit(self):
+        local_core = {"name": "qubit-fs", "source": None, "manifest_path": str(self.root / "rs-fs/Cargo.toml"), "version": "0.5.0"}
+        registry_core = {**local_core, "source": module.REGISTRY_SOURCE}
+        with patch.object(module.subprocess, "run") as execute:
+            execute.return_value.stdout = json.dumps({"packages": [local_core]})
+            module.validate_core_graph(self.root, "rs-mime")
+            with self.assertRaisesRegex(ValueError, "crates.io"):
+                module.validate_core_graph(self.root, "rs-mime", "registry")
+            execute.return_value.stdout = json.dumps({"packages": [registry_core]})
+            with self.assertRaisesRegex(ValueError, "local sibling"):
+                module.validate_core_graph(self.root, "rs-mime")
 
     def test_metadata_requires_local_core_for_rs_fs(self):
         core = {"name": "qubit-fs", "source": None, "manifest_path": str(self.root / "rs-fs/Cargo.toml"), "version": "0.5.0"}
@@ -71,6 +83,9 @@ class InputTests(unittest.TestCase):
             module.validate_core_graph(self.root, "rs-fs")
             execute.return_value.stdout = json.dumps({"packages": [{**core, "source": module.REGISTRY_SOURCE}]})
             with self.assertRaises(ValueError): module.validate_core_graph(self.root, "rs-fs")
+            execute.return_value.stdout = json.dumps({"packages": [{**core, "manifest_path": str(self.root / "elsewhere/Cargo.toml")}]})
+            with self.assertRaisesRegex(ValueError, "manifest="):
+                module.validate_core_graph(self.root, "rs-fs")
 
     def test_only_explicit_release_manifests_are_validated(self):
         nested = self.root / "rs-fs/fuzz/Cargo.toml"
@@ -79,8 +94,32 @@ class InputTests(unittest.TestCase):
         with patch.object(module, "validate_core_graph") as validate, patch.object(module, "run_tests"):
             module.main(["--sibling-root", str(self.root)])
         self.assertEqual(validate.call_count, 6)
-        validate.assert_any_call(self.root, module.S3_FIXTURE)
+        validate.assert_any_call(self.root, module.S3_FIXTURE, "local")
         self.assertFalse(any(call.args[1] == "rs-fs/fuzz" for call in validate.call_args_list))
+
+    def test_ci_only_validates_testkit_even_when_downstream_manifest_is_missing(self):
+        (self.root / "rs-fs-local/Cargo.toml").unlink()
+        with patch.object(module, "validate_core_graph") as validate, patch.object(module, "run_ci") as run_ci:
+            module.main(["--sibling-root", str(self.root), "--phase", "ci"])
+        validate.assert_called_once_with(self.root, "rs-fs-testkit", "local")
+        run_ci.assert_called_once_with(self.root)
+
+    def test_ci_entry_uses_only_testkit_infra_script(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / "rs-fs-testkit/.infra/bin/ci-check.sh"
+            script.parent.mkdir(parents=True)
+            script.touch()
+            with patch.object(module, "run") as execute:
+                module.run_ci(root)
+            execute.assert_called_once_with(["bash", str(script)], root / "rs-fs-testkit")
+
+    def test_ci_rejects_missing_entry_before_running_commands(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(module, "run") as execute:
+                with self.assertRaisesRegex(ValueError, "missing CI entry"):
+                    module.run_ci(Path(temporary))
+            execute.assert_not_called()
 
     def test_lock_drift_is_rejected(self):
         lock = self.root / "rs-fs/Cargo.lock"
@@ -96,3 +135,11 @@ class InputTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "changed Cargo.lock"):
                 module.main(["--sibling-root", str(self.root)])
+
+    def test_ci_detects_new_testkit_lockfile(self):
+        lock = self.root / "rs-fs-testkit/Cargo.lock"
+        with patch.object(module, "validate_core_graph"), patch.object(
+            module, "run_ci", side_effect=lambda _: lock.write_text("created")
+        ):
+            with self.assertRaisesRegex(ValueError, "changed Cargo.lock"):
+                module.main(["--sibling-root", str(self.root), "--phase", "ci"])
