@@ -509,23 +509,30 @@ fn test_shared_fixture_faults_are_rejected_by_their_asynchronous_check() {
                     .expect("copy/basic must be reported");
                 match check.outcome() {
                     ContractCheckOutcome::Unverified { reason } => assert!(
-                        reason.contains("fixture.read_file cannot confirm contents"),
+                        reason.starts_with("fixture.read_file cannot confirm contents: "),
                         "unexpected Unverified reason: {reason}"
                     ),
                     outcome => panic!("{} must be Unverified, got {outcome:?}", case.check_id),
                 }
             } else {
                 assert!(
-                    !run.requirements_satisfied()
-                        && (run.failures().iter().any(|failure| failure.check() == Some(id))
-                            || run.report().checks().iter().any(|check| {
-                                check.id() == id && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })
-                            })),
+                    !run.requirements_satisfied(),
                     "{} must reject {:?}; outcome={:?}, failures={:?}",
                     case.check_id,
                     case.fault,
                     run.report().checks().first().map(|check| check.outcome()),
                     run.failures(),
+                );
+                assert!(
+                    !run.failures().is_empty(),
+                    "{} must record a failure",
+                    case.check_id
+                );
+                assert!(
+                    run.failures().iter().all(|failure| failure.check() == Some(id)),
+                    "{} failures must belong to {id}: {:?}",
+                    case.check_id,
+                    run.failures()
                 );
             }
         });
