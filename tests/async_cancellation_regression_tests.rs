@@ -35,7 +35,13 @@ fn test_async_copy_cancellation_waits_for_each_stage() {
     let fixture = AsyncMemoryFixture::new();
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        suite.run_contract(FileSystemContract::Copy).await.assert_satisfied();
+        let run = suite.run_contract(FileSystemContract::Copy).await;
+        run.assert_satisfied_with(&[
+            ContractCheckId::AsyncCopyCancelNativeAttempt,
+            ContractCheckId::AsyncCopyCancelReader,
+            ContractCheckId::AsyncCopyCancelWriter,
+            ContractCheckId::AsyncCopyCancelCommit,
+        ]);
     });
     assert!(fixture.is_empty(), "cancellation probes must be cleaned");
 }
@@ -83,9 +89,15 @@ fn test_run_can_require_optional_cancellation_evidence() {
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_contract(testkit::FileSystemContract::Copy).await;
+        run.assert_satisfied();
         assert!(run.requirements_satisfied());
         assert!(!run.all_applicable_checks_verified());
-        assert!(!run.requirements_satisfied_with(&[testkit::ContractCheckId::AsyncCopyCancelReader]));
+        assert!(!run.requirements_satisfied_with(&[
+            testkit::ContractCheckId::AsyncCopyCancelNativeAttempt,
+            testkit::ContractCheckId::AsyncCopyCancelReader,
+            testkit::ContractCheckId::AsyncCopyCancelWriter,
+            testkit::ContractCheckId::AsyncCopyCancelCommit,
+        ]));
     });
 }
 
@@ -310,4 +322,34 @@ fn test_failed_optional_copy_probe_invalidates_run() {
         );
         assert!(fixture.is_empty(), "failed copy must still teardown");
     });
+}
+
+/// A directly published partial write is valid Published cancellation evidence.
+#[test]
+fn test_partial_published_write_cancellation_is_observable() {
+    let fixture = AsyncMemoryFixture::with_fault(
+        self::common::async_memory_file_system::AsyncMemoryFault::WriteAbortPublishesPartial,
+    );
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::WriteCancelWrite).await;
+        run.assert_satisfied_with(&[ContractCheckId::WriteCancelWrite]);
+    });
+    assert!(fixture.is_empty(), "partial write cancellation must teardown");
+}
+
+/// A directly published partial copy target is valid Published cancellation evidence.
+#[test]
+fn test_partial_published_copy_cancellation_is_observable() {
+    let fixture = AsyncMemoryFixture::with_fault(
+        self::common::async_memory_file_system::AsyncMemoryFault::WriteAbortPublishesPartial,
+    );
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite
+            .run_check(ContractCheckId::AsyncCopyCancelWriter)
+            .await;
+        run.assert_satisfied_with(&[ContractCheckId::AsyncCopyCancelWriter]);
+    });
+    assert!(fixture.is_empty(), "partial copy cancellation must teardown");
 }

@@ -210,7 +210,7 @@ impl AsyncFileSystemContractSuite<'_> {
         ) {
             return Err(retain_write_operation(error, operation, id));
         }
-        self.verify_write_cancellation_recovery(id, probe.as_ref(), operation, before, bytes)
+        self.verify_write_cancellation_recovery(id, probe.as_ref(), operation, before)
             .await
     }
 
@@ -221,7 +221,6 @@ impl AsyncFileSystemContractSuite<'_> {
         probe: &dyn WriteCancellationProbe,
         mut operation: AsyncWriteAllOperation,
         before: Option<Vec<u8>>,
-        bytes: Vec<u8>,
     ) -> Result<(), ContractFailure> {
         if let Some(recovery) = operation.take_recovery() {
             let mut writer = match recovery {
@@ -262,9 +261,9 @@ impl AsyncFileSystemContractSuite<'_> {
                         verify_condition(after == before, id, "NotPublished recovery changed the target")?
                     }
                     WriteAbortOutcome::Published => verify_condition(
-                        after.as_deref() == Some(bytes.as_slice()),
+                        after.is_some(),
                         id,
-                        "confirmed publication differs",
+                        "Published recovery target is not independently observable",
                     )?,
                     WriteAbortOutcome::Indeterminate => unreachable!(),
                 }

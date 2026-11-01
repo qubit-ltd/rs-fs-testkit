@@ -15,20 +15,44 @@ use crate::FixtureResult;
 
 /// Observes and controls one provider-owned pending copy stage.
 ///
+/// # Context
+///
+/// A fixture returns this probe from
+/// [`crate::AsyncFileSystemFixture::prepare_copy_cancellation`] after arming the
+/// requested stage. The copy execution future must be dropped before calling
+/// [`disarm`](Self::disarm), so the provider stops using the gate before it is
+/// released.
+///
+/// # Polling
+///
+/// [`poll_reached`](Self::poll_reached) returns `Poll::Pending` until the
+/// provider reaches the requested stage. Before returning `Pending`, it must
+/// arrange to wake the supplied task when the stage becomes observable.
+/// `Poll::Ready(Ok(()))` confirms that the stage is gated, and
+/// `Poll::Ready(Err(_))` reports that the fixture could not confirm it.
+///
+/// # Errors
+///
+/// `poll_reached` returns a fixture error when stage acknowledgement fails.
+/// `disarm` returns a fixture error when the gate cannot be released. The
+/// probe must release the gate even when reporting a disarm error, so fixture
+/// teardown can safely continue.
+///
 /// # Examples
 ///
-/// ```
-/// use qubit_fs::copy::CopyOptions;
-/// use qubit_fs::path::Path;
-/// use qubit_fs_testkit::AsyncCopyFixtureCase;
+/// The execution future must already have been dropped before this function
+/// is called.
 ///
-/// let case = AsyncCopyFixtureCase::new(
-///     Path::parse("/source")?,
-///     Path::parse("/target")?,
-///     CopyOptions::file(),
-/// );
-/// assert_eq!(case.target().as_str(), "/target");
-/// # Ok::<(), qubit_fs::error::FsError>(())
+/// ```
+/// use qubit_fs_testkit::CopyCancellationProbe;
+/// use qubit_fs_testkit::FixtureResult;
+///
+/// fn release_after_execution_is_dropped(probe: &dyn CopyCancellationProbe) -> FixtureResult<()> {
+///     let case = probe.case();
+///     assert_ne!(case.source(), case.target());
+///     probe.disarm()?;
+///     Ok(())
+/// }
 /// ```
 pub trait CopyCancellationProbe: Send + Sync {
     /// Returns the isolated copy request controlled by this probe.
