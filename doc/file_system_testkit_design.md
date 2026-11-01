@@ -24,6 +24,24 @@ the full resource or its opened metadata length. A stale length overestimate
 cannot reject a shorter stream before reading it. The suite opens the reader
 even for a zero-length window so provider errors remain observable.
 
+## Evidence boundaries
+
+The suite directly observes behavior available through the public facade and
+independent fixture hooks: operation results, required side effects, selected
+metadata, and fixture-reported outcomes. `Unverified` means a required premise
+or result could not be independently observed; it is not a pass. A cancellation
+recovery reported as `Published` means the target is independently observable,
+not that it contains the complete requested payload.
+
+The testkit's own recording and deliberately faulty fixtures test suite
+bookkeeping, recovery ownership, and whether checks reject selected violations.
+They do not make those internal checks provider guarantees. In particular,
+properties getter I/O behavior, clone snapshot identity, secret-free
+diagnostics, and every operation's `Display`/`Debug`/`Error::source` contract
+are not established by provider-suite observations. Core facade/SPI tests own
+core dispatch and preflight guarantees; providers own native behavior, platform
+semantics, and service-specific guarantees beyond the suite's observations.
+
 ## Typed catalog and execution
 
 Every check has one `ContractCheckId`, one `FileSystemContract` phase, a
@@ -114,7 +132,9 @@ and directory child contents across keep, persist, overwrite, and repeated
 lifecycle operations. Unsupported content hooks are reported as `Unverified`;
 setup errors remain failures. The suite also retains its typed temporary
 resource recovery path. Testkit 0.7 targeted `qubit-fs` 0.2; that is historical,
-not the compatibility target of this 0.8 design.
+not the compatibility target of this 0.8 design. Directory overwrite uses an
+independently seeded empty destination as its baseline; it does not establish
+behavior for overwriting a non-empty directory.
 
 Synchronous expected-write cleanup catches an abort panic at the provider
 boundary and retains both the original `WriteAllFailure` and panic payload for

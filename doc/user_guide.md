@@ -314,6 +314,12 @@ that crate's environment, backend version, lockfile, and recorded run output.
 This guide records the validation boundary only and does not claim that the
 remote suite has been run.
 
+The temporary-directory overwrite case starts with an independently seeded
+empty destination and checks the published replacement contents. It does not
+claim that providers must overwrite non-empty directories. When a cancellation
+check reports `Published`, treat that as evidence that a target is observable;
+the suite does not require it to equal the complete requested payload.
+
 ## Whole-file asynchronous write recovery
 
 `qubit-fs` 0.3 requires owned payloads for `begin_write_all`. The async Write
@@ -350,11 +356,18 @@ The raw-prefix check distinguishes `folder`, `folder/a`, and `folderish` from
 unrelated keys; literal filters are tested relative to a nonempty root.
 
 For a sibling checkout of `rs-fs`, `rs-fs-local`, `rs-fs-registry`,
-`rs-fs-testkit`, and `rs-mime`, use the ecosystem command below. The default
-`tests` phase exercises explicit feature combinations; `--phase ci` runs each
-repository's existing CI serially. The script rejects mixed core sources and
-changed lockfiles. Real S3 service tests remain opt-in and are not counted as
-passing when ignored.
+`rs-fs-testkit`, and `rs-mime`, use the ecosystem command below. The `tests`
+phase runs this explicit matrix with `--no-default-features` on every command:
+`rs-fs` with no extra feature and with `async`; `rs-fs-local` with no extra
+feature and with `registry`; `rs-fs-registry` with no extra feature and with
+`async`; `rs-fs-testkit` with no extra feature and with `async`; and `rs-mime`
+with no extra feature. The test phase also invokes the separate
+`fixtures/s3-contract/` test command. The `ci` phase
+runs only `rs-fs-testkit/.infra/bin/ci-check.sh`; it does not add downstream
+checks to this crate's CI. Both phases validate the core dependency graph and
+compare Cargo.lock snapshots for their selected crate set, failing if a
+lockfile changes. S3 tests are opt-in and are not counted as passing when
+ignored.
 
 ```bash
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests

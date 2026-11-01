@@ -86,6 +86,13 @@ fast path；当 `Read` 与 `Write` 可用且请求属于 allowlist 时，仍可�
 fallback 前提缺失时才返回结构化的 unsupported-capability 错误。未声明的强化保证会被检查
 是否返回结构化的 `RequirementNotMet` 预检错误。
 
+套件直接检查公开门面结果、必需副作用和 fixture 独立 hook 能提供的观察。必要事实无法独立观察时，
+结果记为 `Unverified`，不算通过。testkit 自己的 recording provider 与故障 fixture 用来验证套件
+是否正确记账、保留恢复责任并拒绝指定违规；它们不替 provider 提供行为保证。properties getter
+不执行 I/O、clone 共享同一 snapshot、diagnostics 不含 secret，以及每个操作的
+`Display`／`Debug`／`Error::source` 语义，都不能由 provider suite 的黑盒观察证明。core 门面和
+SPI 分派、预检由 core 自身测试负责；native 行为、平台语义和服务特有保证仍由 provider 验证。
+
 读取预算针对本次选中窗口实际消费的字节，而不是整个资源或元数据长度。例如，从
 `0123456789` 读取 `offset = 2`、`length = 3`，且 `max_bytes = 3`，必须返回 `234`；
 预算为 `2` 时必须返回 `ResourceLimitExceeded`。元数据高估长度时，不能在读取前拒绝
@@ -197,6 +204,9 @@ writer 并显式执行 `abort_async()`。请求在目标取消阶段前执行失
 Write 或 CreateDirectory capability。hook 不支持时，内容证据记录为 `Unverified` 并说明缺少哪个 hook；
 setup 返回错误仍然是失败。
 
+目录覆盖以独立预置的空目标目录为基线，再核对发布后的替换内容；这不表示套件要求 provider
+覆盖非空目录。取消恢复结果为 `Published` 时，只能说明目标可被独立观察，不代表它包含完整请求载荷。
+
 `TempAtomic` 独立执行强制原子持久化请求。普通临时资源检查使用优先原子性，分别验证
 发布、清理、keep、命名选项及目录替换。若任何临时资源类型都不受支持，原子和重复生命周期
 检查会明确记录为不适用。
@@ -268,10 +278,14 @@ List 契约新增可独立执行的 `list/namespace` 和 `list/raw-root-prefix` 
 本次检查之前已经存在的键。缺少该观察能力时，完整性标记为 **Unverified**。
 原始前缀检查区分 `folder`、`folder/a`、`folderish` 与无关键；字面过滤器在非空根范围下验证。
 
-在包含 `rs-fs`、`rs-fs-local`、`rs-fs-registry`、`rs-fs-testkit` 和 `rs-mime`
-的同级检出目录中，可运行下面的生态验证命令。默认 tests 阶段检查各 feature 组合；
-`--phase ci` 串行运行各仓库现有 CI。脚本拒绝混用不同来源的核心类型或验证时改变锁文件。
-真实 S3 服务测试需要显式启用，被忽略时不会计为通过。
+在包含这些项目的同级检出目录中，可运行下面的生态验证命令。`tests` 阶段使用
+每条命令都带 `--no-default-features`，显式矩阵为：`rs-fs` 不额外启用 feature 和启用 `async`；
+`rs-fs-local` 不额外启用 feature 和启用 `registry`；`rs-fs-registry` 不额外启用 feature 和启用
+`async`；`rs-fs-testkit` 不额外启用 feature 和启用 `async`；`rs-mime` 不额外启用 feature，
+随后另行运行 `fixtures/s3-contract/`。`ci` 阶段只运行
+`rs-fs-testkit/.infra/bin/ci-check.sh`，不会把 downstream 检查加入本 crate CI。两阶段都会
+核对所选 crate 的 core 依赖图，并对所选范围内的 Cargo.lock 做前后快照；若验证改动锁文件则失败。
+S3 测试需显式配置，不会把被忽略的测试算作通过。
 
 ```bash
 python3 scripts/check-fs-ecosystem.py --sibling-root .. --phase tests

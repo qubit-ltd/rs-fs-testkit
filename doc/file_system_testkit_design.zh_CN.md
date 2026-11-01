@@ -287,6 +287,16 @@ Limit contract 至少覆盖：
 - write bytes；
 - list page entries。
 
+套件能直接观察的是公开门面的操作结果、必需副作用、选定元数据，以及 fixture 独立 hook
+提供的前置条件和结果。若无法独立观察必要事实，结果为 `Unverified`，不代表通过。取消恢复结果
+`Published` 只表示目标可被独立观察，不表示目标必然包含完整请求载荷。
+
+testkit 自身的 recording provider 和故障 fixture 用于验证套件记账、恢复所有权及检查能否拒绝
+指定违规；这些自测不构成 provider 的行为保证。尤其是 properties getter 不执行 I/O、clone 共享同一
+snapshot、diagnostics 不含 secret，以及每个操作的 `Display`／`Debug`／`Error::source` 语义，都不是
+provider suite 的黑盒观察所能证明的。门面的 SPI 分派和预检由 core 测试负责；native 行为、平台语义
+及套件观察范围以外的服务保证由 provider 自己验证。
+
 测试只在可安全构造边界输入时探测，不通过可能耗尽 CI 资源的巨大分配验证 limit。
 
 ## 8. I/O 与 namespace contract
@@ -559,4 +569,5 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 重复生命周期。缺少内容 hook 时结果标为 `Unverified`，setup 错误仍然失败；临时资源失败保留
 typed recovery source。同步的 expected-write cleanup 会在 provider abort 边界捕获 panic，同时保留
 原 `WriteAllFailure`、writer recovery 和 panic payload。testkit 0.7 曾对应 qubit-fs 0.2；这只是
-历史版本，不是当前 0.8 的兼容目标。
+历史版本，不是当前 0.8 的兼容目标。目录覆盖以独立预置的空目标目录为基线，不据此承诺覆盖非空
+目录的行为。
