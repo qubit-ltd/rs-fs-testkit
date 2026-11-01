@@ -481,6 +481,7 @@ fn test_shared_fixture_attributes_async_cancellation_admission_errors() {
 #[test]
 fn test_shared_fixture_faults_are_rejected_by_their_asynchronous_check() {
     use crate::common::AsyncMemoryFixture;
+    use crate::common::AsyncMemoryFault;
     use crate::common::async_memory_file_system::run_controlled;
     use crate::common::check_matrix::async_fault_cases;
     use crate::qubit_fs_testkit::AsyncFileSystemContractSuite;
@@ -497,18 +498,36 @@ fn test_shared_fixture_faults_are_rejected_by_their_asynchronous_check() {
         run_controlled(async {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id).await;
-            assert!(
-                !run.requirements_satisfied()
-                    && (run.failures().iter().any(|failure| failure.check() == Some(id))
-                        || run.report().checks().iter().any(|check| {
-                            check.id() == id && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })
-                        })),
-                "{} must reject {:?}; outcome={:?}, failures={:?}",
-                case.check_id,
-                case.fault,
-                run.report().checks().first().map(|check| check.outcome()),
-                run.failures(),
-            );
+            if case.fault == AsyncMemoryFault::CopyDropsTarget && id == ContractCheckId::CopyBasic {
+                assert!(!run.requirements_satisfied(), "{} must remain unverified", case.check_id);
+                assert!(run.failures().is_empty(), "{}: {:#?}", case.check_id, run.failures());
+                let check = run
+                    .report()
+                    .checks()
+                    .iter()
+                    .find(|check| check.id() == id)
+                    .expect("copy/basic must be reported");
+                match check.outcome() {
+                    ContractCheckOutcome::Unverified { reason } => assert!(
+                        reason.contains("fixture.read_file cannot confirm contents"),
+                        "unexpected Unverified reason: {reason}"
+                    ),
+                    outcome => panic!("{} must be Unverified, got {outcome:?}", case.check_id),
+                }
+            } else {
+                assert!(
+                    !run.requirements_satisfied()
+                        && (run.failures().iter().any(|failure| failure.check() == Some(id))
+                            || run.report().checks().iter().any(|check| {
+                                check.id() == id && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })
+                            })),
+                    "{} must reject {:?}; outcome={:?}, failures={:?}",
+                    case.check_id,
+                    case.fault,
+                    run.report().checks().first().map(|check| check.outcome()),
+                    run.failures(),
+                );
+            }
         });
     }
 }
