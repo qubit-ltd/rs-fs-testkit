@@ -251,10 +251,15 @@ fn test_async_fallback_copy_detects_dropped_bytes_under_small_limit() {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::CopyBasic).await;
         assert!(!run.requirements_satisfied());
-        assert!(
-            run.failures()
-                .iter()
-                .any(|failure| failure.check() == Some(ContractCheckId::CopyBasic))
-        );
+        let check = run
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == ContractCheckId::CopyBasic)
+            .expect("CopyBasic outcome must be recorded");
+        assert!(matches!(
+            check.outcome(),
+            ContractCheckOutcome::Unverified { reason } if reason.contains("fixture.read_file")
+        ));
     });
 }
