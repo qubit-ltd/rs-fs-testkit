@@ -11,6 +11,8 @@ mod common;
 
 pub use ::qubit_fs_testkit;
 use qubit_fs as qfs;
+use qubit_fs::FileSystem;
+use qubit_fs::path::Path;
 use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractCheckOutcome;
@@ -19,8 +21,6 @@ use qubit_fs_testkit::FileSystemFixture;
 use qubit_fs_testkit::FixtureError;
 use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
-use qubit_fs::FileSystem;
-use qubit_fs::path::Path;
 
 use self::common::MemoryFixture;
 
@@ -246,13 +246,19 @@ fn assert_sync_observation_classification(id: ContractCheckId, hook: Observation
         };
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(id);
-        assert!(!run.requirements_satisfied(), "{id}: unsupported evidence must not satisfy requirements");
+        assert!(
+            !run.requirements_satisfied(),
+            "{id}: unsupported evidence must not satisfy requirements"
+        );
         if is_unverified {
             assert!(run.failures().is_empty(), "{id}: Unsupported should be Unverified");
-            assert!(matches!(
-                run.report().checks()[0].outcome(),
-                ContractCheckOutcome::Unverified { reason } if reason.contains("fixture.")
-            ), "{id}");
+            assert!(
+                matches!(
+                    run.report().checks()[0].outcome(),
+                    ContractCheckOutcome::Unverified { reason } if reason.contains("fixture.")
+                ),
+                "{id}"
+            );
         } else {
             assert_eq!(run.failures().len(), 1, "{id}: invalid evidence must fail");
             assert_eq!(run.failures()[0].check(), Some(id));
@@ -263,10 +269,17 @@ fn assert_sync_observation_classification(id: ContractCheckId, hook: Observation
 
 #[test]
 fn test_focused_sync_missing_observation_is_unverified_and_bad_evidence_fails() {
-    for id in [ContractCheckId::DirectoryCreate, ContractCheckId::DeleteMissingOk, ContractCheckId::DeleteTree] {
+    for id in [
+        ContractCheckId::DirectoryCreate,
+        ContractCheckId::DeleteMissingOk,
+        ContractCheckId::DeleteTree,
+    ] {
         assert_sync_observation_classification(id, ObservationHook::Exists);
     }
-    for id in [ContractCheckId::CopyBasic, ContractCheckId::CopyFallbackOverwriteRejected] {
+    for id in [
+        ContractCheckId::CopyBasic,
+        ContractCheckId::CopyFallbackOverwriteRejected,
+    ] {
         assert_sync_observation_classification(id, ObservationHook::Read);
     }
 }
@@ -378,13 +391,19 @@ mod async_observation_classification {
             };
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id).await;
-            assert!(!run.requirements_satisfied(), "{id}: unsupported evidence must not satisfy requirements");
+            assert!(
+                !run.requirements_satisfied(),
+                "{id}: unsupported evidence must not satisfy requirements"
+            );
             if is_unverified {
                 assert!(run.failures().is_empty(), "{id}: Unsupported should be Unverified");
-                assert!(matches!(
-                    run.report().checks()[0].outcome(),
-                    ContractCheckOutcome::Unverified { reason } if reason.contains("fixture.")
-                ), "{id}");
+                assert!(
+                    matches!(
+                        run.report().checks()[0].outcome(),
+                        ContractCheckOutcome::Unverified { reason } if reason.contains("fixture.")
+                    ),
+                    "{id}"
+                );
             } else {
                 assert_eq!(run.failures().len(), 1, "{id}: invalid evidence must fail");
                 assert_eq!(run.failures()[0].check(), Some(id));
@@ -403,7 +422,10 @@ mod async_observation_classification {
             ] {
                 assert_classification(id, ObservationHook::Exists).await;
             }
-            for id in [ContractCheckId::CopyBasic, ContractCheckId::CopyFallbackOverwriteRejected] {
+            for id in [
+                ContractCheckId::CopyBasic,
+                ContractCheckId::CopyFallbackOverwriteRejected,
+            ] {
                 assert_classification(id, ObservationHook::Read).await;
             }
         });
@@ -654,8 +676,17 @@ fn test_focused_copy_repeat_does_not_execute_basic() {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::CopyBasic).await;
         assert!(!run.requirements_satisfied());
-        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::CopyBasic));
-        assert!(run.failures()[0].take_panic_payload().is_none());
+        let check = run
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == ContractCheckId::CopyBasic)
+            .expect("CopyBasic outcome must be recorded");
+        assert!(matches!(
+            check.outcome(),
+            testkit::ContractCheckOutcome::Unverified { reason }
+                if reason.contains("fixture.read_file")
+        ));
     });
 }
 
