@@ -137,8 +137,9 @@ impl FileSystemContractSuite<'_> {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` when the result and observed file contents match the
-    /// selected conflict behavior.
+    /// Returns `Ok(true)` when the result and observed file contents match the
+    /// selected conflict behavior. Returns `Ok(false)` after recording an
+    /// unverified outcome when the fixture cannot observe the result.
     ///
     /// # Errors
     ///
