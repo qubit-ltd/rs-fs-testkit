@@ -201,6 +201,7 @@ pub struct AsyncMemoryFixture {
     versions: Arc<Mutex<HashMap<String, u64>>>,
     supports_cancellation_cases: bool,
     supports_write_cancellation: bool,
+    unavailable_copy_stage: Option<AsyncCopyCancellationStage>,
     unavailable_write_stage: Option<AsyncWriteCancellationStage>,
     path_calls: Arc<AtomicUsize>,
     limits: FileSystemLimits,
@@ -744,6 +745,13 @@ impl AsyncMemoryFixture {
         fixture
     }
 
+    /// Creates a fixture whose selected copy cancellation stage is unavailable.
+    pub fn without_copy_cancellation_stage(stage: AsyncCopyCancellationStage) -> Self {
+        let mut fixture = Self::new();
+        fixture.unavailable_copy_stage = Some(stage);
+        fixture
+    }
+
     /// Creates a fixture whose provider completes copy through its native path.
     pub fn with_native_copy() -> Self {
         Self::with_copy_behavior(AsyncMemoryFault::None, false, true)
@@ -1075,6 +1083,7 @@ impl AsyncMemoryFixture {
             versions,
             supports_cancellation_cases,
             supports_write_cancellation: true,
+            unavailable_copy_stage: None,
             unavailable_write_stage: None,
             path_calls,
             limits,
@@ -1747,7 +1756,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
         relative: &'a str,
     ) -> FixtureFuture<'a, FixtureSupport<Box<dyn CopyCancellationProbe>>> {
         Box::pin(async move {
-            if !self.supports_cancellation_cases {
+            if !self.supports_cancellation_cases || self.unavailable_copy_stage == Some(stage) {
                 return Ok(FixtureSupport::Unsupported);
             }
             *self.stage.lock().expect("async stage lock must succeed") = stage;

@@ -101,6 +101,61 @@ fn test_run_can_require_optional_cancellation_evidence() {
     });
 }
 
+/// A single missing copy stage stays optional by default and fails strict
+/// requirements.
+#[test]
+fn test_single_unavailable_copy_cancellation_stage_is_independent() {
+    let cancellation_checks = [
+        (
+            ContractCheckId::AsyncCopyCancelNativeAttempt,
+            testkit::AsyncCopyCancellationStage::NativeAttempt,
+        ),
+        (
+            ContractCheckId::AsyncCopyCancelReader,
+            testkit::AsyncCopyCancellationStage::Reader,
+        ),
+        (
+            ContractCheckId::AsyncCopyCancelWriter,
+            testkit::AsyncCopyCancellationStage::Writer,
+        ),
+        (
+            ContractCheckId::AsyncCopyCancelCommit,
+            testkit::AsyncCopyCancellationStage::Commit,
+        ),
+    ];
+    let required = cancellation_checks.map(|(id, _)| id);
+
+    for (_, missing_stage) in cancellation_checks {
+        let fixture = AsyncMemoryFixture::without_copy_cancellation_stage(missing_stage);
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_contract(FileSystemContract::Copy).await;
+            for (id, stage) in cancellation_checks {
+                let check = run
+                    .report()
+                    .checks()
+                    .iter()
+                    .find(|check| check.id() == id)
+                    .expect("copy cancellation check must be recorded");
+                if stage == missing_stage {
+                    assert!(matches!(
+                        check.outcome(),
+                        ContractCheckOutcome::SkippedOptional { reason } if !reason.is_empty()
+                    ));
+                } else {
+                    assert!(matches!(check.outcome(), ContractCheckOutcome::Passed));
+                }
+            }
+            run.assert_satisfied();
+            assert!(!run.requirements_satisfied_with(&required));
+        });
+        assert!(
+            fixture.is_empty(),
+            "independent copy stage probes must be cleaned"
+        );
+    }
+}
+
 /// Missing write cancellation instrumentation is optional by default but can
 /// be required explicitly for each stage.
 #[test]
