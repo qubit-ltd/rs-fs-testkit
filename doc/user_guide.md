@@ -200,8 +200,10 @@ independent teardown.
 
 The independent `write/abort` check prepares a fresh `Abort` scenario and uses
 `exists_out_of_band` before and after abort. `NotPublished` requires the target
-to remain absent; `Published` reports a changed target, and `Indeterminate`
-preserves uncertainty. The suite also checks the corresponding writer state.
+to remain absent; `Published` requires the target to be independently
+observable, without requiring its bytes to differ from the earlier contents;
+`Indeterminate` preserves uncertainty. The suite also checks the corresponding
+writer state.
 If streaming or abort fails, the run retains a `ContractWriterFailure<W>` inside
 `ContractSource`, where `W` is `FileWriter` or `AsyncFileWriter`. Take the source,
 downcast it, and use `writer_mut()` for explicit recovery. The original error

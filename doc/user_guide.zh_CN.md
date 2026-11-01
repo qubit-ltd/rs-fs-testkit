@@ -169,7 +169,8 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 fixture 所有者必须安排独立 teardown。
 
 独立的 `write/abort` 检查准备新的 `Abort` 场景，并在 abort 前后调用 `exists_out_of_band`。
-`NotPublished` 要求目标仍不存在；`Published` 表示目标已改变；`Indeterminate` 保留不确定性。
+`NotPublished` 要求目标仍不存在；`Published` 要求能独立观察到目标，但不要求目标字节与先前内容不同；
+`Indeterminate` 保留不确定性。
 套件也会检查对应的 writer 状态。流式写入或 abort 失败时，运行结果通过 `ContractSource`
 保留 `ContractWriterFailure<W>`，其中 `W` 为 `FileWriter` 或 `AsyncFileWriter`。
 取出 source 并向下转换后，可通过 `writer_mut()` 显式恢复，通过 `error()` 检查原始错误。
