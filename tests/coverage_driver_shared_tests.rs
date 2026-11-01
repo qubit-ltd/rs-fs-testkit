@@ -529,8 +529,18 @@ fn test_shared_fixture_faults_are_rejected_by_their_asynchronous_check() {
                     case.check_id
                 );
                 assert!(
-                    run.failures().iter().all(|failure| failure.check() == Some(id)),
-                    "{} failures must belong to {id}: {:?}",
+                    run.failures().iter().any(|failure| failure.check() == Some(id)),
+                    "{} must include a failure attributed to {id}: {:?}",
+                    case.check_id,
+                    run.failures()
+                );
+                // Teardown failures are run-level and intentionally have no check ID.
+                assert!(
+                    run.failures().iter().all(|failure| match failure.check() {
+                        Some(check_id) => check_id == id,
+                        None => failure.message().starts_with("cleanup failed:"),
+                    }),
+                    "{} has a failure with unexpected check attribution: {:?}",
                     case.check_id,
                     run.failures()
                 );
