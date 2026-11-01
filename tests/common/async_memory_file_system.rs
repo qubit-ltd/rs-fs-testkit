@@ -401,6 +401,8 @@ pub enum AsyncMemoryFault {
     CopyAbortPublishes,
     /// Publishes staged bytes while falsely reporting an unpublished abort.
     WriteAbortPublishes,
+    /// Publishes a non-empty write prefix before a confirmed gate suspension.
+    WriteAbortPublishesPartial,
     /// Behaves conformingly.
     None,
     /// Reports a missing path as an existing file.
@@ -530,6 +532,14 @@ pub enum AsyncMemoryFault {
     AtomicTempPersistNonAtomic,
     /// Ignores temporary-resource parent and affix options.
     TempIgnoresOptions,
+    /// Uses a valid suffix but puts the requested temp prefix inside the basename.
+    TempWrongPrefixBasename,
+    /// Places the requested prefix in a parent component but not the basename.
+    TempPrefixOnlyInParent,
+    /// Reuses an occupied temporary path to test lifecycle isolation failures.
+    TempReusesLivePath,
+    /// Rejects non-empty directory overwrite while allowing an empty target.
+    TempNativeDirectoryOverwrite,
     /// Uses object and prefix metadata kinds for stored resources.
     ObjectKinds,
     /// Ignores a stale or current If-Match read condition.
@@ -2139,6 +2149,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     write_gate,
                     path,
                     bytes: Vec::new(),
+                    partial_published: false,
                     fault,
                     disposition,
                     atomicity,
@@ -2587,6 +2598,7 @@ struct AsyncMemoryWriter {
     versions: Arc<Mutex<HashMap<String, u64>>>,
     path: Path,
     bytes: Vec<u8>,
+    partial_published: bool,
     fault: AsyncMemoryFault,
     disposition: WriteDisposition,
     atomicity: AtomicityRequirement,
@@ -2611,6 +2623,19 @@ impl AsyncOutput for AsyncMemoryWriter {
                 std::io::ErrorKind::PermissionDenied,
                 "copy write failed",
             )));
+        }
+        if this.fault == AsyncMemoryFault::WriteAbortPublishesPartial && !this.partial_published && count > 0 {
+            let accepted = (count / 2).max(1);
+            let prefix = &input[index..index + accepted];
+            this.bytes.extend_from_slice(prefix);
+            this.state
+                .lock()
+                .expect("async memory state lock must succeed")
+                .insert(this.path.as_str().to_owned(), Entry::File(this.bytes.clone()));
+            bump_version(&this.versions, &this.path);
+            this.write_gate.lock().expect("write gate lock").accepted += accepted as u64;
+            this.partial_published = true;
+            return Poll::Ready(Ok(accepted));
         }
         if this
             .write_gate
@@ -2825,6 +2850,9 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
                     .expect("async memory state lock")
                     .insert(this.path.as_str().to_owned(), Entry::File(this.bytes.clone()));
             }
+            if this.fault == AsyncMemoryFault::WriteAbortPublishesPartial {
+                return Ok(WriteAbortOutcome::Published);
+            }
             Ok(WriteAbortOutcome::NotPublished)
         })
     }
@@ -2863,12 +2891,31 @@ fn allocate_async_temp(
     };
     let (prefix, suffix) = if fault == AsyncMemoryFault::TempIgnoresOptions {
         (".async-tmp-", "")
+    } else if fault == AsyncMemoryFault::TempWrongPrefixBasename {
+        (if directory { "xcontract-directory-" } else { "xcontract-file-" }, suffix)
+    } else if fault == AsyncMemoryFault::TempPrefixOnlyInParent {
+        ("unrelated-", suffix)
     } else {
         (prefix, suffix)
     };
+    let parent = if fault == AsyncMemoryFault::TempPrefixOnlyInParent {
+        format!(
+            "{parent}/{}parent",
+            if directory { "contract-directory-" } else { "contract-file-" },
+        )
+    } else {
+        parent.to_owned()
+    };
     let separator = if parent == "/" { "" } else { "/" };
-    let path = Path::parse(&format!("{parent}{separator}{prefix}{}{suffix}", entries.len()))
-        .expect("generated temporary path must be valid");
+    let mut sequence = entries.len();
+    let path = loop {
+        let candidate = Path::parse(&format!("{parent}{separator}{prefix}{sequence}{suffix}"))
+            .expect("generated temporary path must be valid");
+        if fault == AsyncMemoryFault::TempReusesLivePath || !entries.contains_key(candidate.as_str()) {
+            break candidate;
+        }
+        sequence = sequence.checked_add(1).expect("temporary sequence exhausted");
+    };
     entries.insert(
         path.as_str().to_owned(),
         if directory {
@@ -2957,10 +3004,13 @@ impl AsyncTempResourceSpi for AsyncTempSession {
                 ));
             }
             if fault != AsyncMemoryFault::TempCleanupNoOp {
-                entries
-                    .lock()
-                    .expect("async memory state lock must succeed")
-                    .remove(path.as_str());
+                let mut entries = entries.lock().expect("async memory state lock must succeed");
+                let path = path.as_str();
+                entries.retain(|candidate, _| {
+                    candidate != path
+                        && !(candidate.starts_with(path)
+                            && candidate.as_bytes().get(path.len()) == Some(&b'/'))
+                });
             }
             Ok(())
         })
@@ -3000,6 +3050,20 @@ impl AsyncTempResourceSpi for AsyncTempSession {
         let atomicity = request.options().atomicity();
         let fault = this.fault;
         Box::pin(async move {
+            if fault == AsyncMemoryFault::TempNativeDirectoryOverwrite && request.options().overwrite() {
+                let entries = entries.lock().expect("async memory state lock must succeed");
+                let target_prefix = format!("{}/", target.as_str());
+                if entries.keys().any(|path| path.starts_with(&target_prefix)) {
+                    return Err(SpiPersistFailure::new(
+                        FsError::new(
+                            FsErrorKind::Conflict,
+                            FsOperation::PersistTemp,
+                            "native directory overwrite rejects a non-empty target",
+                        ),
+                        PersistFailureState::NotPublished,
+                    ));
+                }
+            }
             if fault == AsyncMemoryFault::TempPersistFails {
                 return Err(SpiPersistFailure::new(
                     FsError::new(

@@ -139,7 +139,15 @@ pub mod rustdoc_provider {
         }
         fn create_temp_file(&self, _: CreateTempFileRequest) -> FsResult<OpenedTempFile> {
             let mut files = self.files.lock().unwrap();
-            let path = Path::parse(&format!("/scratch-{}", files.len())).unwrap();
+            let mut sequence = files.len();
+            let path = loop {
+                let candidate = Path::parse(&format!("/scratch-{sequence}"))
+                    .expect("generated scratch path must be valid");
+                if !files.contains_key(candidate.as_str()) {
+                    break candidate;
+                }
+                sequence = sequence.checked_add(1).expect("scratch sequence exhausted");
+            };
             files.insert(path.as_str().to_owned(), Vec::new());
             Ok(OpenedTempFile::new(
                 self.info(path.clone()),

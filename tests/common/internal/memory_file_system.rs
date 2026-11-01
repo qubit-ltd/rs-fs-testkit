@@ -277,6 +277,14 @@ pub enum MemoryFault {
     CopyOverwriteKeepsTarget,
     /// Ignores temporary-resource parent and affix options.
     TempIgnoresOptions,
+    /// Uses a valid suffix but puts the requested temp prefix inside the basename.
+    TempWrongPrefixBasename,
+    /// Places the requested prefix in a parent component but not the basename.
+    TempPrefixOnlyInParent,
+    /// Reuses an occupied temporary path to test lifecycle isolation failures.
+    TempReusesLivePath,
+    /// Rejects non-empty directory overwrite while allowing an empty target.
+    TempNativeDirectoryOverwrite,
     /// Fails temporary file and directory creation requests.
     TempCreationFails,
     /// Fails temporary resource keep before publishing it.
@@ -1442,6 +1450,10 @@ impl MemorySpi {
         };
         let prefix = if state.fault == MemoryFault::TempIgnoresOptions {
             if directory { ".tmp-dir-" } else { ".tmp-" }
+        } else if state.fault == MemoryFault::TempWrongPrefixBasename {
+            if directory { "xcontract-directory-" } else { "xcontract-file-" }
+        } else if state.fault == MemoryFault::TempPrefixOnlyInParent {
+            "unrelated-"
         } else {
             prefix
         };
@@ -1450,7 +1462,17 @@ impl MemorySpi {
         } else {
             suffix
         };
-        let path = Path::parse(&format!("{parent}/{prefix}{}{suffix}", state.next_temp))
+        let parent = if state.fault == MemoryFault::TempPrefixOnlyInParent {
+            format!("{parent}/{}parent", if directory { "contract-directory-" } else { "contract-file-" })
+        } else {
+            parent.to_owned()
+        };
+        let sequence = if state.fault == MemoryFault::TempReusesLivePath {
+            u64::try_from(state.entries.len()).expect("temporary sequence must fit u64")
+        } else {
+            state.next_temp
+        };
+        let path = Path::parse(&format!("{parent}/{prefix}{sequence}{suffix}"))
             .expect("generated temporary path must be valid");
         state.next_temp += 1;
         publish_entry(
@@ -2321,6 +2343,19 @@ struct TempSession {
 impl TempResourceSpi for TempSession {
     fn persist(&mut self, request: PersistRequest<'_>) -> Result<PersistOutcome, SpiPersistFailure> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        if state.fault == MemoryFault::TempNativeDirectoryOverwrite
+            && request.options().overwrite()
+            && state.entries.keys().any(|path| path.starts_with(&format!("{}/", request.target().as_str())))
+        {
+            return Err(SpiPersistFailure::new(
+                FsError::new(
+                    FsErrorKind::Conflict,
+                    FsOperation::PersistTemp,
+                    "native directory overwrite rejects a non-empty target",
+                ),
+                PersistFailureState::NotPublished,
+            ));
+        }
         if state.fault == MemoryFault::TempPersistFails {
             return Err(SpiPersistFailure::new(
                 FsError::new(

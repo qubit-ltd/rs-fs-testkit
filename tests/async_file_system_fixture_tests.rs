@@ -17,6 +17,7 @@ use qubit_fs::AsyncFileSystem;
 use qubit_fs::copy::CopyMethod;
 use qubit_fs::copy::CopyOptions;
 use qubit_fs::path::Path;
+use qubit_fs::temp::TempOptions;
 use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::AsyncCopyCancellationStage;
 use qubit_fs_testkit::AsyncFileSystemFixture;
@@ -32,6 +33,68 @@ use qubit_fs_testkit::WriteScenario;
 
 use self::common::AsyncMemoryFixture;
 use self::common::async_memory_file_system::run_controlled;
+
+#[test]
+fn test_async_temp_resources_do_not_reuse_a_live_path() {
+    run_controlled(async {
+        let file_fixture = AsyncMemoryFixture::new();
+        let options = TempOptions::default().with_parent(Some(Path::root()));
+        let mut file_a = file_fixture.file_system().create_temp_file(options.clone()).await.expect("create file A");
+        let mut file_b = file_fixture.file_system().create_temp_file(options.clone()).await.expect("create file B");
+        let file_b_path = file_b.path().clone();
+        file_fixture
+            .write_file_out_of_band(&file_b_path, b"file sentinel")
+            .await
+            .expect("seed file B");
+        file_a.cleanup().await.expect("cleanup file A");
+        let mut file_c = file_fixture.file_system().create_temp_file(options.clone()).await.expect("create file C");
+        let file_c_path = file_c.path().clone();
+        assert_ne!(file_b_path, file_c_path, "file C must not reuse live file B's path");
+        assert_eq!(
+            file_fixture.read_file(&file_b_path).await.expect("observe file B"),
+            qubit_fs_testkit::FixtureSupport::Supported(b"file sentinel".to_vec()),
+            "creating file C must preserve file B's bytes",
+        );
+        file_b.cleanup().await.expect("cleanup file B");
+        file_c.cleanup().await.expect("cleanup file C");
+
+        let directory_fixture = AsyncMemoryFixture::new();
+        let mut directory_a = directory_fixture
+            .file_system()
+            .create_temp_directory(options.clone())
+            .await
+            .expect("create directory A");
+        let mut directory_b = directory_fixture
+            .file_system()
+            .create_temp_directory(options.clone())
+            .await
+            .expect("create directory B");
+        let directory_b_path = directory_b.path().clone();
+        let sentinel_path = Path::parse(&format!("{}/nested/sentinel", directory_b_path.as_str()))
+            .expect("build nested sentinel path");
+        directory_fixture
+            .write_file_out_of_band(&sentinel_path, b"directory sentinel")
+            .await
+            .expect("seed nested directory B sentinel");
+        directory_a.cleanup().await.expect("cleanup directory A");
+        let mut directory_c = directory_fixture
+            .file_system()
+            .create_temp_directory(options)
+            .await
+            .expect("create directory C");
+        let directory_c_path = directory_c.path().clone();
+        assert_ne!(directory_b_path, directory_c_path, "directory C must not reuse live directory B's path");
+        assert_eq!(
+            directory_fixture.read_file(&sentinel_path).await.expect("observe nested sentinel"),
+            qubit_fs_testkit::FixtureSupport::Supported(b"directory sentinel".to_vec()),
+            "creating directory C must preserve directory B's nested bytes",
+        );
+        directory_b.cleanup().await.expect("cleanup directory B");
+        directory_c.cleanup().await.expect("cleanup directory C");
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
+    .expect("temporary resources remain isolated while live");
+}
 
 mod common;
 
