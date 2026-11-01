@@ -93,6 +93,16 @@ impl FileSystemContractSuite<'_> {
                 .fixture
                 .exists_out_of_band(path)
                 .map_err(|error| ContractFailure::with_source("directory initial observation failed", error).at(id))?;
+            if matches!(before, FixtureSupport::Unsupported) {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm the initial directory premise".to_owned(),
+                    },
+                );
+                return Ok(());
+            }
             verify_condition(
                 matches!(before, FixtureSupport::Supported(false)),
                 id,
@@ -122,6 +132,16 @@ impl FileSystemContractSuite<'_> {
             let observed = self.fixture.exists_out_of_band(path).map_err(|error| {
                 ContractFailure::with_source("directory publication observation failed", error).at(id)
             })?;
+            if matches!(observed, FixtureSupport::Unsupported) {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm directory publication".to_owned(),
+                    },
+                );
+                return Ok(());
+            }
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(true)),
                 id,

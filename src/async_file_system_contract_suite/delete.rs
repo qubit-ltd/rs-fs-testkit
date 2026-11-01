@@ -221,6 +221,11 @@ impl AsyncFileSystemContractSuite<'_> {
             self.fixture.exists_out_of_band(&path).await.map_err(|error| {
                 ContractFailure::with_source("missing-delete initial observation failed", error).at(id)
             })?;
+        if matches!(before, FixtureSupport::Unsupported) {
+            return Ok(ContractCheckOutcome::Unverified {
+                reason: "fixture.exists_out_of_band cannot confirm the missing-delete premise".to_owned(),
+            });
+        }
         verify_condition(
             matches!(before, FixtureSupport::Supported(false)),
             id,
@@ -242,6 +247,11 @@ impl AsyncFileSystemContractSuite<'_> {
             self.fixture.exists_out_of_band(&path).await.map_err(|error| {
                 ContractFailure::with_source("missing-delete final observation failed", error).at(id)
             })?;
+        if matches!(after, FixtureSupport::Unsupported) {
+            return Ok(ContractCheckOutcome::Unverified {
+                reason: "fixture.exists_out_of_band cannot confirm missing-delete result".to_owned(),
+            });
+        }
         verify_condition(
             matches!(after, FixtureSupport::Supported(false)),
             id,

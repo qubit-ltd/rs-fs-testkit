@@ -103,6 +103,16 @@ impl AsyncFileSystemContractSuite<'_> {
             let before = self.fixture.exists_out_of_band(path).await.map_err(|error| {
                 ContractFailure::with_source("recursive-delete initial observation failed", error).at(id)
             })?;
+            if matches!(before, FixtureSupport::Unsupported) {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm recursive-delete seed".to_owned(),
+                    },
+                );
+                return Ok(());
+            }
             verify_condition(
                 matches!(before, FixtureSupport::Supported(true)),
                 id,
@@ -124,6 +134,16 @@ impl AsyncFileSystemContractSuite<'_> {
             let after = self.fixture.exists_out_of_band(path).await.map_err(|error| {
                 ContractFailure::with_source("recursive-delete final observation failed", error).at(id)
             })?;
+            if matches!(after, FixtureSupport::Unsupported) {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm recursive deletion".to_owned(),
+                    },
+                );
+                return Ok(());
+            }
             verify_condition(
                 matches!(after, FixtureSupport::Supported(false)),
                 id,

@@ -71,14 +71,14 @@ impl AsyncFileSystemContractSuite<'_> {
         )?;
         self.context.record_created(source.clone());
         verify_condition(source != target, id, "copy source and target alias")?;
-        self.verify_copy_contents(
+        if !self.verify_copy_contents(
             id,
             &source,
             bytes,
             "copy source observation failed",
             "copy source evidence is unavailable or differs",
         )
-        .await?;
+        .await? { return Ok(()); }
         self.execute_basic_copy(id, source, target, bytes).await
     }
 
@@ -287,14 +287,14 @@ impl AsyncFileSystemContractSuite<'_> {
         )?;
         if id == ContractCheckId::CopyRepeatedExecute {
             for path in [&source, &target] {
-                self.verify_copy_contents(
+                if !self.verify_copy_contents(
                     id,
                     path,
                     bytes,
                     "initial copy observation failed",
                     "initial copy contents differ or evidence is unavailable",
                 )
-                .await?;
+                .await? { return Ok(()); }
             }
             let repeated = match operation.execute().await {
                 Err(error) => error,
@@ -317,14 +317,14 @@ impl AsyncFileSystemContractSuite<'_> {
             )?;
         }
         for path in [&source, &target] {
-            self.verify_copy_contents(
+            if !self.verify_copy_contents(
                 id,
                 path,
                 bytes,
                 "copy contents observation failed",
                 "copy source or target contents differ or evidence is unavailable",
             )
-            .await?;
+            .await? { return Ok(()); }
         }
         self.context
             .record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Passed);
@@ -349,22 +349,29 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Returns a [`ContractFailure`] if the read fails or the observed contents
     /// are unsupported or differ from `expected`.
     async fn verify_copy_contents(
-        &self,
+        &mut self,
         id: ContractCheckId,
         path: &qfs::path::Path,
         expected: &[u8],
         read_error: &'static str,
         mismatch: &'static str,
-    ) -> Result<(), ContractFailure> {
+    ) -> Result<bool, ContractFailure> {
         let observed = self
             .fixture
             .read_file(path)
             .await
             .map_err(|error| ContractFailure::with_source(read_error, error).at(id))?;
+        if matches!(observed, FixtureSupport::Unsupported) {
+            self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
+                reason: format!("fixture.read_file cannot confirm contents: {read_error}"),
+            });
+            return Ok(false);
+        }
         verify_condition(
             matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
             id,
             mismatch,
-        )
+        )?;
+        Ok(true)
     }
 }

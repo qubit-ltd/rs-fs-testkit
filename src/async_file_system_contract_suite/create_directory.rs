@@ -99,8 +99,12 @@ impl AsyncFileSystemContractSuite<'_> {
                 .check_create_directory_rejected(id, capability, &target, options)
                 .await;
         }
-        self.verify_create_directory_targets_absent(id, &parent, &target)
-            .await?;
+        if !self
+            .verify_create_directory_targets_absent(id, capability, &parent, &target)
+            .await?
+        {
+            return Ok(());
+        }
         self.context.record_created(parent.clone());
         self.context.record_created(target.clone());
         let outcome = self
@@ -121,7 +125,12 @@ impl AsyncFileSystemContractSuite<'_> {
                 "recursive ancestor count is zero",
             )?;
         }
-        self.verify_create_directory_publication(id, &parent, &target).await?;
+        if !self
+            .verify_create_directory_publication(id, capability, &parent, &target)
+            .await?
+        {
+            return Ok(());
+        }
         self.verify_create_directory_exists_ok(id, recursive, &target).await?;
         self.context
             .record_check(id, Some(capability), ContractCheckOutcome::Passed);
@@ -191,23 +200,34 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Returns a contract failure if either path cannot be independently
     /// observed as absent.
     async fn verify_create_directory_targets_absent(
-        &self,
+        &mut self,
         id: ContractCheckId,
+        capability: FileSystemCapability,
         parent: &Path,
         target: &Path,
-    ) -> Result<(), ContractFailure> {
+    ) -> Result<bool, ContractFailure> {
         for path in [parent, target] {
             let before =
                 self.fixture.exists_out_of_band(path).await.map_err(|error| {
                     ContractFailure::with_source("directory initial observation failed", error).at(id)
                 })?;
+            if matches!(before, FixtureSupport::Unsupported) {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm the initial directory premise".to_owned(),
+                    },
+                );
+                return Ok(false);
+            }
             verify_condition(
                 matches!(before, FixtureSupport::Supported(false)),
                 id,
                 "directory fixture needs independently confirmed absent paths",
             )?;
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Checks independent publication and directory metadata for requested
@@ -229,15 +249,26 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Returns a contract failure if a path is not observed as present or its
     /// metadata is not directory-like.
     async fn verify_create_directory_publication(
-        &self,
+        &mut self,
         id: ContractCheckId,
+        capability: FileSystemCapability,
         parent: &Path,
         target: &Path,
-    ) -> Result<(), ContractFailure> {
+    ) -> Result<bool, ContractFailure> {
         for path in [parent, target] {
             let observed = self.fixture.exists_out_of_band(path).await.map_err(|error| {
                 ContractFailure::with_source("directory publication observation failed", error).at(id)
             })?;
+            if matches!(observed, FixtureSupport::Unsupported) {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm directory publication".to_owned(),
+                    },
+                );
+                return Ok(false);
+            }
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(true)),
                 id,
@@ -255,7 +286,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 "created resource is not directory-like",
             )?;
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Repeats creation with `exists_ok` and checks the already-existing

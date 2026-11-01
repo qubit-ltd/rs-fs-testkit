@@ -98,6 +98,12 @@ impl AsyncFileSystemContractSuite<'_> {
             let observed = self.fixture.read_file(path).await.map_err(|error| {
                 ContractFailure::with_source("copy conflict initial observation failed", error).at(id)
             })?;
+            if matches!(observed, FixtureSupport::Unsupported) {
+                self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
+                    reason: "fixture.read_file cannot confirm the prepared copy conflict".to_owned(),
+                });
+                return Ok(());
+            }
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
                 id,
@@ -110,8 +116,9 @@ impl AsyncFileSystemContractSuite<'_> {
             CopyConflictPolicy::Skip,
             CopyConflictPolicy::Overwrite,
         ] {
-            self.check_copy_conflict_policy(id, &source, &target, bytes, policy, fallback)
-                .await?;
+            if !self.check_copy_conflict_policy(id, &source, &target, bytes, policy, fallback).await? {
+                return Ok(());
+            }
         }
         self.context.record_check(
             id,
@@ -155,7 +162,7 @@ impl AsyncFileSystemContractSuite<'_> {
         bytes: &[u8],
         policy: CopyConflictPolicy,
         fallback: bool,
-    ) -> Result<(), ContractFailure> {
+    ) -> Result<bool, ContractFailure> {
         let options = CopyOptions::file().with_conflict(policy);
         let result = crate::internal::execute_copy::execute_copy(
             self.fixture.file_system(),
@@ -206,8 +213,7 @@ impl AsyncFileSystemContractSuite<'_> {
         } else {
             b"existing"
         };
-        self.verify_copy_conflict_result_contents(id, source, target, bytes, expected_target)
-            .await
+        self.verify_copy_conflict_result_contents(id, source, target, bytes, expected_target).await
     }
 
     /// Confirms the policy preserved the source and left the expected target
@@ -236,17 +242,23 @@ impl AsyncFileSystemContractSuite<'_> {
         target: &Path,
         source_bytes: &[u8],
         target_bytes: &[u8],
-    ) -> Result<(), ContractFailure> {
+    ) -> Result<bool, ContractFailure> {
         for (path, expected) in [(source, source_bytes), (target, target_bytes)] {
             let observed = self.fixture.read_file(path).await.map_err(|error| {
                 ContractFailure::with_source("copy conflict result observation failed", error).at(id)
             })?;
+            if matches!(observed, FixtureSupport::Unsupported) {
+                self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
+                    reason: "fixture.read_file cannot confirm copy conflict result".to_owned(),
+                });
+                return Ok(false);
+            }
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
                 id,
                 "copy conflict changed source or published incorrect target contents",
             )?;
         }
-        Ok(())
+        Ok(true)
     }
 }

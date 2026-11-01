@@ -90,6 +90,12 @@ impl FileSystemContractSuite<'_> {
             let observed = self.fixture.read_file(path).map_err(|error| {
                 ContractFailure::with_source("copy conflict initial observation failed", error).at(id)
             })?;
+            if matches!(observed, FixtureSupport::Unsupported) {
+                self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
+                    reason: "fixture.read_file cannot confirm the prepared copy conflict".to_owned(),
+                });
+                return Ok(());
+            }
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
                 id,
@@ -102,7 +108,9 @@ impl FileSystemContractSuite<'_> {
             CopyConflictPolicy::Skip,
             CopyConflictPolicy::Overwrite,
         ] {
-            self.check_copy_conflict_policy(id, &source, &target, bytes, policy, fallback)?;
+            if !self.check_copy_conflict_policy(id, &source, &target, bytes, policy, fallback)? {
+                return Ok(());
+            }
         }
         self.context.record_check(
             id,
@@ -144,7 +152,7 @@ impl FileSystemContractSuite<'_> {
         bytes: &[u8],
         policy: CopyConflictPolicy,
         fallback: bool,
-    ) -> Result<(), ContractFailure> {
+    ) -> Result<bool, ContractFailure> {
         let options = CopyOptions::file().with_conflict(policy);
         let result = self.fixture.file_system().copy(source, target, options);
         let rejected_kind = match policy {
@@ -193,12 +201,18 @@ impl FileSystemContractSuite<'_> {
             let observed = self.fixture.read_file(path).map_err(|error| {
                 ContractFailure::with_source("copy conflict result observation failed", error).at(id)
             })?;
+            if matches!(observed, FixtureSupport::Unsupported) {
+                self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
+                    reason: "fixture.read_file cannot confirm copy conflict result".to_owned(),
+                });
+                return Ok(false);
+            }
             verify_condition(
                 matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
                 id,
                 "copy conflict changed source or published incorrect target contents",
             )?;
         }
-        Ok(())
+        Ok(true)
     }
 }

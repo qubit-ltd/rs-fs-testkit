@@ -59,6 +59,10 @@ fn test_synchronous_fixture_defaults_report_optional_probes_as_unsupported() {
         "exists_out_of_band default must be unsupported"
     );
     assert!(
+        matches!(fixture.read_file(&path), Ok(FixtureSupport::Unsupported)),
+        "read_file default must be unsupported"
+    );
+    assert!(
         matches!(
             fixture.write_file_out_of_band(&path, b"bytes"),
             Ok(FixtureSupport::Unsupported)
@@ -160,6 +164,10 @@ mod asynchronous_defaults {
                 Ok(FixtureSupport::Unsupported)
             ),
             "exists_out_of_band default must be unsupported"
+        );
+        assert!(
+            matches!(poll_fixture_future(fixture.read_file(&path)), Ok(FixtureSupport::Unsupported)),
+            "read_file default must be unsupported"
         );
         assert!(
             matches!(

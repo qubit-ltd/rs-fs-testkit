@@ -13,7 +13,14 @@ pub use ::qubit_fs_testkit;
 use qubit_fs as qfs;
 use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::ContractCheckId;
+use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContractSuite;
+use qubit_fs_testkit::FileSystemFixture;
+use qubit_fs_testkit::FixtureError;
+use qubit_fs_testkit::FixtureResult;
+use qubit_fs_testkit::FixtureSupport;
+use qubit_fs::FileSystem;
+use qubit_fs::path::Path;
 
 use self::common::MemoryFixture;
 
@@ -159,6 +166,271 @@ fn test_focused_snapshot_does_not_prepare_fixture_path() {
     );
     assert!(std::error::Error::source(&run.failures()[0]).is_some());
     assert!(run.failures()[0].take_panic_payload().is_none());
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ObservationMode {
+    Unsupported,
+    WrongValue,
+    Error,
+}
+
+#[derive(Clone, Copy)]
+enum ObservationHook {
+    Exists,
+    Read,
+}
+
+struct ObservationFixture {
+    inner: MemoryFixture,
+    mode: ObservationMode,
+    hook: ObservationHook,
+    wrong_exists: bool,
+}
+
+impl FileSystemFixture for ObservationFixture {
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+
+    fn file_system(&self) -> &FileSystem {
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+
+    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+        self.inner.seed_file(relative, bytes)
+    }
+
+    fn seed_empty_directory(&self, relative: &str) -> FixtureResult<FixtureSupport<Path>> {
+        self.inner.seed_empty_directory(relative)
+    }
+
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
+        if matches!(self.hook, ObservationHook::Exists) {
+            return match self.mode {
+                ObservationMode::Unsupported => Ok(FixtureSupport::Unsupported),
+                ObservationMode::WrongValue => Ok(FixtureSupport::Supported(self.wrong_exists)),
+                ObservationMode::Error => Err(FixtureError::new("injected exists observation error")),
+            };
+        }
+        self.inner.exists_out_of_band(path)
+    }
+
+    fn read_file(&self, path: &Path) -> FixtureResult<FixtureSupport<Vec<u8>>> {
+        if matches!(self.hook, ObservationHook::Read) {
+            return match self.mode {
+                ObservationMode::Unsupported => Ok(FixtureSupport::Unsupported),
+                ObservationMode::WrongValue => Ok(FixtureSupport::Supported(b"wrong".to_vec())),
+                ObservationMode::Error => Err(FixtureError::new("injected read observation error")),
+            };
+        }
+        self.inner.read_file(path)
+    }
+}
+
+fn assert_sync_observation_classification(id: ContractCheckId, hook: ObservationHook) {
+    for (mode, is_unverified) in [
+        (ObservationMode::Unsupported, true),
+        (ObservationMode::WrongValue, false),
+        (ObservationMode::Error, false),
+    ] {
+        let fixture = ObservationFixture {
+            inner: MemoryFixture::with_all_capabilities(),
+            mode,
+            hook,
+            wrong_exists: id != ContractCheckId::DeleteTree,
+        };
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        assert!(!run.requirements_satisfied(), "{id}: unsupported evidence must not satisfy requirements");
+        if is_unverified {
+            assert!(run.failures().is_empty(), "{id}: Unsupported should be Unverified");
+            assert!(matches!(
+                run.report().checks()[0].outcome(),
+                ContractCheckOutcome::Unverified { reason } if reason.contains("fixture.")
+            ), "{id}");
+        } else {
+            assert_eq!(run.failures().len(), 1, "{id}: invalid evidence must fail");
+            assert_eq!(run.failures()[0].check(), Some(id));
+        }
+        assert!(fixture.inner.is_empty(), "{id}: cleanup must run for {mode:?}");
+    }
+}
+
+#[test]
+fn test_focused_sync_missing_observation_is_unverified_and_bad_evidence_fails() {
+    for id in [ContractCheckId::DirectoryCreate, ContractCheckId::DeleteMissingOk, ContractCheckId::DeleteTree] {
+        assert_sync_observation_classification(id, ObservationHook::Exists);
+    }
+    for id in [ContractCheckId::CopyBasic, ContractCheckId::CopyFallbackOverwriteRejected] {
+        assert_sync_observation_classification(id, ObservationHook::Read);
+    }
+}
+
+#[test]
+fn test_sync_unverified_check_does_not_stop_independent_checks() {
+    let fixture = ObservationFixture {
+        inner: MemoryFixture::with_all_capabilities(),
+        mode: ObservationMode::Unsupported,
+        hook: ObservationHook::Exists,
+        wrong_exists: true,
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_all();
+    assert!(run.report().checks().len() > 1);
+    assert!(run.report().checks().iter().any(|check| {
+        check.id() == ContractCheckId::DirectoryCreate
+            && matches!(
+                check.outcome(),
+                ContractCheckOutcome::Unverified { reason } if reason.contains("exists_out_of_band")
+            )
+    }));
+    assert!(fixture.inner.is_empty(), "all prepared resources must be cleaned up");
+}
+
+#[cfg(feature = "async")]
+mod async_observation_classification {
+    use qubit_fs::AsyncFileSystem;
+    use qubit_fs::path::Path;
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+    use qubit_fs_testkit::AsyncFileSystemFixture;
+    use qubit_fs_testkit::FixtureFuture;
+
+    use super::ContractCheckId;
+    use super::ContractCheckOutcome;
+    use super::FixtureError;
+    use super::FixtureResult;
+    use super::FixtureSupport;
+    use super::ObservationHook;
+    use super::ObservationMode;
+    use crate::common::AsyncMemoryFixture;
+
+    struct AsyncObservationFixture {
+        inner: AsyncMemoryFixture,
+        mode: ObservationMode,
+        hook: ObservationHook,
+        wrong_exists: bool,
+    }
+
+    impl AsyncFileSystemFixture for AsyncObservationFixture {
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            self.inner.teardown()
+        }
+
+        fn file_system(&self) -> &AsyncFileSystem {
+            self.inner.file_system()
+        }
+
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            self.inner.path(relative)
+        }
+
+        fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
+            self.inner.seed_file(relative, bytes)
+        }
+
+        fn seed_empty_directory<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
+            self.inner.seed_empty_directory(relative)
+        }
+
+        fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
+            Box::pin(async move {
+                if matches!(self.hook, ObservationHook::Exists) {
+                    return match self.mode {
+                        ObservationMode::Unsupported => Ok(FixtureSupport::Unsupported),
+                        ObservationMode::WrongValue => Ok(FixtureSupport::Supported(self.wrong_exists)),
+                        ObservationMode::Error => Err(FixtureError::new("injected async exists observation error")),
+                    };
+                }
+                self.inner.exists_out_of_band(path).await
+            })
+        }
+
+        fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
+            Box::pin(async move {
+                if matches!(self.hook, ObservationHook::Read) {
+                    return match self.mode {
+                        ObservationMode::Unsupported => Ok(FixtureSupport::Unsupported),
+                        ObservationMode::WrongValue => Ok(FixtureSupport::Supported(b"wrong".to_vec())),
+                        ObservationMode::Error => Err(FixtureError::new("injected async read observation error")),
+                    };
+                }
+                self.inner.read_file(path).await
+            })
+        }
+    }
+
+    async fn assert_classification(id: ContractCheckId, hook: ObservationHook) {
+        for (mode, is_unverified) in [
+            (ObservationMode::Unsupported, true),
+            (ObservationMode::WrongValue, false),
+            (ObservationMode::Error, false),
+        ] {
+            let fixture = AsyncObservationFixture {
+                inner: AsyncMemoryFixture::with_all_capabilities(),
+                mode,
+                hook,
+                wrong_exists: id != ContractCheckId::DeleteTree,
+            };
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id).await;
+            assert!(!run.requirements_satisfied(), "{id}: unsupported evidence must not satisfy requirements");
+            if is_unverified {
+                assert!(run.failures().is_empty(), "{id}: Unsupported should be Unverified");
+                assert!(matches!(
+                    run.report().checks()[0].outcome(),
+                    ContractCheckOutcome::Unverified { reason } if reason.contains("fixture.")
+                ), "{id}");
+            } else {
+                assert_eq!(run.failures().len(), 1, "{id}: invalid evidence must fail");
+                assert_eq!(run.failures()[0].check(), Some(id));
+            }
+            assert!(fixture.inner.is_empty(), "{id}: cleanup must run for {mode:?}");
+        }
+    }
+
+    #[test]
+    fn test_focused_async_missing_observation_is_unverified_and_bad_evidence_fails() {
+        crate::common::async_memory_file_system::run_controlled(async {
+            for id in [
+                ContractCheckId::DirectoryCreate,
+                ContractCheckId::DeleteMissingOk,
+                ContractCheckId::DeleteTree,
+            ] {
+                assert_classification(id, ObservationHook::Exists).await;
+            }
+            for id in [ContractCheckId::CopyBasic, ContractCheckId::CopyFallbackOverwriteRejected] {
+                assert_classification(id, ObservationHook::Read).await;
+            }
+        });
+    }
+
+    #[test]
+    fn test_async_unverified_check_does_not_stop_independent_checks() {
+        crate::common::async_memory_file_system::run_controlled(async {
+            let fixture = AsyncObservationFixture {
+                inner: AsyncMemoryFixture::with_all_capabilities(),
+                mode: ObservationMode::Unsupported,
+                hook: ObservationHook::Exists,
+                wrong_exists: true,
+            };
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_all().await;
+            assert!(run.report().checks().len() > 1);
+            assert!(run.report().checks().iter().any(|check| {
+                check.id() == ContractCheckId::DirectoryCreate
+                    && matches!(
+                        check.outcome(),
+                        ContractCheckOutcome::Unverified { reason } if reason.contains("exists_out_of_band")
+                    )
+            }));
+            assert!(fixture.inner.is_empty(), "all prepared resources must be cleaned up");
+        });
+    }
 }
 
 /// Creating only the leaf must not satisfy recursive directory creation.
