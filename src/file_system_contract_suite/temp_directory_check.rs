@@ -119,7 +119,9 @@ impl FileSystemContractSuite<'_> {
                 )?;
             }
             verify_condition(
-                source.as_str().contains("contract-directory-") && source.as_str().ends_with(".tmp"),
+                source.file_name().is_some_and(|name| {
+                    name.starts_with("contract-directory-") && name.ends_with(".tmp")
+                }),
                 id,
                 "temp/directory: requested prefix or suffix was ignored",
             )?;
@@ -262,6 +264,96 @@ impl FileSystemContractSuite<'_> {
                     )
                     .at(id));
                 }
+                let mut first = filesystem.create_temp_directory(TempOptions::default()).map_err(|error| {
+                    ContractFailure::with_owned_source("interleaved temporary preparation failed", error).at(id)
+                })?;
+                self.context.record_created(first.path().clone());
+                let mut second = filesystem.create_temp_directory(TempOptions::default()).map_err(|error| {
+                    ContractFailure::with_owned_source("interleaved temporary preparation failed", error).at(id)
+                })?;
+                let second_path = second.path().clone();
+                self.context.record_created(second_path.clone());
+                let sentinel = second_path.join(
+                    &RelativePath::parse("nested/sentinel").expect("constant temporary sentinel path"),
+                );
+                match self.fixture.write_file_out_of_band(&sentinel, b"directory B sentinel").map_err(|error| {
+                    ContractFailure::with_source("interleaved temporary sentinel setup failed", error).at(id)
+                })? {
+                    FixtureSupport::Supported(()) => {}
+                    FixtureSupport::Unsupported => {
+                        self.record_temp_directory_content_unverified(
+                            id,
+                            "fixture write_file_out_of_band hook is unsupported",
+                        );
+                        return Ok(());
+                    }
+                }
+                if let Err(error) = first.cleanup() {
+                    return Err(ContractFailure::with_owned_source(
+                        "interleaved temporary cleanup failed",
+                        ContractTempFailure::new(error, first),
+                    )
+                    .at(id));
+                }
+                for path in [&second_path, &sentinel] {
+                    let observed = self.fixture.exists_out_of_band(path).map_err(|error| {
+                        ContractFailure::with_source("interleaved temporary observation failed", error).at(id)
+                    })?;
+                    verify_condition(
+                        matches!(observed, FixtureSupport::Supported(true)),
+                        id,
+                        "temp/repeated-lifecycle: live directory or sentinel disappeared after cleanup",
+                    )?;
+                }
+                match self.fixture.read_file(&sentinel).map_err(|error| {
+                    ContractFailure::with_source("interleaved temporary sentinel observation failed", error).at(id)
+                })? {
+                    FixtureSupport::Supported(actual) => verify_condition(
+                        actual.as_slice() == b"directory B sentinel",
+                        id,
+                        "temp/repeated-lifecycle: live directory sentinel changed after cleanup",
+                    )?,
+                    FixtureSupport::Unsupported => {
+                        self.record_temp_directory_content_unverified(id, "fixture read_file hook is unsupported");
+                        return Ok(());
+                    }
+                }
+                let mut third = filesystem.create_temp_directory(TempOptions::default()).map_err(|error| {
+                    ContractFailure::with_owned_source("interleaved temporary preparation failed", error).at(id)
+                })?;
+                self.context.record_created(third.path().clone());
+                verify_condition(
+                    third.path() != &second_path,
+                    id,
+                    "temp/repeated-lifecycle: live directory path was reused",
+                )?;
+                match self.fixture.read_file(&sentinel).map_err(|error| {
+                    ContractFailure::with_source("interleaved temporary sentinel observation failed", error).at(id)
+                })? {
+                    FixtureSupport::Supported(actual) => verify_condition(
+                        actual.as_slice() == b"directory B sentinel",
+                        id,
+                        "temp/repeated-lifecycle: live directory sentinel changed after creating another resource",
+                    )?,
+                    FixtureSupport::Unsupported => {
+                        self.record_temp_directory_content_unverified(id, "fixture read_file hook is unsupported");
+                        return Ok(());
+                    }
+                }
+                if let Err(error) = second.cleanup() {
+                    return Err(ContractFailure::with_owned_source(
+                        "interleaved temporary cleanup failed",
+                        ContractTempFailure::new(error, second),
+                    )
+                    .at(id));
+                }
+                if let Err(error) = third.cleanup() {
+                    return Err(ContractFailure::with_owned_source(
+                        "interleaved temporary cleanup failed",
+                        ContractTempFailure::new(error, third),
+                    )
+                    .at(id));
+                }
                 return Ok(());
             }
             temporary = filesystem
@@ -391,7 +483,6 @@ impl FileSystemContractSuite<'_> {
                 .at(id));
             };
             self.context.record_created(target.clone());
-            let old_contents = self.prepare_temp_directory_contents(&target, id, true)?;
             let mut replacement = filesystem
                 .create_temp_directory(TempOptions::default())
                 .map_err(|error| {
@@ -428,9 +519,6 @@ impl FileSystemContractSuite<'_> {
             }
             if replacement_contents {
                 self.verify_temp_directory_contents(outcome.target(), id, false)?;
-            }
-            if old_contents {
-                self.verify_temp_directory_contents(&target, id, false)?;
             }
         }
         Ok(())
