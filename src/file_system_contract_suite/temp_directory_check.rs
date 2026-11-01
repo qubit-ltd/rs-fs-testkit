@@ -299,11 +299,21 @@ impl FileSystemContractSuite<'_> {
                     let observed = self.fixture.exists_out_of_band(path).map_err(|error| {
                         ContractFailure::with_source("interleaved temporary observation failed", error).at(id)
                     })?;
-                    verify_condition(
-                        matches!(observed, FixtureSupport::Supported(true)),
-                        id,
-                        "temp/repeated-lifecycle: live directory or sentinel disappeared after cleanup",
-                    )?;
+                    match observed {
+                        FixtureSupport::Supported(true) => {}
+                        FixtureSupport::Supported(false) => verify_condition(
+                            false,
+                            id,
+                            "temp/repeated-lifecycle: live directory or sentinel disappeared after cleanup",
+                        )?,
+                        FixtureSupport::Unsupported => {
+                            self.record_temp_directory_content_unverified(
+                                id,
+                                "fixture exists_out_of_band hook is unsupported",
+                            );
+                            return Ok(());
+                        }
+                    }
                 }
                 match self.fixture.read_file(&sentinel).map_err(|error| {
                     ContractFailure::with_source("interleaved temporary sentinel observation failed", error).at(id)
