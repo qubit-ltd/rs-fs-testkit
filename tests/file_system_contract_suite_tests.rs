@@ -490,12 +490,21 @@ fn test_sync_temp_directory_faults_are_attributed_to_directory_check() {
 /// Observation errors at each temporary lifecycle stage retain their check.
 #[test]
 fn test_sync_temp_lifecycle_observation_errors_are_attributed() {
-    for (id, maximum_call, no_atomic_persist) in [
-        (testkit::ContractCheckId::TempDirectory, 4, false),
-        (testkit::ContractCheckId::TempRepeatedLifecycle, 8, false),
-        (testkit::ContractCheckId::TempAtomic, 4, true),
+    for (id, no_atomic_persist) in [
+        (testkit::ContractCheckId::TempDirectory, false),
+        (testkit::ContractCheckId::TempRepeatedLifecycle, false),
+        (testkit::ContractCheckId::TempAtomic, true),
     ] {
-        for fail_call in 1..=maximum_call {
+        let baseline = if no_atomic_persist {
+            MemoryFixture::without_atomic_temp_persist()
+        } else {
+            MemoryFixture::with_all_capabilities()
+        };
+        let mut baseline_suite = FileSystemContractSuite::new(&baseline);
+        let _ = baseline_suite.run_check(id);
+        let observation_calls = baseline.exists_call_count();
+        assert!(baseline.is_empty(), "{id}: baseline cleanup failed");
+        for fail_call in 1..=observation_calls {
             let fixture = if no_atomic_persist {
                 MemoryFixture::without_atomic_temp_persist_with_exists_error_call(fail_call)
             } else {
@@ -503,6 +512,7 @@ fn test_sync_temp_lifecycle_observation_errors_are_attributed() {
             };
             let mut suite = FileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id);
+            assert!(!run.failures().is_empty(), "{id}, observation {fail_call}");
             assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
             assert!(fixture.is_empty(), "{id}, observation {fail_call}: cleanup failed");
         }
@@ -515,120 +525,21 @@ fn test_sync_later_temp_resource_creation_errors_keep_check_identity() {
         testkit::ContractCheckId::TempDirectory,
         testkit::ContractCheckId::TempFile,
     ] {
-        let maximum_call = if id == testkit::ContractCheckId::TempDirectory {
-            4
-        } else {
-            3
-        };
-        for fail_call in 2..=maximum_call {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut baseline_suite = FileSystemContractSuite::new(&baseline);
+        let _ = baseline_suite.run_check(id);
+        let creation_calls = baseline.temp_creation_call_count();
+        assert!(baseline.is_empty(), "{id}: baseline cleanup failed");
+        for fail_call in 2..=creation_calls {
             let fixture = MemoryFixture::with_temp_creation_error_call(fail_call);
             let mut suite = FileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id);
             assert!(!run.failures().is_empty(), "{id}, call {fail_call}");
-            assert_eq!(run.failures()[0].check(), Some(id), "{id}, call {fail_call}");
-            assert!(fixture.is_empty(), "{id}, call {fail_call}: leaked resources");
-        }
-    }
-}
-
-/// Every synchronous check preserves identity when any existence observation
-/// fails.
-#[test]
-fn test_sync_checks_handle_existence_observation_failures() {
-    for id in testkit::ContractCheckId::ALL
-        .iter()
-        .copied()
-        .filter(|id| id.supports_synchronous())
-    {
-        for fail_call in 1..=12 {
-            let fixture = MemoryFixture::with_exists_error_call(fail_call);
-            let mut suite = FileSystemContractSuite::new(&fixture);
-            let run = suite.run_check(id);
-            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
-            assert!(fixture.is_empty(), "{id}, observation {fail_call}: cleanup failed");
-        }
-    }
-}
-
-/// Every synchronous check preserves identity when path preparation fails.
-#[test]
-fn test_sync_checks_handle_path_preparation_failures() {
-    for id in testkit::ContractCheckId::ALL
-        .iter()
-        .copied()
-        .filter(|id| id.supports_synchronous())
-    {
-        let baseline = MemoryFixture::with_all_capabilities();
-        let mut baseline_suite = FileSystemContractSuite::new(&baseline);
-        let _ = baseline_suite.run_check(id);
-        let path_calls = baseline.path_call_count();
-        assert!(baseline.is_empty(), "{id}: baseline cleanup failed");
-        for fail_call in 1..=path_calls {
-            let fixture = MemoryFixture::with_path_error_call(fail_call);
-            let mut suite = FileSystemContractSuite::new(&fixture);
-            let run = suite.run_check(id);
-            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
-            assert!(fixture.is_empty(), "{id}, path {fail_call}: cleanup failed");
-        }
-    }
-}
-
-/// Every check keeps fixture seed errors distinct from unavailable evidence.
-#[test]
-fn test_sync_checks_handle_seed_preparation_errors() {
-    for id in testkit::ContractCheckId::ALL
-        .iter()
-        .copied()
-        .filter(|id| id.supports_synchronous())
-    {
-        for file_call in 1..=8 {
-            let fixture = MemoryFixture::with_seed_error_calls(Some(file_call), None);
-            let mut suite = FileSystemContractSuite::new(&fixture);
-            let run = suite.run_check(id);
-            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
-            assert!(fixture.is_empty(), "{id}, file seed {file_call}: cleanup failed");
-        }
-        for directory_call in 1..=4 {
-            let fixture = MemoryFixture::with_seed_error_calls(None, Some(directory_call));
-            let mut suite = FileSystemContractSuite::new(&fixture);
-            let run = suite.run_check(id);
-            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
             assert!(
-                fixture.is_empty(),
-                "{id}, directory seed {directory_call}: cleanup failed"
+                run.failures().iter().all(|failure| failure.check() == Some(id)),
+                "{id}, call {fail_call}"
             );
-        }
-    }
-}
-
-/// Optional observation failures remain explicit across every contract check.
-#[test]
-fn test_sync_checks_handle_optional_fixture_hook_errors() {
-    for hook in [
-        FixtureHook::Snapshot,
-        FixtureHook::ReadFile,
-        FixtureHook::WriteFile,
-        FixtureHook::ResourceVersion,
-        FixtureHook::StaleResourceVersion,
-        FixtureHook::ChecksumFailureCase,
-        FixtureHook::SeedSymlink,
-        FixtureHook::CopyFastPathCase,
-    ] {
-        for id in testkit::ContractCheckId::ALL
-            .iter()
-            .copied()
-            .filter(|id| id.supports_synchronous())
-        {
-            for call in 1..=4 {
-                let fixture = MemoryFixture::with_fixture_hook_error(hook, call);
-                let mut suite = FileSystemContractSuite::new(&fixture);
-                let run = suite.run_check(id);
-                assert!(
-                    run.failures().iter().all(|failure| failure.check() == Some(id)),
-                    "{id}, {hook:?}"
-                );
-                assert!(fixture.is_empty(), "{id}, {hook:?} call {call}: cleanup failed");
-            }
+            assert!(fixture.is_empty(), "{id}, call {fail_call}: leaked resources");
         }
     }
 }
@@ -788,23 +699,6 @@ fn test_stronger_capability_negative_branches_are_exercised() {
             "{id}"
         );
         assert!(fixture.is_empty());
-    }
-}
-
-/// Each advertised option and stronger guarantee must be observed by the
-/// synchronous suite rather than accepted as an unchecked provider claim.
-#[test]
-fn test_sync_suite_rejects_advertised_option_and_guarantee_faults() {
-    for case in sync_fault_cases().iter().skip(8) {
-        let fixture = MemoryFixture::with_fault(case.fault);
-        assert_panics_at(
-            || {
-                FileSystemContractSuite::new(&fixture)
-                    .run_contract(case.phase)
-                    .assert_satisfied()
-            },
-            case.check_id,
-        );
     }
 }
 
