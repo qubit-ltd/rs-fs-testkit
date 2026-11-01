@@ -214,9 +214,13 @@ fn test_sync_temp_file_and_directory_lifecycles_keep_interleaved_resources_isola
         .expect("directory B should open");
     let directory_b_path = directory_b.path().clone();
     let nested_sentinel = directory_b_path.join(&RelativePath::parse("nested/sentinel").expect("valid child"));
-    fixture
+    let sentinel_write = fixture
         .write_file_out_of_band(&nested_sentinel, b"directory B sentinel")
         .expect("nested sentinel write should succeed");
+    assert!(
+        matches!(sentinel_write, FixtureSupport::Supported(())),
+        "fixture must write the nested directory sentinel",
+    );
     directory_a.cleanup().expect("directory A cleanup should succeed");
     let mut directory_c = file_system
         .create_temp_directory(TempOptions::default())
