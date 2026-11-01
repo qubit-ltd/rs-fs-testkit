@@ -26,7 +26,6 @@ use crate::qubit_fs_testkit::AsyncFileSystemContractSuite;
 #[cfg(feature = "async")]
 use crate::qubit_fs_testkit::AsyncFileSystemFixture;
 use crate::qubit_fs_testkit::ContractCheckId;
-use crate::qubit_fs_testkit::FileSystemContract;
 use crate::qubit_fs_testkit::FileSystemContractSuite;
 use crate::qubit_fs_testkit::FileSystemFixture;
 #[cfg(feature = "async")]

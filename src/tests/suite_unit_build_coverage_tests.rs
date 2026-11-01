@@ -13,7 +13,6 @@ use super::super::AsyncFileSystemContractSuite;
 #[cfg(feature = "async")]
 use super::super::AsyncFileSystemFixture;
 use super::super::ContractCheckId;
-use super::super::FileSystemContract;
 use super::super::FileSystemContractSuite;
 use super::super::FileSystemFixture;
 #[cfg(feature = "async")]
