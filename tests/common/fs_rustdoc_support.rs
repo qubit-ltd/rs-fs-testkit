@@ -141,8 +141,8 @@ pub mod rustdoc_provider {
             let mut files = self.files.lock().unwrap();
             let mut sequence = files.len();
             let path = loop {
-                let candidate = Path::parse(&format!("/scratch-{sequence}"))
-                    .expect("generated scratch path must be valid");
+                let candidate =
+                    Path::parse(&format!("/scratch-{sequence}")).expect("generated scratch path must be valid");
                 if !files.contains_key(candidate.as_str()) {
                     break candidate;
                 }

@@ -99,9 +99,13 @@ impl AsyncFileSystemContractSuite<'_> {
                 ContractFailure::with_source("copy conflict initial observation failed", error).at(id)
             })?;
             if matches!(observed, FixtureSupport::Unsupported) {
-                self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
-                    reason: "fixture.read_file cannot confirm the prepared copy conflict".to_owned(),
-                });
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::Copy),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.read_file cannot confirm the prepared copy conflict".to_owned(),
+                    },
+                );
                 return Ok(());
             }
             verify_condition(
@@ -116,7 +120,10 @@ impl AsyncFileSystemContractSuite<'_> {
             CopyConflictPolicy::Skip,
             CopyConflictPolicy::Overwrite,
         ] {
-            if !self.check_copy_conflict_policy(id, &source, &target, bytes, policy, fallback).await? {
+            if !self
+                .check_copy_conflict_policy(id, &source, &target, bytes, policy, fallback)
+                .await?
+            {
                 return Ok(());
             }
         }
@@ -213,7 +220,8 @@ impl AsyncFileSystemContractSuite<'_> {
         } else {
             b"existing"
         };
-        self.verify_copy_conflict_result_contents(id, source, target, bytes, expected_target).await
+        self.verify_copy_conflict_result_contents(id, source, target, bytes, expected_target)
+            .await
     }
 
     /// Confirms the policy preserved the source and left the expected target
@@ -248,9 +256,13 @@ impl AsyncFileSystemContractSuite<'_> {
                 ContractFailure::with_source("copy conflict result observation failed", error).at(id)
             })?;
             if matches!(observed, FixtureSupport::Unsupported) {
-                self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
-                    reason: "fixture.read_file cannot confirm copy conflict result".to_owned(),
-                });
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::Copy),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.read_file cannot confirm copy conflict result".to_owned(),
+                    },
+                );
                 return Ok(false);
             }
             verify_condition(

@@ -149,10 +149,7 @@ fn test_single_unavailable_copy_cancellation_stage_is_independent() {
             run.assert_satisfied();
             assert!(!run.requirements_satisfied_with(&required));
         });
-        assert!(
-            fixture.is_empty(),
-            "independent copy stage probes must be cleaned"
-        );
+        assert!(fixture.is_empty(), "independent copy stage probes must be cleaned");
     }
 }
 
@@ -393,7 +390,8 @@ fn test_partial_published_write_cancellation_is_observable() {
     assert!(fixture.is_empty(), "partial write cancellation must teardown");
 }
 
-/// A directly published partial copy target is valid Published cancellation evidence.
+/// A directly published partial copy target is valid Published cancellation
+/// evidence.
 #[test]
 fn test_partial_published_copy_cancellation_is_observable() {
     let fixture = AsyncMemoryFixture::with_fault(
@@ -401,9 +399,7 @@ fn test_partial_published_copy_cancellation_is_observable() {
     );
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        let run = suite
-            .run_check(ContractCheckId::AsyncCopyCancelWriter)
-            .await;
+        let run = suite.run_check(ContractCheckId::AsyncCopyCancelWriter).await;
         run.assert_satisfied_with(&[ContractCheckId::AsyncCopyCancelWriter]);
     });
     assert!(fixture.is_empty(), "partial copy cancellation must teardown");

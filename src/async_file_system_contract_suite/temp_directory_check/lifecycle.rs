@@ -7,8 +7,8 @@
 // =============================================================================
 //! Verifies temporary-directory keep and cleanup lifecycle contracts.
 
-use qubit_fs::temp::AsyncTempDirectory;
 use qubit_fs::path::RelativePath;
+use qubit_fs::temp::AsyncTempDirectory;
 use qubit_fs::temp::TempOptions;
 use qubit_fs::temp::TempResourceState;
 
@@ -106,15 +106,15 @@ pub(super) async fn prepare_temp_directory_persistence(
             })?;
         let second_path = second.path().clone();
         suite.context.record_created(second_path.clone());
-        let sentinel = second_path.join(
-            &RelativePath::parse("nested/sentinel").expect("constant temporary sentinel path"),
-        );
+        let sentinel =
+            second_path.join(&RelativePath::parse("nested/sentinel").expect("constant temporary sentinel path"));
         match suite
             .fixture
             .write_file_out_of_band(&sentinel, b"directory B sentinel")
             .await
-            .map_err(|error| ContractFailure::with_source("interleaved temporary sentinel setup failed", error).at(id))?
-        {
+            .map_err(|error| {
+                ContractFailure::with_source("interleaved temporary sentinel setup failed", error).at(id)
+            })? {
             FixtureSupport::Supported(()) => {}
             FixtureSupport::Unsupported => {
                 return Ok((
@@ -131,11 +131,9 @@ pub(super) async fn prepare_temp_directory_persistence(
             .at(id));
         }
         for path in [&second_path, &sentinel] {
-            let observed = suite
-                .fixture
-                .exists_out_of_band(path)
-                .await
-                .map_err(|error| ContractFailure::with_source("interleaved temporary observation failed", error).at(id))?;
+            let observed = suite.fixture.exists_out_of_band(path).await.map_err(|error| {
+                ContractFailure::with_source("interleaved temporary observation failed", error).at(id)
+            })?;
             match observed {
                 FixtureSupport::Supported(true) => {}
                 FixtureSupport::Supported(false) => verify_condition(

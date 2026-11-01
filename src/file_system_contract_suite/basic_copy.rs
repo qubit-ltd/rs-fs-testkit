@@ -138,9 +138,13 @@ impl FileSystemContractSuite<'_> {
             .read_file(&source)
             .map_err(|error| ContractFailure::with_source("copy source observation failed", error).at(id))?;
         if matches!(before, FixtureSupport::Unsupported) {
-            self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
-                reason: "fixture.read_file cannot confirm the prepared copy source".to_owned(),
-            });
+            self.context.record_check(
+                id,
+                Some(FileSystemCapability::Copy),
+                ContractCheckOutcome::Unverified {
+                    reason: "fixture.read_file cannot confirm the prepared copy source".to_owned(),
+                },
+            );
             return Ok(());
         }
         verify_condition(
@@ -175,9 +179,13 @@ impl FileSystemContractSuite<'_> {
                 .read_file(path)
                 .map_err(|error| ContractFailure::with_source("copy contents observation failed", error).at(id))?;
             if matches!(observed, FixtureSupport::Unsupported) {
-                self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
-                    reason: "fixture.read_file cannot confirm copied contents".to_owned(),
-                });
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::Copy),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.read_file cannot confirm copied contents".to_owned(),
+                    },
+                );
                 return Ok(());
             }
             verify_condition(

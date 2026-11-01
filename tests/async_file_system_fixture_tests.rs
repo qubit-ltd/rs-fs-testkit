@@ -64,15 +64,9 @@ fn test_async_temp_resources_do_not_reuse_a_live_path() {
             .await
             .expect("create file C");
         let file_c_path = file_c.path().clone();
-        assert_ne!(
-            file_b_path, file_c_path,
-            "file C must not reuse live file B's path"
-        );
+        assert_ne!(file_b_path, file_c_path, "file C must not reuse live file B's path");
         assert_eq!(
-            file_fixture
-                .read_file(&file_b_path)
-                .await
-                .expect("observe file B"),
+            file_fixture.read_file(&file_b_path).await.expect("observe file B"),
             qubit_fs_testkit::FixtureSupport::Supported(b"file sentinel".to_vec()),
             "creating file C must preserve file B's bytes",
         );
@@ -104,8 +98,8 @@ fn test_async_temp_resources_do_not_reuse_a_live_path() {
             .await
             .expect("create directory B");
         let directory_b_path = directory_b.path().clone();
-        let sentinel_path = Path::parse(&format!("{}/nested/sentinel", directory_b_path.as_str()))
-            .expect("build nested sentinel path");
+        let sentinel_path =
+            Path::parse(&format!("{}/nested/sentinel", directory_b_path.as_str())).expect("build nested sentinel path");
         assert!(matches!(
             directory_fixture
                 .write_file_out_of_band(&sentinel_path, b"directory sentinel")

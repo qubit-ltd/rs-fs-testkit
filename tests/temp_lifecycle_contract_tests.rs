@@ -160,7 +160,10 @@ fn test_sync_temp_directory_overwrite_accepts_native_empty_target() {
 
 #[test]
 fn test_sync_temp_name_faults_fail_the_matching_check() {
-    for fault in [MemoryFault::TempWrongPrefixBasename, MemoryFault::TempPrefixOnlyInParent] {
+    for fault in [
+        MemoryFault::TempWrongPrefixBasename,
+        MemoryFault::TempPrefixOnlyInParent,
+    ] {
         for id in [ContractCheckId::TempFile, ContractCheckId::TempDirectory] {
             let fixture = MemoryFixture::with_fault(fault);
             let mut suite = FileSystemContractSuite::new(&fixture);
@@ -184,9 +187,11 @@ fn test_sync_temp_lifecycle_rejects_reused_live_paths() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::TempRepeatedLifecycle);
     assert!(!run.requirements_satisfied(), "reused live paths must fail");
-    assert!(run.failures().iter().any(|failure| {
-        failure.check() == Some(ContractCheckId::TempRepeatedLifecycle)
-    }));
+    assert!(
+        run.failures()
+            .iter()
+            .any(|failure| { failure.check() == Some(ContractCheckId::TempRepeatedLifecycle) })
+    );
     fixture.teardown().expect("fixture teardown must succeed");
     assert!(fixture.is_empty());
 }
@@ -195,14 +200,20 @@ fn test_sync_temp_lifecycle_rejects_reused_live_paths() {
 fn test_sync_temp_file_and_directory_lifecycles_keep_interleaved_resources_isolated() {
     let fixture = MemoryFixture::new();
     let file_system = fixture.file_system();
-    let mut file_a = file_system.create_temp_file(TempOptions::default()).expect("file A should open");
-    let mut file_b = file_system.create_temp_file(TempOptions::default()).expect("file B should open");
+    let mut file_a = file_system
+        .create_temp_file(TempOptions::default())
+        .expect("file A should open");
+    let mut file_b = file_system
+        .create_temp_file(TempOptions::default())
+        .expect("file B should open");
     let file_b_path = file_b.path().clone();
     file_system
         .write_all(&file_b_path, b"file B sentinel", WriteOptions::default())
         .expect("file B should accept sentinel");
     file_a.cleanup().expect("file A cleanup should succeed");
-    let mut file_c = file_system.create_temp_file(TempOptions::default()).expect("file C should open");
+    let mut file_c = file_system
+        .create_temp_file(TempOptions::default())
+        .expect("file C should open");
     assert_ne!(&file_b_path, file_c.path());
     assert_fixture_file(&fixture, &file_b_path, b"file B sentinel");
 

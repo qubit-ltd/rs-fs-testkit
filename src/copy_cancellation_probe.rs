@@ -18,10 +18,10 @@ use crate::FixtureResult;
 /// # Context
 ///
 /// A fixture returns this probe from
-/// [`crate::AsyncFileSystemFixture::prepare_copy_cancellation`] after arming the
-/// requested stage. The copy execution future must be dropped before calling
-/// [`disarm`](Self::disarm), so the provider stops using the gate before it is
-/// released.
+/// [`crate::AsyncFileSystemFixture::prepare_copy_cancellation`] after arming
+/// the requested stage. The copy execution future must be dropped before
+/// calling [`disarm`](Self::disarm), so the provider stops using the gate
+/// before it is released.
 ///
 /// # Polling
 ///

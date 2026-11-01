@@ -234,7 +234,10 @@ fn test_shared_fixture_errors_reach_every_synchronous_check() {
             let run = suite.run_check(id);
             assert!(!run.failures().is_empty(), "{id}, file seed call {call}");
             assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
-            assert!(fixture.is_empty(), "{id}, file seed call {call}: fixture leaked resources");
+            assert!(
+                fixture.is_empty(),
+                "{id}, file seed call {call}: fixture leaked resources"
+            );
         }
         for call in 1..=baseline.seed_directory_call_count() {
             let fixture = MemoryFixture::with_seed_error_calls(None, Some(call));
@@ -242,7 +245,10 @@ fn test_shared_fixture_errors_reach_every_synchronous_check() {
             let run = suite.run_check(id);
             assert!(!run.failures().is_empty(), "{id}, directory seed call {call}");
             assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
-            assert!(fixture.is_empty(), "{id}, directory seed call {call}: fixture leaked resources");
+            assert!(
+                fixture.is_empty(),
+                "{id}, directory seed call {call}: fixture leaked resources"
+            );
         }
         for call in 1..=baseline.exists_call_count() {
             let fixture = MemoryFixture::with_exists_error_call(call);
@@ -258,8 +264,14 @@ fn test_shared_fixture_errors_reach_every_synchronous_check() {
                 let mut suite = FileSystemContractSuite::new(&fixture);
                 let run = suite.run_check(id);
                 assert!(!run.failures().is_empty(), "{id}, temp creation call {call}");
-                assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}, temp creation call {call}");
-                assert!(fixture.is_empty(), "{id}, temp creation call {call}: fixture leaked resources");
+                assert!(
+                    run.failures().iter().all(|failure| failure.check() == Some(id)),
+                    "{id}, temp creation call {call}"
+                );
+                assert!(
+                    fixture.is_empty(),
+                    "{id}, temp creation call {call}: fixture leaked resources"
+                );
             }
         }
         for hook in hooks {
@@ -272,7 +284,10 @@ fn test_shared_fixture_errors_reach_every_synchronous_check() {
                     run.failures().iter().all(|failure| failure.check() == Some(id)),
                     "{id}, {hook:?}"
                 );
-                assert!(fixture.is_empty(), "{id}, {hook:?} call {call}: fixture leaked resources");
+                assert!(
+                    fixture.is_empty(),
+                    "{id}, {hook:?} call {call}: fixture leaked resources"
+                );
             }
         }
     }
@@ -480,8 +495,8 @@ fn test_shared_fixture_attributes_async_cancellation_admission_errors() {
 #[cfg(feature = "async")]
 #[test]
 fn test_shared_fixture_faults_are_rejected_by_their_asynchronous_check() {
-    use crate::common::AsyncMemoryFixture;
     use crate::common::AsyncMemoryFault;
+    use crate::common::AsyncMemoryFixture;
     use crate::common::async_memory_file_system::run_controlled;
     use crate::common::check_matrix::async_fault_cases;
     use crate::qubit_fs_testkit::AsyncFileSystemContractSuite;
@@ -499,7 +514,11 @@ fn test_shared_fixture_faults_are_rejected_by_their_asynchronous_check() {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id).await;
             if case.fault == AsyncMemoryFault::CopyDropsTarget && id == ContractCheckId::CopyBasic {
-                assert!(!run.requirements_satisfied(), "{} must remain unverified", case.check_id);
+                assert!(
+                    !run.requirements_satisfied(),
+                    "{} must remain unverified",
+                    case.check_id
+                );
                 assert!(run.failures().is_empty(), "{}: {:#?}", case.check_id, run.failures());
                 let check = run
                     .report()
@@ -523,11 +542,7 @@ fn test_shared_fixture_faults_are_rejected_by_their_asynchronous_check() {
                     run.report().checks().first().map(|check| check.outcome()),
                     run.failures(),
                 );
-                assert!(
-                    !run.failures().is_empty(),
-                    "{} must record a failure",
-                    case.check_id
-                );
+                assert!(!run.failures().is_empty(), "{} must record a failure", case.check_id);
                 assert!(
                     run.failures().iter().any(|failure| failure.check() == Some(id)),
                     "{} must include a failure attributed to {id}: {:?}",
@@ -593,7 +608,10 @@ fn test_shared_fixture_errors_reach_every_asynchronous_check() {
                 let run = suite.run_check(id).await;
                 assert!(!run.failures().is_empty(), "{id}, file seed call {call}");
                 assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
-                assert!(fixture.is_empty(), "{id}, file seed call {call}: fixture leaked resources");
+                assert!(
+                    fixture.is_empty(),
+                    "{id}, file seed call {call}: fixture leaked resources"
+                );
             });
         }
         for call in 1..=baseline.seed_directory_call_count() {
@@ -603,7 +621,10 @@ fn test_shared_fixture_errors_reach_every_asynchronous_check() {
                 let run = suite.run_check(id).await;
                 assert!(!run.failures().is_empty(), "{id}, directory seed call {call}");
                 assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}");
-                assert!(fixture.is_empty(), "{id}, directory seed call {call}: fixture leaked resources");
+                assert!(
+                    fixture.is_empty(),
+                    "{id}, directory seed call {call}: fixture leaked resources"
+                );
             });
         }
         for call in 1..=baseline.exists_call_count() {
@@ -623,9 +644,15 @@ fn test_shared_fixture_errors_reach_every_asynchronous_check() {
                     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
                     let run = suite.run_check(id).await;
                     assert!(!run.failures().is_empty(), "{id}, temp creation call {call}");
-                    assert!(run.failures().iter().all(|failure| failure.check() == Some(id)), "{id}, temp creation call {call}");
+                    assert!(
+                        run.failures().iter().all(|failure| failure.check() == Some(id)),
+                        "{id}, temp creation call {call}"
+                    );
                 });
-                assert!(fixture.is_empty(), "{id}, temp creation call {call}: fixture leaked resources");
+                assert!(
+                    fixture.is_empty(),
+                    "{id}, temp creation call {call}: fixture leaked resources"
+                );
             }
         }
         for hook in hooks {
@@ -640,7 +667,10 @@ fn test_shared_fixture_errors_reach_every_asynchronous_check() {
                         "{id}, {hook:?}"
                     );
                 });
-                assert!(fixture.is_empty(), "{id}, {hook:?} call {call}: fixture leaked resources");
+                assert!(
+                    fixture.is_empty(),
+                    "{id}, {hook:?} call {call}: fixture leaked resources"
+                );
             }
         }
     }

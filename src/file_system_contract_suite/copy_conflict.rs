@@ -91,9 +91,13 @@ impl FileSystemContractSuite<'_> {
                 ContractFailure::with_source("copy conflict initial observation failed", error).at(id)
             })?;
             if matches!(observed, FixtureSupport::Unsupported) {
-                self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
-                    reason: "fixture.read_file cannot confirm the prepared copy conflict".to_owned(),
-                });
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::Copy),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.read_file cannot confirm the prepared copy conflict".to_owned(),
+                    },
+                );
                 return Ok(());
             }
             verify_condition(
@@ -203,9 +207,13 @@ impl FileSystemContractSuite<'_> {
                 ContractFailure::with_source("copy conflict result observation failed", error).at(id)
             })?;
             if matches!(observed, FixtureSupport::Unsupported) {
-                self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
-                    reason: "fixture.read_file cannot confirm copy conflict result".to_owned(),
-                });
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::Copy),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.read_file cannot confirm copy conflict result".to_owned(),
+                    },
+                );
                 return Ok(false);
             }
             verify_condition(

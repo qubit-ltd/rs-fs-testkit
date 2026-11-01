@@ -533,7 +533,8 @@ pub enum AsyncMemoryFault {
     AtomicTempPersistNonAtomic,
     /// Ignores temporary-resource parent and affix options.
     TempIgnoresOptions,
-    /// Uses a valid suffix but puts the requested temp prefix inside the basename.
+    /// Uses a valid suffix but puts the requested temp prefix inside the
+    /// basename.
     TempWrongPrefixBasename,
     /// Places the requested prefix in a parent component but not the basename.
     TempPrefixOnlyInParent,
@@ -2901,7 +2902,14 @@ fn allocate_async_temp(
     let (prefix, suffix) = if fault == AsyncMemoryFault::TempIgnoresOptions {
         (".async-tmp-", "")
     } else if fault == AsyncMemoryFault::TempWrongPrefixBasename {
-        (if directory { "xcontract-directory-" } else { "xcontract-file-" }, suffix)
+        (
+            if directory {
+                "xcontract-directory-"
+            } else {
+                "xcontract-file-"
+            },
+            suffix,
+        )
     } else if fault == AsyncMemoryFault::TempPrefixOnlyInParent {
         ("unrelated-", suffix)
     } else {
@@ -2910,7 +2918,11 @@ fn allocate_async_temp(
     let parent = if fault == AsyncMemoryFault::TempPrefixOnlyInParent {
         format!(
             "{parent}/{}parent",
-            if directory { "contract-directory-" } else { "contract-file-" },
+            if directory {
+                "contract-directory-"
+            } else {
+                "contract-file-"
+            },
         )
     } else {
         parent.to_owned()
@@ -3017,8 +3029,7 @@ impl AsyncTempResourceSpi for AsyncTempSession {
                 let path = path.as_str();
                 entries.retain(|candidate, _| {
                     candidate != path
-                        && !(candidate.starts_with(path)
-                            && candidate.as_bytes().get(path.len()) == Some(&b'/'))
+                        && !(candidate.starts_with(path) && candidate.as_bytes().get(path.len()) == Some(&b'/'))
                 });
             }
             Ok(())

@@ -277,7 +277,8 @@ pub enum MemoryFault {
     CopyOverwriteKeepsTarget,
     /// Ignores temporary-resource parent and affix options.
     TempIgnoresOptions,
-    /// Uses a valid suffix but puts the requested temp prefix inside the basename.
+    /// Uses a valid suffix but puts the requested temp prefix inside the
+    /// basename.
     TempWrongPrefixBasename,
     /// Places the requested prefix in a parent component but not the basename.
     TempPrefixOnlyInParent,
@@ -1451,7 +1452,11 @@ impl MemorySpi {
         let prefix = if state.fault == MemoryFault::TempIgnoresOptions {
             if directory { ".tmp-dir-" } else { ".tmp-" }
         } else if state.fault == MemoryFault::TempWrongPrefixBasename {
-            if directory { "xcontract-directory-" } else { "xcontract-file-" }
+            if directory {
+                "xcontract-directory-"
+            } else {
+                "xcontract-file-"
+            }
         } else if state.fault == MemoryFault::TempPrefixOnlyInParent {
             "unrelated-"
         } else {
@@ -1463,7 +1468,14 @@ impl MemorySpi {
             suffix
         };
         let parent = if state.fault == MemoryFault::TempPrefixOnlyInParent {
-            format!("{parent}/{}parent", if directory { "contract-directory-" } else { "contract-file-" })
+            format!(
+                "{parent}/{}parent",
+                if directory {
+                    "contract-directory-"
+                } else {
+                    "contract-file-"
+                }
+            )
         } else {
             parent.to_owned()
         };
@@ -2345,7 +2357,10 @@ impl TempResourceSpi for TempSession {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         if state.fault == MemoryFault::TempNativeDirectoryOverwrite
             && request.options().overwrite()
-            && state.entries.keys().any(|path| path.starts_with(&format!("{}/", request.target().as_str())))
+            && state
+                .entries
+                .keys()
+                .any(|path| path.starts_with(&format!("{}/", request.target().as_str())))
         {
             return Err(SpiPersistFailure::new(
                 FsError::new(

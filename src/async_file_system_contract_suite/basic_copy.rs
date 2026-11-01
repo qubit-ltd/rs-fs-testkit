@@ -71,14 +71,18 @@ impl AsyncFileSystemContractSuite<'_> {
         )?;
         self.context.record_created(source.clone());
         verify_condition(source != target, id, "copy source and target alias")?;
-        if !self.verify_copy_contents(
-            id,
-            &source,
-            bytes,
-            "copy source observation failed",
-            "copy source evidence is unavailable or differs",
-        )
-        .await? { return Ok(()); }
+        if !self
+            .verify_copy_contents(
+                id,
+                &source,
+                bytes,
+                "copy source observation failed",
+                "copy source evidence is unavailable or differs",
+            )
+            .await?
+        {
+            return Ok(());
+        }
         self.execute_basic_copy(id, source, target, bytes).await
     }
 
@@ -287,14 +291,18 @@ impl AsyncFileSystemContractSuite<'_> {
         )?;
         if id == ContractCheckId::CopyRepeatedExecute {
             for path in [&source, &target] {
-                if !self.verify_copy_contents(
-                    id,
-                    path,
-                    bytes,
-                    "initial copy observation failed",
-                    "initial copy contents differ or evidence is unavailable",
-                )
-                .await? { return Ok(()); }
+                if !self
+                    .verify_copy_contents(
+                        id,
+                        path,
+                        bytes,
+                        "initial copy observation failed",
+                        "initial copy contents differ or evidence is unavailable",
+                    )
+                    .await?
+                {
+                    return Ok(());
+                }
             }
             let repeated = match operation.execute().await {
                 Err(error) => error,
@@ -317,14 +325,18 @@ impl AsyncFileSystemContractSuite<'_> {
             )?;
         }
         for path in [&source, &target] {
-            if !self.verify_copy_contents(
-                id,
-                path,
-                bytes,
-                "copy contents observation failed",
-                "copy source or target contents differ or evidence is unavailable",
-            )
-            .await? { return Ok(()); }
+            if !self
+                .verify_copy_contents(
+                    id,
+                    path,
+                    bytes,
+                    "copy contents observation failed",
+                    "copy source or target contents differ or evidence is unavailable",
+                )
+                .await?
+            {
+                return Ok(());
+            }
         }
         self.context
             .record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Passed);
@@ -362,9 +374,13 @@ impl AsyncFileSystemContractSuite<'_> {
             .await
             .map_err(|error| ContractFailure::with_source(read_error, error).at(id))?;
         if matches!(observed, FixtureSupport::Unsupported) {
-            self.context.record_check(id, Some(FileSystemCapability::Copy), ContractCheckOutcome::Unverified {
-                reason: format!("fixture.read_file cannot confirm contents: {read_error}"),
-            });
+            self.context.record_check(
+                id,
+                Some(FileSystemCapability::Copy),
+                ContractCheckOutcome::Unverified {
+                    reason: format!("fixture.read_file cannot confirm contents: {read_error}"),
+                },
+            );
             return Ok(false);
         }
         verify_condition(

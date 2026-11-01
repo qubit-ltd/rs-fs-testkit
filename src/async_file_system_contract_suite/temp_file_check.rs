@@ -168,9 +168,9 @@ impl AsyncFileSystemContractSuite<'_> {
                 )?;
             }
             verify_condition(
-                source.file_name().is_some_and(|name| {
-                    name.starts_with("contract-file-") && name.ends_with(".tmp")
-                }),
+                source
+                    .file_name()
+                    .is_some_and(|name| name.starts_with("contract-file-") && name.ends_with(".tmp")),
                 id,
                 "temp/file: requested prefix or suffix was ignored",
             )?;
@@ -356,10 +356,10 @@ impl AsyncFileSystemContractSuite<'_> {
                     id,
                     "temp/repeated-lifecycle: live file path was reused",
                 )?;
-                if content_reason.is_none() {
-                    if let Some(reason) = self.verify_temp_file_content(id, &second_path).await? {
-                        return Ok(Some(reason));
-                    }
+                if content_reason.is_none()
+                    && let Some(reason) = self.verify_temp_file_content(id, &second_path).await?
+                {
+                    return Ok(Some(reason));
                 }
                 if let Err(error) = second.cleanup().await {
                     return Err(ContractFailure::with_owned_source(

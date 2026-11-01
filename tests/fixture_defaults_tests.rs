@@ -166,7 +166,10 @@ mod asynchronous_defaults {
             "exists_out_of_band default must be unsupported"
         );
         assert!(
-            matches!(poll_fixture_future(fixture.read_file(&path)), Ok(FixtureSupport::Unsupported)),
+            matches!(
+                poll_fixture_future(fixture.read_file(&path)),
+                Ok(FixtureSupport::Unsupported)
+            ),
             "read_file default must be unsupported"
         );
         assert!(

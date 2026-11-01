@@ -192,7 +192,10 @@ fn test_async_temp_directory_overwrite_accepts_native_empty_target() {
 
 #[test]
 fn test_async_temp_name_faults_fail_the_matching_check() {
-    for fault in [AsyncMemoryFault::TempWrongPrefixBasename, AsyncMemoryFault::TempPrefixOnlyInParent] {
+    for fault in [
+        AsyncMemoryFault::TempWrongPrefixBasename,
+        AsyncMemoryFault::TempPrefixOnlyInParent,
+    ] {
         for id in [ContractCheckId::TempFile, ContractCheckId::TempDirectory] {
             let fixture = AsyncMemoryFixture::with_fault(fault);
             run_controlled(async {
@@ -219,9 +222,11 @@ fn test_async_temp_lifecycle_rejects_reused_live_paths() {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::TempRepeatedLifecycle).await;
         assert!(!run.requirements_satisfied(), "reused live paths must fail");
-        assert!(run.failures().iter().any(|failure| {
-            failure.check() == Some(ContractCheckId::TempRepeatedLifecycle)
-        }));
+        assert!(
+            run.failures()
+                .iter()
+                .any(|failure| { failure.check() == Some(ContractCheckId::TempRepeatedLifecycle) })
+        );
     });
     run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
     assert!(fixture.is_empty());
@@ -244,7 +249,11 @@ fn test_async_temp_file_and_directory_lifecycles_keep_interleaved_resources_isol
     });
     let file_b_path = file_b.path().clone();
     let mut write = file_system
-        .begin_write_all(file_b_path.clone(), b"file B sentinel".to_vec(), WriteOptions::default())
+        .begin_write_all(
+            file_b_path.clone(),
+            b"file B sentinel".to_vec(),
+            WriteOptions::default(),
+        )
         .expect("file B write preflight should succeed");
     run_controlled(write.execute()).expect("file B should accept sentinel");
     run_controlled(file_a.cleanup()).expect("file A cleanup should succeed");
@@ -272,8 +281,8 @@ fn test_async_temp_file_and_directory_lifecycles_keep_interleaved_resources_isol
         "fixture must write the nested directory sentinel",
     );
     run_controlled(directory_a.cleanup()).expect("directory A cleanup should succeed");
-    let mut directory_c = run_controlled(file_system.create_temp_directory(TempOptions::default()))
-        .expect("directory C should open");
+    let mut directory_c =
+        run_controlled(file_system.create_temp_directory(TempOptions::default())).expect("directory C should open");
     assert_ne!(&directory_b_path, directory_c.path());
     assert_fixture_file(&fixture, &nested_sentinel, b"directory B sentinel");
 

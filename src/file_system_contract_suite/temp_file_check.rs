@@ -122,9 +122,9 @@ impl FileSystemContractSuite<'_> {
                 )?;
             }
             verify_condition(
-                source.file_name().is_some_and(|name| {
-                    name.starts_with("contract-file-") && name.ends_with(".tmp")
-                }),
+                source
+                    .file_name()
+                    .is_some_and(|name| name.starts_with("contract-file-") && name.ends_with(".tmp")),
                 id,
                 "temp/file: requested prefix or suffix was ignored",
             )?;
