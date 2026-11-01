@@ -120,7 +120,9 @@ impl AsyncFileSystemContractSuite<'_> {
                 )?;
             }
             verify_condition(
-                source.as_str().contains("contract-directory-") && source.as_str().ends_with(".tmp"),
+                source.file_name().is_some_and(|name| {
+                    name.starts_with("contract-directory-") && name.ends_with(".tmp")
+                }),
                 id,
                 "temp/directory: requested prefix or suffix was ignored",
             )?;

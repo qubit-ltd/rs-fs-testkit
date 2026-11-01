@@ -122,7 +122,9 @@ impl FileSystemContractSuite<'_> {
                 )?;
             }
             verify_condition(
-                source.as_str().contains("contract-file-") && source.as_str().ends_with(".tmp"),
+                source.file_name().is_some_and(|name| {
+                    name.starts_with("contract-file-") && name.ends_with(".tmp")
+                }),
                 id,
                 "temp/file: requested prefix or suffix was ignored",
             )?;
@@ -258,6 +260,49 @@ impl FileSystemContractSuite<'_> {
                     return Err(ContractFailure::with_owned_source(
                         "repeated cleanup state differs",
                         ContractTempFailure::new(error, cleaned),
+                    )
+                    .at(id));
+                }
+                let mut first = filesystem.create_temp_file(TempOptions::default()).map_err(|error| {
+                    ContractFailure::with_owned_source("interleaved temporary preparation failed", error).at(id)
+                })?;
+                self.context.record_created(first.path().clone());
+                let mut second = filesystem.create_temp_file(TempOptions::default()).map_err(|error| {
+                    ContractFailure::with_owned_source("interleaved temporary preparation failed", error).at(id)
+                })?;
+                let second_path = second.path().clone();
+                self.context.record_created(second_path.clone());
+                let content_supported = self.prepare_temp_file_content(&second_path, id)?;
+                if let Err(error) = first.cleanup() {
+                    return Err(ContractFailure::with_owned_source(
+                        "interleaved temporary cleanup failed",
+                        ContractTempFailure::new(error, first),
+                    )
+                    .at(id));
+                }
+                let mut third = filesystem.create_temp_file(TempOptions::default()).map_err(|error| {
+                    ContractFailure::with_owned_source("interleaved temporary preparation failed", error).at(id)
+                })?;
+                self.context.record_created(third.path().clone());
+                verify_condition(
+                    third.path() != &second_path,
+                    id,
+                    "temp/repeated-lifecycle: live file path was reused",
+                )?;
+                if content_supported {
+                    self.verify_temp_file_content(&second_path, id)?;
+                }
+                if let Err(error) = second.cleanup() {
+                    return Err(ContractFailure::with_owned_source(
+                        "interleaved temporary cleanup failed",
+                        ContractTempFailure::new(error, second),
+                    )
+                    .at(id));
+                }
+                if let Err(error) = third.cleanup() {
+                    return Err(ContractFailure::with_owned_source(
+                        "interleaved temporary cleanup failed",
+                        ContractTempFailure::new(error, third),
                     )
                     .at(id));
                 }

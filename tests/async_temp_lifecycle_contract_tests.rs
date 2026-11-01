@@ -12,6 +12,7 @@ pub use ::qubit_fs_testkit;
 mod common;
 use qubit_fs::metadata::AtomicityRequirement;
 use qubit_fs::path::Path;
+use qubit_fs::path::RelativePath;
 use qubit_fs::temp::PersistFailureState;
 use qubit_fs::temp::PersistOptions;
 use qubit_fs::temp::TempOptions;
@@ -175,6 +176,109 @@ fn test_async_temp_publication_contract_rejects_lost_file_contents_and_directory
         });
         assert!(fixture.is_empty(), "{fault:?} must clean up after {id}");
     }
+}
+
+#[test]
+fn test_async_temp_directory_overwrite_accepts_native_empty_target() {
+    let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::TempNativeDirectoryOverwrite);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempDirectory).await;
+        assert!(run.requirements_satisfied(), "{:?}", run.failures());
+    });
+    run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
+    assert!(fixture.is_empty());
+}
+
+#[test]
+fn test_async_temp_name_faults_fail_the_matching_check() {
+    for fault in [AsyncMemoryFault::TempWrongPrefixBasename, AsyncMemoryFault::TempPrefixOnlyInParent] {
+        for id in [ContractCheckId::TempFile, ContractCheckId::TempDirectory] {
+            let fixture = AsyncMemoryFixture::with_fault(fault);
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                assert!(!run.requirements_satisfied(), "{fault:?} unexpectedly passed {id}");
+                assert!(
+                    run.failures().iter().any(|failure| failure.check() == Some(id)),
+                    "{fault:?} must fail {id}: {:?}",
+                    run.failures()
+                );
+                assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
+            });
+            run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
+            assert!(fixture.is_empty(), "{fault:?} must clean up after {id}");
+        }
+    }
+}
+
+#[test]
+fn test_async_temp_lifecycle_rejects_reused_live_paths() {
+    let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::TempReusesLivePath);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempRepeatedLifecycle).await;
+        assert!(!run.requirements_satisfied(), "reused live paths must fail");
+        assert!(run.failures().iter().any(|failure| {
+            failure.check() == Some(ContractCheckId::TempRepeatedLifecycle)
+        }));
+    });
+    run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
+    assert!(fixture.is_empty());
+}
+
+#[test]
+fn test_async_temp_file_and_directory_lifecycles_keep_interleaved_resources_isolated() {
+    let fixture = AsyncMemoryFixture::new();
+    let file_system = fixture.file_system();
+    let (mut file_a, mut file_b) = run_controlled(async {
+        let file_a = file_system
+            .create_temp_file(TempOptions::default())
+            .await
+            .expect("file A should open");
+        let file_b = file_system
+            .create_temp_file(TempOptions::default())
+            .await
+            .expect("file B should open");
+        (file_a, file_b)
+    });
+    let file_b_path = file_b.path().clone();
+    let mut write = file_system
+        .begin_write_all(file_b_path.clone(), b"file B sentinel".to_vec(), WriteOptions::default())
+        .expect("file B write preflight should succeed");
+    run_controlled(write.execute()).expect("file B should accept sentinel");
+    run_controlled(file_a.cleanup()).expect("file A cleanup should succeed");
+    let mut file_c = run_controlled(file_system.create_temp_file(TempOptions::default())).expect("file C should open");
+    assert_ne!(&file_b_path, file_c.path());
+    assert_fixture_file(&fixture, &file_b_path, b"file B sentinel");
+
+    let (mut directory_a, mut directory_b) = run_controlled(async {
+        let directory_a = file_system
+            .create_temp_directory(TempOptions::default())
+            .await
+            .expect("directory A should open");
+        let directory_b = file_system
+            .create_temp_directory(TempOptions::default())
+            .await
+            .expect("directory B should open");
+        (directory_a, directory_b)
+    });
+    let directory_b_path = directory_b.path().clone();
+    let nested_sentinel = directory_b_path.join(&RelativePath::parse("nested/sentinel").expect("valid child"));
+    run_controlled(fixture.write_file_out_of_band(&nested_sentinel, b"directory B sentinel"))
+        .expect("nested sentinel write should succeed");
+    run_controlled(directory_a.cleanup()).expect("directory A cleanup should succeed");
+    let mut directory_c = run_controlled(file_system.create_temp_directory(TempOptions::default()))
+        .expect("directory C should open");
+    assert_ne!(&directory_b_path, directory_c.path());
+    assert_fixture_file(&fixture, &nested_sentinel, b"directory B sentinel");
+
+    run_controlled(file_b.cleanup()).expect("file B cleanup should succeed");
+    run_controlled(file_c.cleanup()).expect("file C cleanup should succeed");
+    run_controlled(directory_b.cleanup()).expect("directory B cleanup should succeed");
+    run_controlled(directory_c.cleanup()).expect("directory C cleanup should succeed");
+    run_controlled(fixture.teardown()).expect("fixture teardown must succeed");
+    assert!(fixture.is_empty());
 }
 
 #[test]

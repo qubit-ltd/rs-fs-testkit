@@ -284,34 +284,6 @@ pub(super) async fn verify_temp_directory_overwrite(
         }
     };
     suite.context.record_created(target.clone());
-    let old_payload = target.join(&RelativePath::parse("payload").expect("constant old child path"));
-    match suite
-        .fixture
-        .write_file_out_of_band(&old_payload, b"old-temp-data")
-        .await
-        .map_err(|error| ContractFailure::with_source("temporary overwrite old content setup failed", error).at(id))?
-    {
-        FixtureSupport::Supported(()) => {}
-        FixtureSupport::Unsupported => {
-            return Ok(Some(
-                "temporary directory overwrite needs fixture.write_file_out_of_band".to_owned(),
-            ));
-        }
-    }
-    match suite.fixture.read_file(&old_payload).await.map_err(|error| {
-        ContractFailure::with_source("temporary overwrite old content observation failed", error).at(id)
-    })? {
-        FixtureSupport::Supported(actual) => {
-            verify_condition(
-                actual == b"old-temp-data",
-                id,
-                "temporary overwrite fixture setup changed old content",
-            )?;
-        }
-        FixtureSupport::Unsupported => {
-            return Ok(Some("temporary directory overwrite needs fixture.read_file".to_owned()));
-        }
-    }
     let mut replacement = filesystem
         .create_temp_directory(TempOptions::default())
         .await
