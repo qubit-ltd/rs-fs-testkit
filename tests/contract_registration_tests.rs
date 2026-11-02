@@ -50,7 +50,10 @@ fn test_default_registration_rejects_missing_evidence() {
         .output()
         .expect("run isolated contract registration");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("running 1 test"), "exact filter must run one child test: {stdout}");
+    assert!(
+        stdout.contains("running 1 test"),
+        "exact filter must run one child test: {stdout}"
+    );
     assert!(
         !output.status.success(),
         "default registration accepted missing read evidence"

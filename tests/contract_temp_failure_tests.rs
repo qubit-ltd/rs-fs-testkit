@@ -54,7 +54,11 @@ fn test_sync_temp_failure_retains_indeterminate_resource() {
     );
     assert_eq!(
         FsErrorKind::InvalidState,
-        retained.resource_mut().cleanup().expect_err("uncertain source cannot be cleaned").kind()
+        retained
+            .resource_mut()
+            .cleanup()
+            .expect_err("uncertain source cannot be cleaned")
+            .kind()
     );
     let (error, resource) = retained.into_parts();
     assert!(error.downcast_ref::<PersistFailure>().is_some());
@@ -63,7 +67,8 @@ fn test_sync_temp_failure_retains_indeterminate_resource() {
     assert!(!run.requirements_satisfied());
 }
 
-/// Async persistence retains an indeterminate resource handle without async Drop.
+/// Async persistence retains an indeterminate resource handle without async
+/// Drop.
 #[cfg(feature = "async")]
 #[test]
 fn test_async_temp_failure_retains_indeterminate_resource() {
@@ -100,7 +105,12 @@ fn test_async_temp_failure_retains_indeterminate_resource() {
         );
         assert_eq!(
             FsErrorKind::InvalidState,
-            retained.resource_mut().cleanup().await.expect_err("uncertain source cannot be cleaned").kind()
+            retained
+                .resource_mut()
+                .cleanup()
+                .await
+                .expect_err("uncertain source cannot be cleaned")
+                .kind()
         );
         assert_eq!(retained.resource().state(), TempResourceState::Indeterminate);
         assert!(source.take().is_none());
