@@ -16,7 +16,6 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
-use std::task::Wake;
 use std::task::Waker;
 
 pub use ::qubit_fs_testkit;
@@ -97,15 +96,8 @@ impl AsyncFileSystemFixture for DeleteTreeFixture {
     }
 }
 
-struct NoopWake;
-
-impl Wake for NoopWake {
-    fn wake(self: std::sync::Arc<Self>) {}
-}
-
 fn poll_once<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
-    let waker = Waker::from(std::sync::Arc::new(NoopWake));
-    future.poll(&mut Context::from_waker(&waker))
+    future.poll(&mut Context::from_waker(Waker::noop()))
 }
 
 fn assert_cleanup_recorded(fixture: &DeleteTreeFixture) {
