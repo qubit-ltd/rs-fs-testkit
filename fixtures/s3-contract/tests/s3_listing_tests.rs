@@ -106,6 +106,47 @@ async fn test_namespace_is_exact_and_scoped_to_configuration() {
     assert_eq!(actual, ["folder/a", "folderish", "top"]);
 }
 
+#[tokio::test]
+async fn test_namespace_snapshot_does_not_claim_unowned_keys() {
+    let fixture = common::Fixture::memory("snapshot-ownership");
+    let sentinel = ObjectPath::from(format!("{}/sentinel", fixture.config.prefix));
+    fixture
+        .store
+        .put(&sentinel, Bytes::from_static(b"keep").into())
+        .await
+        .unwrap();
+    assert!(matches!(
+        fixture.seed_file("owned", b"remove").await.unwrap(),
+        FixtureSupport::Supported(_)
+    ));
+    let owned = ObjectPath::from(format!("{}/owned", fixture.config.prefix));
+    for _ in 0..2 {
+        let FixtureSupport::Supported(paths) = fixture.snapshot_namespace_paths().await.unwrap()
+        else {
+            panic!("namespace snapshot must be supported");
+        };
+        let mut names: Vec<_> = paths.iter().map(|path| path.as_str()).collect();
+        names.sort();
+        assert_eq!(names, vec!["owned", "sentinel"]);
+    }
+    for _ in 0..2 {
+        fixture.teardown().await.unwrap();
+        assert!(matches!(
+            fixture.store.head(&owned).await,
+            Err(object_store::Error::NotFound { .. })
+        ));
+        let retained = fixture
+            .store
+            .get(&sentinel)
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        assert_eq!(retained.as_ref(), b"keep");
+    }
+}
+
 /// Scan budgets count unmatched SDK entries rather than only returned entries.
 #[tokio::test]
 async fn test_unmatched_entries_still_exhaust_scan_budget() {

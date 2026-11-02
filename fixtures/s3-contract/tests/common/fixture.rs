@@ -172,7 +172,7 @@ impl AsyncFileSystemFixture for Fixture {
                 .unwrap_or(FixtureSupport::Unsupported))
         })
     }
-    /// Enumerates all SDK objects in this fresh, isolated configured namespace.
+    /// Observes SDK objects in this namespace without claiming deletion ownership.
     fn snapshot_namespace_paths(&self) -> FixtureFuture<'_, FixtureSupport<Vec<Path>>> {
         Box::pin(async move {
             let prefix = ObjectPath::parse(&self.config.prefix).unwrap();
@@ -191,7 +191,9 @@ impl AsyncFileSystemFixture for Fixture {
                         .as_ref()
                         .strip_prefix(&boundary)
                         .ok_or_else(|| FixtureError::new("SDK snapshot escaped namespace"))?;
-                    self.path(logical)
+                    Path::parse_literal(logical).map_err(|error| {
+                        FixtureError::with_source("snapshot logical path failed", error)
+                    })
                 })
                 .collect::<FixtureResult<Vec<_>>>()?;
             Ok(FixtureSupport::Supported(paths))
