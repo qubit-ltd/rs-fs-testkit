@@ -151,11 +151,20 @@ impl AsyncFileSystemContractSuite<'_> {
                 &source
             };
             let error = failure.error();
-            if error.kind() != FsErrorKind::UnsupportedCapability
+            let capability_rejection_matches = match error.kind() {
+                FsErrorKind::UnsupportedCapability => error.required_capability() == Some(required),
+                FsErrorKind::RequirementNotMet => error.required_capability().is_none(),
+                _ => false,
+            };
+            let path_matches = match error.kind() {
+                FsErrorKind::UnsupportedCapability => error.path() == Some(path),
+                FsErrorKind::RequirementNotMet => error.path() == Some(&source),
+                _ => false,
+            };
+            if !capability_rejection_matches
                 || error.operation() != FsOperation::Copy
-                || error.path() != Some(path)
+                || !path_matches
                 || error.target() != Some(target)
-                || error.required_capability() != Some(required)
                 || error.provider() != Some(self.context.properties().info().provider_id())
                 || failure.state() != CopyFailureState::Unchanged
             {
