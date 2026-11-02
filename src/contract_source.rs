@@ -58,10 +58,10 @@ impl ContractSource {
 
     /// Inspects the original concrete error while it remains owned by the run.
     ///
-    /// The callback runs synchronously while this source's mutex is held. It must
-    /// not directly or indirectly call `inspect` or `take` on the same source, or
-    /// wait for another operation that needs that mutex. Return the inspection
-    /// result first, then call `take` outside the callback.
+    /// The callback runs synchronously while this source's mutex is held. It
+    /// must not directly or indirectly call `inspect` or `take` on the same
+    /// source, or wait for another operation that needs that mutex. Return
+    /// the inspection result first, then call `take` outside the callback.
     ///
     /// ```
     /// use std::error::Error;
@@ -74,9 +74,10 @@ impl ContractSource {
     /// }
     /// ```
     ///
-    /// Inspection and transfer are not atomic. Another caller may take the source
-    /// between these operations, so callers must handle `take() == None`. Taking
-    /// the source also transfers explicit recovery responsibility to the caller.
+    /// Inspection and transfer are not atomic. Another caller may take the
+    /// source between these operations, so callers must handle `take() ==
+    /// None`. Taking the source also transfers explicit recovery
+    /// responsibility to the caller.
     ///
     /// # Returns
     ///
