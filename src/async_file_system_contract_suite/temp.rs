@@ -77,10 +77,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 if file {
                     unverified_reason = self.execute_temp_file(id).await?;
                 }
-                if directory {
-                    if let Some(reason) = self.execute_temp_directory(id).await? {
-                        unverified_reason.get_or_insert(reason);
-                    }
+                if directory && let Some(reason) = self.execute_temp_directory(id).await? {
+                    unverified_reason.get_or_insert(reason);
                 }
                 if !file && !directory {
                     ContractCheckOutcome::NotApplicable {
