@@ -152,3 +152,51 @@ fn test_core_check_cannot_downgrade_itself_to_optional() {
     );
     assert!(!report.requirements_satisfied());
 }
+
+#[test]
+fn test_strict_report_diagnostics_cover_missing_reason_and_registration_cases() {
+    let empty = ContractReport::new();
+    assert!(std::panic::catch_unwind(|| empty.assert_satisfied()).is_err());
+
+    let mut missing = ContractReport::new();
+    missing.expect(ContractCheckId::ReadBasic);
+    assert!(std::panic::catch_unwind(|| missing.assert_satisfied()).is_err());
+
+    let mut optional = ContractReport::new();
+    let optional_id = ContractCheckId::AsyncCopyCancelReader;
+    optional.expect(optional_id);
+    optional.record(
+        optional_id,
+        None,
+        ContractCheckOutcome::SkippedOptional {
+            reason: "optional path skipped".to_owned(),
+        },
+    );
+    assert!(std::panic::catch_unwind(|| optional.assert_satisfied_with(&[optional_id])).is_err());
+
+    let mut blank = ContractReport::new();
+    blank.expect(ContractCheckId::ReadBasic);
+    blank.record(
+        ContractCheckId::ReadBasic,
+        None,
+        ContractCheckOutcome::NotApplicable {
+            reason: " \t ".to_owned(),
+        },
+    );
+    assert!(std::panic::catch_unwind(|| blank.assert_satisfied()).is_err());
+
+    let mut outside = ContractReport::new();
+    outside.expect(ContractCheckId::ReadBasic);
+    outside.record(ContractCheckId::ReadBasic, None, ContractCheckOutcome::Passed);
+    assert!(
+        std::panic::catch_unwind(|| {
+            outside.assert_satisfied_with(&[ContractCheckId::WriteBasic]);
+        })
+        .is_err()
+    );
+
+    let mut duplicate = ContractReport::new();
+    duplicate.register(ContractCheckId::ReadBasic, None);
+    duplicate.register(ContractCheckId::ReadBasic, None);
+    assert!(!duplicate.requirements_satisfied());
+}

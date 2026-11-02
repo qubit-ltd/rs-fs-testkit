@@ -186,6 +186,11 @@ pub const fn sync_fault_cases() -> &'static [SyncFaultCase] {
             check_id: "delete/tree",
         },
         SyncFaultCase {
+            fault: MemoryFault::RecursiveDeleteReportsMissing,
+            phase: FileSystemContract::Delete,
+            check_id: "delete/tree",
+        },
+        SyncFaultCase {
             fault: MemoryFault::AtomicRenameNonAtomic,
             phase: FileSystemContract::Rename,
             check_id: "rename/atomic",
@@ -488,6 +493,11 @@ pub const fn async_fault_cases() -> &'static [AsyncFaultCase] {
         },
         AsyncFaultCase {
             fault: AsyncMemoryFault::RecursiveDeleteLeavesChildren,
+            phase: FileSystemContract::Delete,
+            check_id: "delete/tree",
+        },
+        AsyncFaultCase {
+            fault: AsyncMemoryFault::RecursiveDeleteReportsMissing,
             phase: FileSystemContract::Delete,
             check_id: "delete/tree",
         },

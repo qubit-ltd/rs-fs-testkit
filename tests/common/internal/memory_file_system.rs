@@ -350,6 +350,9 @@ pub enum MemoryFault {
     ServerSideCopyFails,
     /// Removes the requested directory but leaves recursive descendants.
     RecursiveDeleteLeavesChildren,
+    /// Reports recursive deletion as already missing after deleting a present
+    /// tree.
+    RecursiveDeleteReportsMissing,
     /// Ignores a stale If-Match read precondition.
     IgnoreReadIfMatch,
     /// Ignores an If-None-Match read precondition.
@@ -1845,7 +1848,10 @@ impl FileSystemSpi for MemorySpi {
         }
         state.delete_attempts = state.delete_attempts.saturating_add(1);
         let existed = state.entries.contains_key(request.path().as_str());
-        let already_missing = if state.fault == MemoryFault::DeleteNoOp {
+        let already_missing = if state.fault == MemoryFault::RecursiveDeleteReportsMissing {
+            remove_entry(&mut state, request.path().as_str());
+            true
+        } else if state.fault == MemoryFault::DeleteNoOp {
             false
         } else {
             let removed = remove_entry(&mut state, request.path().as_str());

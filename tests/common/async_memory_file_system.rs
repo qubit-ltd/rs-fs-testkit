@@ -511,6 +511,9 @@ pub enum AsyncMemoryFault {
     ReplaceCommitFails,
     /// Removes only the requested directory during recursive deletion.
     RecursiveDeleteLeavesChildren,
+    /// Reports recursive deletion as already missing after deleting a present
+    /// tree.
+    RecursiveDeleteReportsMissing,
     /// Reports non-atomic completion for a required atomic rename.
     AtomicRenameNonAtomic,
     /// Reports non-atomic completion for a required atomic replacement.
@@ -2262,7 +2265,19 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     "cleanup delete error",
                 ));
             }
-            let missing = if fault == AsyncMemoryFault::DeleteNoOp {
+            let missing = if fault == AsyncMemoryFault::RecursiveDeleteReportsMissing {
+                let mut entries = entries.lock().expect("async memory state lock must succeed");
+                if recursive {
+                    let path = path.as_str();
+                    entries.retain(|entry_path, _| {
+                        entry_path != path
+                            && !(entry_path.starts_with(path) && entry_path.as_bytes().get(path.len()) == Some(&b'/'))
+                    });
+                } else {
+                    entries.remove(path.as_str());
+                }
+                true
+            } else if fault == AsyncMemoryFault::DeleteNoOp {
                 true
             } else {
                 let mut entries = entries.lock().expect("async memory state lock must succeed");
