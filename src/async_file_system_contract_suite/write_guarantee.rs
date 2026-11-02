@@ -7,6 +7,7 @@
 // =============================================================================
 //! Independently prepared atomic replacement and durable publication checks.
 
+use super::write::bounded_payload;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::AchievedAtomicity;
@@ -119,7 +120,12 @@ impl AsyncFileSystemContractSuite<'_> {
         scenario: WriteScenario,
     ) -> Result<ContractCheckOutcome, ContractFailure> {
         let relative = self.context.relative_name(&id.as_str().replace('/', "-"));
-        let bytes = b"b";
+        let payload = bounded_payload(
+            self.context.properties().limits().max_write_bytes(),
+            b"b",
+            b'b',
+        );
+        let bytes = payload.as_slice();
         let prepared = self
             .fixture
             .prepare_write(scenario, &relative, bytes)

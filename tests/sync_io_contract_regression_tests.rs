@@ -108,6 +108,29 @@ fn test_sync_rejects_durable_write_dropping_bytes() {
 }
 
 #[test]
+fn test_sync_write_guarantees_respect_zero_and_one_byte_limits() {
+    for maximum in [0, 1] {
+        for id in [
+            ContractCheckId::WriteAtomicReplaceExisting,
+            ContractCheckId::WriteDurable,
+        ] {
+            let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(maximum));
+            let fixture = MemoryFixture::with_limits(limits);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            run.assert_satisfied();
+            let check = run
+                .report()
+                .checks()
+                .iter()
+                .find(|check| check.id() == id)
+                .expect("selected guarantee must have evidence");
+            assert!(matches!(check.outcome(), ContractCheckOutcome::Passed));
+        }
+    }
+}
+
+#[test]
 fn test_sync_rejects_checksum_corruption() {
     let fixture = MemoryFixture::with_fault(MemoryFault::ChecksumIgnoresCorruption);
     assert_panics_at(

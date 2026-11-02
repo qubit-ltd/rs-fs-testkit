@@ -67,6 +67,31 @@ fn test_async_limits_allow_single_byte_write() {
 }
 
 #[test]
+fn test_async_write_guarantees_respect_zero_and_one_byte_limits() {
+    for maximum in [0, 1] {
+        for id in [
+            ContractCheckId::WriteAtomicReplaceExisting,
+            ContractCheckId::WriteDurable,
+        ] {
+            let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(maximum));
+            let fixture = AsyncMemoryFixture::with_limits(limits);
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                run.assert_satisfied();
+                let check = run
+                    .report()
+                    .checks()
+                    .iter()
+                    .find(|check| check.id() == id)
+                    .expect("selected guarantee must have evidence");
+                assert!(matches!(check.outcome(), ContractCheckOutcome::Passed));
+            });
+        }
+    }
+}
+
+#[test]
 fn test_async_write_limit_small_boundaries_are_reported() {
     for limit in [
         FileSystemLimit::Maximum(1),
