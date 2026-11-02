@@ -97,8 +97,12 @@ pub trait FileSystemFixture {
         method: CopyMethod,
     ) -> FixtureResult<FixtureSupport<CopyFixtureCase>>;
 
+    fn teardown(&self) -> FixtureResult<()>;
 }
 ```
+
+以上为接口节选。Fixture 必须提供独立、幂等的显式 `teardown`，能够处理部分准备完成及
+staging 资源；`Drop` 可以补充清理，但不能替代此职责。
 
 关键变化是 `file_system()` 返回 `&FileSystem`，不再返回 `&dyn FileSystem`。
 
@@ -107,7 +111,7 @@ Fixture 负责：
 - 为一次 suite run 提供隔离 namespace；
 - 把 testkit relative name 映射为 provider path；
 - 在必要时提供不依赖被测 capability 的 setup/observation；
-- 在 drop 或显式 teardown 中释放测试资源；
+- 通过显式 teardown 释放测试资源；
 - 明确无法提供的 representation probe。
 
 Fixture 不负责重新解释 capability 或放宽 contract。
@@ -130,8 +134,12 @@ pub trait AsyncFileSystemFixture: Sync {
     fn file_system(&self) -> &AsyncFileSystem;
     fn path(&self, relative: &str) -> FixtureResult<Path>;
     // 对应的异步 setup/observation hooks
+    fn teardown(&self) -> FixtureFuture<'_, ()>;
 }
 ```
+
+以上同样为接口节选。异步 fixture 必须提供独立、幂等的显式异步 `teardown`，覆盖部分准备
+和 staging 资源；`Drop` 不执行异步 I/O，也不能替代 teardown。
 
 Async fixture hook 返回 runtime-neutral future。Testkit 不创建全局 runtime。
 异步可选 hook 同样返回 `FixtureResult<FixtureSupport<T>>`，不能用 ready `None`
@@ -269,15 +277,11 @@ side effect。门面“SPI 完全未调用”的白盒保证由 `qubit-fs` 自�
 
 Properties contract 验证：
 
-- filesystem id 和 provider id 有效且不同概念不混用；
-- properties getter 不执行 I/O；
-- facade clone 观察同一不可变 snapshot；
+- filesystem id 和 provider id 非空；
+- info、capabilities、limits 与 symlink policy 的快照在检查时保持一致；
 - capabilities dependency 自洽；
-- path semantics 与 fixture mapping 相容；
-- `PathConstraints` 与 fixture mapping 相容，且稳定约束在 I/O 前执行；
-- finite limit 可被安全探测；
-- unknown/inapplicable/unbounded 不被误当作数值；
-- provider diagnostics 不包含 credential-like key。
+- path semantics、`PathConstraints` 与 fixture mapping 相容；
+- 在预算内探测 finite limit，并明确处理 unknown/inapplicable/unbounded limit。
 
 Limit contract 至少覆盖：
 
@@ -291,11 +295,11 @@ Limit contract 至少覆盖：
 提供的前置条件和结果。若无法独立观察必要事实，结果为 `Unverified`，不代表通过。取消恢复结果
 `Published` 只表示目标可被独立观察，不表示目标必然包含完整请求载荷。
 
-testkit 自身的 recording provider 和故障 fixture 用于验证套件记账、恢复所有权及检查能否拒绝
-指定违规；这些自测不构成 provider 的行为保证。尤其是 properties getter 不执行 I/O、clone 共享同一
-snapshot、diagnostics 不含 secret，以及每个操作的 `Display`／`Debug`／`Error::source` 语义，都不是
-provider suite 的黑盒观察所能证明的。门面的 SPI 分派和预检由 core 测试负责；native 行为、平台语义
-及套件观察范围以外的服务保证由 provider 自己验证。
+testkit 自身的 recording provider 和故障 fixture 用于验证套件记账、恢复所有权及已覆盖检查能否拒绝
+指定违规；这些自测不构成 provider 的行为保证。Provider suite 的黑盒观察不能证明 properties getter
+不执行 I/O、facade clone 共享同一 snapshot identity，或 diagnostics 不含 credential-like key。这些要求
+由 core/provider 的白盒测试或实现审查负责。门面的 SPI 分派和预检由 core 测试负责；native 行为、平台
+语义及套件观察范围以外的服务保证由 provider 自己验证。
 
 测试只在可安全构造边界输入时探测，不通过可能耗尽 CI 资源的巨大分配验证 limit。
 
@@ -391,7 +395,8 @@ abort，且目标内容仍可读取。只有 `RetryableNotPublished` 才允许�
 
 ## 10. Error contract
 
-每个操作都验证结构化错误，而不只断言 `is_err()`：
+在对应已执行的负面场景中，suite 校验该场景要求的结构化字段及保留的错误证据，而不只断言
+`is_err()`：
 
 - `FsErrorKind`；
 - `FsOperation`；
@@ -400,8 +405,11 @@ abort，且目标内容仍可读取。只有 `RetryableNotPublished` 才允许�
 - provider id；
 - required capability；
 - indeterminate/partial-progress state；
-- source error 是否保留；
-- `Display` / `Debug` 不泄漏 secret。
+- 当该负面场景检查 source 保留时，确认 source 证据仍可用。
+
+具体校验哪些字段以及是否保留 source 由各检查场景决定。逐操作完整错误链与
+`Display`／`Debug` 的格式化和安全性质属于 core/provider 的测试责任，不是 provider suite
+已统一验证的保证。
 
 Provider 返回非法 opened identity、entry 或 outcome 时，门面必须产生
 `ProviderContractViolation`。
@@ -446,7 +454,7 @@ I/O driver 和 cancellation assertion 分开实现。公共 API 不通过宏生�
 
 ## 12. Testkit 自验证
 
-Testkit 必须包含 conforming provider 和一组最小 broken provider：
+以下是 testkit 自验证及 core/provider 故障测试覆盖的场景目录，不表示它们全部由 provider suite 捕获：
 
 - unstable/inconsistent properties；
 - ignored option；
@@ -469,8 +477,11 @@ Testkit 必须包含 conforming provider 和一组最小 broken provider：
 - async copy cancellation 丢失 recovery writer；
 - async cancellation state 错误。
 
-每个 broken provider 只破坏一个 contract，相应 self-test 必须证明 suite 能精确捕获。
-这样避免 assertion 只对 conforming provider 运行而实际上没有判别力。
+Testkit 自验证使用 conforming provider 及故障模型，验证套件自身的记账、恢复和已实现断言；只有
+suite 实际执行并取得独立观察证据的场景才计入其覆盖。门面 preflight、SPI 分派及 provider contract
+violation 转换由 core 测试负责；provider/native 行为、secret 泄漏及平台语义由 provider 自己的白盒或
+故障注入测试负责。各项是否由 suite 覆盖，以实际测试实现和场景证据为准，不要求 suite 捕获此目录
+中的每一种故障。
 
 ## 13. 与其他 crate 的验证分工
 
@@ -525,7 +536,7 @@ src/
 - provider 只需实现 fixture 并创建 suite；
 - fixture setup/observation failure 不会被当成 unsupported 跳过；
 - 完整 suite 对 conforming provider 通过；
-- 每个 broken provider 被对应 contract 拒绝；
+- 已实施的 suite 自验证覆盖对应的故障模型；core/provider 故障测试各自覆盖其责任范围；
 - capability 缺失不会导致无意义正向测试；
 - capability 声明不会被静默跳过；
 - 同步与异步 contract coverage 对称；

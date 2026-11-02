@@ -65,7 +65,10 @@ Resources are recorded as soon as setup publishes or stages them. Cleanup
 continues after individual failures, retains unresolved ledger entries, and
 records every attempt. `ContractRun` keeps execution failures, cleanup
 failures, and their typed source values. No asynchronous I/O occurs in `Drop`;
-an asynchronous caller owns the runtime and may retry `finish().await`.
+an asynchronous caller owns the runtime and may retry `finish().await`. Sync
+and async fixtures must both provide an independent, idempotent explicit
+teardown that handles partial setup and staging resources. `Drop` may supplement
+cleanup but cannot replace teardown; async `Drop` performs no I/O.
 
 Writer and copy cancellation checks retain the operation and publication
 state across cancellation. Recovery is explicit: taking a retained writer or
