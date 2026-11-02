@@ -55,6 +55,36 @@ impl FileSystemFixture for DefaultSyncFixture {
     }
 }
 
+struct TempOnlySyncFixture(MemoryFixture);
+
+impl FileSystemFixture for TempOnlySyncFixture {
+    fn file_system(&self) -> &FileSystem {
+        self.0.file_system()
+    }
+
+    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
+        self.0.path(relative)
+    }
+
+    fn exists_out_of_band(
+        &self,
+        path: &Path,
+    ) -> qubit_fs_testkit::FixtureResult<qubit_fs_testkit::FixtureSupport<bool>> {
+        self.0.exists_out_of_band(path)
+    }
+
+    fn seed_empty_directory(
+        &self,
+        relative: &str,
+    ) -> qubit_fs_testkit::FixtureResult<qubit_fs_testkit::FixtureSupport<Path>> {
+        self.0.seed_empty_directory(relative)
+    }
+
+    fn teardown(&self) -> qubit_fs_testkit::FixtureResult<()> {
+        self.0.teardown()
+    }
+}
+
 #[cfg(feature = "async")]
 struct DefaultAsyncFixture(AsyncMemoryFixture);
 
@@ -80,6 +110,28 @@ impl AsyncFileSystemFixture for DefaultAsyncFixture {
     }
 }
 
+#[cfg(feature = "async")]
+struct TempOnlyAsyncFixture(AsyncMemoryFixture);
+
+#[cfg(feature = "async")]
+impl AsyncFileSystemFixture for TempOnlyAsyncFixture {
+    fn file_system(&self) -> &qubit_fs::AsyncFileSystem {
+        self.0.file_system()
+    }
+
+    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
+        self.0.path(relative)
+    }
+
+    fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, qubit_fs_testkit::FixtureSupport<bool>> {
+        self.0.exists_out_of_band(path)
+    }
+
+    fn teardown(&self) -> FixtureFuture<'_, ()> {
+        self.0.teardown()
+    }
+}
+
 #[test]
 fn test_synchronous_suite_handles_default_unsupported_fixture_hooks() {
     let fixture = DefaultSyncFixture::new();
@@ -96,6 +148,30 @@ fn test_synchronous_suite_handles_default_unsupported_fixture_hooks() {
         crate::qubit_fs_testkit::ContractCheckOutcome::Unverified { .. }
     )));
     assert!(run.cleanup().completed());
+}
+
+#[test]
+fn test_synchronous_temp_capabilities_without_observation_hooks_remain_unverified() {
+    use crate::qubit_fs_testkit::ContractCheckOutcome;
+    use crate::qubit_fs_testkit::FileSystemContract;
+
+    let fixture = TempOnlySyncFixture(MemoryFixture::temp_only());
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_contract(FileSystemContract::TempResources);
+
+    assert!(!run.was_interrupted());
+    assert!(run.failures().is_empty(), "{:?}", run.failures());
+    assert!(
+        run.report()
+            .checks()
+            .iter()
+            .any(|check| matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }))
+    );
+    assert!(run.cleanup().completed());
+    assert!(
+        fixture.0.is_empty(),
+        "temporary suite must clean up without hook support"
+    );
 }
 
 #[test]
@@ -289,6 +365,33 @@ fn test_synchronous_temp_directory_paths_retain_creation_and_cleanup_failures() 
 }
 
 #[test]
+fn test_synchronous_expected_write_rejection_cleanup_errors_are_retained() {
+    for (fault, id) in [
+        (
+            crate::common::MemoryFault::ConditionalAbortFailsOnce,
+            ContractCheckId::WriteCreateConflict,
+        ),
+        (
+            crate::common::MemoryFault::ConditionalAbortPanicsOnce,
+            ContractCheckId::WriteIfAbsent,
+        ),
+        (
+            crate::common::MemoryFault::ConditionalAbortReportsPublished,
+            ContractCheckId::WriteIfAbsent,
+        ),
+    ] {
+        let fixture = MemoryFixture::with_fault(fault);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        assert!(
+            run.failures().iter().any(|failure| failure.check() == Some(id)),
+            "{fault:?} must be attributed to {id}"
+        );
+        assert!(fixture.is_empty(), "{fault:?} must clean up the fixture");
+    }
+}
+
+#[test]
 fn test_temporary_directories_reject_atomic_persist_when_not_advertised() {
     let fixture = MemoryFixture::without_atomic_temp_persist();
     let mut suite = FileSystemContractSuite::new(&fixture);
@@ -401,6 +504,33 @@ fn test_asynchronous_suite_handles_default_unsupported_fixture_hooks() {
         assert!(run.failures().iter().all(|failure| failure.check().is_some()));
         assert!(run.cleanup().completed());
     });
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_temp_capabilities_without_observation_hooks_remain_unverified() {
+    use crate::qubit_fs_testkit::ContractCheckOutcome;
+    use crate::qubit_fs_testkit::FileSystemContract;
+
+    let fixture = TempOnlyAsyncFixture(AsyncMemoryFixture::temp_only());
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_contract(FileSystemContract::TempResources).await;
+
+        assert!(!run.was_interrupted());
+        assert!(run.failures().is_empty(), "{:?}", run.failures());
+        assert!(
+            run.report()
+                .checks()
+                .iter()
+                .any(|check| matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }))
+        );
+        assert!(run.cleanup().completed());
+    });
+    assert!(
+        fixture.0.is_empty(),
+        "temporary suite must clean up without hook support"
+    );
 }
 
 #[cfg(feature = "async")]
@@ -608,6 +738,23 @@ fn test_asynchronous_temp_directory_paths_retain_creation_and_cleanup_failures()
         });
         assert!(fixture.is_empty(), "{fault:?} must clean up the fixture");
     }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_expected_write_rejection_cleanup_errors_are_retained() {
+    let fault = crate::common::AsyncMemoryFault::ConditionalAbortReportsPublished;
+    let id = ContractCheckId::WriteIfAbsent;
+    let fixture = AsyncMemoryFixture::with_fault(fault);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id).await;
+        assert!(
+            run.failures().iter().any(|failure| failure.check() == Some(id)),
+            "{fault:?} must be attributed to {id}"
+        );
+    });
+    assert!(fixture.is_empty(), "{fault:?} must clean up the fixture");
 }
 
 #[cfg(feature = "async")]
