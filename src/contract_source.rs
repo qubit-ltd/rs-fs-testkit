@@ -58,6 +58,26 @@ impl ContractSource {
 
     /// Inspects the original concrete error while it remains owned by the run.
     ///
+    /// The callback runs synchronously while this source's mutex is held. It must
+    /// not directly or indirectly call `inspect` or `take` on the same source, or
+    /// wait for another operation that needs that mutex. Return the inspection
+    /// result first, then call `take` outside the callback.
+    ///
+    /// ```
+    /// use std::error::Error;
+    ///
+    /// use qubit_fs_testkit::ContractSource;
+    ///
+    /// fn take_io_source(source: &ContractSource) -> Option<Box<dyn Error + Send>> {
+    ///     let is_io_error = source.inspect(|error| error.is::<std::io::Error>())?;
+    ///     if is_io_error { source.take() } else { None }
+    /// }
+    /// ```
+    ///
+    /// Inspection and transfer are not atomic. Another caller may take the source
+    /// between these operations, so callers must handle `take() == None`. Taking
+    /// the source also transfers explicit recovery responsibility to the caller.
+    ///
     /// # Returns
     ///
     /// Returns `Some` with the result of `inspect` while the source is

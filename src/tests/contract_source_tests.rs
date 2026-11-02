@@ -22,6 +22,16 @@ fn test_source_inspection_and_transfer_preserve_original_error() {
 }
 
 #[test]
+fn test_source_can_be_taken_after_type_inspection() {
+    let source = ContractSource::new(std::io::Error::other("recoverable"));
+    let is_io_error = source.inspect(|error| error.is::<std::io::Error>()) == Some(true);
+    assert!(is_io_error);
+    let owned = source.take().expect("source must transfer after inspection");
+    assert!(owned.is::<std::io::Error>());
+    assert!(source.take().is_none());
+}
+
+#[test]
 fn test_formatting_keeps_the_original_error_available_for_inspection() {
     let source = ContractSource::new(std::io::Error::other("private provider detail"));
     assert_eq!(
