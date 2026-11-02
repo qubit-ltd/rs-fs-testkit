@@ -1,6 +1,4 @@
-# relative git root<TAB>repository URL<TAB>default branch
-../rs-budget	https://github.com/qubit-ltd/rs-budget	main
+# relative git root	repository URL	default branch
+# Project-owned path-dependency closure; do not enable the empty default profile.
 ../rs-fs	https://github.com/qubit-ltd/rs-fs	main
-../rs-io	https://github.com/qubit-ltd/rs-io	main
 ../rs-redact	https://github.com/qubit-ltd/rs-redact	main
-../rs-json	https://github.com/qubit-ltd/rs-json	main
