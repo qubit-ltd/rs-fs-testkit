@@ -114,6 +114,14 @@ pub enum ContractCheckId {
     ReadRange,
     /// Evidence for the `read/range-limit` contract.
     ReadRangeLimit,
+    /// Evidence for the `read/random-access-basic` contract.
+    RandomAccessBasic,
+    /// Evidence for the `read/random-access-bounds` contract.
+    RandomAccessBounds,
+    /// Evidence for the `read/random-access-identity` contract.
+    RandomAccessIdentity,
+    /// Evidence for the `read/random-access-cancel` contract.
+    RandomAccessCancel,
     /// Evidence for the `rename/atomic` contract.
     RenameAtomic,
     /// Evidence for the `rename/basic` contract.
@@ -216,6 +224,10 @@ impl ContractCheckId {
         Self::ReadIfNoneMatchStale,
         Self::ReadRange,
         Self::ReadRangeLimit,
+        Self::RandomAccessBasic,
+        Self::RandomAccessBounds,
+        Self::RandomAccessIdentity,
+        Self::RandomAccessCancel,
         Self::RenameAtomic,
         Self::RenameBasic,
         Self::RenameConflict,
@@ -330,6 +342,10 @@ impl ContractCheckId {
             Self::ReadIfNoneMatchStale => "read/if-none-match-stale",
             Self::ReadRange => "read/range",
             Self::ReadRangeLimit => "read/range-limit",
+            Self::RandomAccessBasic => "read/random-access-basic",
+            Self::RandomAccessBounds => "read/random-access-bounds",
+            Self::RandomAccessIdentity => "read/random-access-identity",
+            Self::RandomAccessCancel => "read/random-access-cancel",
             Self::RenameAtomic => "rename/atomic",
             Self::RenameBasic => "rename/basic",
             Self::RenameConflict => "rename/conflict",

@@ -441,6 +441,28 @@ pub(crate) const fn specification(id: ContractCheckId) -> CheckSpec {
             asynchronous_only: false,
             optional: true,
         },
+        ContractCheckId::RandomAccessBasic
+        | ContractCheckId::RandomAccessBounds
+        | ContractCheckId::RandomAccessIdentity => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::Read),
+            asynchronous_only: false,
+            optional: true,
+        },
+        ContractCheckId::RandomAccessCancel => CheckSpec {
+            id,
+            copy_scenario: None,
+            write_scenario: None,
+            read_scenario: None,
+            contract: FileSystemContract::Read,
+            capability: Some(FileSystemCapability::Read),
+            asynchronous_only: true,
+            optional: true,
+        },
         ContractCheckId::RenameAtomic => CheckSpec {
             id,
             copy_scenario: None,

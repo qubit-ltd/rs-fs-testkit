@@ -31,6 +31,39 @@ use crate::FixtureSupport;
 /// assert!(suite.run().report().checks().is_empty());
 /// ```
 pub trait FileSystemFixture {
+    /// Independently reports whether the provider implements the random-access
+    /// SPI operation. This must reflect provider configuration, not facade
+    /// range-read support. `Unsupported` means the suite cannot determine the
+    /// declaration and reports the optional check as skipped.
+    ///
+    /// # Returns
+    /// `Supported(true)` or `Supported(false)` with the independent SPI
+    /// declaration, or `Unsupported` when the fixture cannot observe it.
+    #[inline]
+    fn random_access_operation(&self) -> FixtureSupport<bool> {
+        FixtureSupport::Unsupported
+    }
+
+    /// Replaces a logical path while preserving objects already opened through
+    /// the provider. The implementation must use an independent fixture path
+    /// and must not perform the replacement through the facade under test.
+    ///
+    /// # Parameters
+    /// * `path` - Seeded path to replace.
+    /// * `bytes` - Content of the replacement object.
+    ///
+    /// # Returns
+    /// `Supported(())` when replacement is observable, otherwise `Unsupported`.
+    ///
+    /// # Errors
+    /// Returns [`FixtureError`](crate::FixtureError) when replacement setup
+    /// fails.
+    #[inline]
+    fn replace_random_access_path(&self, path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
+        let _ = (path, bytes);
+        Ok(FixtureSupport::Unsupported)
+    }
+
     /// Snapshots every logical path in the isolated configured namespace.
     ///
     /// Use the underlying SDK or fixture model, never the facade list method.

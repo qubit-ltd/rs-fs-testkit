@@ -63,6 +63,16 @@ impl FileSystemContractSuite<'_> {
     /// Returns a failure if dispatch, execution, or outcome recording fails.
     pub(super) fn check_read_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
+        if matches!(
+            id,
+            ContractCheckId::RandomAccessBasic
+                | ContractCheckId::RandomAccessBounds
+                | ContractCheckId::RandomAccessIdentity
+        ) {
+            let outcome = self.execute_random_access(id)?;
+            self.context.record_check(id, Some(FileSystemCapability::Read), outcome);
+            return Ok(());
+        }
         let spec = check_catalog::specification(id);
         let scenario = spec.read_scenario.expect("dispatch selected a non-read check");
         let outcome = self.execute_read_scenario(id, scenario)?;

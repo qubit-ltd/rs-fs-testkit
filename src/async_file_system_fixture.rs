@@ -55,6 +55,79 @@ pub type FixtureFuture<'a, T> = Pin<Box<dyn Future<Output = FixtureResult<T>> + 
 /// assert!(suite.run().report().checks().is_empty());
 /// ```
 pub trait AsyncFileSystemFixture: Sync {
+    /// Independently reports whether the provider implements random-access
+    /// sessions. This must reflect provider SPI configuration rather than
+    /// range-read support.
+    ///
+    /// # Returns
+    /// `Supported(true)` or `Supported(false)` with the independent SPI
+    /// declaration, or `Unsupported` when the fixture cannot observe it.
+    #[inline]
+    fn random_access_operation(&self) -> FixtureSupport<bool> {
+        FixtureSupport::Unsupported
+    }
+
+    /// Replaces a path while preserving any object already opened by a reader.
+    /// The fixture must use an independent setup path rather than the facade
+    /// under test.
+    ///
+    /// # Parameters
+    /// * `path` - Seeded path to replace.
+    /// * `bytes` - Replacement object content.
+    ///
+    /// # Returns
+    /// A future resolving to `Supported(())` when replacement is available,
+    /// or `Unsupported` when it cannot be performed independently.
+    ///
+    /// # Errors
+    /// The future returns [`FixtureError`](crate::FixtureError) when fixture
+    /// replacement fails.
+    #[inline]
+    fn replace_random_access_path<'a>(
+        &'a self,
+        path: &'a Path,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, FixtureSupport<()>> {
+        let _ = (path, bytes);
+        Box::pin(async { Ok(FixtureSupport::Unsupported) })
+    }
+
+    /// Arms a deterministic pending read for the next random-access read.
+    /// The hook changes fixture state only; it must not start an async runtime.
+    ///
+    /// # Parameters
+    /// * `path` - Seed path whose next random-access read will be gated.
+    ///
+    /// # Returns
+    /// `Supported(())` when the gate was armed, or `Unsupported` when this
+    /// fixture cannot inject a pending read.
+    ///
+    /// # Errors
+    /// Returns [`FixtureError`](crate::FixtureError) when arming fails.
+    #[inline]
+    fn arm_random_access_pending_read(&self, path: &Path) -> FixtureResult<FixtureSupport<()>> {
+        let _ = path;
+        Ok(FixtureSupport::Unsupported)
+    }
+
+    /// Idempotently releases a previously armed pending-read probe.
+    /// This hook is synchronous so guards can release the gate during future
+    /// cancellation without a runtime.
+    ///
+    /// # Parameters
+    /// * `path` - Seed path associated with the gate.
+    ///
+    /// # Returns
+    /// `Ok(())` once the gate has been released.
+    ///
+    /// # Errors
+    /// Returns [`FixtureError`](crate::FixtureError) when release fails.
+    #[inline]
+    fn disarm_random_access_pending_read(&self, path: &Path) -> FixtureResult<()> {
+        let _ = path;
+        Ok(())
+    }
+
     /// Snapshots every logical path in the isolated configured namespace.
     ///
     /// Use the underlying SDK or fixture model, never the facade list method.

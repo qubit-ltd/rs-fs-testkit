@@ -21,10 +21,23 @@ fn test_each_executable_check_has_one_owner() {
     for phase in FileSystemContract::ALL {
         for check in for_contract(phase, true) {
             assert!(seen.insert(check.id), "duplicate owner for {}", check.id);
+            let has_read_scenario = phase == FileSystemContract::Read
+                && !matches!(
+                    check.id,
+                    ContractCheckId::RandomAccessBasic
+                        | ContractCheckId::RandomAccessBounds
+                        | ContractCheckId::RandomAccessIdentity
+                        | ContractCheckId::RandomAccessCancel
+                );
             assert_eq!(
                 check.read_scenario.is_some(),
-                phase == FileSystemContract::Read,
+                has_read_scenario,
                 "read preparation metadata must match execution ownership for {}",
+                check.id
+            );
+            assert_eq!(
+                check.contract, phase,
+                "catalog must have one phase owner for {}",
                 check.id
             );
         }

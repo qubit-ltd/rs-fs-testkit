@@ -23,6 +23,8 @@ use crate::internal::catch_unwind_future;
 mod properties;
 // Implements reader contracts.
 mod read;
+// Implements independently prepared random-access reader contracts.
+mod random_access;
 // Implements writer and publication contracts.
 mod write;
 // Implements independently prepared bounded write evidence.

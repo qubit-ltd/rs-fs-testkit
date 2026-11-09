@@ -32,6 +32,13 @@ fn test_check_names_are_unique() {
     );
     assert!(names.contains("write/cancel-open"));
     assert!(names.contains("write/repeated-execute"));
+    assert!(names.contains("read/random-access-basic"));
+    assert!(names.contains("read/random-access-bounds"));
+    assert!(names.contains("read/random-access-identity"));
+    assert!(names.contains("read/random-access-cancel"));
+    assert_eq!(ContractCheckId::RandomAccessBasic.contract(), FileSystemContract::Read);
+    assert!(ContractCheckId::RandomAccessBasic.is_optional());
+    assert!(!ContractCheckId::RandomAccessCancel.supports_synchronous());
     for id in ContractCheckId::ALL.iter().copied() {
         assert_eq!(id.to_string(), id.as_str());
         let _ = id.is_optional();
