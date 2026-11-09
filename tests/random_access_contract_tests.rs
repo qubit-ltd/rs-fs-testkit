@@ -81,6 +81,8 @@ struct RandomProvider {
     supported: bool,
     reopen_path: bool,
     limit: FileSystemLimit,
+    open_error: Option<FsErrorKind>,
+    reported_len: Option<u64>,
 }
 
 struct RandomSession {
@@ -133,6 +135,9 @@ impl FileSystemSpi for RandomProvider {
     }
 
     fn open_random_access_reader(&self, request: OpenReaderRequest<'_>) -> FsResult<OpenedRandomAccessReader> {
+        if let Some(kind) = self.open_error {
+            return Err(FsError::new(kind, FsOperation::OpenReader, "injected random-access open failure"));
+        }
         if !self.supported {
             return Err(FsError::new(
                 FsErrorKind::UnsupportedOperation,
@@ -145,7 +150,7 @@ impl FileSystemSpi for RandomProvider {
             FileSystemId::new(PROVIDER_ID).expect("valid ID"),
             request.path().clone(),
         )
-        .with_metadata(FileMetadata::new(FileKind::File).with_len(Some(bytes.len() as u64)));
+        .with_metadata(FileMetadata::new(FileKind::File).with_len(Some(self.reported_len.unwrap_or(bytes.len() as u64))));
         Ok(OpenedRandomAccessReader::new(
             info,
             Box::new(RandomSession {
@@ -165,12 +170,24 @@ struct RandomFixture {
 
 impl RandomFixture {
     fn new(supported: bool, reopen_path: bool, limit: FileSystemLimit) -> Self {
+        Self::with_open_options(supported, reopen_path, limit, None, None)
+    }
+
+    fn with_open_options(
+        supported: bool,
+        reopen_path: bool,
+        limit: FileSystemLimit,
+        open_error: Option<FsErrorKind>,
+        reported_len: Option<u64>,
+    ) -> Self {
         let current = Arc::new(Mutex::new(Arc::from(&b""[..])));
         let file_system = FileSystem::from_spi(RandomProvider {
             current: current.clone(),
             supported,
             reopen_path,
             limit,
+            open_error,
+            reported_len,
         })
         .expect("provider facade initializes");
         Self {
@@ -564,6 +581,23 @@ fn test_random_access_false_declaration_rejects_provider_support() {
 }
 
 #[test]
+fn test_random_access_false_declaration_reports_unexpected_provider_error() {
+    let fixture = ContradictoryDeclarationFixture {
+        inner: RandomFixture::with_open_options(
+            true,
+            false,
+            FileSystemLimit::Unknown,
+            Some(FsErrorKind::Io),
+            None,
+        ),
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::RandomAccessBasic);
+    assert_eq!(run.failures().len(), 1);
+    assert!(run.failures()[0].message().contains("unexpected error"));
+}
+
+#[test]
 fn test_random_access_unsupported_declaration_reports_path_setup_failure() {
     let fixture = PathFailureFixture {
         inner: MemoryFixture::new(),
@@ -609,6 +643,18 @@ fn test_random_access_reads_bounds_and_object_identity() {
         outcome(&bounded, ContractCheckId::RandomAccessBounds),
         ContractCheckOutcome::Passed
     );
+
+    let incorrect_length = RandomFixture::with_open_options(
+        true,
+        false,
+        FileSystemLimit::Unknown,
+        None,
+        Some(7),
+    );
+    assert!(matches!(
+        outcome(&incorrect_length, ContractCheckId::RandomAccessBasic),
+        ContractCheckOutcome::Failed { .. }
+    ));
 
     let limit_exceeds_seed = RandomFixture::new(true, false, FileSystemLimit::Maximum(10));
     assert!(matches!(
