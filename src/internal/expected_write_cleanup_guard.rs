@@ -27,9 +27,11 @@ impl<'a> ExpectedWriteCleanupGuard<'a> {
     ///
     /// # Parameters
     ///
-    /// - `failure`: Rejected write and operation whose cleanup is pending.
-    /// - `failures`: Run-level storage for cancellation diagnostics.
-    /// - `id`: Check identity attributed to cleanup failures.
+    /// * `failure` — the original operation failure whose recovery state is
+    ///   being retained.
+    /// * `failures` — the collection that receives cleanup failures.
+    /// * `id` — the stable identity of the contract check being executed or
+    ///   recorded.
     pub(crate) fn new(
         failure: ContractAsyncWriteFailure,
         failures: &'a mut Vec<ContractFailure>,
@@ -74,6 +76,11 @@ impl Drop for ExpectedWriteCleanupGuard<'_> {
 
 #[cfg(all(test, feature = "async"))]
 mod tests {
+    use std::future::Future;
+    use std::task::Context;
+    use std::task::Poll;
+    use std::task::Waker;
+
     use qubit_fs::write::WriteOptions;
 
     use crate::ContractAsyncWriteFailure;
@@ -82,7 +89,15 @@ mod tests {
     use crate::qubit_fs_testkit::AsyncFileSystemFixture;
     use crate::tests::common::AsyncMemoryFault;
     use crate::tests::common::AsyncMemoryFixture;
-    use crate::tests::rustdoc_support::poll_support;
+
+    fn ready<F: Future>(future: F) -> F::Output {
+        let mut future = std::pin::pin!(future);
+        let mut context = Context::from_waker(Waker::noop());
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(output) => output,
+            Poll::Pending => panic!("memory write fixture must complete immediately"),
+        }
+    }
 
     fn retained_failure() -> ContractAsyncWriteFailure {
         let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::OwningCommitFails);
@@ -91,13 +106,13 @@ mod tests {
             .file_system()
             .begin_write_all(path, b"payload".to_vec(), WriteOptions::default())
             .expect("write operation should be admitted");
-        let failure = poll_support::ready(operation.execute()).expect_err("commit should fail");
+        let failure = ready(operation.execute()).expect_err("commit should fail");
         assert!(operation.has_recovery());
         ContractAsyncWriteFailure::new(failure, Some(operation))
     }
 
     #[test]
-    fn finishing_guard_returns_failure_without_reporting_cancellation() {
+    fn test_finishing_guard_returns_failure_without_reporting_cancellation() {
         let mut failures = Vec::new();
         let failure = retained_failure();
         let guard = ExpectedWriteCleanupGuard::new(failure, &mut failures, ContractCheckId::WriteIfAbsent);
@@ -109,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn dropping_guard_records_check_and_retains_original_failure() {
+    fn test_dropping_guard_records_check_and_retains_original_failure() {
         let mut failures = Vec::new();
         let failure = retained_failure();
         {

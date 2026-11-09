@@ -2,6 +2,8 @@
 //    Copyright (c) 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Independently checks random-access sessions in the synchronous driver.
 
@@ -20,6 +22,11 @@ const SEED: &[u8] = b"abcdef";
 
 impl FileSystemContractSuite<'_> {
     /// Executes one independently prepared random-access check.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` — the stable identity of the contract check being executed or
+    ///   recorded.
     pub(super) fn execute_random_access(
         &mut self,
         id: ContractCheckId,
@@ -176,6 +183,16 @@ impl FileSystemContractSuite<'_> {
     }
 }
 
+/// Reads the requested random-access range and compares it with the expected
+/// bytes.
+///
+/// # Parameters
+///
+/// * `reader` — the open random-access reader used to retrieve the sample.
+/// * `offset` — the byte position from which the random-access sample is read.
+/// * `expected` — the bytes or value required by the selected contract check.
+/// * `id` — the stable identity of the contract check being executed or
+///   recorded.
 fn verify_sample(
     reader: &mut qubit_fs::read::RandomAccessReader,
     offset: u64,

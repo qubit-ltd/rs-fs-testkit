@@ -401,15 +401,9 @@ mod tests {
         let fixture = AsyncMemoryFixture::without_optional_capabilities();
         run_controlled(async {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-            suite
-                .run_check(ContractCheckId::DeleteIfMatch)
-                .await
-                .assert_satisfied();
+            suite.run_check(ContractCheckId::DeleteIfMatch).await.assert_satisfied();
         });
-        assert!(
-            fixture.is_empty(),
-            "conditional-delete rejection must clean up"
-        );
+        assert!(fixture.is_empty(), "conditional-delete rejection must clean up");
     }
 
     #[test]
@@ -417,10 +411,7 @@ mod tests {
         let fixture = AsyncMemoryFixture::read_only();
         run_controlled(async {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-            suite
-                .run_check(ContractCheckId::DeleteBasic)
-                .await
-                .assert_satisfied();
+            suite.run_check(ContractCheckId::DeleteBasic).await.assert_satisfied();
         });
     }
 }

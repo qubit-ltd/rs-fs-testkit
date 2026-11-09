@@ -143,16 +143,13 @@ impl FileSystemFixture for ConditionalDeleteVersionUnavailableFixture {
         self.inner.resource_version(path)
     }
 
-    fn stale_resource_version(
-        &self,
-        _path: &Path,
-    ) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version(&self, _path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
         Ok(FixtureSupport::Unsupported)
     }
 }
 
 #[test]
-fn sync_suite_records_unverified_when_independent_fixture_evidence_is_missing() {
+fn test_sync_suite_reports_unverified_when_independent_evidence_is_missing() {
     let read = ReadPreparationUnavailableFixture {
         inner: MemoryFixture::with_all_capabilities(),
     };

@@ -26,8 +26,10 @@ use crate::ContractWriterFailure;
 ///
 /// # Parameters
 ///
-/// - `failure`: The provider's expected rejection and any recovery session.
-/// - `id`: Check identity attributed to a cleanup or state failure.
+/// * `failure` — the original operation failure whose recovery state is being
+///   retained.
+/// * `id` — the stable identity of the contract check being executed or
+///   recorded.
 pub(crate) fn finish_expected_write_failure(
     mut failure: WriteAllFailure,
     id: ContractCheckId,
@@ -86,9 +88,11 @@ pub(crate) fn finish_expected_write_failure(
 ///
 /// # Parameters
 ///
-/// - `failure`: The admitted asynchronous failure retaining its operation.
-/// - `id`: Check identity attributed to a cleanup or state failure.
-/// - `failures`: Run-level storage for failures if this future is cancelled.
+/// * `failure` — the original operation failure whose recovery state is being
+///   retained.
+/// * `id` — the stable identity of the contract check being executed or
+///   recorded.
+/// * `failures` — the collection that receives cleanup failures.
 #[cfg(feature = "async")]
 pub(crate) async fn finish_expected_async_write_failure(
     failure: crate::ContractAsyncWriteFailure,
@@ -157,7 +161,7 @@ mod tests {
     use crate::tests::common::MemoryFixture;
 
     #[test]
-    fn sync_rejection_cleanup_completes_without_retaining_a_contract_failure() {
+    fn test_sync_rejection_cleanup_completes_without_retaining_a_contract_failure() {
         let fixture = MemoryFixture::with_fault(MemoryFault::WriteCommitFailure);
         let path = fixture.path("expected-rejection").expect("fixture path");
         let failure = fixture
@@ -172,16 +176,29 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[test]
-    fn async_rejection_cleanup_completes_without_reporting_failure() {
-        use super::finish_expected_async_write_failure;
+    fn test_async_rejection_cleanup_completes_without_reporting_failure() {
+        use std::future::Future;
+        use std::task::Context;
+        use std::task::Poll;
+        use std::task::Waker;
+
         use qubit_fs::write::AsyncWriteAllOperation;
         use qubit_fs::write::WriteOptions;
 
+        use super::finish_expected_async_write_failure;
         use crate::ContractAsyncWriteFailure;
         use crate::qubit_fs_testkit::AsyncFileSystemFixture;
         use crate::tests::common::AsyncMemoryFault;
         use crate::tests::common::AsyncMemoryFixture;
-        use crate::tests::rustdoc_support::poll_support;
+
+        fn ready<F: Future>(future: F) -> F::Output {
+            let mut future = std::pin::pin!(future);
+            let mut context = Context::from_waker(Waker::noop());
+            match future.as_mut().poll(&mut context) {
+                Poll::Ready(output) => output,
+                Poll::Pending => panic!("memory write fixture must complete immediately"),
+            }
+        }
 
         let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::OwningCommitFails);
         let path = fixture.path("owning-write").expect("fixture path");
@@ -189,11 +206,11 @@ mod tests {
             .file_system()
             .begin_write_all(path, b"payload".to_vec(), WriteOptions::default())
             .expect("write operation should be admitted");
-        let failure = poll_support::ready(operation.execute()).expect_err("commit should fail");
+        let failure = ready(operation.execute()).expect_err("commit should fail");
         let failure = ContractAsyncWriteFailure::new(failure, Some(operation));
         let mut reported = Vec::new();
 
-        let result = poll_support::ready(finish_expected_async_write_failure(
+        let result = ready(finish_expected_async_write_failure(
             failure,
             ContractCheckId::WriteIfAbsent,
             &mut reported,

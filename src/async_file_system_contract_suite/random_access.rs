@@ -2,6 +2,8 @@
 //    Copyright (c) 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Independently checks asynchronous random-access sessions.
 
@@ -26,6 +28,11 @@ const SEED: &[u8] = b"abcdef";
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes one independently prepared random-access check.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` — the stable identity of the contract check being executed or
+    ///   recorded.
     pub(super) async fn execute_random_access(
         &mut self,
         id: ContractCheckId,
@@ -203,6 +210,14 @@ impl AsyncFileSystemContractSuite<'_> {
         Ok(ContractCheckOutcome::Passed)
     }
 
+    /// Cancels an injected pending read and verifies the reader remains usable.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` — the filesystem path whose state or operation result is being
+    ///   checked.
+    /// * `id` — the stable identity of the contract check being executed or
+    ///   recorded.
     async fn execute_random_access_cancel(
         &mut self,
         path: &qubit_fs::path::Path,
@@ -258,6 +273,16 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 }
 
+/// Reads the requested random-access range and compares it with the expected
+/// bytes.
+///
+/// # Parameters
+///
+/// * `reader` — the open random-access reader used to retrieve the sample.
+/// * `offset` — the byte position from which the random-access sample is read.
+/// * `expected` — the bytes or value required by the selected contract check.
+/// * `id` — the stable identity of the contract check being executed or
+///   recorded.
 async fn verify_sample(
     reader: &mut qubit_fs::read::AsyncRandomAccessReader,
     offset: u64,
@@ -468,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_and_identity_checks_verify_partial_reads_and_object_snapshots() {
+    fn test_basic_and_identity_checks_verify_partial_reads_and_object_snapshots() {
         let fixture = RandomAccessFixture::new();
         let mut basic_suite = AsyncFileSystemContractSuite::new(&fixture);
         let basic = ready(basic_suite.run_check(ContractCheckId::RandomAccessBasic));
@@ -482,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn undeclared_random_access_is_rejected_only_when_provider_accepts_it() {
+    fn test_undeclared_random_access_is_rejected_when_provider_accepts_it() {
         struct UnsupportedDeclaration(RandomAccessFixture);
 
         impl AsyncFileSystemFixture for UnsupportedDeclaration {
@@ -508,9 +533,16 @@ mod tests {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
         assert_eq!(run.failures().len(), 1);
-        assert!(run.failures()[0].message().contains("declaring the operation unsupported"));
-        assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Failed {
-            reason: "provider opened a random-access reader after declaring the operation unsupported".to_owned(),
-        });
+        assert!(
+            run.failures()[0]
+                .message()
+                .contains("declaring the operation unsupported")
+        );
+        assert_eq!(
+            run.report().checks()[0].outcome(),
+            &ContractCheckOutcome::Failed {
+                reason: "provider opened a random-access reader after declaring the operation unsupported".to_owned(),
+            }
+        );
     }
 }

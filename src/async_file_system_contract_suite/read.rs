@@ -356,11 +356,12 @@ impl AsyncFileSystemContractSuite<'_> {
 
 #[cfg(all(test, feature = "async"))]
 mod tests {
+    use qubit_fs::metadata::FileSystemLimits;
+
     use super::super::AsyncFileSystemContractSuite;
     use crate::ContractCheckId;
     use crate::tests::common::AsyncMemoryFixture;
     use crate::tests::common::async_memory_file_system::run_controlled;
-    use qubit_fs::metadata::FileSystemLimits;
 
     #[test]
     fn test_optional_conditional_read_is_rejected_when_capability_is_absent() {
@@ -372,10 +373,7 @@ mod tests {
                 .await
                 .assert_satisfied();
         });
-        assert!(
-            fixture.is_empty(),
-            "conditional-read rejection must clean up"
-        );
+        assert!(fixture.is_empty(), "conditional-read rejection must clean up");
     }
 
     #[test]

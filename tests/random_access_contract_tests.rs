@@ -556,9 +556,11 @@ fn test_random_access_false_declaration_rejects_provider_support() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::RandomAccessBasic);
     assert_eq!(run.failures().len(), 1);
-    assert!(run.failures()[0]
-        .message()
-        .contains("after declaring the operation unsupported"));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("after declaring the operation unsupported")
+    );
 }
 
 #[test]
@@ -569,9 +571,11 @@ fn test_random_access_unsupported_declaration_reports_path_setup_failure() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::RandomAccessBounds);
     assert_eq!(run.failures().len(), 1);
-    assert!(run.failures()[0]
-        .message()
-        .contains("random-access path preparation failed"));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("random-access path preparation failed")
+    );
 }
 
 #[test]
@@ -582,9 +586,11 @@ fn test_random_access_seed_setup_failure_is_reported() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::RandomAccessBasic);
     assert_eq!(run.failures().len(), 1);
-    assert!(run.failures()[0]
-        .message()
-        .contains("random-access seed preparation failed"));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("random-access seed preparation failed")
+    );
 }
 
 #[test]

@@ -811,8 +811,7 @@ mod tests {
 
     impl DefaultFixture<'_> {
         fn path_for(relative: &str) -> FixtureResult<Path> {
-            Path::parse(&format!("/default-fixture/{relative}"))
-                .map_err(|error| FixtureError::new(error.to_string()))
+            Path::parse(&format!("/default-fixture/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
         }
     }
 
@@ -825,10 +824,7 @@ mod tests {
             Self::path_for(relative)
         }
 
-        fn seed_empty_directory<'a>(
-            &'a self,
-            relative: &'a str,
-        ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+        fn seed_empty_directory<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
             let call = self.directory_calls.fetch_add(1, Ordering::SeqCst) + 1;
             let result = if call <= self.supported_directory_calls {
                 Self::path_for(relative).map(FixtureSupport::Supported)
@@ -838,11 +834,7 @@ mod tests {
             Box::pin(async move { result })
         }
 
-        fn seed_file<'a>(
-            &'a self,
-            relative: &'a str,
-            _bytes: &'a [u8],
-        ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+        fn seed_file<'a>(&'a self, relative: &'a str, _bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
             let result = if self.seed_file_supported {
                 Self::path_for(relative).map(FixtureSupport::Supported)
             } else {
@@ -887,10 +879,7 @@ mod tests {
             fixture.arm_random_access_pending_read(&path),
             Ok(FixtureSupport::Unsupported)
         ));
-        assert!(matches!(
-            fixture.disarm_random_access_pending_read(&path),
-            Ok(())
-        ));
+        assert!(matches!(fixture.disarm_random_access_pending_read(&path), Ok(())));
     }
 
     #[test]
@@ -898,9 +887,8 @@ mod tests {
         let memory = AsyncMemoryFixture::new();
         let fixture = fixture(&memory, 1, false);
 
-        let prepared =
-            block_on(fixture.prepare_copy(CopyScenario::AtomicTree, "source", "target", b"child"))
-                .expect("prepare tree copy");
+        let prepared = block_on(fixture.prepare_copy(CopyScenario::AtomicTree, "source", "target", b"child"))
+            .expect("prepare tree copy");
         assert!(matches!(
             prepared,
             FixturePreparation::Unavailable { ref reason } if reason == "tree subdirectory setup unavailable"
@@ -912,9 +900,8 @@ mod tests {
         let memory = AsyncMemoryFixture::new();
         let fixture = fixture(&memory, 2, false);
 
-        let prepared =
-            block_on(fixture.prepare_copy(CopyScenario::DurableTree, "source", "target", b"child"))
-                .expect("prepare tree copy");
+        let prepared = block_on(fixture.prepare_copy(CopyScenario::DurableTree, "source", "target", b"child"))
+            .expect("prepare tree copy");
         assert!(matches!(
             prepared,
             FixturePreparation::Unavailable { ref reason } if reason == "tree child setup unavailable"
