@@ -353,3 +353,41 @@ impl AsyncFileSystemContractSuite<'_> {
         Ok(())
     }
 }
+
+#[cfg(all(test, feature = "async"))]
+mod tests {
+    use super::super::AsyncFileSystemContractSuite;
+    use crate::ContractCheckId;
+    use crate::tests::common::AsyncMemoryFixture;
+    use crate::tests::common::async_memory_file_system::run_controlled;
+    use qubit_fs::metadata::FileSystemLimits;
+
+    #[test]
+    fn test_optional_conditional_read_is_rejected_when_capability_is_absent() {
+        let fixture = AsyncMemoryFixture::without_optional_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            suite
+                .run_check(ContractCheckId::ReadIfMatchCurrent)
+                .await
+                .assert_satisfied();
+        });
+        assert!(
+            fixture.is_empty(),
+            "conditional-read rejection must clean up"
+        );
+    }
+
+    #[test]
+    fn test_range_limit_is_skipped_when_provider_limit_is_unknown() {
+        let fixture = AsyncMemoryFixture::with_limits(FileSystemLimits::unknown());
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            suite
+                .run_check(ContractCheckId::ReadRangeLimit)
+                .await
+                .assert_satisfied();
+        });
+        assert!(fixture.is_empty(), "unknown-limit read check must clean up");
+    }
+}

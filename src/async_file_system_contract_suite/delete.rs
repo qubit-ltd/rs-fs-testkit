@@ -388,3 +388,39 @@ impl AsyncFileSystemContractSuite<'_> {
         Ok(ContractCheckOutcome::Passed)
     }
 }
+
+#[cfg(all(test, feature = "async"))]
+mod tests {
+    use super::super::AsyncFileSystemContractSuite;
+    use crate::ContractCheckId;
+    use crate::tests::common::AsyncMemoryFixture;
+    use crate::tests::common::async_memory_file_system::run_controlled;
+
+    #[test]
+    fn test_delete_without_conditional_capability_is_rejected_as_expected() {
+        let fixture = AsyncMemoryFixture::without_optional_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            suite
+                .run_check(ContractCheckId::DeleteIfMatch)
+                .await
+                .assert_satisfied();
+        });
+        assert!(
+            fixture.is_empty(),
+            "conditional-delete rejection must clean up"
+        );
+    }
+
+    #[test]
+    fn test_basic_delete_without_delete_capability_is_rejected_as_expected() {
+        let fixture = AsyncMemoryFixture::read_only();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            suite
+                .run_check(ContractCheckId::DeleteBasic)
+                .await
+                .assert_satisfied();
+        });
+    }
+}

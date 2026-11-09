@@ -782,3 +782,142 @@ pub trait AsyncFileSystemFixture: Sync {
         Box::pin(async { Ok(FixtureSupport::Unsupported) })
     }
 }
+
+#[cfg(all(test, feature = "async"))]
+mod tests {
+    use std::future::Future;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+
+    use qubit_fs::AsyncFileSystem;
+    use qubit_fs::path::Path;
+
+    use super::AsyncFileSystemFixture;
+    use super::FixtureFuture;
+    use crate::CopyScenario;
+    use crate::FixtureError;
+    use crate::FixturePreparation;
+    use crate::FixtureResult;
+    use crate::FixtureSupport;
+    use crate::tests::common::AsyncMemoryFixture;
+    use crate::tests::common::async_memory_file_system::run_controlled;
+
+    struct DefaultFixture<'a> {
+        file_system: &'a AsyncFileSystem,
+        directory_calls: AtomicUsize,
+        supported_directory_calls: usize,
+        seed_file_supported: bool,
+    }
+
+    impl DefaultFixture<'_> {
+        fn path_for(relative: &str) -> FixtureResult<Path> {
+            Path::parse(&format!("/default-fixture/{relative}"))
+                .map_err(|error| FixtureError::new(error.to_string()))
+        }
+    }
+
+    impl AsyncFileSystemFixture for DefaultFixture<'_> {
+        fn file_system(&self) -> &AsyncFileSystem {
+            self.file_system
+        }
+
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            Self::path_for(relative)
+        }
+
+        fn seed_empty_directory<'a>(
+            &'a self,
+            relative: &'a str,
+        ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+            let call = self.directory_calls.fetch_add(1, Ordering::SeqCst) + 1;
+            let result = if call <= self.supported_directory_calls {
+                Self::path_for(relative).map(FixtureSupport::Supported)
+            } else {
+                Ok(FixtureSupport::Unsupported)
+            };
+            Box::pin(async move { result })
+        }
+
+        fn seed_file<'a>(
+            &'a self,
+            relative: &'a str,
+            _bytes: &'a [u8],
+        ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+            let result = if self.seed_file_supported {
+                Self::path_for(relative).map(FixtureSupport::Supported)
+            } else {
+                Ok(FixtureSupport::Unsupported)
+            };
+            Box::pin(async move { result })
+        }
+
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    fn fixture<'a>(
+        memory: &'a AsyncMemoryFixture,
+        supported_directory_calls: usize,
+        seed_file_supported: bool,
+    ) -> DefaultFixture<'a> {
+        DefaultFixture {
+            file_system: memory.file_system(),
+            directory_calls: AtomicUsize::new(0),
+            supported_directory_calls,
+            seed_file_supported,
+        }
+    }
+
+    fn block_on<T>(future: impl Future<Output = T>) -> T {
+        run_controlled(future)
+    }
+
+    #[test]
+    fn test_default_random_access_fixture_hooks_report_unsupported() {
+        let memory = AsyncMemoryFixture::new();
+        let fixture = fixture(&memory, 0, false);
+        let path = DefaultFixture::path_for("random-access").expect("build fixture path");
+
+        assert!(matches!(
+            block_on(fixture.replace_random_access_path(&path, b"replacement")),
+            Ok(FixtureSupport::Unsupported)
+        ));
+        assert!(matches!(
+            fixture.arm_random_access_pending_read(&path),
+            Ok(FixtureSupport::Unsupported)
+        ));
+        assert!(matches!(
+            fixture.disarm_random_access_pending_read(&path),
+            Ok(())
+        ));
+    }
+
+    #[test]
+    fn test_tree_copy_preparation_reports_missing_subdirectory_support() {
+        let memory = AsyncMemoryFixture::new();
+        let fixture = fixture(&memory, 1, false);
+
+        let prepared =
+            block_on(fixture.prepare_copy(CopyScenario::AtomicTree, "source", "target", b"child"))
+                .expect("prepare tree copy");
+        assert!(matches!(
+            prepared,
+            FixturePreparation::Unavailable { ref reason } if reason == "tree subdirectory setup unavailable"
+        ));
+    }
+
+    #[test]
+    fn test_tree_copy_preparation_reports_missing_child_support() {
+        let memory = AsyncMemoryFixture::new();
+        let fixture = fixture(&memory, 2, false);
+
+        let prepared =
+            block_on(fixture.prepare_copy(CopyScenario::DurableTree, "source", "target", b"child"))
+                .expect("prepare tree copy");
+        assert!(matches!(
+            prepared,
+            FixturePreparation::Unavailable { ref reason } if reason == "tree child setup unavailable"
+        ));
+    }
+}
