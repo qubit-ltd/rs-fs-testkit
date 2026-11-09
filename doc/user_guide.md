@@ -5,7 +5,7 @@
 ## Purpose and Audience
 
 This guide is for authors of synchronous or asynchronous `qubit-fs` 0.3
-providers using the current `qubit-fs-testkit` 0.8 contract suites. The testkit
+providers using the current `qubit-fs-testkit` 0.9 contract suites. The testkit
 is test support and belongs in provider development dependencies. References
 to testkit 0.7 and `qubit-fs` 0.2 below describe historical interfaces.
 
@@ -41,7 +41,7 @@ including when deletion is unavailable.
 Add the testkit as a development dependency in the provider crate:
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.8
+cargo add --dev qubit-fs-testkit@0.9
 ```
 
 The provider itself uses `qubit-fs` 0.3. The repository's complete local
@@ -398,7 +398,7 @@ cancellation probes are explicit skips; executed probe failures remain failures.
 Existing check IDs remain unchanged; range checks include zero and EOF windows
 when capability permits.
 
-For temporary resources, testkit 0.8 follows the qubit-fs 0.3 contract that keeps
+For temporary resources, testkit 0.9 follows the qubit-fs 0.3 contract that keeps
 publication facts independent from source qualification. This suite checks the
 existing repeated lifecycle, including the publication target after a successful
 `keep`. Core and adapter regressions cover the new source states, invalid retries,

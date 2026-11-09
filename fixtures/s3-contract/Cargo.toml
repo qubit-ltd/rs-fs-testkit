@@ -16,7 +16,7 @@ futures-util = "^0.3"
 tokio = { version = "^1.54", features = ["rt-multi-thread", "macros", "sync", "time"] }
 
 [dev-dependencies]
-qubit-fs-testkit = { version = "0.8", path = "../..", default-features = false, features = ["async"] }
+qubit-fs-testkit = { version = "^0.9", path = "../..", default-features = false, features = ["async"] }
 tokio = { version = "^1.54", features = ["test-util"] }
 
 [lints.rust]

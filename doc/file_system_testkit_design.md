@@ -1,7 +1,7 @@
 # qubit-fs-testkit design
 
 This document describes the public contract model implemented by
-`qubit-fs-testkit` 0.8 against `qubit-fs` 0.3. The crate is development-only test support: it exercises a
+`qubit-fs-testkit` 0.9 against `qubit-fs` 0.3. The crate is development-only test support: it exercises a
 provider through `qubit_fs::FileSystem` or `qubit_fs::AsyncFileSystem` and never
 depends on provider SPI types.
 
@@ -143,7 +143,7 @@ and directory child contents across keep, persist, overwrite, and repeated
 lifecycle operations. Unsupported content hooks are reported as `Unverified`;
 setup errors remain failures. The suite also retains its typed temporary
 resource recovery path. Testkit 0.7 targeted `qubit-fs` 0.2; that is historical,
-not the compatibility target of this 0.8 design. Directory overwrite uses an
+not the compatibility target of this 0.9 design. Directory overwrite uses an
 independently seeded empty destination as its baseline; it does not establish
 behavior for overwriting a non-empty directory.
 

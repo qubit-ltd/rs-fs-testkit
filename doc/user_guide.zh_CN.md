@@ -4,7 +4,7 @@
 
 ## 手册目标与读者
 
-本手册面向使用当前 `qubit-fs-testkit` 0.8 契约套件的同步或异步 `qubit-fs` 0.3
+本手册面向使用当前 `qubit-fs-testkit` 0.9 契约套件的同步或异步 `qubit-fs` 0.3
 provider 作者。testkit 属于测试支持，应作为 provider 的开发依赖。下文提到的 testkit 0.7
 和 `qubit-fs` 0.2 均指历史接口。
 
@@ -36,7 +36,7 @@ native-copy 用例。异步 fixture 提供对应的 future 观察，以及可选
 在 provider crate 中将 testkit 添加为开发依赖：
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.8
+cargo add --dev qubit-fs-testkit@0.9
 ```
 
 provider 本身依赖 `qubit-fs` 0.3。仓库中的完整本地 provider fixture 示例
@@ -310,7 +310,7 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 缺少的可选写取消探针会明确记录为跳过；已执行探针失败仍然失败。既有检查 ID 不变，
 范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
 
-对于临时资源，testkit 0.8 遵循 qubit-fs 0.3 将 publication 事实与源资格分开的契约。本套件
+对于临时资源，testkit 0.9 遵循 qubit-fs 0.3 将 publication 事实与源资格分开的契约。本套件
 检查既有的重复生命周期，包括成功 `keep` 后的发布目标；新增源状态、非法重试、
 cleanup 失败与取消由核心及 adapter 回归覆盖。
 

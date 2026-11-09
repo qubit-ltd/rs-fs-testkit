@@ -7,14 +7,14 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![English Document](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 
-`qubit-fs-testkit` 0.8 为 `qubit-fs` 0.3 provider 实现提供可复用、由 capability 驱动的契约测试。将它
+`qubit-fs-testkit` 0.9 为 `qubit-fs` 0.3 provider 实现提供可复用、由 capability 驱动的契约测试。将它
 作为 provider 的开发依赖，提供隔离 fixture，并运行同步或运行时无关的异步套件，无需将测试支持
 放入生产依赖图。
 
 ## 安装
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.8
+cargo add --dev qubit-fs-testkit@0.9
 ```
 
 同步契约套件无需额外 feature 即可使用；使用异步套件时，请在开发依赖中加入
@@ -27,7 +27,7 @@ cargo add --dev qubit-fs-testkit@0.8
 
 ```toml
 [dev-dependencies]
-qubit-fs-testkit = "0.8"
+qubit-fs-testkit = "0.9"
 ```
 
 围绕 provider 的隔离门面实现 `FileSystemFixture`。`file_system()` 返回已配置的
@@ -64,7 +64,7 @@ suite.run_all().assert_satisfied();
 
 ```toml
 [dev-dependencies]
-qubit-fs-testkit = { version = "0.8", features = ["async"] }
+qubit-fs-testkit = { version = "0.9", features = ["async"] }
 ```
 
 套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝。
@@ -112,7 +112,7 @@ capability。
 - [API 文档](https://docs.rs/qubit-fs-testkit)
 - [English README](README.md)
 
-当前 0.8 版本对应 `qubit-fs` 0.3。历史 0.7 版本对应 `qubit-fs` 0.2；
+当前 0.9 版本对应 `qubit-fs` 0.3。历史 0.7 版本对应 `qubit-fs` 0.2；
 列举、取消与恢复的历史差异见[用户手册](doc/user_guide.zh_CN.md)。
 
 ## 测试

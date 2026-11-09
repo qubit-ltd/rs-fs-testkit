@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
-`qubit-fs-testkit` 0.8 provides reusable, capability-driven contracts for
+`qubit-fs-testkit` 0.9 provides reusable, capability-driven contracts for
 `qubit-fs` 0.3 provider implementations. Add it to a provider's development
 dependencies, supply an isolated fixture, and run the synchronous or
 runtime-neutral asynchronous suite without putting test support in production
@@ -16,7 +16,7 @@ dependency graphs.
 ## Installation
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.8
+cargo add --dev qubit-fs-testkit@0.9
 ```
 
 The synchronous contract suite is available without features. Add
@@ -31,7 +31,7 @@ only as a development dependency:
 
 ```toml
 [dev-dependencies]
-qubit-fs-testkit = "0.8"
+qubit-fs-testkit = "0.9"
 ```
 
 Implement `FileSystemFixture` around the provider's isolated facade. Its
@@ -73,7 +73,7 @@ dependency enables the feature explicitly:
 
 ```toml
 [dev-dependencies]
-qubit-fs-testkit = { version = "0.8", features = ["async"] }
+qubit-fs-testkit = { version = "0.9", features = ["async"] }
 ```
 
 The suite follows advertised capabilities. It checks supported behavior and
@@ -135,7 +135,7 @@ the suite's current coverage.
 - [API documentation](https://docs.rs/qubit-fs-testkit)
 - [中文 README](README.zh_CN.md)
 
-Version 0.8 targets `qubit-fs` 0.3. Version 0.7 targeted `qubit-fs` 0.2;
+Version 0.9 targets `qubit-fs` 0.3. Version 0.7 targeted `qubit-fs` 0.2;
 historical list, cancellation, and recovery details are distinguished in the
 [user guide](doc/user_guide.md).
 
