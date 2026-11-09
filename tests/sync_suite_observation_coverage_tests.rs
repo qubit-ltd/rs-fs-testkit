@@ -22,6 +22,7 @@ use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
 use qubit_fs_testkit::ReadScenario;
 
+use self::common::MemoryFault;
 use self::common::MemoryFixture;
 
 extern crate qubit_fs_testkit;
@@ -195,4 +196,105 @@ fn test_sync_suite_reports_unverified_when_independent_evidence_is_missing() {
         conditional_result.report().checks()[0].outcome(),
         ContractCheckOutcome::Unverified { .. }
     ));
+}
+
+#[test]
+fn test_sync_suite_attributes_publication_and_metadata_errors_to_selected_check() {
+    for (id, fault, message) in [
+        (
+            ContractCheckId::AppendBasic,
+            MemoryFault::WriteFails,
+            "append publication failed",
+        ),
+        (
+            ContractCheckId::WriteBasic,
+            MemoryFault::WriteFails,
+            "write/basic: write failed",
+        ),
+        (
+            ContractCheckId::WriteReplace,
+            MemoryFault::WriteFails,
+            "replacement publication failed",
+        ),
+        (
+            ContractCheckId::WriteIfAbsent,
+            MemoryFault::WriteFails,
+            "conditional write first publication failed",
+        ),
+        (
+            ContractCheckId::WriteIfMatch,
+            MemoryFault::WriteFails,
+            "conditional write first publication failed",
+        ),
+        (
+            ContractCheckId::DirectoryCreate,
+            MemoryFault::CreateDirectoryFails,
+            "directory creation failed",
+        ),
+        (
+            ContractCheckId::CopyBasic,
+            MemoryFault::CopyFails,
+            "copy execution failed",
+        ),
+        (
+            ContractCheckId::CopyFallbackOverwriteRejected,
+            MemoryFault::CopyOverwriteFails,
+            "copy conflict execution failed",
+        ),
+        (
+            ContractCheckId::ReadRange,
+            MemoryFault::ReadFailsOnEmptyRange,
+            "empty range observation failed",
+        ),
+        (
+            ContractCheckId::RepresentationEmpty,
+            MemoryFault::CleanupStatError,
+            "representation metadata observation failed",
+        ),
+        (
+            ContractCheckId::StatFileKind,
+            MemoryFault::CleanupStatError,
+            "seeded file stat failed",
+        ),
+    ] {
+        let fixture = MemoryFixture::with_fault_and_all_capabilities(fault);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+
+        assert_eq!(
+            run.failures().first().and_then(|failure| failure.check()),
+            Some(id),
+            "{id}: {:?}; report: {:?}",
+            run.failures(),
+            run.report().checks()
+        );
+        assert!(
+            run.failures()
+                .iter()
+                .any(|failure| failure.to_string().contains(message)),
+            "{id}: expected failure containing {message:?}, got {:?}",
+            run.failures()
+        );
+    }
+}
+
+#[test]
+fn test_sync_suite_public_helpers_seed_and_track_resources() {
+    let fixture = MemoryFixture::with_all_capabilities();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+
+    let path = suite.path("support-path");
+    assert!(path.as_str().ends_with("support-path"));
+    assert!(matches!(
+        suite.seed("support-seed", b"seeded"),
+        FixtureSupport::Supported(_)
+    ));
+    let required = suite.required_seed("required-support-seed", b"required", "coverage probe");
+    assert!(required.as_str().ends_with("required-support-seed"));
+
+    suite.finish();
+    assert!(
+        fixture.is_empty(),
+        "public suite helpers must register seeded paths for cleanup"
+    );
 }

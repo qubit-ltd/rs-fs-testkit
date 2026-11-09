@@ -171,6 +171,107 @@ fn test_synchronous_advertised_capability_requires_seed_support() {
 }
 
 #[test]
+fn test_synchronous_publication_and_metadata_errors_keep_the_selected_check() {
+    for (id, fault, message) in [
+        (
+            ContractCheckId::AppendBasic,
+            super::common::MemoryFault::WriteFails,
+            "append publication failed",
+        ),
+        (
+            ContractCheckId::WriteBasic,
+            super::common::MemoryFault::WriteFails,
+            "write/basic: write failed",
+        ),
+        (
+            ContractCheckId::WriteReplace,
+            super::common::MemoryFault::WriteFails,
+            "replacement publication failed",
+        ),
+        (
+            ContractCheckId::WriteIfAbsent,
+            super::common::MemoryFault::WriteFails,
+            "conditional write first publication failed",
+        ),
+        (
+            ContractCheckId::WriteIfMatch,
+            super::common::MemoryFault::WriteFails,
+            "conditional write first publication failed",
+        ),
+        (
+            ContractCheckId::DirectoryCreate,
+            super::common::MemoryFault::CreateDirectoryFails,
+            "directory creation failed",
+        ),
+        (
+            ContractCheckId::CopyBasic,
+            super::common::MemoryFault::CopyFails,
+            "copy execution failed",
+        ),
+        (
+            ContractCheckId::CopyFallbackOverwriteRejected,
+            super::common::MemoryFault::CopyOverwriteFails,
+            "copy conflict execution failed",
+        ),
+        (
+            ContractCheckId::ReadRange,
+            super::common::MemoryFault::ReadFailsOnEmptyRange,
+            "empty range observation failed",
+        ),
+        (
+            ContractCheckId::RepresentationEmpty,
+            super::common::MemoryFault::CleanupStatError,
+            "representation metadata observation failed",
+        ),
+        (
+            ContractCheckId::StatFileKind,
+            super::common::MemoryFault::CleanupStatError,
+            "seeded file stat failed",
+        ),
+    ] {
+        let fixture = MemoryFixture::with_fault_and_all_capabilities(fault);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+
+        assert_eq!(
+            run.failures().first().and_then(|failure| failure.check()),
+            Some(id),
+            "{id}: {:?}; report: {:?}",
+            run.failures(),
+            run.report().checks()
+        );
+        assert!(
+            run.failures()
+                .iter()
+                .any(|failure| failure.to_string().contains(message)),
+            "{id}: expected failure containing {message:?}, got {:?}",
+            run.failures()
+        );
+    }
+}
+
+#[test]
+fn test_synchronous_public_suite_helpers_seed_and_track_resources() {
+    let fixture = MemoryFixture::with_all_capabilities();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+
+    let path = suite.path("support-path");
+    assert!(path.as_str().ends_with("support-path"));
+    assert!(matches!(
+        suite.seed("support-seed", b"seeded"),
+        super::super::FixtureSupport::Supported(_)
+    ));
+    let required = suite.required_seed("required-support-seed", b"required", "coverage probe");
+    assert!(required.as_str().ends_with("required-support-seed"));
+
+    suite.finish();
+    assert!(
+        fixture.is_empty(),
+        "public suite helpers must register seeded paths for cleanup"
+    );
+}
+
+#[test]
 fn test_synchronous_copy_checks_reject_unadvertised_guarantees() {
     for id in [
         ContractCheckId::CopyServerSide,

@@ -257,6 +257,8 @@ pub enum MemoryFault {
     ReadWrongBytes,
     /// Fails when opening a provider-owned reader.
     ReadFails,
+    /// Fails only when a zero-length range is read.
+    ReadFailsOnEmptyRange,
     /// Accepts writes without publishing their content.
     WriteDropsBytes,
     /// Fails when opening a provider-owned writer.
@@ -342,6 +344,10 @@ pub enum MemoryFault {
     DurableTreeCopyNonDurable,
     /// Copies the complete tree but omits descendant byte statistics.
     TreeCopyWrongStats,
+    /// Fails a basic copy before publishing a target.
+    CopyFails,
+    /// Fails an overwrite-policy copy after other conflict policies succeed.
+    CopyOverwriteFails,
     /// Reports a non-durable completion for a durability-required rename.
     DurableRenameNonDurable,
     /// Reports non-atomic completion for an atomic-required temp persist.
@@ -791,6 +797,19 @@ impl MemoryFixture {
             true,
             "memory-all-capabilities-provider",
         )
+    }
+
+    /// Creates an all-capability fixture with one injected provider fault.
+    pub fn with_fault_and_all_capabilities(fault: MemoryFault) -> Self {
+        let fixture = Self::with_configuration(fault, true, true, true, true, true, "memory-all-capabilities-provider");
+        if matches!(fault, MemoryFault::CopyFails | MemoryFault::CopyOverwriteFails) {
+            fixture
+                .state
+                .lock()
+                .expect("memory state lock must succeed")
+                .native_copy = true;
+        }
+        fixture
     }
 
     /// Creates a fixture with one injected fault and deletion-capability value.
@@ -1708,7 +1727,9 @@ impl FileSystemSpi for MemorySpi {
 
     fn open_reader(&self, request: OpenReaderRequest<'_>) -> FsResult<OpenedReader> {
         let state = self.state.lock().expect("memory state lock must succeed");
-        if state.fault == MemoryFault::ReadFails {
+        if state.fault == MemoryFault::ReadFails
+            || (state.fault == MemoryFault::ReadFailsOnEmptyRange && request.options().options().length() == Some(0))
+        {
             return Err(FsError::new(
                 FsErrorKind::PermissionDenied,
                 FsOperation::OpenReader,
@@ -1928,6 +1949,19 @@ impl FileSystemSpi for MemorySpi {
     fn try_copy(&self, request: CopyRequest<'_>) -> Result<CopyAttempt, SpiCopyFailure> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
         let options = request.options().options();
+        if state.fault == MemoryFault::CopyFails
+            || (state.fault == MemoryFault::CopyOverwriteFails && options.conflict() == CopyConflictPolicy::Overwrite)
+        {
+            return Err(SpiCopyFailure::new(
+                FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::Copy,
+                    "injected copy failure",
+                ),
+                CopyFailureState::Unchanged,
+                CopyStats::default(),
+            ));
+        }
         if state.fault == MemoryFault::ServerSideCopyFails && options.server_side() == ServerSidePreference::Require {
             return Err(SpiCopyFailure::new(
                 FsError::new(
