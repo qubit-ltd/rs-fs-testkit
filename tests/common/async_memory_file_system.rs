@@ -414,6 +414,8 @@ pub enum AsyncMemoryFault {
     StatUnknownLength,
     /// Returns a known file length that differs from the seeded content.
     StatWrongLength,
+    /// Fails metadata observations for existing entries.
+    StatFails,
     /// Claims recursive creation while omitting ancestors.
     RecursiveCreateLeavesParentsMissing,
     /// Fails directory creation before publishing any path.
@@ -975,6 +977,13 @@ impl AsyncMemoryFixture {
     /// Creates a fixture that fails one indexed path preparation request.
     pub fn with_path_error_call(call: usize) -> Self {
         let mut fixture = Self::with_all_capabilities();
+        fixture.path_error_call = Some(call);
+        fixture
+    }
+
+    /// Creates a cancellation-capable fixture that fails one path request.
+    pub fn with_cancellation_path_error_call(call: usize) -> Self {
+        let mut fixture = Self::with_fault(AsyncMemoryFault::None);
         fixture.path_error_call = Some(call);
         fixture
     }
@@ -1970,6 +1979,13 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     FsErrorKind::PermissionDenied,
                     FsOperation::Stat,
                     "cleanup stat error",
+                ));
+            }
+            if fault == AsyncMemoryFault::StatFails && entry.is_some() {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::Stat,
+                    "injected metadata observation failure",
                 ));
             }
             match entry {

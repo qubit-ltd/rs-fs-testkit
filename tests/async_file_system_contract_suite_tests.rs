@@ -134,3 +134,129 @@ fn test_async_suite_records_capability_limits_and_fixture_boundaries() {
         ));
     });
 }
+
+#[test]
+fn test_async_contract_provider_errors_are_attributed_and_cleaned() {
+    use self::common::shared_model::FixtureHook;
+    use qubit_fs::metadata::FileSystemLimit;
+    use qubit_fs::metadata::FileSystemLimits;
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+    use qubit_fs_testkit::ContractCheckId;
+
+    use self::common::AsyncMemoryFault;
+    use self::common::AsyncMemoryFixture;
+    use self::common::async_memory_file_system::run_controlled;
+
+    for (fixture, id) in [
+        (
+            AsyncMemoryFixture::with_fault(AsyncMemoryFault::WriteFails),
+            ContractCheckId::WriteAbort,
+        ),
+        (
+            AsyncMemoryFixture::with_fault(AsyncMemoryFault::WriteFails),
+            ContractCheckId::AppendBasic,
+        ),
+        (
+            AsyncMemoryFixture::with_fault(AsyncMemoryFault::WriteFails),
+            ContractCheckId::WriteIfAbsent,
+        ),
+        (
+            AsyncMemoryFixture::with_fault(AsyncMemoryFault::WriteFails),
+            ContractCheckId::WriteIfMatch,
+        ),
+        (
+            AsyncMemoryFixture::with_fault(AsyncMemoryFault::StatFails),
+            ContractCheckId::StatFileKind,
+        ),
+        (
+            AsyncMemoryFixture::with_fault(AsyncMemoryFault::StatFails),
+            ContractCheckId::RepresentationEmpty,
+        ),
+        (
+            AsyncMemoryFixture::with_fault_and_limits(
+                AsyncMemoryFault::ReadFails,
+                FileSystemLimits::unknown().with_max_read_range_bytes(FileSystemLimit::Maximum(4)),
+            ),
+            ContractCheckId::ReadRangeLimit,
+        ),
+        (
+            AsyncMemoryFixture::with_fault(AsyncMemoryFault::CopyWriteFails),
+            ContractCheckId::CopyFallbackOverwriteRejected,
+        ),
+        (
+            AsyncMemoryFixture::without_core_capabilities_with_path_error(1),
+            ContractCheckId::WriteBasic,
+        ),
+        (
+            AsyncMemoryFixture::without_core_capabilities_with_path_error(1),
+            ContractCheckId::CopyBasic,
+        ),
+        (
+            AsyncMemoryFixture::without_core_capabilities_with_path_error(2),
+            ContractCheckId::CopyBasic,
+        ),
+        (
+            AsyncMemoryFixture::with_cancellation_path_error_call(1),
+            ContractCheckId::AsyncCopyCancelReader,
+        ),
+        (
+            AsyncMemoryFixture::with_path_error_call(1),
+            ContractCheckId::WriteOwningOperation,
+        ),
+        (
+            AsyncMemoryFixture::with_fault(AsyncMemoryFault::WriteCancelObserveFails),
+            ContractCheckId::WriteCancelCommit,
+        ),
+        (
+            AsyncMemoryFixture::with_path_error_call_and_limits(
+                1,
+                FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4)),
+            ),
+            ContractCheckId::WriteLimit,
+        ),
+        (
+            AsyncMemoryFixture::with_fault_and_limits(
+                AsyncMemoryFault::WriteFails,
+                FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4)),
+            ),
+            ContractCheckId::WriteLimit,
+        ),
+        (
+            AsyncMemoryFixture::with_fixture_hook_error_and_limits(
+                FixtureHook::ReadFile,
+                1,
+                FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4)),
+            ),
+            ContractCheckId::WriteLimit,
+        ),
+    ] {
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id).await;
+            assert!(
+                !run.requirements_satisfied(),
+                "{id} must report the injected provider/fixture error: {:?}",
+                run.report().checks()
+            );
+            assert!(
+                run.failures()
+                    .iter()
+                    .any(|failure| failure.check() == Some(id)),
+                "{id}"
+            );
+            suite.finish().await;
+        });
+        assert!(fixture.is_empty(), "{id}: fixture leaked resources");
+    }
+
+    let fixture = AsyncMemoryFixture::with_all_capabilities();
+    run_controlled(async {
+        let suite = AsyncFileSystemContractSuite::new(&fixture);
+        assert!(
+            suite
+                .path("path-contract")
+                .as_str()
+                .ends_with("path-contract")
+        );
+    });
+}
