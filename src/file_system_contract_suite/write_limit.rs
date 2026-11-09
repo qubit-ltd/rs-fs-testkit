@@ -88,6 +88,41 @@ impl FileSystemContractSuite<'_> {
             )?;
             let path = case.path().clone();
             self.context.record_created(path.clone());
+            let rejected_baseline = if reject {
+                match self.fixture.exists_out_of_band(&path).map_err(|error| {
+                    ContractFailure::with_source("write limit baseline observation failed", error).at(id)
+                })? {
+                    FixtureSupport::Unsupported => {
+                        return Ok(ContractCheckOutcome::Unverified {
+                            reason: "fixture.exists_out_of_band is required to observe a rejected write".to_owned(),
+                        });
+                    }
+                    FixtureSupport::Supported(false) => None,
+                    FixtureSupport::Supported(true) => {
+                        if case.options().disposition() == WriteDisposition::CreateNew {
+                            return Err(ContractFailure::message_only(
+                                "write limit CreateNew target already exists before request",
+                            )
+                            .at(id));
+                        }
+                        match self.fixture.read_file(&path).map_err(|error| {
+                            ContractFailure::with_source("write limit baseline content observation failed", error)
+                                .at(id)
+                        })? {
+                            FixtureSupport::Supported(bytes) => Some(bytes),
+                            FixtureSupport::Unsupported => {
+                                return Ok(ContractCheckOutcome::Unverified {
+                                    reason:
+                                        "fixture.read_file is required to preserve an existing rejected-write target"
+                                            .to_owned(),
+                                });
+                            }
+                        }
+                    }
+                }
+            } else {
+                None
+            };
             let result = self
                 .fixture
                 .file_system()
@@ -107,6 +142,46 @@ impl FileSystemContractSuite<'_> {
                     return Err(ContractFailure::with_owned_source("write limit rejection differs", failure).at(id));
                 }
                 crate::internal::finish_expected_write_failure::finish_expected_write_failure(failure, id)?;
+                let observed = self.fixture.exists_out_of_band(&path).map_err(|error| {
+                    ContractFailure::with_source("write limit final target observation failed", error).at(id)
+                })?;
+                match (rejected_baseline, observed) {
+                    (_, FixtureSupport::Unsupported) => {
+                        return Ok(ContractCheckOutcome::Unverified {
+                            reason: "fixture.exists_out_of_band cannot confirm the rejected-write target after cleanup"
+                                .to_owned(),
+                        });
+                    }
+                    (None, FixtureSupport::Supported(false)) => {}
+                    (None, FixtureSupport::Supported(true)) => {
+                        return Err(
+                            ContractFailure::message_only("rejected write unexpectedly created its target").at(id),
+                        );
+                    }
+                    (Some(_), FixtureSupport::Supported(false)) => {
+                        return Err(ContractFailure::message_only("rejected write removed its existing target").at(id));
+                    }
+                    (Some(expected), FixtureSupport::Supported(true)) => {
+                        match self.fixture.read_file(&path).map_err(|error| {
+                            ContractFailure::with_source("write limit final content observation failed", error).at(id)
+                        })? {
+                            FixtureSupport::Supported(actual) if actual == expected => {}
+                            FixtureSupport::Supported(_) => {
+                                return Err(ContractFailure::message_only(
+                                    "rejected write changed its existing target",
+                                )
+                                .at(id));
+                            }
+                            FixtureSupport::Unsupported => {
+                                return Ok(ContractCheckOutcome::Unverified {
+                                    reason:
+                                        "fixture.read_file cannot confirm existing target contents after rejected write"
+                                            .to_owned(),
+                                });
+                            }
+                        }
+                    }
+                }
             } else {
                 let outcome = result.map_err(|error| {
                     ContractFailure::with_owned_source("write boundary request failed", error).at(id)

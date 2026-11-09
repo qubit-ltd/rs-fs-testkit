@@ -99,6 +99,12 @@ SPI 分派、预检由 core 自身测试负责；native 行为、平台语义和
 实际较短的流。套件始终先打开 reader，即使窗口长度为零也如此，因此 NotFound、权限和
 条件错误仍会保留。
 
+`ReadRange` 检查还会用等于窗口长度的 caller budget 再次读取同一个非空、非零偏移窗口，
+并核对精确字节；随后将预算减少一个字节，要求 `Read` 操作返回
+`ResourceLimitExceeded`。caller budget 由门面执行，与 provider 声明的最大范围长度是不同约束。
+`max_bytes` 不会作为参数传入 SPI request，所以这只验证调用方侧的消费预算，
+不代表 provider 或服务端的字节预算。
+
 writer 成功 commit 后再次 commit，应返回 `InvalidState`，并将 `WriteFailureState` 报告为
 `Published`。它不得再次调用 provider commit，也不得自动 abort；已发布目标仍应可观察。
 只有可重试的 `NotPublished` 失败仍允许再次 commit。
@@ -307,6 +313,10 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 `ContractWriterFailure<WriteAllFailure>` 或
 `ContractWriterFailure<ContractAsyncWriteFailure>`：`error()` 表示清理错误，
 `writer()` 持有原始失败及恢复责任。恢复不会改变历史状态和字节数。
+对于 `WriteLimit`，套件会在超限请求前独立记录目标是否存在。既有的
+`CreateOrReplace` 目标还必须独立读取并保留原始字节。typed recovery 清理后，套件独立确认目标仍缺失，
+或仍存在且字节不变。缺少观测能力记为 `Unverified`；观测错误或状态变化会使检查失败，
+不能用 teardown 成功推断拒绝写入没有副作用。
 缺少的可选写取消探针会明确记录为跳过；已执行探针失败仍然失败。既有检查 ID 不变，
 范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
 

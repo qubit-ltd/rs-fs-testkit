@@ -17,7 +17,6 @@ pub(crate) mod shared_model;
 #[cfg(feature = "async")]
 mod async_memory_write_cancellation_probe;
 #[cfg(feature = "async")]
-#[cfg(feature = "async")]
 mod write_gate;
 
 mod unavailable_scenario;

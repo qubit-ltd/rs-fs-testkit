@@ -108,6 +108,15 @@ metadata length cannot reject a shorter stream before it is read. The suite
 always opens the reader first, including for a zero-length window, so
 not-found, permission, and condition errors are preserved.
 
+The `ReadRange` check also reads the same non-empty, non-zero-offset window
+with a caller budget equal to its length and verifies those exact bytes, then
+retries the request with a budget one byte smaller and requires
+`ResourceLimitExceeded` for `Read`. This caller budget is enforced by the
+facade and is separate from the provider's declared maximum range length.
+`max_bytes` is not passed as a parameter in the SPI request, so this verifies
+the caller-side consumption budget rather than a provider or service-side byte
+budget.
+
 After a successful writer commit, a second commit is an `InvalidState` error
 whose `WriteFailureState` is `Published`. It must not issue another provider
 commit or automatically abort the writer, and the published target remains
@@ -393,7 +402,13 @@ is checked through independent observation. Failed cleanup retains
 `ContractWriterFailure<WriteAllFailure>` or
 `ContractWriterFailure<ContractAsyncWriteFailure>`: `error()` describes cleanup,
 while `writer()` owns the original failure and its recovery responsibility.
-Recovering it never changes historical state or bytes. Missing optional write
+Recovering it never changes historical state or bytes. For `WriteLimit`, the
+suite independently records whether the over-limit destination existed before
+the request. Existing `CreateOrReplace` targets also require an observed byte
+baseline. After typed recovery cleanup, the suite independently confirms
+absence or unchanged existence and bytes. Missing observation support is
+`Unverified`, and observation errors or changed state fail the check; teardown
+success is not evidence about the rejected write. Missing optional write
 cancellation probes are explicit skips; executed probe failures remain failures.
 Existing check IDs remain unchanged; range checks include zero and EOF windows
 when capability permits.

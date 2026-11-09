@@ -126,6 +126,7 @@ use qubit_io::AsyncInput;
 use qubit_io::AsyncOutput;
 
 use super::MemoryFixture;
+use super::UnavailableScenario;
 use super::async_memory_write_cancellation_probe::AsyncMemoryWriteCancellationProbe;
 use super::memory_file_system::listed_entries;
 use super::memory_file_system::provider_properties;
@@ -133,7 +134,6 @@ use super::shared_model::Entry;
 use super::shared_model::FixtureHook;
 use super::shared_model::FixtureHookErrorPlan;
 use super::write_gate::WriteGate;
-use crate::common::UnavailableScenario;
 use crate::qubit_fs_testkit as testkit;
 #[cfg(feature = "async")]
 use crate::qubit_fs_testkit::AsyncCopyCancellationStage;
@@ -153,6 +153,8 @@ use crate::qubit_fs_testkit::FixtureFuture;
 use crate::qubit_fs_testkit::FixtureResult;
 use crate::qubit_fs_testkit::FixtureSupport;
 use crate::qubit_fs_testkit::WriteCancellationProbe;
+
+type RecordedReadRequest = (Option<u64>, Option<u64>);
 
 #[cfg(feature = "async")]
 struct WakeFlag(AtomicUsize);
@@ -219,7 +221,12 @@ pub struct AsyncMemoryFixture {
     fixture_hook_errors: Arc<Mutex<FixtureHookErrorPlan>>,
     temp_creation_calls: Arc<AtomicUsize>,
     temp_creation_error_call: Arc<AtomicUsize>,
+    temp_cleanup_calls: Arc<AtomicUsize>,
+    temp_cleanup_error_call: Arc<AtomicUsize>,
     cleanup_stat_panics: Arc<AtomicBool>,
+    read_requests: Arc<Mutex<Vec<RecordedReadRequest>>>,
+    reader_calls: Arc<AtomicUsize>,
+    read_error_call: Arc<AtomicUsize>,
 }
 
 /// Shared stage gate used by the asynchronous cancellation self-test.
@@ -468,6 +475,10 @@ pub enum AsyncMemoryFault {
     TempKeepDropsFileContents,
     /// Drops temporary-file bytes during persist while keeping the target path.
     TempPersistDropsFileContents,
+    /// Reports the independent temporary-content read hook as unsupported.
+    TempReadHookUnsupported,
+    /// Reports the independent temporary-content write hook as unsupported.
+    TempWriteHookUnsupported,
     /// Drops temporary-directory descendants during keep while keeping the
     /// root.
     TempKeepDropsDirectoryChildren,
@@ -972,6 +983,13 @@ impl AsyncMemoryFixture {
         fixture
     }
 
+    /// Creates a fixture that fails one indexed temporary-resource cleanup.
+    pub fn with_temp_cleanup_error_call(call: usize) -> Self {
+        let fixture = Self::with_all_capabilities();
+        fixture.temp_cleanup_error_call.store(call, Ordering::Release);
+        fixture
+    }
+
     /// Creates a fixture that fails one indexed path preparation request.
     pub fn with_path_error_call(call: usize) -> Self {
         let mut fixture = Self::with_all_capabilities();
@@ -995,6 +1013,37 @@ impl AsyncMemoryFixture {
             .lock()
             .expect("async fixture hook error lock must succeed")
             .fail_at(hook, call);
+        fixture
+    }
+
+    /// Creates a fixture that reports one indexed observation hook as
+    /// unsupported.
+    pub fn with_unsupported_fixture_hook(hook: FixtureHook, call: usize) -> Self {
+        let fixture = Self::with_all_capabilities();
+        fixture
+            .fixture_hook_errors
+            .lock()
+            .expect("async fixture hook lock must succeed")
+            .mark_unsupported_at(hook, call);
+        fixture
+    }
+
+    /// Creates a bounded fixture that reports one observation hook as
+    /// unsupported.
+    pub fn with_unsupported_fixture_hook_and_limits(hook: FixtureHook, call: usize, limits: FileSystemLimits) -> Self {
+        let fixture = Self::with_fault_and_limits(AsyncMemoryFault::None, limits);
+        fixture
+            .fixture_hook_errors
+            .lock()
+            .expect("async fixture hook lock must succeed")
+            .mark_unsupported_at(hook, call);
+        fixture
+    }
+
+    /// Creates a bounded fixture that fails one indexed reader-open request.
+    pub fn with_reader_error_call_and_limits(call: usize, limits: FileSystemLimits) -> Self {
+        let fixture = Self::with_fault_and_limits(AsyncMemoryFault::None, limits);
+        fixture.read_error_call.store(call, Ordering::Release);
         fixture
     }
 
@@ -1057,7 +1106,12 @@ impl AsyncMemoryFixture {
         let path_calls = Arc::new(AtomicUsize::new(0));
         let temp_creation_calls = Arc::new(AtomicUsize::new(0));
         let temp_creation_error_call = Arc::new(AtomicUsize::new(usize::MAX));
+        let temp_cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let temp_cleanup_error_call = Arc::new(AtomicUsize::new(usize::MAX));
         let cleanup_stat_panics = Arc::new(AtomicBool::new(false));
+        let read_requests = Arc::new(Mutex::new(Vec::new()));
+        let reader_calls = Arc::new(AtomicUsize::new(0));
+        let read_error_call = Arc::new(AtomicUsize::new(usize::MAX));
         let file_system = AsyncFileSystem::from_spi(AsyncMemorySpi {
             stage: Arc::clone(&stage),
             copy_gate: Arc::clone(&copy_gate),
@@ -1076,7 +1130,12 @@ impl AsyncMemoryFixture {
             read_only: capabilities.read_only,
             temp_creation_calls: Arc::clone(&temp_creation_calls),
             temp_creation_error_call: Arc::clone(&temp_creation_error_call),
+            temp_cleanup_calls: Arc::clone(&temp_cleanup_calls),
+            temp_cleanup_error_call: Arc::clone(&temp_cleanup_error_call),
             cleanup_stat_panics: Arc::clone(&cleanup_stat_panics),
+            read_requests: Arc::clone(&read_requests),
+            reader_calls: Arc::clone(&reader_calls),
+            read_error_call: Arc::clone(&read_error_call),
         })
         .expect("async memory SPI properties must be valid");
         Self {
@@ -1107,7 +1166,12 @@ impl AsyncMemoryFixture {
             fixture_hook_errors: Arc::new(Mutex::new(FixtureHookErrorPlan::default())),
             temp_creation_calls,
             temp_creation_error_call,
+            temp_cleanup_calls,
+            temp_cleanup_error_call,
             cleanup_stat_panics,
+            read_requests,
+            reader_calls,
+            read_error_call,
         }
     }
 
@@ -1132,6 +1196,15 @@ impl AsyncMemoryFixture {
             .lock()
             .expect("async memory state lock must succeed")
             .is_empty()
+    }
+
+    /// Returns provider reader requests as offset/length pairs for contract
+    /// self-tests.
+    pub fn read_requests(&self) -> Vec<RecordedReadRequest> {
+        self.read_requests
+            .lock()
+            .expect("async read request lock must succeed")
+            .clone()
     }
 
     /// Returns how many contract paths the suite requested from this fixture.
@@ -1198,6 +1271,13 @@ impl AsyncMemoryFixture {
             .lock()
             .expect("async fixture hook error lock must succeed")
             .should_fail(hook)
+    }
+
+    fn fixture_hook_unsupported(&self, hook: FixtureHook) -> bool {
+        self.fixture_hook_errors
+            .lock()
+            .expect("async fixture hook lock must succeed")
+            .should_be_unsupported(hook)
     }
 }
 
@@ -1550,8 +1630,14 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
         Box::pin(async move {
+            if self.fault == AsyncMemoryFault::TempReadHookUnsupported {
+                return Ok(FixtureSupport::Unsupported);
+            }
             if self.fixture_hook_fails(FixtureHook::ReadFile) {
                 return Err(FixtureError::new("injected file observation failure"));
+            }
+            if self.fixture_hook_unsupported(FixtureHook::ReadFile) {
+                return Ok(FixtureSupport::Unsupported);
             }
             let entry = self
                 .entries
@@ -1572,6 +1658,12 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             if self.exists_error_call == Some(call) {
                 return Err(FixtureError::new("injected existence observation failure"));
             }
+            if self.fixture_hook_fails(FixtureHook::Exists) {
+                return Err(FixtureError::new("injected existence observation hook failure"));
+            }
+            if self.fixture_hook_unsupported(FixtureHook::Exists) {
+                return Ok(FixtureSupport::Unsupported);
+            }
             Ok(FixtureSupport::Supported(
                 self.entries
                     .lock()
@@ -1583,8 +1675,14 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn write_file_out_of_band<'a>(&'a self, path: &'a Path, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<()>> {
         Box::pin(async move {
+            if self.fault == AsyncMemoryFault::TempWriteHookUnsupported {
+                return Ok(FixtureSupport::Unsupported);
+            }
             if self.fixture_hook_fails(FixtureHook::WriteFile) {
                 return Err(FixtureError::new("injected out-of-band write failure"));
+            }
+            if self.fixture_hook_unsupported(FixtureHook::WriteFile) {
+                return Ok(FixtureSupport::Unsupported);
             }
             let mut entries = self.entries.lock().expect("async memory state lock must succeed");
             let mut current = path.as_str();
@@ -1840,7 +1938,12 @@ struct AsyncMemorySpi {
     read_only: bool,
     temp_creation_calls: Arc<AtomicUsize>,
     temp_creation_error_call: Arc<AtomicUsize>,
+    temp_cleanup_calls: Arc<AtomicUsize>,
+    temp_cleanup_error_call: Arc<AtomicUsize>,
     cleanup_stat_panics: Arc<AtomicBool>,
+    read_requests: Arc<Mutex<Vec<RecordedReadRequest>>>,
+    reader_calls: Arc<AtomicUsize>,
+    read_error_call: Arc<AtomicUsize>,
 }
 
 #[cfg(feature = "async")]
@@ -2042,6 +2145,23 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
     }
 
     fn open_reader<'a>(&'a self, request: OpenReaderRequest<'a>) -> SpiFuture<'a, FsResult<OpenedAsyncReader>> {
+        let reader_call = self.reader_calls.fetch_add(1, Ordering::Relaxed) + 1;
+        self.read_requests
+            .lock()
+            .expect("async read request lock must succeed")
+            .push((
+                request.options().options().offset(),
+                request.options().options().length(),
+            ));
+        if reader_call == self.read_error_call.load(Ordering::Acquire) {
+            return Box::pin(async {
+                Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::OpenReader,
+                    "injected indexed reader failure",
+                ))
+            });
+        }
         if self.gate_controls(AsyncCopyCancellationStage::Reader) {
             let gate = Arc::clone(&self.copy_gate);
             return Box::pin(async move { wait_copy_gate(gate, AsyncCopyCancellationStage::Reader).await });
@@ -2543,7 +2663,13 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             );
             Ok(OpenedAsyncTempFile::new(
                 Self::info(&path).with_metadata(FileMetadata::new(FileKind::File)),
-                Box::new(AsyncTempSession { entries, path, fault }),
+                Box::new(AsyncTempSession {
+                    entries,
+                    path,
+                    fault,
+                    cleanup_calls: Arc::clone(&self.temp_cleanup_calls),
+                    cleanup_error_call: Arc::clone(&self.temp_cleanup_error_call),
+                }),
             ))
         })
     }
@@ -2576,7 +2702,13 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             );
             Ok(OpenedAsyncTempDirectory::new(
                 Self::info(&path).with_metadata(FileMetadata::new(FileKind::Directory)),
-                Box::new(AsyncTempSession { entries, path, fault }),
+                Box::new(AsyncTempSession {
+                    entries,
+                    path,
+                    fault,
+                    cleanup_calls: Arc::clone(&self.temp_cleanup_calls),
+                    cleanup_error_call: Arc::clone(&self.temp_cleanup_error_call),
+                }),
             ))
         })
     }
@@ -2981,6 +3113,8 @@ struct AsyncTempSession {
     entries: Arc<Mutex<HashMap<String, Entry>>>,
     path: Path,
     fault: AsyncMemoryFault,
+    cleanup_calls: Arc<AtomicUsize>,
+    cleanup_error_call: Arc<AtomicUsize>,
 }
 
 #[cfg(feature = "async")]
@@ -3040,7 +3174,17 @@ impl AsyncTempResourceSpi for AsyncTempSession {
         let entries = Arc::clone(&this.entries);
         let path = this.path.clone();
         let fault = this.fault;
+        let calls = Arc::clone(&this.cleanup_calls);
+        let error_call = Arc::clone(&this.cleanup_error_call);
         Box::pin(async move {
+            let call = calls.fetch_add(1, Ordering::Relaxed) + 1;
+            if call == error_call.load(Ordering::Acquire) {
+                return Err(FsError::new(
+                    FsErrorKind::PermissionDenied,
+                    FsOperation::CleanupTemp,
+                    "injected indexed temp cleanup failure",
+                ));
+            }
             if fault == AsyncMemoryFault::TempCleanupFailsOnce {
                 return Err(FsError::new(
                     FsErrorKind::PermissionDenied,

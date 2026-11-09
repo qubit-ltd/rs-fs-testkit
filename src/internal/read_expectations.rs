@@ -137,7 +137,24 @@ pub(crate) const fn uses_stale(scenario: ReadScenario) -> bool {
 /// The offset and length of the range that fits both limits.
 #[must_use]
 #[inline]
-fn window(limit: FileSystemLimit) -> (u64, u64) {
+pub(crate) fn window(limit: FileSystemLimit) -> (u64, u64) {
     let length = limit.maximum().map_or(8, |maximum| maximum.min(8));
     (if length == 0 { 0 } else { 5 }, length)
+}
+
+/// Plans a legal range request together with sufficient and insufficient
+/// caller byte budgets for that exact window.
+///
+/// # Parameters
+///
+/// - `limit`: The provider's maximum read-range length.
+///
+/// # Returns
+///
+/// The selected offset, length, accepted budget, and optional rejected budget.
+#[must_use]
+pub(crate) fn window_budget_plan(limit: FileSystemLimit) -> (u64, u64, usize, Option<usize>) {
+    let (offset, length) = window(limit);
+    let accepted = usize::try_from(length).expect("bounded read window fits usize");
+    (offset, length, accepted, accepted.checked_sub(1))
 }

@@ -547,17 +547,84 @@ fn test_synchronous_read_range_checks_cover_one_and_two_byte_limits() {
         let limits = qubit_fs::metadata::FileSystemLimits::unknown()
             .with_max_read_range_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(maximum));
         let fixture = MemoryFixture::with_limits(limits);
-        for id in [ContractCheckId::ReadRange, ContractCheckId::ReadRangeLimit] {
-            let mut suite = FileSystemContractSuite::new(&fixture);
-            let run = suite.run_check(id);
-            assert!(
-                run.requirements_satisfied(),
-                "maximum {maximum}, {id}: {:?}",
-                run.failures()
-            );
-        }
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::ReadRange);
+        assert!(
+            run.requirements_satisfied(),
+            "maximum {maximum}, ReadRange: {:?}",
+            run.failures()
+        );
+        assert_eq!(
+            fixture
+                .read_requests()
+                .into_iter()
+                .filter(|request| *request == (Some(5), Some(maximum)))
+                .count(),
+            3,
+            "range window must be requested for base, accepted-budget and rejected-budget reads"
+        );
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::ReadRangeLimit);
+        assert!(
+            run.requirements_satisfied(),
+            "maximum {maximum}, ReadRangeLimit: {:?}",
+            run.failures()
+        );
         assert!(fixture.is_empty(), "maximum {maximum} read checks must clean up");
     }
+}
+
+#[test]
+fn test_synchronous_bounded_write_limit_observes_rejected_target() {
+    let limits = qubit_fs::metadata::FileSystemLimits::unknown()
+        .with_max_write_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(4));
+    let fixture = MemoryFixture::with_fault_and_limits(super::common::MemoryFault::None, limits);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::WriteLimit);
+    assert!(run.requirements_satisfied(), "{:?}", run.failures());
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        super::super::ContractCheckOutcome::Passed
+    ));
+}
+
+#[test]
+fn test_synchronous_bounded_write_limit_does_not_pass_without_baseline() {
+    let limits = qubit_fs::metadata::FileSystemLimits::unknown()
+        .with_max_write_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(4));
+    let fixture = MemoryFixture::with_unsupported_fixture_hook_and_limits(
+        super::common::shared_model::FixtureHook::Exists,
+        1,
+        limits,
+    );
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::WriteLimit);
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        super::super::ContractCheckOutcome::Unverified { .. }
+    ));
+}
+
+#[test]
+fn test_synchronous_read_range_attributes_budget_window_reader_error() {
+    let limits = qubit_fs::metadata::FileSystemLimits::unknown()
+        .with_max_read_range_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(4));
+    let fixture = MemoryFixture::with_reader_error_call_and_limits(2, limits);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::ReadRange);
+    assert!(!run.requirements_satisfied());
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::ReadRange));
+}
+
+#[test]
+fn test_synchronous_bounded_write_limit_attributes_setup_error() {
+    let limits = qubit_fs::metadata::FileSystemLimits::unknown()
+        .with_max_write_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(4));
+    let fixture = MemoryFixture::with_path_error_call_and_limits(1, limits);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::WriteLimit);
+    assert!(!run.requirements_satisfied());
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteLimit));
 }
 
 #[test]
@@ -1268,20 +1335,99 @@ fn test_asynchronous_read_range_checks_cover_one_and_two_byte_limits() {
     for maximum in [1, 2] {
         let limits = qubit_fs::metadata::FileSystemLimits::unknown()
             .with_max_read_range_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(maximum));
-        let fixture = AsyncMemoryFixture::with_limits(limits);
+        let fixture = AsyncMemoryFixture::with_fault_and_limits(super::common::AsyncMemoryFault::None, limits);
         run_controlled(async {
-            for id in [ContractCheckId::ReadRange, ContractCheckId::ReadRangeLimit] {
-                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-                let run = suite.run_check(id).await;
-                assert!(
-                    run.requirements_satisfied(),
-                    "maximum {maximum}, {id}: {:?}",
-                    run.failures()
-                );
-            }
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::ReadRange).await;
+            assert!(
+                run.requirements_satisfied(),
+                "maximum {maximum}, ReadRange: {:?}",
+                run.failures()
+            );
+            assert_eq!(
+                fixture
+                    .read_requests()
+                    .into_iter()
+                    .filter(|request| *request == (Some(5), Some(maximum)))
+                    .count(),
+                3,
+                "range window must be requested for base, accepted-budget and rejected-budget reads"
+            );
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::ReadRangeLimit).await;
+            assert!(
+                run.requirements_satisfied(),
+                "maximum {maximum}, ReadRangeLimit: {:?}",
+                run.failures()
+            );
         });
         assert!(fixture.is_empty(), "maximum {maximum} read checks must clean up");
     }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_bounded_write_limit_observes_rejected_target() {
+    let limits = qubit_fs::metadata::FileSystemLimits::unknown()
+        .with_max_write_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(4));
+    let fixture = AsyncMemoryFixture::with_fault_and_limits(super::common::AsyncMemoryFault::None, limits);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::WriteLimit).await;
+        assert!(run.requirements_satisfied(), "{:?}", run.failures());
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            super::super::ContractCheckOutcome::Passed
+        ));
+    });
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_bounded_write_limit_does_not_pass_without_baseline() {
+    let limits = qubit_fs::metadata::FileSystemLimits::unknown()
+        .with_max_write_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(4));
+    let fixture = AsyncMemoryFixture::with_unsupported_fixture_hook_and_limits(
+        super::common::shared_model::FixtureHook::Exists,
+        1,
+        limits,
+    );
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::WriteLimit).await;
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            super::super::ContractCheckOutcome::Unverified { .. }
+        ));
+    });
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_read_range_attributes_budget_window_reader_error() {
+    let limits = qubit_fs::metadata::FileSystemLimits::unknown()
+        .with_max_read_range_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(4));
+    let fixture = AsyncMemoryFixture::with_reader_error_call_and_limits(2, limits);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::ReadRange).await;
+        assert!(!run.requirements_satisfied());
+        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::ReadRange));
+    });
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_bounded_write_limit_attributes_setup_error() {
+    let limits = qubit_fs::metadata::FileSystemLimits::unknown()
+        .with_max_write_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(4));
+    let fixture = AsyncMemoryFixture::with_path_error_call_and_limits(1, limits);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::WriteLimit).await;
+        assert!(!run.requirements_satisfied());
+        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteLimit));
+    });
 }
 
 #[cfg(feature = "async")]

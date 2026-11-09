@@ -564,6 +564,13 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 缺少的可选写取消探针会明确记录为跳过；已执行探针失败仍然失败。既有检查 ID 不变，
 范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
 
+`ReadRange` 还会在选定窗口上验证调用方的 `read_all` 字节预算：等于窗口长度的预算必须返回
+seed 字节，少一个字节的预算必须以 `Read` 操作返回 `ResourceLimitExceeded`。这是门面预算检查，
+与 provider 的 `max_read_range_bytes` 限制分开。`max_bytes` 由门面执行，不会作为参数传入 SPI
+request；这只验证调用方侧的消费预算，不代表 provider 或服务端的字节预算。`WriteLimit` 会在拒绝请求前独立记录目标存在性；
+fixture 准备 `CreateOrReplace` 时还会记录既有内容。清理保留的 recovery session 后，
+套件再次独立确认目标仍缺失或保持原状。观测能力缺失记为未验证；观测错误或目标变化会使检查失败。
+
 取消诊断的所有权迁移如下：
 
 | 失败路径 | 保留的 source | 恢复方式 |
