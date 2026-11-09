@@ -344,12 +344,10 @@ abort，且目标内容仍可读取。只有 `RetryableNotPublished` 才允许�
 
 验证：
 
-- direct children 与 recursive/prefix 规则；
-- entry path 不离开请求 root；
-- metadata absent 与 unknown 的区别；
-- page-size hint 不突破 provider limit；
-- stream 中途错误进入终止 failed state；
-- provider contract violation 被门面识别。
+列举契约比较独立准备的条目集合、路径和过滤结果；请求 metadata 时检查其存在性。分页检查以
+`page_size = 1` 请求并验证结果完整，不证明真实服务分页大小或实际 SPI 参数。页大小属性检查验证公开
+clamp 计算。metadata 字段 absent/unknown 的完整语义、SPI 分派参数、流错误后的终止状态和全部
+provider 违规识别不由本段套件结果统一证明，应分别参考核心白盒回归或 provider 自有验证。
 
 ### 8.4 Namespace mutation
 

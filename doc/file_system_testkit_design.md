@@ -42,6 +42,14 @@ are not established by provider-suite observations. Core facade/SPI tests own
 core dispatch and preflight guarantees; providers own native behavior, platform
 semantics, and service-specific guarantees beyond the suite's observations.
 
+Listing checks compare independently prepared entry sets, paths, and filters,
+and require metadata presence when requested. A `page_size` hint of one tests
+result completeness, not actual service pagination or SPI arguments. The page
+limit property check exercises the public clamp calculation. These observations
+do not establish every metadata field's absent/unknown semantics, stream
+termination after errors, or all provider-violation detection; core and
+provider-specific tests own those additional guarantees.
+
 ## Typed catalog and execution
 
 Every check has one `ContractCheckId`, one `FileSystemContract` phase, a
