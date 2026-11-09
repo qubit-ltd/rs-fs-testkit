@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 qubit-fs = { path = "../../../rs-fs", version = "0.3", default-features = false, features = ["async"] }
 
-qubit-io = "0.19"
+qubit-io = "^0.19"
 
 object_store = { version = "^0.14", features = ["aws"] }
 bytes = "^1.11"
@@ -17,7 +17,7 @@ tokio = { version = "^1.54", features = ["rt-multi-thread", "macros", "sync", "t
 
 [dev-dependencies]
 qubit-fs-testkit = { version = "0.8", path = "../..", default-features = false, features = ["async"] }
-tokio = { version = "1", features = ["test-util"] }
+tokio = { version = "^1.54", features = ["test-util"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
