@@ -16,12 +16,10 @@ use super::super::ContractCheckId;
 use super::super::FileSystemContractSuite;
 use super::super::FileSystemFixture;
 #[cfg(feature = "async")]
-use super::super::common::AsyncMemoryFixture;
-use super::super::common::MemoryFixture;
+use super::common::AsyncMemoryFixture;
+use super::common::MemoryFixture;
 #[cfg(feature = "async")]
-use super::super::common::async_memory_file_system::run_controlled;
-#[cfg(feature = "async")]
-use super::super::rustdoc_support::poll_support;
+use super::common::async_memory_file_system::run_controlled;
 
 #[test]
 fn test_every_synchronous_check_executes_in_the_library_test_build() {
@@ -33,7 +31,7 @@ fn test_every_synchronous_check_executes_in_the_library_test_build() {
 
 #[test]
 fn test_synchronous_suite_handles_default_unsupported_fixture_hooks() {
-    let fixture = super::super::rustdoc_support::RustdocSyncFixture::new();
+    let fixture = super::rustdoc_support::RustdocSyncFixture::new();
     assert!(matches!(
         fixture.seed_file("coverage-seed", b"payload"),
         Ok(super::super::FixtureSupport::Unsupported)
@@ -58,7 +56,7 @@ fn test_synchronous_fixture_defaults_return_explicit_unsupported_evidence() {
     use super::super::ReadScenario;
     use super::super::WriteScenario;
 
-    let fixture = super::super::rustdoc_support::RustdocSyncFixture::new();
+    let fixture = super::rustdoc_support::RustdocSyncFixture::new();
     let path = fixture.path("default-hook").expect("valid fixture path");
     assert!(!fixture.copy_fallback_only());
     assert_eq!(fixture.list_prefix(&path, "child").expect("prefix"), "child");
@@ -189,9 +187,9 @@ fn test_synchronous_copy_checks_reject_unadvertised_guarantees() {
 
 #[test]
 fn test_synchronous_server_side_copy_reports_unavailable_fixture_evidence() {
-    let fixture = MemoryFixture::with_conditional_case_unavailable(
-        super::super::common::UnavailableScenario::Capability(FileSystemCapability::ServerSideCopy),
-    );
+    let fixture = MemoryFixture::with_conditional_case_unavailable(super::common::UnavailableScenario::Capability(
+        FileSystemCapability::ServerSideCopy,
+    ));
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::CopyServerSide);
     assert!(run.completed);
@@ -220,15 +218,15 @@ fn test_synchronous_server_side_copy_rejects_an_unadvertised_capability() {
 fn test_synchronous_temp_directory_paths_retain_creation_and_cleanup_failures() {
     for (fault, id) in [
         (
-            super::super::common::MemoryFault::TempCreationFails,
+            super::common::MemoryFault::TempCreationFails,
             ContractCheckId::TempDirectory,
         ),
         (
-            super::super::common::MemoryFault::TempCleanupFailsOnce,
+            super::common::MemoryFault::TempCleanupFailsOnce,
             ContractCheckId::TempDirectory,
         ),
         (
-            super::super::common::MemoryFault::TempKeepFails,
+            super::common::MemoryFault::TempKeepFails,
             ContractCheckId::TempRepeatedLifecycle,
         ),
     ] {
@@ -238,6 +236,327 @@ fn test_synchronous_temp_directory_paths_retain_creation_and_cleanup_failures() 
         assert!(!run.failures().is_empty(), "{fault:?} must fail {id}");
         assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
         assert!(fixture.is_empty(), "{fault:?} must clean up the fixture");
+    }
+}
+
+#[test]
+fn test_synchronous_repeated_temp_lifecycle_retains_each_interleaved_cleanup_failure() {
+    for call in [1, 2, 3, 4, 5, 6, 7, 8] {
+        let fixture = MemoryFixture::with_temp_cleanup_error_call(call);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempRepeatedLifecycle);
+        assert!(
+            run.failures()
+                .iter()
+                .any(|failure| failure.check() == Some(ContractCheckId::TempRepeatedLifecycle)),
+            "cleanup call {call} must be attributed to the repeated lifecycle"
+        );
+        assert!(
+            fixture.is_empty(),
+            "cleanup call {call} must be retried during teardown"
+        );
+    }
+}
+
+#[test]
+fn test_synchronous_temp_directory_preserves_fixture_observation_errors() {
+    let hooks = [
+        super::common::shared_model::FixtureHook::WriteFile,
+        super::common::shared_model::FixtureHook::ReadFile,
+    ];
+    for id in [ContractCheckId::TempDirectory, ContractCheckId::TempRepeatedLifecycle] {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut suite = FileSystemContractSuite::new(&baseline);
+        let _ = suite.run_check(id);
+        for hook in hooks {
+            for call in 1..=baseline.fixture_hook_call_count(hook) {
+                let fixture = MemoryFixture::with_fixture_hook_error(hook, call);
+                let mut suite = FileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id);
+                assert!(!run.failures().is_empty(), "{id}, {hook:?} call {call} must fail");
+                assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
+            }
+        }
+        for call in 1..=baseline.exists_call_count() {
+            let fixture = MemoryFixture::with_exists_error_call(call);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(
+                !run.failures().is_empty(),
+                "{id} existence observation {call} must fail"
+            );
+            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
+        }
+    }
+}
+
+#[test]
+fn test_synchronous_temp_directory_marks_unsupported_content_evidence_unverified() {
+    for fault in [
+        super::common::MemoryFault::TempWriteHookUnsupported,
+        super::common::MemoryFault::TempReadHookUnsupported,
+    ] {
+        let fixture = MemoryFixture::with_fault(fault);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempDirectory);
+        assert!(run.completed, "{fault:?} check must complete");
+        assert!(
+            run.failures().is_empty(),
+            "{fault:?} is unavailable evidence, not a provider failure"
+        );
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            super::super::ContractCheckOutcome::Unverified { .. }
+        ));
+        assert!(run.cleanup().completed(), "{fault:?} cleanup must be reported");
+    }
+}
+
+#[test]
+fn test_synchronous_suite_preserves_indexed_fixture_hook_failures() {
+    let hooks = [
+        super::common::shared_model::FixtureHook::Snapshot,
+        super::common::shared_model::FixtureHook::ReadFile,
+        super::common::shared_model::FixtureHook::WriteFile,
+        super::common::shared_model::FixtureHook::ResourceVersion,
+        super::common::shared_model::FixtureHook::StaleResourceVersion,
+        super::common::shared_model::FixtureHook::ChecksumFailureCase,
+        super::common::shared_model::FixtureHook::SeedSymlink,
+        super::common::shared_model::FixtureHook::CopyFastPathCase,
+    ];
+    for id in ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut suite = FileSystemContractSuite::new(&baseline);
+        let _ = suite.run_check(id);
+        for hook in hooks {
+            for call in 1..=baseline.fixture_hook_call_count(hook) {
+                let fixture = MemoryFixture::with_fixture_hook_error(hook, call);
+                let mut suite = FileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id);
+                assert!(
+                    run.report().checks().iter().any(|check| check.id() == id),
+                    "{id}, {hook:?} call {call} must retain its check"
+                );
+                assert!(
+                    run.failures()
+                        .iter()
+                        .all(|failure| failure.check().is_none_or(|check| check == id))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_synchronous_checks_retain_every_indexed_seed_failure() {
+    for id in ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut suite = FileSystemContractSuite::new(&baseline);
+        let run = suite.run_check(id);
+        assert!(run.requirements_satisfied(), "baseline {id}: {:?}", run.failures());
+        let file_calls = baseline.seed_file_call_count();
+        let directory_calls = baseline.seed_directory_call_count();
+
+        for (file_call, directory_call) in (1..=file_calls)
+            .map(|call| (Some(call), None))
+            .chain((1..=directory_calls).map(|call| (None, Some(call))))
+        {
+            let fixture = MemoryFixture::with_seed_error_calls(file_call, directory_call);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(
+                run.failures().iter().any(|failure| failure.check() == Some(id)),
+                "{id}, file seed {file_call:?}, directory seed {directory_call:?}"
+            );
+            assert!(fixture.is_empty(), "{id} seed failure leaked resources");
+        }
+    }
+}
+
+#[test]
+fn test_synchronous_checks_record_every_indexed_unavailable_seed() {
+    for id in ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut suite = FileSystemContractSuite::new(&baseline);
+        let _ = suite.run_check(id);
+        let file_calls = baseline.seed_file_call_count();
+        let directory_calls = baseline.seed_directory_call_count();
+
+        for (directory_call, file_call) in (1..=file_calls)
+            .map(|call| (None, Some(call)))
+            .chain((1..=directory_calls).map(|call| (Some(call), None)))
+        {
+            let fixture = MemoryFixture::with_unavailable_seed_calls(directory_call, file_call);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(
+                run.completed,
+                "{id}, file seed {file_call:?}, directory seed {directory_call:?}"
+            );
+            assert!(
+                run.failures()
+                    .iter()
+                    .all(|failure| failure.check().is_none_or(|check| check == id)),
+                "{id}, file seed {file_call:?}, directory seed {directory_call:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_synchronous_checks_retain_every_indexed_existence_failure() {
+    for id in ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut suite = FileSystemContractSuite::new(&baseline);
+        let _ = suite.run_check(id);
+        for call in 1..=baseline.exists_call_count() {
+            let fixture = MemoryFixture::with_exists_error_call(call);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(
+                run.failures()
+                    .iter()
+                    .all(|failure| failure.check().is_none_or(|check| check == id)),
+                "{id}, existence observation {call}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_synchronous_checks_record_indexed_unsupported_fixture_evidence() {
+    let hooks = [
+        super::common::shared_model::FixtureHook::Snapshot,
+        super::common::shared_model::FixtureHook::ReadFile,
+        super::common::shared_model::FixtureHook::WriteFile,
+        super::common::shared_model::FixtureHook::Exists,
+        super::common::shared_model::FixtureHook::ResourceVersion,
+        super::common::shared_model::FixtureHook::StaleResourceVersion,
+        super::common::shared_model::FixtureHook::ChecksumFailureCase,
+        super::common::shared_model::FixtureHook::SeedSymlink,
+        super::common::shared_model::FixtureHook::CopyFastPathCase,
+    ];
+    for id in ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut suite = FileSystemContractSuite::new(&baseline);
+        let _ = suite.run_check(id);
+        for hook in hooks {
+            for call in 1..=baseline.fixture_hook_call_count(hook) {
+                let fixture = MemoryFixture::with_unsupported_fixture_hook(hook, call);
+                let mut suite = FileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id);
+                assert!(run.completed, "{id}, {hook:?} call {call} must complete");
+                assert!(
+                    run.failures()
+                        .iter()
+                        .all(|failure| failure.check().is_none_or(|check| check == id)),
+                    "{id}, {hook:?} call {call} must retain attribution"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_synchronous_temporary_lifecycle_records_indexed_unsupported_evidence() {
+    let hooks = [
+        super::common::shared_model::FixtureHook::ReadFile,
+        super::common::shared_model::FixtureHook::WriteFile,
+        super::common::shared_model::FixtureHook::Exists,
+    ];
+    for id in [
+        ContractCheckId::TempDirectory,
+        ContractCheckId::TempAtomic,
+        ContractCheckId::TempRepeatedLifecycle,
+    ] {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut suite = FileSystemContractSuite::new(&baseline);
+        let _ = suite.run_check(id);
+        for hook in hooks {
+            for call in 1..=baseline.fixture_hook_call_count(hook) {
+                let fixture = MemoryFixture::with_unsupported_fixture_hook(hook, call);
+                let mut suite = FileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id);
+                assert!(run.completed, "{id}, {hook:?} call {call} must complete");
+                assert!(
+                    run.failures()
+                        .iter()
+                        .all(|failure| failure.check().is_none_or(|check| check == id))
+                );
+                assert_eq!(run.report().checks().len(), 1);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_synchronous_temporary_file_records_indexed_unsupported_evidence() {
+    let hooks = [
+        super::common::shared_model::FixtureHook::ReadFile,
+        super::common::shared_model::FixtureHook::WriteFile,
+        super::common::shared_model::FixtureHook::Exists,
+    ];
+    for id in [
+        ContractCheckId::TempFile,
+        ContractCheckId::TempAtomic,
+        ContractCheckId::TempRepeatedLifecycle,
+    ] {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut suite = FileSystemContractSuite::new(&baseline);
+        let _ = suite.run_check(id);
+        for hook in hooks {
+            for call in 1..=baseline.fixture_hook_call_count(hook) {
+                let fixture = MemoryFixture::with_unsupported_fixture_hook(hook, call);
+                let mut suite = FileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id);
+                assert!(run.completed, "{id}, {hook:?} call {call} must complete");
+                assert_eq!(run.report().checks().len(), 1);
+                assert!(
+                    run.failures()
+                        .iter()
+                        .all(|failure| failure.check().is_none_or(|check| check == id))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_synchronous_read_range_checks_cover_one_and_two_byte_limits() {
+    for maximum in [1, 2] {
+        let limits = qubit_fs::metadata::FileSystemLimits::unknown()
+            .with_max_read_range_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(maximum));
+        let fixture = MemoryFixture::with_limits(limits);
+        for id in [ContractCheckId::ReadRange, ContractCheckId::ReadRangeLimit] {
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(
+                run.requirements_satisfied(),
+                "maximum {maximum}, {id}: {:?}",
+                run.failures()
+            );
+        }
+        assert!(fixture.is_empty(), "maximum {maximum} read checks must clean up");
     }
 }
 
@@ -339,6 +658,27 @@ fn test_synchronous_core_profile_preserves_path_failures() {
     }
 }
 
+#[test]
+fn test_synchronous_capable_profile_preserves_every_path_failure() {
+    for id in ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        let baseline = MemoryFixture::with_all_capabilities();
+        let mut suite = FileSystemContractSuite::new(&baseline);
+        let _ = suite.run_check(id);
+        for call in 1..=baseline.path_call_count() {
+            let fixture = MemoryFixture::with_path_error_call(call);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(!run.failures().is_empty(), "{id}, path {call}");
+            assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
+            assert!(fixture.is_empty(), "{id}, path {call} leaked resources");
+        }
+    }
+}
+
 #[cfg(feature = "async")]
 #[test]
 fn test_every_asynchronous_check_executes_in_the_library_test_build() {
@@ -353,9 +693,9 @@ fn test_every_asynchronous_check_executes_in_the_library_test_build() {
 #[cfg(feature = "async")]
 #[test]
 fn test_asynchronous_suite_handles_default_unsupported_fixture_hooks() {
-    let fixture = super::super::rustdoc_support::RustdocAsyncFixture::new();
+    let fixture = super::rustdoc_support::RustdocAsyncFixture::new();
     assert!(matches!(
-        poll_support::ready(fixture.seed_file("coverage-seed", b"payload")),
+        run_controlled(fixture.seed_file("coverage-seed", b"payload")),
         Ok(super::super::FixtureSupport::Unsupported)
     ));
     run_controlled(async {
@@ -375,7 +715,7 @@ fn test_asynchronous_fixture_defaults_return_explicit_unsupported_evidence() {
     use super::super::ReadScenario;
     use super::super::WriteScenario;
 
-    let fixture = super::super::rustdoc_support::RustdocAsyncFixture::new();
+    let fixture = super::rustdoc_support::RustdocAsyncFixture::new();
     let path = fixture.path("default-hook").expect("valid fixture path");
     run_controlled(async {
         assert!(!fixture.copy_fallback_only());
@@ -504,11 +844,22 @@ fn test_asynchronous_copy_checks_reject_unadvertised_guarantees() {
         ContractCheckId::CopyAtomicFile,
         ContractCheckId::CopyDurableFile,
     ] {
-        let fixture = AsyncMemoryFixture::new();
+        let fixture = AsyncMemoryFixture::with_cancellation_limits(qubit_fs::metadata::FileSystemLimits::unknown());
         run_controlled(async {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id).await;
             assert!(run.requirements_satisfied(), "{id}: {:?}", run.failures());
+            assert!(
+                matches!(
+                    run.report()
+                        .checks()
+                        .iter()
+                        .find(|check| check.id() == id)
+                        .map(|check| check.outcome()),
+                    Some(super::super::ContractCheckOutcome::Passed)
+                ),
+                "{id} must execute its stage probe"
+            );
         });
         assert!(fixture.is_empty(), "{id}: fixture leaked resources");
     }
@@ -518,7 +869,7 @@ fn test_asynchronous_copy_checks_reject_unadvertised_guarantees() {
 #[test]
 fn test_asynchronous_server_side_copy_reports_unavailable_fixture_evidence() {
     let fixture = AsyncMemoryFixture::with_conditional_case_unavailable(
-        super::super::common::UnavailableScenario::Capability(FileSystemCapability::ServerSideCopy),
+        super::common::UnavailableScenario::Capability(FileSystemCapability::ServerSideCopy),
     );
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
@@ -554,15 +905,15 @@ fn test_asynchronous_server_side_copy_rejects_an_unadvertised_capability() {
 fn test_asynchronous_temp_directory_paths_retain_creation_and_cleanup_failures() {
     for (fault, id) in [
         (
-            super::super::common::AsyncMemoryFault::TempCreationFails,
+            super::common::AsyncMemoryFault::TempCreationFails,
             ContractCheckId::TempDirectory,
         ),
         (
-            super::super::common::AsyncMemoryFault::TempCleanupFailsOnce,
+            super::common::AsyncMemoryFault::TempCleanupFailsOnce,
             ContractCheckId::TempDirectory,
         ),
         (
-            super::super::common::AsyncMemoryFault::TempKeepFails,
+            super::common::AsyncMemoryFault::TempKeepFails,
             ContractCheckId::TempRepeatedLifecycle,
         ),
     ] {
@@ -574,6 +925,467 @@ fn test_asynchronous_temp_directory_paths_retain_creation_and_cleanup_failures()
             assert!(run.failures().iter().all(|failure| { failure.check() == Some(id) }));
         });
         assert!(fixture.is_empty(), "{fault:?} must clean up the fixture");
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_repeated_temp_lifecycle_retains_each_interleaved_cleanup_failure() {
+    for call in [1, 2, 3, 4, 5, 6, 7, 8] {
+        let fixture = AsyncMemoryFixture::with_temp_cleanup_error_call(call);
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::TempRepeatedLifecycle).await;
+            assert!(
+                run.failures()
+                    .iter()
+                    .any(|failure| failure.check() == Some(ContractCheckId::TempRepeatedLifecycle)),
+                "cleanup call {call} must be attributed to the repeated lifecycle"
+            );
+        });
+        assert!(
+            fixture.is_empty(),
+            "cleanup call {call} must be retried during teardown"
+        );
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_temp_directory_preserves_fixture_observation_errors() {
+    let hooks = [
+        super::common::shared_model::FixtureHook::WriteFile,
+        super::common::shared_model::FixtureHook::ReadFile,
+    ];
+    for id in [ContractCheckId::TempDirectory, ContractCheckId::TempRepeatedLifecycle] {
+        let baseline = AsyncMemoryFixture::with_all_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&baseline);
+            let _ = suite.run_check(id).await;
+        });
+        for hook in hooks {
+            for call in 1..=baseline.fixture_hook_call_count(hook) {
+                let fixture = AsyncMemoryFixture::with_fixture_hook_error(hook, call);
+                run_controlled(async {
+                    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                    let run = suite.run_check(id).await;
+                    assert!(!run.failures().is_empty(), "{id}, {hook:?} call {call} must fail");
+                    assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
+                });
+            }
+        }
+        for call in 1..=baseline.exists_call_count() {
+            let fixture = AsyncMemoryFixture::with_exists_error_call(call);
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                assert!(
+                    !run.failures().is_empty(),
+                    "{id} existence observation {call} must fail"
+                );
+                assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
+            });
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_temp_directory_marks_unsupported_content_evidence_unverified() {
+    for fault in [
+        super::common::async_memory_file_system::AsyncMemoryFault::TempWriteHookUnsupported,
+        super::common::async_memory_file_system::AsyncMemoryFault::TempReadHookUnsupported,
+    ] {
+        let fixture = AsyncMemoryFixture::with_fault(fault);
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::TempDirectory).await;
+            assert!(run.completed, "{fault:?} check must complete");
+            assert!(
+                run.failures().is_empty(),
+                "{fault:?} is unavailable evidence, not a provider failure"
+            );
+            assert!(matches!(
+                run.report().checks()[0].outcome(),
+                super::super::ContractCheckOutcome::Unverified { .. }
+            ));
+            assert!(run.cleanup().completed(), "{fault:?} cleanup must be reported");
+        });
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_suite_preserves_indexed_fixture_hook_failures() {
+    let hooks = [
+        super::common::shared_model::FixtureHook::Snapshot,
+        super::common::shared_model::FixtureHook::ReadFile,
+        super::common::shared_model::FixtureHook::WriteFile,
+        super::common::shared_model::FixtureHook::ResourceVersion,
+        super::common::shared_model::FixtureHook::StaleResourceVersion,
+        super::common::shared_model::FixtureHook::ChecksumFailureCase,
+        super::common::shared_model::FixtureHook::SeedSymlink,
+        super::common::shared_model::FixtureHook::CopyFastPathCase,
+    ];
+    for id in ContractCheckId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.supports_synchronous())
+    {
+        let baseline = AsyncMemoryFixture::with_all_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&baseline);
+            let _ = suite.run_check(id).await;
+        });
+        for hook in hooks {
+            for call in 1..=baseline.fixture_hook_call_count(hook) {
+                let fixture = AsyncMemoryFixture::with_fixture_hook_error(hook, call);
+                run_controlled(async {
+                    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                    let run = suite.run_check(id).await;
+                    assert!(
+                        run.report().checks().iter().any(|check| check.id() == id),
+                        "{id}, {hook:?} call {call} must retain its check"
+                    );
+                    assert!(
+                        run.failures()
+                            .iter()
+                            .all(|failure| failure.check().is_none_or(|check| check == id))
+                    );
+                });
+            }
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_checks_retain_every_indexed_seed_failure() {
+    for id in ContractCheckId::ALL.iter().copied() {
+        let baseline = AsyncMemoryFixture::with_all_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&baseline);
+            let run = suite.run_check(id).await;
+            assert!(run.requirements_satisfied(), "baseline {id}: {:?}", run.failures());
+        });
+        let file_calls = baseline.seed_file_call_count();
+        let directory_calls = baseline.seed_directory_call_count();
+
+        for (file_call, directory_call) in (1..=file_calls)
+            .map(|call| (Some(call), None))
+            .chain((1..=directory_calls).map(|call| (None, Some(call))))
+        {
+            let fixture = AsyncMemoryFixture::with_seed_error_calls(file_call, directory_call);
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                assert!(
+                    run.failures().iter().any(|failure| failure.check() == Some(id)),
+                    "{id}, file seed {file_call:?}, directory seed {directory_call:?}"
+                );
+            });
+            assert!(fixture.is_empty(), "{id} seed failure leaked resources");
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_checks_record_every_indexed_unavailable_seed() {
+    for id in ContractCheckId::ALL.iter().copied() {
+        let baseline = AsyncMemoryFixture::with_all_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&baseline);
+            let _ = suite.run_check(id).await;
+        });
+        let file_calls = baseline.seed_file_call_count();
+        let directory_calls = baseline.seed_directory_call_count();
+
+        for (directory_call, file_call) in (1..=file_calls)
+            .map(|call| (None, Some(call)))
+            .chain((1..=directory_calls).map(|call| (Some(call), None)))
+        {
+            let fixture = AsyncMemoryFixture::with_unavailable_seed_calls(directory_call, file_call);
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                assert!(
+                    run.completed,
+                    "{id}, file seed {file_call:?}, directory seed {directory_call:?}"
+                );
+                assert!(
+                    run.failures()
+                        .iter()
+                        .all(|failure| failure.check().is_none_or(|check| check == id)),
+                    "{id}, file seed {file_call:?}, directory seed {directory_call:?}"
+                );
+            });
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_checks_retain_every_indexed_existence_failure() {
+    for id in ContractCheckId::ALL.iter().copied() {
+        let baseline = AsyncMemoryFixture::with_all_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&baseline);
+            let _ = suite.run_check(id).await;
+        });
+        for call in 1..=baseline.exists_call_count() {
+            let fixture = AsyncMemoryFixture::with_exists_error_call(call);
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                assert!(
+                    run.failures()
+                        .iter()
+                        .all(|failure| failure.check().is_none_or(|check| check == id)),
+                    "{id}, existence observation {call}"
+                );
+            });
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_checks_record_indexed_unsupported_fixture_evidence() {
+    let hooks = [
+        super::common::shared_model::FixtureHook::Snapshot,
+        super::common::shared_model::FixtureHook::ReadFile,
+        super::common::shared_model::FixtureHook::WriteFile,
+        super::common::shared_model::FixtureHook::Exists,
+        super::common::shared_model::FixtureHook::ResourceVersion,
+        super::common::shared_model::FixtureHook::StaleResourceVersion,
+        super::common::shared_model::FixtureHook::ChecksumFailureCase,
+        super::common::shared_model::FixtureHook::SeedSymlink,
+        super::common::shared_model::FixtureHook::CopyFastPathCase,
+    ];
+    for id in ContractCheckId::ALL.iter().copied() {
+        let baseline = AsyncMemoryFixture::with_all_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&baseline);
+            let _ = suite.run_check(id).await;
+        });
+        for hook in hooks {
+            for call in 1..=baseline.fixture_hook_call_count(hook) {
+                let fixture = AsyncMemoryFixture::with_unsupported_fixture_hook(hook, call);
+                run_controlled(async {
+                    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                    let run = suite.run_check(id).await;
+                    assert!(run.completed, "{id}, {hook:?} call {call} must complete");
+                    assert!(
+                        run.failures()
+                            .iter()
+                            .all(|failure| failure.check().is_none_or(|check| check == id)),
+                        "{id}, {hook:?} call {call} must retain attribution"
+                    );
+                });
+            }
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_temporary_lifecycle_records_indexed_unsupported_evidence() {
+    let hooks = [
+        super::common::shared_model::FixtureHook::ReadFile,
+        super::common::shared_model::FixtureHook::WriteFile,
+        super::common::shared_model::FixtureHook::Exists,
+    ];
+    for id in [
+        ContractCheckId::TempDirectory,
+        ContractCheckId::TempAtomic,
+        ContractCheckId::TempRepeatedLifecycle,
+    ] {
+        let baseline = AsyncMemoryFixture::with_all_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&baseline);
+            let _ = suite.run_check(id).await;
+        });
+        for hook in hooks {
+            for call in 1..=baseline.fixture_hook_call_count(hook) {
+                let fixture = AsyncMemoryFixture::with_unsupported_fixture_hook(hook, call);
+                run_controlled(async {
+                    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                    let run = suite.run_check(id).await;
+                    assert!(run.completed, "{id}, {hook:?} call {call} must complete");
+                    assert!(
+                        run.failures()
+                            .iter()
+                            .all(|failure| failure.check().is_none_or(|check| check == id))
+                    );
+                    assert_eq!(run.report().checks().len(), 1);
+                });
+            }
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_temporary_file_records_indexed_unsupported_evidence() {
+    let hooks = [
+        super::common::shared_model::FixtureHook::ReadFile,
+        super::common::shared_model::FixtureHook::WriteFile,
+        super::common::shared_model::FixtureHook::Exists,
+    ];
+    for id in [
+        ContractCheckId::TempFile,
+        ContractCheckId::TempAtomic,
+        ContractCheckId::TempRepeatedLifecycle,
+    ] {
+        let baseline = AsyncMemoryFixture::with_all_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&baseline);
+            let _ = suite.run_check(id).await;
+        });
+        for hook in hooks {
+            for call in 1..=baseline.fixture_hook_call_count(hook) {
+                let fixture = AsyncMemoryFixture::with_unsupported_fixture_hook(hook, call);
+                run_controlled(async {
+                    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                    let run = suite.run_check(id).await;
+                    assert!(run.completed, "{id}, {hook:?} call {call} must complete");
+                    assert_eq!(run.report().checks().len(), 1);
+                    assert!(
+                        run.failures()
+                            .iter()
+                            .all(|failure| failure.check().is_none_or(|check| check == id))
+                    );
+                });
+            }
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_read_range_checks_cover_one_and_two_byte_limits() {
+    for maximum in [1, 2] {
+        let limits = qubit_fs::metadata::FileSystemLimits::unknown()
+            .with_max_read_range_bytes(qubit_fs::metadata::FileSystemLimit::Maximum(maximum));
+        let fixture = AsyncMemoryFixture::with_limits(limits);
+        run_controlled(async {
+            for id in [ContractCheckId::ReadRange, ContractCheckId::ReadRangeLimit] {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                assert!(
+                    run.requirements_satisfied(),
+                    "maximum {maximum}, {id}: {:?}",
+                    run.failures()
+                );
+            }
+        });
+        assert!(fixture.is_empty(), "maximum {maximum} read checks must clean up");
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_copy_cancellation_covers_every_supported_stage() {
+    for id in [
+        ContractCheckId::AsyncCopyCancelNativeAttempt,
+        ContractCheckId::AsyncCopyCancelReader,
+        ContractCheckId::AsyncCopyCancelWriter,
+        ContractCheckId::AsyncCopyCancelCommit,
+    ] {
+        let fixture = AsyncMemoryFixture::with_cancellation_limits(qubit_fs::metadata::FileSystemLimits::unknown());
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id).await;
+            assert!(run.requirements_satisfied(), "{id}: {:?}", run.failures());
+            assert!(
+                matches!(
+                    run.report()
+                        .checks()
+                        .iter()
+                        .find(|check| check.id() == id)
+                        .map(|check| check.outcome()),
+                    Some(super::super::ContractCheckOutcome::Passed)
+                ),
+                "{id} must execute its stage probe"
+            );
+        });
+        assert!(fixture.is_empty(), "{id} must clean up its resources");
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_copy_cancellation_retains_each_probe_fault_at_every_stage() {
+    let stages = [
+        ContractCheckId::AsyncCopyCancelNativeAttempt,
+        ContractCheckId::AsyncCopyCancelReader,
+        ContractCheckId::AsyncCopyCancelWriter,
+        ContractCheckId::AsyncCopyCancelCommit,
+    ];
+    let faults = [
+        super::common::AsyncMemoryFault::CopyCancelAcknowledgeFails,
+        super::common::AsyncMemoryFault::CopyCancelDisarmFails,
+    ];
+    for id in stages {
+        for fault in faults {
+            let fixture = AsyncMemoryFixture::with_fault(fault);
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                assert!(!run.failures().is_empty(), "{fault:?} must fail {id}");
+                assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
+            });
+            assert!(fixture.is_empty(), "{fault:?} at {id} must clean up resources");
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_write_cancellation_covers_every_supported_stage() {
+    for id in [
+        ContractCheckId::WriteCancelOpen,
+        ContractCheckId::WriteCancelWrite,
+        ContractCheckId::WriteCancelFlush,
+        ContractCheckId::WriteCancelCommit,
+    ] {
+        let fixture = AsyncMemoryFixture::new();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id).await;
+            assert!(run.requirements_satisfied(), "{id}: {:?}", run.failures());
+        });
+        assert!(fixture.is_empty(), "{id} must clean up its resources");
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_write_cancellation_retains_each_probe_fault_at_every_stage() {
+    let stages = [
+        ContractCheckId::WriteCancelOpen,
+        ContractCheckId::WriteCancelWrite,
+        ContractCheckId::WriteCancelFlush,
+        ContractCheckId::WriteCancelCommit,
+    ];
+    let faults = [
+        super::common::AsyncMemoryFault::WriteCancelObserveFails,
+        super::common::AsyncMemoryFault::WriteCancelAcknowledgeFails,
+        super::common::AsyncMemoryFault::WriteCancelAcceptedBytesFails,
+        super::common::AsyncMemoryFault::WriteCancelDisarmFails,
+    ];
+    for id in stages {
+        for fault in faults {
+            let fixture = AsyncMemoryFixture::with_fault(fault);
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                assert!(!run.failures().is_empty(), "{fault:?} must fail {id}");
+                assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
+            });
+            assert!(fixture.is_empty(), "{fault:?} at {id} must clean up resources");
+        }
     }
 }
 
@@ -602,9 +1414,9 @@ fn test_asynchronous_copy_cancellation_attributes_admission_path_errors() {
 #[test]
 fn test_asynchronous_copy_cancellation_retains_probe_failures() {
     for fault in [
-        super::super::common::AsyncMemoryFault::CopyCancelAcknowledgeFails,
-        super::super::common::AsyncMemoryFault::CopyCancelDisarmFails,
-        super::super::common::AsyncMemoryFault::CopyCancelFailsBeforeStage,
+        super::common::AsyncMemoryFault::CopyCancelAcknowledgeFails,
+        super::common::AsyncMemoryFault::CopyCancelDisarmFails,
+        super::common::AsyncMemoryFault::CopyCancelFailsBeforeStage,
     ] {
         let fixture = AsyncMemoryFixture::with_fault(fault);
         run_controlled(async {
@@ -625,7 +1437,7 @@ fn test_asynchronous_copy_cancellation_retains_probe_failures() {
         (
             "read",
             AsyncMemoryFixture::with_cancellation_fixture_hook_error(
-                super::super::common::shared_model::FixtureHook::ReadFile,
+                super::common::shared_model::FixtureHook::ReadFile,
                 1,
             ),
         ),
@@ -668,6 +1480,28 @@ fn test_asynchronous_optional_profile_preserves_path_failures() {
                 );
             });
             assert!(fixture.is_empty(), "{id}, path {call}: fixture leaked resources");
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_asynchronous_capable_profile_preserves_every_path_failure() {
+    for id in ContractCheckId::ALL.iter().copied() {
+        let baseline = AsyncMemoryFixture::with_all_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&baseline);
+            let _ = suite.run_check(id).await;
+        });
+        for call in 1..=baseline.path_call_count() {
+            let fixture = AsyncMemoryFixture::with_path_error_call(call);
+            run_controlled(async {
+                let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                let run = suite.run_check(id).await;
+                assert!(!run.failures().is_empty(), "{id}, path {call}");
+                assert!(run.failures().iter().all(|failure| failure.check() == Some(id)));
+            });
+            assert!(fixture.is_empty(), "{id}, path {call} leaked resources");
         }
     }
 }
