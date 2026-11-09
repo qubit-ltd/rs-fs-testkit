@@ -407,4 +407,33 @@ mod tests {
             assert!(result.is_err(), "non-cancellation check identity was accepted");
         });
     }
+
+    #[test]
+    fn test_records_copy_cancellation_as_inapplicable_without_copy_capability() {
+        let fixture = AsyncMemoryFixture::without_core_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            suite
+                .context
+                .prepare_phase(ContractCheckId::AsyncCopyCancelNativeAttempt.contract(), true);
+            suite
+                .check_copy_cancellation_item(ContractCheckId::AsyncCopyCancelNativeAttempt)
+                .await
+                .expect("missing copy capability makes the probe inapplicable");
+            let check = suite
+                .report()
+                .checks()
+                .iter()
+                .find(|check| check.id() == ContractCheckId::AsyncCopyCancelNativeAttempt)
+                .expect("inapplicable check must be recorded");
+            assert!(matches!(
+                check.outcome(),
+                crate::ContractCheckOutcome::NotApplicable { .. }
+            ));
+        });
+        assert!(
+            fixture.is_empty(),
+            "inapplicable probe must not create resources"
+        );
+    }
 }

@@ -349,4 +349,33 @@ mod tests {
             assert!(error.message().contains("not write cancellation"));
         });
     }
+
+    #[test]
+    fn test_records_write_cancellation_as_inapplicable_without_write_capability() {
+        let fixture = AsyncMemoryFixture::without_core_capabilities();
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            suite
+                .context
+                .prepare_phase(ContractCheckId::WriteCancelOpen.contract(), true);
+            suite
+                .check_write_cancellation_item(ContractCheckId::WriteCancelOpen)
+                .await
+                .expect("missing write capability makes the probe inapplicable");
+            let check = suite
+                .report()
+                .checks()
+                .iter()
+                .find(|check| check.id() == ContractCheckId::WriteCancelOpen)
+                .expect("inapplicable check must be recorded");
+            assert!(matches!(
+                check.outcome(),
+                crate::ContractCheckOutcome::NotApplicable { .. }
+            ));
+        });
+        assert!(
+            fixture.is_empty(),
+            "inapplicable probe must not create resources"
+        );
+    }
 }
