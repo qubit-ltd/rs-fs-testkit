@@ -183,6 +183,54 @@ fn test_async_fault_profiles_are_exercised_by_the_real_suite() {
     }
 }
 
+#[test]
+fn test_async_rejects_wrong_interior_offset_with_small_range_limits() {
+    for maximum in [1, 4, 7] {
+        let limits = FileSystemLimits::unknown().with_max_read_range_bytes(FileSystemLimit::Maximum(maximum));
+        let fixture = AsyncMemoryFixture::with_fault_and_limits(AsyncMemoryFault::IgnoreInteriorReadOffset, limits);
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::ReadRange).await;
+            assert!(!run.requirements_satisfied());
+            assert!(run.report().checks().iter().any(|check| {
+                check.id() == ContractCheckId::ReadRange
+                    && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })
+            }));
+        });
+    }
+}
+
+#[test]
+fn test_async_read_range_succeeds_with_small_and_unbounded_limits() {
+    for limit in [
+        FileSystemLimit::Maximum(1),
+        FileSystemLimit::Maximum(4),
+        FileSystemLimit::Maximum(7),
+        FileSystemLimit::Maximum(8),
+        FileSystemLimit::Unknown,
+        FileSystemLimit::Unbounded,
+    ] {
+        let limits = FileSystemLimits::unknown().with_max_read_range_bytes(limit);
+        let fixture = AsyncMemoryFixture::with_fault_and_limits(AsyncMemoryFault::None, limits);
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::ReadRange).await;
+            run.assert_satisfied();
+            let check = run
+                .report()
+                .checks()
+                .iter()
+                .find(|check| check.id() == ContractCheckId::ReadRange)
+                .expect("selected range guarantee must have evidence");
+            assert!(
+                matches!(check.outcome(), ContractCheckOutcome::Passed),
+                "limit={limit:?}, outcome={:?}",
+                check.outcome()
+            );
+        });
+    }
+}
+
 /// A deliberately invalid request must be observed by the real facade call;
 /// recording RejectedAsExpected without issuing it cannot pass this regression.
 #[test]

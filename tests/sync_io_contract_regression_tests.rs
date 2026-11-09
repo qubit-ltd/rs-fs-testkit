@@ -69,6 +69,47 @@ fn test_sync_rejects_read_ignoring_if_none_match() {
 }
 
 #[test]
+fn test_sync_rejects_wrong_interior_offset_with_small_range_limits() {
+    for maximum in [1, 4, 7] {
+        let limits = FileSystemLimits::unknown().with_max_read_range_bytes(FileSystemLimit::Maximum(maximum));
+        let fixture = MemoryFixture::with_fault_and_limits(MemoryFault::IgnoreInteriorReadOffset, limits);
+        assert_panics_at(
+            || {
+                FileSystemContractSuite::new(&fixture)
+                    .run_check(ContractCheckId::ReadRange)
+                    .assert_satisfied();
+            },
+            "read/range",
+        );
+    }
+}
+
+#[test]
+fn test_sync_read_range_succeeds_with_small_and_unbounded_limits() {
+    for limit in [
+        FileSystemLimit::Maximum(1),
+        FileSystemLimit::Maximum(4),
+        FileSystemLimit::Maximum(7),
+        FileSystemLimit::Maximum(8),
+        FileSystemLimit::Unknown,
+        FileSystemLimit::Unbounded,
+    ] {
+        let limits = FileSystemLimits::unknown().with_max_read_range_bytes(limit);
+        let fixture = MemoryFixture::with_limits(limits);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::ReadRange);
+        run.assert_satisfied();
+        let check = run
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == ContractCheckId::ReadRange)
+            .expect("selected range guarantee must have evidence");
+        assert!(matches!(check.outcome(), ContractCheckOutcome::Passed));
+    }
+}
+
+#[test]
 fn test_sync_rejects_write_ignoring_stale_version() {
     let fixture = MemoryFixture::with_fault(MemoryFault::IgnoreWriteIfMatch);
     assert_panics_at(

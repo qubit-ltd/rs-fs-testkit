@@ -19,6 +19,13 @@ use crate::ReadScenario;
 pub(crate) const CONTENT: &[u8] = b"read contract bytes";
 
 /// Builds requests without accepting weaker expectations from a fixture.
+///
+/// # Parameters
+///
+/// - `scenario`: the contract behavior to request.
+/// - `limit`: the provider's maximum read size, used to bound range requests.
+/// - `version`: the independently observed resource version for conditional
+///   requests.
 pub(crate) fn options(scenario: ReadScenario, limit: FileSystemLimit, version: ResourceVersion) -> ReadOptions {
     match scenario {
         ReadScenario::Basic | ReadScenario::RangeLimit => ReadOptions::default(),
@@ -117,7 +124,9 @@ pub(crate) const fn uses_stale(scenario: ReadScenario) -> bool {
     matches!(scenario, ReadScenario::IfMatchStale | ReadScenario::IfNoneMatchStale)
 }
 
-/// Bounds the range by both provider limits and the known seed length.
+/// Bounds the range by provider limits and the known seed length, using an
+/// interior offset for every non-empty range so small limits still verify
+/// correct positioning.
 ///
 /// # Parameters
 ///
@@ -130,5 +139,5 @@ pub(crate) const fn uses_stale(scenario: ReadScenario) -> bool {
 #[inline]
 fn window(limit: FileSystemLimit) -> (u64, u64) {
     let length = limit.maximum().map_or(8, |maximum| maximum.min(8));
-    (if length >= 8 { 5 } else { 0 }, length)
+    (if length == 0 { 0 } else { 5 }, length)
 }

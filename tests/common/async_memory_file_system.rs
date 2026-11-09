@@ -549,6 +549,8 @@ pub enum AsyncMemoryFault {
     ObjectKinds,
     /// Ignores a stale or current If-Match read condition.
     IgnoreReadIfMatch,
+    /// Ignores a non-zero offset for reads within the file.
+    IgnoreInteriorReadOffset,
     /// Ignores a stale or current If-None-Match read condition.
     IgnoreReadIfNoneMatch,
     /// Ignores an If-Match write condition.
@@ -2105,7 +2107,14 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     "async memory checksum mismatch",
                 ));
             }
-            let start = options.offset().unwrap_or(0).min(bytes.len() as u64) as usize;
+            let offset = options.offset().unwrap_or(0);
+            let ignore_offset =
+                fault == AsyncMemoryFault::IgnoreInteriorReadOffset && offset > 0 && offset < bytes.len() as u64;
+            let start = if ignore_offset {
+                0
+            } else {
+                offset.min(bytes.len() as u64) as usize
+            };
             let end = options.length().map_or(bytes.len(), |length| {
                 start.saturating_add(length as usize).min(bytes.len())
             });
