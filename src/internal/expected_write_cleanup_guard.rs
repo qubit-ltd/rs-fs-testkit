@@ -71,3 +71,55 @@ impl Drop for ExpectedWriteCleanupGuard<'_> {
         }
     }
 }
+
+#[cfg(all(test, feature = "async"))]
+mod tests {
+    use qubit_fs::write::WriteOptions;
+
+    use crate::ContractAsyncWriteFailure;
+    use crate::ContractCheckId;
+    use crate::internal::expected_write_cleanup_guard::ExpectedWriteCleanupGuard;
+    use crate::qubit_fs_testkit::AsyncFileSystemFixture;
+    use crate::tests::common::AsyncMemoryFault;
+    use crate::tests::common::AsyncMemoryFixture;
+    use crate::tests::rustdoc_support::poll_support;
+
+    fn retained_failure() -> ContractAsyncWriteFailure {
+        let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::OwningCommitFails);
+        let path = fixture.path("owning-write").expect("fixture path");
+        let mut operation = fixture
+            .file_system()
+            .begin_write_all(path, b"payload".to_vec(), WriteOptions::default())
+            .expect("write operation should be admitted");
+        let failure = poll_support::ready(operation.execute()).expect_err("commit should fail");
+        assert!(operation.has_recovery());
+        ContractAsyncWriteFailure::new(failure, Some(operation))
+    }
+
+    #[test]
+    fn finishing_guard_returns_failure_without_reporting_cancellation() {
+        let mut failures = Vec::new();
+        let failure = retained_failure();
+        let guard = ExpectedWriteCleanupGuard::new(failure, &mut failures, ContractCheckId::WriteIfAbsent);
+
+        let retained = guard.finish();
+
+        assert!(retained.operation().is_some());
+        assert!(failures.is_empty());
+    }
+
+    #[test]
+    fn dropping_guard_records_check_and_retains_original_failure() {
+        let mut failures = Vec::new();
+        let failure = retained_failure();
+        {
+            let mut guard = ExpectedWriteCleanupGuard::new(failure, &mut failures, ContractCheckId::WriteIfMatch);
+            assert!(guard.failure_mut().operation().is_some());
+        }
+
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].check(), Some(ContractCheckId::WriteIfMatch));
+        assert!(failures[0].message().contains("cleanup was cancelled"));
+        assert!(std::error::Error::source(&failures[0]).is_some());
+    }
+}

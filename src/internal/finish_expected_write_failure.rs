@@ -145,3 +145,61 @@ pub(crate) async fn finish_expected_async_write_failure(
         .at(id)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use qubit_fs::write::WriteOptions;
+
+    use super::finish_expected_write_failure;
+    use crate::ContractCheckId;
+    use crate::FileSystemFixture;
+    use crate::tests::common::MemoryFault;
+    use crate::tests::common::MemoryFixture;
+
+    #[test]
+    fn sync_rejection_cleanup_completes_without_retaining_a_contract_failure() {
+        let fixture = MemoryFixture::with_fault(MemoryFault::WriteCommitFailure);
+        let path = fixture.path("expected-rejection").expect("fixture path");
+        let failure = fixture
+            .file_system()
+            .write_all(&path, b"payload", WriteOptions::default())
+            .expect_err("commit should fail");
+
+        let result = finish_expected_write_failure(failure, ContractCheckId::WriteIfAbsent);
+
+        assert!(result.is_ok());
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn async_rejection_cleanup_completes_without_reporting_failure() {
+        use super::finish_expected_async_write_failure;
+        use qubit_fs::write::AsyncWriteAllOperation;
+        use qubit_fs::write::WriteOptions;
+
+        use crate::ContractAsyncWriteFailure;
+        use crate::qubit_fs_testkit::AsyncFileSystemFixture;
+        use crate::tests::common::AsyncMemoryFault;
+        use crate::tests::common::AsyncMemoryFixture;
+        use crate::tests::rustdoc_support::poll_support;
+
+        let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::OwningCommitFails);
+        let path = fixture.path("owning-write").expect("fixture path");
+        let mut operation: AsyncWriteAllOperation = fixture
+            .file_system()
+            .begin_write_all(path, b"payload".to_vec(), WriteOptions::default())
+            .expect("write operation should be admitted");
+        let failure = poll_support::ready(operation.execute()).expect_err("commit should fail");
+        let failure = ContractAsyncWriteFailure::new(failure, Some(operation));
+        let mut reported = Vec::new();
+
+        let result = poll_support::ready(finish_expected_async_write_failure(
+            failure,
+            ContractCheckId::WriteIfAbsent,
+            &mut reported,
+        ));
+
+        assert!(result.is_ok());
+        assert!(reported.is_empty());
+    }
+}
