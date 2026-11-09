@@ -2,6 +2,8 @@
 //    Copyright (c) 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Stable identities and honest evidence states for random-access contracts.
 
@@ -427,7 +429,7 @@ fn outcome(fixture: &dyn FileSystemFixture, id: ContractCheckId) -> ContractChec
 }
 
 #[test]
-fn random_access_checks_have_distinct_stable_ids_and_default_to_skipped() {
+fn test_random_access_checks_have_distinct_ids_and_default_to_skipped() {
     let fixture = MemoryFixture::new();
     for (id, name) in [
         (ContractCheckId::RandomAccessBasic, "read/random-access-basic"),
@@ -446,7 +448,7 @@ fn random_access_checks_have_distinct_stable_ids_and_default_to_skipped() {
 }
 
 #[test]
-fn random_access_unsupported_declaration_is_rejected_and_false_claim_is_unverified_or_failed() {
+fn test_random_access_declared_support_is_verified_or_rejected() {
     let unsupported = DeclaredFixture {
         inner: MemoryFixture::new(),
         declared: FixtureSupport::Supported(false),
@@ -481,7 +483,7 @@ fn random_access_unsupported_declaration_is_rejected_and_false_claim_is_unverifi
 }
 
 #[test]
-fn random_access_sampling_short_reads_bounds_and_object_identity_are_checked() {
+fn test_random_access_reads_bounds_and_object_identity() {
     let conforming = RandomFixture::new(true, false, FileSystemLimit::Unknown);
     for id in [
         ContractCheckId::RandomAccessBasic,
@@ -512,7 +514,7 @@ fn random_access_sampling_short_reads_bounds_and_object_identity_are_checked() {
 
 #[cfg(feature = "async")]
 #[test]
-fn random_access_async_bounds_checks_finite_ranges() {
+fn test_async_random_access_bounds_accept_finite_ranges() {
     let fixture = AsyncRandomFixture::new(true, false);
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
@@ -526,7 +528,7 @@ fn random_access_async_bounds_checks_finite_ranges() {
 
 #[cfg(feature = "async")]
 #[test]
-fn random_access_cancel_drops_unpolled_and_pending_futures_then_reuses_reader() {
+fn test_random_access_cancel_releases_futures_and_reuses_reader() {
     let fixture = AsyncRandomFixture::new(true, false);
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
@@ -544,7 +546,7 @@ fn random_access_cancel_drops_unpolled_and_pending_futures_then_reuses_reader() 
 
 #[cfg(feature = "async")]
 #[test]
-fn random_access_cancel_reports_unverified_and_detects_session_rebinding() {
+fn test_random_access_cancel_reports_unverified_and_detects_rebinding() {
     let no_pending = AsyncRandomFixture::new(false, false);
     let mut suite = AsyncFileSystemContractSuite::new(&no_pending);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
