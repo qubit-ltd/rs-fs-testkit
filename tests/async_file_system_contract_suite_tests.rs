@@ -137,7 +137,6 @@ fn test_async_suite_records_capability_limits_and_fixture_boundaries() {
 
 #[test]
 fn test_async_contract_provider_errors_are_attributed_and_cleaned() {
-    use self::common::shared_model::FixtureHook;
     use qubit_fs::metadata::FileSystemLimit;
     use qubit_fs::metadata::FileSystemLimits;
     use qubit_fs_testkit::AsyncFileSystemContractSuite;
@@ -146,6 +145,7 @@ fn test_async_contract_provider_errors_are_attributed_and_cleaned() {
     use self::common::AsyncMemoryFault;
     use self::common::AsyncMemoryFixture;
     use self::common::async_memory_file_system::run_controlled;
+    use self::common::shared_model::FixtureHook;
 
     for (fixture, id) in [
         (
@@ -238,12 +238,7 @@ fn test_async_contract_provider_errors_are_attributed_and_cleaned() {
                 "{id} must report the injected provider/fixture error: {:?}",
                 run.report().checks()
             );
-            assert!(
-                run.failures()
-                    .iter()
-                    .any(|failure| failure.check() == Some(id)),
-                "{id}"
-            );
+            assert!(run.failures().iter().any(|failure| failure.check() == Some(id)), "{id}");
             suite.finish().await;
         });
         assert!(fixture.is_empty(), "{id}: fixture leaked resources");
@@ -252,11 +247,6 @@ fn test_async_contract_provider_errors_are_attributed_and_cleaned() {
     let fixture = AsyncMemoryFixture::with_all_capabilities();
     run_controlled(async {
         let suite = AsyncFileSystemContractSuite::new(&fixture);
-        assert!(
-            suite
-                .path("path-contract")
-                .as_str()
-                .ends_with("path-contract")
-        );
+        assert!(suite.path("path-contract").as_str().ends_with("path-contract"));
     });
 }

@@ -331,8 +331,8 @@ mod tests {
     use qubit_fs::metadata::FileSystemCapability;
     use qubit_fs::metadata::FileSystemId;
     use qubit_fs::metadata::FileSystemInfo;
-    use qubit_fs::metadata::FileSystemLimits;
     use qubit_fs::metadata::FileSystemLimit;
+    use qubit_fs::metadata::FileSystemLimits;
     use qubit_fs::metadata::OpenedFileInfo;
     use qubit_fs::metadata::SymlinkPolicy;
     use qubit_fs::path::Path;
@@ -728,60 +728,52 @@ mod tests {
 
     #[test]
     fn test_random_access_open_failures_are_reported_for_declared_and_undeclared_operations() {
-        let fixture = RandomAccessFixture::with_configuration(
-            true,
-            None,
-            false,
-            true,
-            FileSystemLimit::Unknown,
-        );
+        let fixture = RandomAccessFixture::with_configuration(true, None, false, true, FileSystemLimit::Unknown);
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
         assert_eq!(run.failures().len(), 1);
-        assert!(run.failures()[0].message().contains("declared random-access open failed"));
-
-        let fixture = RandomAccessFixture::with_configuration(
-            true,
-            None,
-            false,
-            true,
-            FileSystemLimit::Unknown,
+        assert!(
+            run.failures()[0]
+                .message()
+                .contains("declared random-access open failed")
         );
+
+        let fixture = RandomAccessFixture::with_configuration(true, None, false, true, FileSystemLimit::Unknown);
         struct Undeclared(RandomAccessFixture);
         impl AsyncFileSystemFixture for Undeclared {
-            fn file_system(&self) -> &AsyncFileSystem { self.0.file_system() }
-            fn path(&self, relative: &str) -> FixtureResult<Path> { self.0.path(relative) }
-            fn teardown(&self) -> FixtureFuture<'_, ()> { self.0.teardown() }
-            fn random_access_operation(&self) -> FixtureSupport<bool> { FixtureSupport::Supported(false) }
+            fn file_system(&self) -> &AsyncFileSystem {
+                self.0.file_system()
+            }
+            fn path(&self, relative: &str) -> FixtureResult<Path> {
+                self.0.path(relative)
+            }
+            fn teardown(&self) -> FixtureFuture<'_, ()> {
+                self.0.teardown()
+            }
+            fn random_access_operation(&self) -> FixtureSupport<bool> {
+                FixtureSupport::Supported(false)
+            }
         }
         let fixture = Undeclared(fixture);
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
         assert_eq!(run.failures().len(), 1);
-        assert!(run.failures()[0].message().contains("undeclared random-access operation returned an unexpected error"));
+        assert!(
+            run.failures()[0]
+                .message()
+                .contains("undeclared random-access operation returned an unexpected error")
+        );
     }
 
     #[test]
     fn test_random_access_finite_range_limits_are_probed_or_skipped_safely() {
-        let fixture = RandomAccessFixture::with_configuration(
-            true,
-            None,
-            false,
-            false,
-            FileSystemLimit::Maximum(3),
-        );
+        let fixture = RandomAccessFixture::with_configuration(true, None, false, false, FileSystemLimit::Maximum(3));
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
         assert!(run.failures().is_empty(), "{:?}", run.failures());
         assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
 
-        let fixture = RandomAccessFixture::with_configuration(
-            true,
-            None,
-            false,
-            false,
-            FileSystemLimit::Maximum(64),
-        );
+        let fixture = RandomAccessFixture::with_configuration(true, None, false, false, FileSystemLimit::Maximum(64));
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
         assert_eq!(
@@ -791,13 +783,7 @@ mod tests {
             }
         );
 
-        let fixture = RandomAccessFixture::with_configuration(
-            true,
-            None,
-            false,
-            false,
-            FileSystemLimit::Maximum(6),
-        );
+        let fixture = RandomAccessFixture::with_configuration(true, None, false, false, FileSystemLimit::Maximum(6));
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
         assert_eq!(
@@ -812,9 +798,15 @@ mod tests {
     fn test_random_access_identity_check_is_skipped_without_replacement_hook() {
         struct NoReplacement(RandomAccessFixture);
         impl AsyncFileSystemFixture for NoReplacement {
-            fn file_system(&self) -> &AsyncFileSystem { self.0.file_system() }
-            fn path(&self, relative: &str) -> FixtureResult<Path> { self.0.path(relative) }
-            fn teardown(&self) -> FixtureFuture<'_, ()> { self.0.teardown() }
+            fn file_system(&self) -> &AsyncFileSystem {
+                self.0.file_system()
+            }
+            fn path(&self, relative: &str) -> FixtureResult<Path> {
+                self.0.path(relative)
+            }
+            fn teardown(&self) -> FixtureFuture<'_, ()> {
+                self.0.teardown()
+            }
         }
         let fixture = NoReplacement(RandomAccessFixture::new());
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
