@@ -806,7 +806,8 @@ mod tests {
         file_system: &'a AsyncFileSystem,
         directory_calls: AtomicUsize,
         supported_directory_calls: usize,
-        seed_file_supported: bool,
+        file_calls: AtomicUsize,
+        supported_file_calls: usize,
     }
 
     impl DefaultFixture<'_> {
@@ -835,7 +836,8 @@ mod tests {
         }
 
         fn seed_file<'a>(&'a self, relative: &'a str, _bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
-            let result = if self.seed_file_supported {
+            let call = self.file_calls.fetch_add(1, Ordering::SeqCst) + 1;
+            let result = if call <= self.supported_file_calls {
                 Self::path_for(relative).map(FixtureSupport::Supported)
             } else {
                 Ok(FixtureSupport::Unsupported)
@@ -853,11 +855,24 @@ mod tests {
         supported_directory_calls: usize,
         seed_file_supported: bool,
     ) -> DefaultFixture<'a> {
+        fixture_with_file_limit(
+            memory,
+            supported_directory_calls,
+            if seed_file_supported { usize::MAX } else { 0 },
+        )
+    }
+
+    fn fixture_with_file_limit<'a>(
+        memory: &'a AsyncMemoryFixture,
+        supported_directory_calls: usize,
+        supported_file_calls: usize,
+    ) -> DefaultFixture<'a> {
         DefaultFixture {
             file_system: memory.file_system(),
             directory_calls: AtomicUsize::new(0),
             supported_directory_calls,
-            seed_file_supported,
+            file_calls: AtomicUsize::new(0),
+            supported_file_calls,
         }
     }
 
@@ -906,5 +921,31 @@ mod tests {
             prepared,
             FixturePreparation::Unavailable { ref reason } if reason == "tree child setup unavailable"
         ));
+    }
+
+    #[test]
+    fn test_file_copy_preparation_reports_missing_conflict_target_support() {
+        let memory = AsyncMemoryFixture::new();
+        let fixture = fixture_with_file_limit(&memory, 0, 1);
+
+        let prepared = block_on(fixture.prepare_copy(CopyScenario::Conflict, "source", "target", b"payload"))
+            .expect("prepare conflict copy");
+        assert!(matches!(
+            prepared,
+            FixturePreparation::Unavailable { ref reason } if reason == "copy conflict target seed unavailable"
+        ));
+    }
+
+    #[test]
+    fn test_supported_copy_preparation_uses_fixture_path_and_cleanup_hooks() {
+        let memory = AsyncMemoryFixture::new();
+        let fixture = fixture_with_file_limit(&memory, 2, 1);
+
+        assert!(std::ptr::eq(fixture.file_system(), memory.file_system()));
+        assert_eq!(fixture.path("explicit").expect("map fixture path").as_str(), "/default-fixture/explicit");
+        let prepared = block_on(fixture.prepare_copy(CopyScenario::DurableTree, "source", "target", b"child"))
+            .expect("prepare supported tree copy");
+        assert!(matches!(prepared, FixturePreparation::Ready(_)));
+        block_on(fixture.teardown()).expect("tear down fixture");
     }
 }
