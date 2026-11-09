@@ -285,3 +285,232 @@ async fn verify_sample(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use std::task::Context;
+    use std::task::Poll;
+    use std::task::Waker;
+
+    use qubit_fs::AsyncFileSystem;
+    use qubit_fs::FsResult;
+    use qubit_fs::metadata::FileKind;
+    use qubit_fs::metadata::FileMetadata;
+    use qubit_fs::metadata::FileSystemCapabilities;
+    use qubit_fs::metadata::FileSystemCapability;
+    use qubit_fs::metadata::FileSystemId;
+    use qubit_fs::metadata::FileSystemInfo;
+    use qubit_fs::metadata::FileSystemLimits;
+    use qubit_fs::metadata::OpenedFileInfo;
+    use qubit_fs::metadata::SymlinkPolicy;
+    use qubit_fs::path::Path;
+    use qubit_fs::path::PathConstraints;
+    use qubit_fs::path::PathSemantics;
+    use qubit_fs::spi::AsyncFileSystemSpi;
+    use qubit_fs::spi::AsyncRandomAccessReadSession;
+    use qubit_fs::spi::OpenReaderRequest;
+    use qubit_fs::spi::OpenedAsyncRandomAccessReader;
+    use qubit_fs::spi::ProviderOperation;
+    use qubit_fs::spi::ProviderOperations;
+    use qubit_fs::spi::ProviderProperties;
+    use qubit_fs::spi::SpiFuture;
+    use qubit_fs::spi::StatRequest;
+    use qubit_fs::spi::StatResponse;
+
+    use crate::AsyncFileSystemContractSuite;
+    use crate::AsyncFileSystemFixture;
+    use crate::ContractCheckId;
+    use crate::ContractCheckOutcome;
+    use crate::FixtureError;
+    use crate::FixtureFuture;
+    use crate::FixtureResult;
+    use crate::FixtureSupport;
+
+    const PROVIDER_ID: &str = "async-random-access-unit-fixture";
+
+    struct RandomAccessProvider {
+        current: Arc<Mutex<Arc<[u8]>>>,
+    }
+
+    struct RandomAccessSession {
+        bytes: Arc<[u8]>,
+    }
+
+    impl AsyncRandomAccessReadSession for RandomAccessSession {
+        fn read_at_async<'a>(
+            self: Pin<&'a mut Self>,
+            offset: u64,
+            output: &'a mut [u8],
+        ) -> SpiFuture<'a, FsResult<usize>> {
+            let bytes = self.get_mut().bytes.clone();
+            Box::pin(async move {
+                let start = usize::try_from(offset).unwrap_or(usize::MAX);
+                let count = output.len().min(1).min(bytes.len().saturating_sub(start));
+                output[..count].copy_from_slice(&bytes[start..start + count]);
+                Ok(count)
+            })
+        }
+    }
+
+    impl AsyncFileSystemSpi for RandomAccessProvider {
+        fn properties(&self) -> ProviderProperties {
+            ProviderProperties::new(
+                FileSystemInfo::new(
+                    FileSystemId::new(PROVIDER_ID).expect("valid fixture ID"),
+                    "fixture",
+                    PathSemantics::Hierarchical,
+                ),
+                ProviderOperations::new()
+                    .with(ProviderOperation::OpenReader)
+                    .with(ProviderOperation::OpenRandomAccessReader),
+                FileSystemCapabilities::new().with_guaranteed(FileSystemCapability::Read),
+                FileSystemLimits::unknown(),
+                PathConstraints::absolute(),
+                SymlinkPolicy::Reject,
+            )
+            .expect("valid fixture properties")
+        }
+
+        fn stat<'a>(&'a self, request: StatRequest<'a>) -> SpiFuture<'a, FsResult<StatResponse>> {
+            let len = self.current.lock().expect("fixture state").len() as u64;
+            Box::pin(async move {
+                Ok(StatResponse::new(
+                    request.path().clone(),
+                    FileMetadata::new(FileKind::File).with_len(Some(len)),
+                ))
+            })
+        }
+
+        fn open_random_access_reader<'a>(
+            &'a self,
+            request: OpenReaderRequest<'a>,
+        ) -> SpiFuture<'a, FsResult<OpenedAsyncRandomAccessReader>> {
+            let bytes = self.current.lock().expect("fixture state").clone();
+            Box::pin(async move {
+                let info = OpenedFileInfo::new(
+                    FileSystemId::new(PROVIDER_ID).expect("valid fixture ID"),
+                    request.path().clone(),
+                )
+                .with_metadata(FileMetadata::new(FileKind::File).with_len(Some(bytes.len() as u64)));
+                Ok(OpenedAsyncRandomAccessReader::new(
+                    info,
+                    Box::new(RandomAccessSession { bytes }),
+                ))
+            })
+        }
+    }
+
+    struct RandomAccessFixture {
+        file_system: AsyncFileSystem,
+        current: Arc<Mutex<Arc<[u8]>>>,
+    }
+
+    impl RandomAccessFixture {
+        fn new() -> Self {
+            let current = Arc::new(Mutex::new(Arc::from(&b""[..])));
+            let file_system = AsyncFileSystem::from_spi(RandomAccessProvider {
+                current: current.clone(),
+            })
+            .expect("fixture provider initializes");
+            Self { file_system, current }
+        }
+    }
+
+    impl AsyncFileSystemFixture for RandomAccessFixture {
+        fn file_system(&self) -> &AsyncFileSystem {
+            &self.file_system
+        }
+
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            Path::parse(&format!("/{relative}"))
+                .map_err(|error| FixtureError::with_source("invalid fixture path", error))
+        }
+
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            *self.current.lock().expect("fixture state") = Arc::from(&b""[..]);
+            Box::pin(async { Ok(()) })
+        }
+
+        fn random_access_operation(&self) -> FixtureSupport<bool> {
+            FixtureSupport::Supported(true)
+        }
+
+        fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
+            let path = self.path(relative);
+            Box::pin(async move {
+                let path = path?;
+                *self.current.lock().expect("fixture state") = Arc::from(bytes);
+                Ok(FixtureSupport::Supported(path))
+            })
+        }
+
+        fn replace_random_access_path<'a>(
+            &'a self,
+            _path: &'a Path,
+            bytes: &'a [u8],
+        ) -> FixtureFuture<'a, FixtureSupport<()>> {
+            *self.current.lock().expect("fixture state") = Arc::from(bytes);
+            Box::pin(async { Ok(FixtureSupport::Supported(())) })
+        }
+    }
+
+    fn ready<F: Future>(future: F) -> F::Output {
+        let mut future = std::pin::pin!(future);
+        let mut context = Context::from_waker(Waker::noop());
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(output) => output,
+            Poll::Pending => panic!("random-access fixture operations complete immediately"),
+        }
+    }
+
+    #[test]
+    fn basic_and_identity_checks_verify_partial_reads_and_object_snapshots() {
+        let fixture = RandomAccessFixture::new();
+        let mut basic_suite = AsyncFileSystemContractSuite::new(&fixture);
+        let basic = ready(basic_suite.run_check(ContractCheckId::RandomAccessBasic));
+        assert!(basic.failures().is_empty(), "{:?}", basic.failures());
+        assert_eq!(basic.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
+
+        let mut identity_suite = AsyncFileSystemContractSuite::new(&fixture);
+        let identity = ready(identity_suite.run_check(ContractCheckId::RandomAccessIdentity));
+        assert!(identity.failures().is_empty(), "{:?}", identity.failures());
+        assert_eq!(identity.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
+    }
+
+    #[test]
+    fn undeclared_random_access_is_rejected_only_when_provider_accepts_it() {
+        struct UnsupportedDeclaration(RandomAccessFixture);
+
+        impl AsyncFileSystemFixture for UnsupportedDeclaration {
+            fn file_system(&self) -> &AsyncFileSystem {
+                self.0.file_system()
+            }
+
+            fn path(&self, relative: &str) -> FixtureResult<Path> {
+                self.0.path(relative)
+            }
+
+            fn teardown(&self) -> FixtureFuture<'_, ()> {
+                self.0.teardown()
+            }
+
+            fn random_access_operation(&self) -> FixtureSupport<bool> {
+                FixtureSupport::Supported(false)
+            }
+        }
+
+        let fixture = UnsupportedDeclaration(RandomAccessFixture::new());
+        *fixture.0.current.lock().expect("fixture state") = Arc::from(&b"abcdef"[..]);
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
+        assert_eq!(run.failures().len(), 1);
+        assert!(run.failures()[0].message().contains("declaring the operation unsupported"));
+        assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Failed {
+            reason: "provider opened a random-access reader after declaring the operation unsupported".to_owned(),
+        });
+    }
+}
