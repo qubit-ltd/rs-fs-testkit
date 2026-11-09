@@ -39,6 +39,19 @@ impl FileSystemContractSuite<'_> {
     /// Returns a `ContractFailure` when the selected check is not a file-copy
     /// guarantee, fixture operations fail, or observed copy behavior violates
     /// the required contract.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered atomic or durable file-copy check to execute.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the selected guarantee outcome has been recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when setup, copy execution, recovery, or independent
+    /// byte verification fails.
     pub(super) fn check_strong_file_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let scenario =

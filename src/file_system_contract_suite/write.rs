@@ -36,6 +36,20 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Executes exactly one write check with its own applicability decision.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered write check whose applicability and behavior are
+    ///   evaluated.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the selected check records its outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when the identifier is not a write check or
+    /// its required provider behavior is violated.
     pub(super) fn check_write_item(&mut self, id: ContractCheckId) -> Result<(), crate::ContractFailure> {
         self.context.begin(id.as_str());
         let spec = crate::internal::check_catalog::specification(id);
@@ -194,6 +208,16 @@ impl<'a> FileSystemContractSuite<'a> {
 /// Unknown, inapplicable, and unbounded dimensions use the preferred payload.
 /// A finite limit truncates the payload without ever allocating beyond the
 /// preferred test vector; zero permits an empty publication probe.
+///
+/// # Parameters
+///
+/// - `limit`: Advertised maximum payload size, when the provider declares one.
+/// - `preferred`: Test payload whose length bounds the generated payload.
+/// - `fill`: Byte repeated when the finite limit truncates the preferred data.
+///
+/// # Returns
+///
+/// A payload no longer than the preferred data or the finite advertised limit.
 #[must_use]
 pub(super) fn bounded_payload(limit: FileSystemLimit, preferred: &[u8], fill: u8) -> Vec<u8> {
     let length = limit

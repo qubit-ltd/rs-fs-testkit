@@ -27,6 +27,19 @@ mod persistence;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes only the selected temporary lifecycle scenario for this kind.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Temporary-directory check identity selecting the scenario.
+    ///
+    /// # Returns
+    ///
+    /// An optional reason why independent evidence is unavailable.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when fixture preparation or directory verification
+    /// fails.
     pub(super) async fn execute_temp_directory(
         &mut self,
         id: ContractCheckId,

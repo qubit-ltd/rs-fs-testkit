@@ -9,8 +9,8 @@
 
 #![allow(dead_code)]
 
-use std::panic::catch_unwind;
 use std::panic::UnwindSafe;
+use std::panic::catch_unwind;
 
 /// Runs `operation` and returns its panic payload as text.
 #[must_use]

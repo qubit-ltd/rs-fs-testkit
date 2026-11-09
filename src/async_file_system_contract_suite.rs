@@ -198,6 +198,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// `contracts` defines the phase loop; when `selected` is present, that
     /// identity determines the single focused check dispatched in each selected
     /// contract phase.
+    ///
+    /// # Parameters
+    ///
+    /// - `contracts`: Contract phases to execute in order.
+    /// - `selected`: Optional check to run in its owning contract phase.
+    ///
+    /// # Returns
+    ///
+    /// The run report after execution and fixture cleanup complete.
     async fn run_selected(
         &mut self,
         contracts: &[FileSystemContract],
@@ -257,6 +266,14 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// The identity's contract determines the owning check driver. A driver
     /// failure is returned with the check identity attached when applicable.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Check identity whose owning driver should execute.
+    ///
+    /// # Errors
+    ///
+    /// Returns the failure produced by the selected check driver.
     async fn dispatch_check(&mut self, id: crate::ContractCheckId) -> Result<(), crate::ContractFailure> {
         match id.contract() {
             FileSystemContract::Copy => self.check_copy_item(id).await,
@@ -278,6 +295,14 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// A check failure stops the phase and is returned with its diagnostic
     /// context for the suite to record.
+    ///
+    /// # Parameters
+    ///
+    /// - `contract`: Contract phase whose checks should run.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first check failure produced by the selected phase.
     async fn dispatch_contract(&mut self, contract: FileSystemContract) -> Result<(), crate::ContractFailure> {
         match contract {
             FileSystemContract::Properties => self.check_properties().await?,

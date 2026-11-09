@@ -34,6 +34,15 @@ use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes only the selected stage and records no sibling outcomes.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Copy-cancellation check identity selecting the lifecycle stage.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when the selected stage cannot be prepared or
+    /// verified.
     pub(super) async fn check_copy_cancellation_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let stage = match id {
             ContractCheckId::AsyncCopyCancelNativeAttempt => AsyncCopyCancellationStage::NativeAttempt,
@@ -294,6 +303,18 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 }
 
+/// Retains the copy operation alongside the diagnostic that interrupted a
+/// cancellation observation.
+///
+/// # Parameters
+///
+/// - `failure`: Diagnostic produced while checking the cancellation stage.
+/// - `operation`: Copy operation retained for recovery or inspection.
+/// - `id`: Check identity attached to the resulting failure.
+///
+/// # Returns
+///
+/// A failure that owns the operation and its diagnostic.
 fn retain_copy_operation(
     failure: ContractFailure,
     operation: AsyncCopyOperation,
@@ -307,6 +328,14 @@ fn retain_copy_operation(
 }
 
 /// Returns the stable identity for one cancellation stage.
+///
+/// # Parameters
+///
+/// - `stage`: Copy cancellation lifecycle stage to identify.
+///
+/// # Returns
+///
+/// The registered check identity associated with `stage`.
 #[inline]
 const fn cancellation_check_id(stage: AsyncCopyCancellationStage) -> ContractCheckId {
     match stage {

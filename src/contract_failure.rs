@@ -88,6 +88,10 @@ impl ContractFailure {
     }
 
     /// Constructs a failure without an underlying provider cause.
+    ///
+    /// # Parameters
+    ///
+    /// - `message`: Safe diagnostic context describing the failure.
     pub(crate) fn message_only(message: impl Into<String>) -> Self {
         Self {
             check: None,
@@ -98,6 +102,11 @@ impl ContractFailure {
     }
 
     /// Retains the typed source separately from safe diagnostic context.
+    ///
+    /// # Parameters
+    ///
+    /// - `message`: Safe diagnostic context that may be displayed.
+    /// - `source`: The typed error retained for source-chain inspection.
     pub(crate) fn with_source(message: impl Into<String>, source: impl Error + Send + Sync + 'static) -> Self {
         Self {
             check: None,
@@ -109,11 +118,21 @@ impl ContractFailure {
 
     /// Retains errors that own a non-Sync recovery handle without discarding
     /// it.
+    ///
+    /// # Parameters
+    ///
+    /// - `message`: Safe diagnostic context that may be displayed.
+    /// - `source`: The error and non-`Sync` recovery handle to retain.
     pub(crate) fn with_owned_source(message: impl Into<String>, source: impl Error + Send + 'static) -> Self {
         Self::with_source(message, crate::ContractSource::new(source))
     }
 
     /// Preserves an unexpected panic at the external execution boundary.
+    ///
+    /// # Parameters
+    ///
+    /// - `context`: Safe operation context included in the diagnostic message.
+    /// - `payload`: The original panic payload, retained for caller inspection.
     pub(crate) fn panicked(context: &str, payload: Box<dyn Any + Send>) -> Self {
         let detail = payload
             .downcast_ref::<String>()
@@ -132,6 +151,10 @@ impl ContractFailure {
     }
 
     /// Attributes a preserved failure to its typed execution entry.
+    ///
+    /// # Parameters
+    ///
+    /// - `check`: The contract check responsible for the failure.
     pub(crate) fn at(mut self, check: ContractCheckId) -> Self {
         self.check = Some(check);
         self
@@ -139,6 +162,11 @@ impl ContractFailure {
 }
 
 impl Debug for ContractFailure {
+    /// Formats safe context without invoking the retained cause formatter.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the safe failure summary.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter
             .debug_struct("ContractFailure")
@@ -149,6 +177,11 @@ impl Debug for ContractFailure {
 }
 
 impl Display for ContractFailure {
+    /// Formats the check identity and safe diagnostic context.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the diagnostic description.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         if let Some(check) = self.check {
             write!(formatter, "{check}: ")?;
@@ -158,6 +191,7 @@ impl Display for ContractFailure {
 }
 
 impl Error for ContractFailure {
+    /// Returns the typed cause retained for standard error-chain inspection.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.source.as_deref().map(|source| source as &(dyn Error + 'static))
     }

@@ -13,7 +13,7 @@ use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::path::PathSemantics;
 
-use crate::config::S3ContractConfig;
+use crate::s3_contract_config::S3ContractConfig;
 
 /// Maps a filesystem object key into the configured S3 namespace.
 ///
@@ -24,6 +24,11 @@ use crate::config::S3ContractConfig;
 ///
 /// Returns an error when the configured prefix or path is not a valid object
 /// key.
+///
+/// # Parameters
+///
+/// - `config`: Configuration that supplies the namespace prefix.
+/// - `path`: Logical object-key path to map into that namespace.
 pub fn map(config: &S3ContractConfig, path: &Path) -> FsResult<String> {
     let prefix = config.prefix.as_str();
     if prefix.is_empty() || prefix.starts_with('/') || validate_key(prefix).is_err() {
@@ -58,6 +63,10 @@ pub fn map(config: &S3ContractConfig, path: &Path) -> FsResult<String> {
 ///
 /// Returns a static message when the key is invalid or its spelling would
 /// change in the SDK representation.
+///
+/// # Parameters
+///
+/// - `key`: Object key whose spelling must round-trip through the SDK.
 pub fn validate_key(key: &str) -> Result<(), &'static str> {
     if key.is_empty() || key.contains('\0') {
         return Err("invalid object key");
@@ -77,10 +86,13 @@ pub fn validate_key(key: &str) -> Result<(), &'static str> {
 ///
 /// Returns an `InvalidOptions` error when the prefix is invalid or cannot be
 /// parsed by the SDK.
+///
+/// # Parameters
+///
+/// - `config`: S3 configuration containing the namespace prefix.
 pub(crate) fn configured_prefix(config: &S3ContractConfig) -> FsResult<ObjectPath> {
-    validate_key(&config.prefix).map_err(|message| {
-        FsError::new(FsErrorKind::InvalidOptions, FsOperation::Provider, message)
-    })?;
+    validate_key(&config.prefix)
+        .map_err(|message| FsError::new(FsErrorKind::InvalidOptions, FsOperation::Provider, message))?;
     ObjectPath::parse(&config.prefix).map_err(|error| {
         FsError::with_source(
             FsErrorKind::InvalidOptions,

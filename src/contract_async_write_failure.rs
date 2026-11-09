@@ -99,6 +99,11 @@ impl ContractAsyncWriteFailure {
 
     /// Pairs a failure with the operation that owns its recovery session.
     ///
+    /// # Parameters
+    ///
+    /// - `failure`: The immutable whole-file failure snapshot to retain.
+    /// - `operation`: The admitted operation, when request admission succeeded.
+    ///
     /// # Returns
     ///
     /// A wrapper that preserves the failure and optional operation together.
@@ -108,6 +113,11 @@ impl ContractAsyncWriteFailure {
 }
 
 impl Debug for ContractAsyncWriteFailure {
+    /// Formats a stable summary without invoking provider error formatting.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the stable summary.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter
             .debug_struct("ContractAsyncWriteFailure")
@@ -117,12 +127,18 @@ impl Debug for ContractAsyncWriteFailure {
 }
 
 impl Display for ContractAsyncWriteFailure {
+    /// Formats a stable description of the retained write failure.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the failure description.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str("whole-file write failed; original failure and available operation retained")
     }
 }
 
 impl Error for ContractAsyncWriteFailure {
+    /// Exposes the retained write failure as the standard error source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(&self.failure)
     }

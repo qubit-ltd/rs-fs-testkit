@@ -74,9 +74,7 @@ mod write_fixture_case;
 mod write_scenario;
 
 #[cfg(test)]
-#[path = "tests.rs"]
-mod tests;
-
+pub(crate) mod tests;
 #[cfg(feature = "async")]
 pub use async_copy_cancellation_stage::AsyncCopyCancellationStage;
 #[cfg(feature = "async")]
@@ -118,6 +116,8 @@ pub use fixture_error::FixtureResult;
 pub use fixture_preparation::FixturePreparation;
 pub use fixture_support::FixtureSupport;
 pub use read_scenario::ReadScenario;
+#[cfg(all(test, feature = "async"))]
+pub(crate) use tests::common;
 #[cfg(feature = "async")]
 pub use write_cancellation_probe::WriteCancellationProbe;
 pub use write_fixture_case::WriteFixtureCase;
@@ -125,11 +125,3 @@ pub use write_scenario::WriteScenario;
 
 #[cfg(test)]
 pub use crate as qubit_fs_testkit;
-
-#[cfg(test)]
-#[path = "../tests/common/mod.rs"]
-mod common;
-
-#[cfg(test)]
-#[path = "../tests/common/rustdoc_support.rs"]
-mod rustdoc_support;

@@ -199,6 +199,24 @@ impl FileSystemContractSuite<'_> {
 
     /// Verifies that the default conflict preserves both independently seeded
     /// files.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered rename-conflict check receiving failures.
+    /// - `source`: Independently seeded source that must remain unchanged.
+    /// - `target`: Independently seeded conflicting target.
+    /// - `bytes`: Expected original source contents.
+    /// - `options`: Rename policy whose default conflict behavior is checked.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the conflict is rejected and both files retain their
+    /// original contents.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when the conflict changes either resource or
+    /// its rejection metadata differs.
     fn check_rename_conflict(
         &self,
         id: ContractCheckId,
@@ -247,6 +265,24 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Checks the reported publication guarantees and observes the final paths.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered rename check selecting any required guarantee.
+    /// - `source`: Source path expected in the operation outcome.
+    /// - `target`: Target path expected in the operation outcome.
+    /// - `bytes`: Independently seeded contents expected at the target.
+    /// - `outcome`: Provider-reported rename result to verify.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the reported paths, guarantees, and observed resource
+    /// states satisfy the selected check.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when reported guarantees or independent
+    /// observations differ from the requested rename.
     fn verify_rename_publication(
         &self,
         id: ContractCheckId,

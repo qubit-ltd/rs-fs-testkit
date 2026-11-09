@@ -26,14 +26,7 @@ mod common;
 #[tokio::test]
 async fn test_raw_scope_and_relative_filter_select_exact_keys() {
     let filesystem = open_in_memory("raw-list").unwrap();
-    for key in [
-        "folder",
-        "folder/a",
-        "folder/ab",
-        "folder/b",
-        "folderish",
-        "other",
-    ] {
+    for key in ["folder", "folder/a", "folder/ab", "folder/b", "folderish", "other"] {
         let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
         filesystem
             .begin_write_all(Path::parse_literal(key).unwrap(), b"x".to_vec(), options)
@@ -54,8 +47,7 @@ async fn test_raw_scope_and_relative_filter_select_exact_keys() {
             vec!["folder/a", "folder/ab"],
         ),
     ] {
-        let options = ListOptions::object_keys()
-            .with_filter(Some(ListFilter::LiteralPrefix(filter.into())));
+        let options = ListOptions::object_keys().with_filter(Some(ListFilter::LiteralPrefix(filter.into())));
         let mut stream = filesystem.list(&scope, options).await.unwrap();
         let mut actual = Vec::new();
         while let Some(entry) = stream.next_entry_async().await.unwrap() {
@@ -87,10 +79,7 @@ async fn test_namespace_is_exact_and_scoped_to_configuration() {
     }
     fixture
         .store
-        .put(
-            &ObjectPath::from("outside/leak"),
-            Bytes::from_static(b"x").into(),
-        )
+        .put(&ObjectPath::from("outside/leak"), Bytes::from_static(b"x").into())
         .await
         .unwrap();
     let mut stream = fixture
@@ -121,8 +110,7 @@ async fn test_namespace_snapshot_does_not_claim_unowned_keys() {
     ));
     let owned = ObjectPath::from(format!("{}/owned", fixture.config.prefix));
     for _ in 0..2 {
-        let FixtureSupport::Supported(paths) = fixture.snapshot_namespace_paths().await.unwrap()
-        else {
+        let FixtureSupport::Supported(paths) = fixture.snapshot_namespace_paths().await.unwrap() else {
             panic!("namespace snapshot must be supported");
         };
         let mut names: Vec<_> = paths.iter().map(|path| path.as_str()).collect();
@@ -135,14 +123,7 @@ async fn test_namespace_snapshot_does_not_claim_unowned_keys() {
             fixture.store.head(&owned).await,
             Err(object_store::Error::NotFound { .. })
         ));
-        let retained = fixture
-            .store
-            .get(&sentinel)
-            .await
-            .unwrap()
-            .bytes()
-            .await
-            .unwrap();
+        let retained = fixture.store.get(&sentinel).await.unwrap().bytes().await.unwrap();
         assert_eq!(retained.as_ref(), b"keep");
     }
 }
@@ -157,8 +138,7 @@ async fn test_unmatched_entries_still_exhaust_scan_budget() {
             FixtureSupport::Supported(_)
         ));
     }
-    let options = ListOptions::object_keys()
-        .with_filter(Some(ListFilter::LiteralPrefix("no-match".into())));
+    let options = ListOptions::object_keys().with_filter(Some(ListFilter::LiteralPrefix("no-match".into())));
     let mut stream = fixture.filesystem.list(&ListScope::Namespace, options).await.unwrap();
     assert_eq!(
         stream.next_entry_async().await.unwrap_err().kind(),
@@ -186,12 +166,7 @@ async fn test_ambiguous_resources_are_rejected_before_sdk_dispatch() {
         );
         let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
         assert_eq!(
-            filesystem
-                .open_writer(&path, options)
-                .await
-                .unwrap_err()
-                .error()
-                .kind(),
+            filesystem.open_writer(&path, options).await.unwrap_err().error().kind(),
             FsErrorKind::InvalidPath
         );
     }

@@ -139,18 +139,29 @@ impl<T> ContractTempFailure<T> {
 }
 
 impl<T> Debug for ContractTempFailure<T> {
+    /// Formats a stable summary without inspecting the retained resource.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the stable failure summary.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str("ContractTempFailure { resource: retained, error: retained }")
     }
 }
 
 impl<T> Display for ContractTempFailure<T> {
+    /// Formats a stable description of the retained temporary failure.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the failure description.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str("temporary lifecycle failed; original error and recovery resource retained")
     }
 }
 
 impl<T> Error for ContractTempFailure<T> {
+    /// Exposes the retained operation error as the standard error source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(self.error.as_ref())
     }

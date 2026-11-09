@@ -26,7 +26,10 @@
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FixtureSupport<T> {
     /// The fixture supplied the requested provider-specific value.
-    Supported(T),
+    Supported(
+        /// Provider-specific value supplied for this supported probe.
+        T,
+    ),
     /// The fixture cannot supply this optional probe.
     Unsupported,
 }

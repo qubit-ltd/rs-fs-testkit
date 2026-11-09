@@ -163,6 +163,21 @@ pub(super) async fn persist_temp_directory(
     verify_temp_directory_contents(suite, id, outcome.target()).await
 }
 
+/// Creates known direct and nested files beneath a temporary directory.
+///
+/// # Parameters
+///
+/// - `suite`: Suite whose fixture prepares and writes the contents.
+/// - `id`: Check identity associated with preparation failures.
+/// - `root`: Temporary directory that receives the prepared files.
+///
+/// # Returns
+///
+/// An optional reason why the fixture cannot provide independent file evidence.
+///
+/// # Errors
+///
+/// Returns a failure when path preparation or fixture writes fail.
 pub(super) async fn prepare_temp_directory_contents(
     suite: &AsyncFileSystemContractSuite<'_>,
     id: ContractCheckId,
@@ -212,6 +227,21 @@ pub(super) async fn prepare_temp_directory_contents(
     Ok(None)
 }
 
+/// Checks direct and nested files that were independently prepared in the tree.
+///
+/// # Parameters
+///
+/// - `suite`: Suite whose fixture observes the files.
+/// - `id`: Check identity associated with observation failures.
+/// - `root`: Temporary directory whose contents are verified.
+///
+/// # Returns
+///
+/// An optional reason why the fixture cannot provide independent file evidence.
+///
+/// # Errors
+///
+/// Returns a failure when a path cannot be prepared or an observation fails.
 pub(super) async fn verify_temp_directory_contents(
     suite: &AsyncFileSystemContractSuite<'_>,
     id: ContractCheckId,

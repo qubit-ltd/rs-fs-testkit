@@ -23,6 +23,11 @@ use crate::ContractWriterFailure;
 ///
 /// Any unexpected state or unsuccessful cleanup retains the original snapshot
 /// and session in the returned contract failure. No publication is retried.
+///
+/// # Parameters
+///
+/// - `failure`: The provider's expected rejection and any recovery session.
+/// - `id`: Check identity attributed to a cleanup or state failure.
 pub(crate) fn finish_expected_write_failure(
     mut failure: WriteAllFailure,
     id: ContractCheckId,
@@ -78,6 +83,12 @@ pub(crate) fn finish_expected_write_failure(
 ///
 /// Cleanup borrows the session retained in the failure; cleanup errors preserve
 /// both that operation and its immutable execution failure snapshot.
+///
+/// # Parameters
+///
+/// - `failure`: The admitted asynchronous failure retaining its operation.
+/// - `id`: Check identity attributed to a cleanup or state failure.
+/// - `failures`: Run-level storage for failures if this future is cancelled.
 #[cfg(feature = "async")]
 pub(crate) async fn finish_expected_async_write_failure(
     failure: crate::ContractAsyncWriteFailure,

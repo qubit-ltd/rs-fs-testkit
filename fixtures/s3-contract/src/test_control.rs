@@ -21,8 +21,20 @@ mod internal;
 ///
 /// No timers, runtime tasks, or implicit retries are involved. A controlled
 /// adapter must not be shared with unrelated operations while a gate is armed.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_fs_s3_contract::TestControl;
+///
+/// let control = TestControl::default();
+/// assert_eq!(control.put_calls(), 0);
+/// ```
 #[derive(Clone, Default)]
-pub struct TestControl(Arc<ControlState>);
+pub struct TestControl(
+    /// Shared gate and observation state used by all control handles.
+    Arc<ControlState>,
+);
 
 impl TestControl {
     /// Returns bytes acknowledged by the provider since the current gate was
@@ -84,10 +96,7 @@ impl TestControl {
     /// * `stage` — operation boundary at which the adapter should pause.
     pub fn arm(&self, stage: TestStage) {
         let mut gate = self.0.gate.lock().expect("test gate lock");
-        assert!(
-            gate.stage.is_none(),
-            "release the previous test gate before rearming"
-        );
+        assert!(gate.stage.is_none(), "release the previous test gate before rearming");
         self.0.accepted.store(0, Ordering::SeqCst);
         gate.stage = Some(stage);
         gate.reached = false;
@@ -111,11 +120,24 @@ impl TestControl {
     }
 
     /// Records accepted bytes independently of facade counters.
+    ///
+    /// # Parameters
+    ///
+    /// - `count`: Number of bytes accepted by the adapter.
     pub(crate) fn record_write(&self, count: usize) {
         self.0.accepted.fetch_add(count, Ordering::SeqCst);
     }
 
     /// Parks at the selected boundary, acknowledging arrival exactly once.
+    ///
+    /// # Parameters
+    ///
+    /// - `stage`: Lifecycle boundary controlled by this gate.
+    /// - `cx`: Task context used to register operation and observer wakers.
+    ///
+    /// # Returns
+    ///
+    /// `Pending` while the selected stage remains armed; otherwise `Ready(())`.
     pub(crate) fn poll_gate(&self, stage: TestStage, cx: &mut Context<'_>) -> Poll<()> {
         let observer = {
             let mut gate = self.0.gate.lock().expect("test gate lock");
@@ -133,6 +155,10 @@ impl TestControl {
     }
 
     /// Waits only for an explicit release by the test or probe.
+    ///
+    /// # Parameters
+    ///
+    /// - `stage`: Lifecycle boundary to wait at until released.
     pub(crate) async fn wait(&self, stage: TestStage) {
         std::future::poll_fn(|cx| self.poll_gate(stage, cx)).await;
     }

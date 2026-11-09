@@ -74,6 +74,19 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Prepares, observes, and verifies one read scenario independently.
     ///
     /// Observation and request failures remain attached to their actual entry.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Read check identity that receives the result and any failure.
+    /// - `scenario`: Read behavior to prepare and verify.
+    ///
+    /// # Returns
+    ///
+    /// The outcome recorded for the read scenario.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when preparation or filesystem observation fails.
     async fn execute_read_scenario(
         &mut self,
         id: ContractCheckId,
@@ -265,6 +278,18 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 
     /// Verifies additional range and caller-buffer-limit read requirements.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Check identity associated with failures.
+    /// - `scenario`: Read scenario whose extra guarantees are checked.
+    /// - `limit`: Provider's declared maximum read-range length.
+    /// - `path`: Prepared resource path to read.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when range or buffer-limit behavior violates the
+    /// check.
     async fn check_read_result(
         &self,
         id: ContractCheckId,

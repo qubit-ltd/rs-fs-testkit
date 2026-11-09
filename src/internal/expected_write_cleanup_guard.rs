@@ -24,6 +24,12 @@ pub(crate) struct ExpectedWriteCleanupGuard<'a> {
 
 impl<'a> ExpectedWriteCleanupGuard<'a> {
     /// Transfers the failure into a guard before polling explicit cleanup.
+    ///
+    /// # Parameters
+    ///
+    /// - `failure`: Rejected write and operation whose cleanup is pending.
+    /// - `failures`: Run-level storage for cancellation diagnostics.
+    /// - `id`: Check identity attributed to cleanup failures.
     pub(crate) fn new(
         failure: ContractAsyncWriteFailure,
         failures: &'a mut Vec<ContractFailure>,

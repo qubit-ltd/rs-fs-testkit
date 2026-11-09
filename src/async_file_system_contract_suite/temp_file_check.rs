@@ -495,6 +495,22 @@ impl AsyncFileSystemContractSuite<'_> {
         self.verify_temp_file_content(id, outcome.target()).await
     }
 
+    /// Prepares a temporary file with known bytes through the fixture's
+    /// independent write hook.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Check identity associated with preparation failures.
+    /// - `source`: Temporary file path to populate.
+    ///
+    /// # Returns
+    ///
+    /// Whether the fixture supplied independent content evidence, or a reason
+    /// why it could not do so.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when the fixture write hook fails.
     async fn prepare_temp_file_content(
         &self,
         id: ContractCheckId,
@@ -517,6 +533,21 @@ impl AsyncFileSystemContractSuite<'_> {
         self.verify_temp_file_content(id, source).await
     }
 
+    /// Observes and compares the bytes stored at a temporary file path.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Check identity associated with observation failures.
+    /// - `path`: Temporary file path whose contents are read.
+    ///
+    /// # Returns
+    ///
+    /// Whether the fixture supplied matching content evidence, or a reason why
+    /// it could not do so.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when the fixture read hook fails.
     async fn verify_temp_file_content(
         &self,
         id: ContractCheckId,

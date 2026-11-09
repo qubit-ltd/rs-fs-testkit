@@ -48,10 +48,7 @@ pub struct Fixture {
 
 impl Fixture {
     /// Creates an isolated in-memory namespace with independent SDK access.
-    #[allow(
-        dead_code,
-        reason = "real-service test binary uses Fixture::new instead"
-    )]
+    #[allow(dead_code, reason = "real-service test binary uses Fixture::new instead")]
     pub fn memory(prefix: &str) -> Self {
         let store: Arc<dyn ObjectStore> = Arc::new(object_store::memory::InMemory::new());
         let config = S3ContractConfig {
@@ -70,8 +67,8 @@ impl Fixture {
     /// run.
     pub fn new(config: S3ContractConfig, store: Arc<dyn ObjectStore>) -> Self {
         let control = TestControl::default();
-        let filesystem = open_with_control(config.clone(), Arc::clone(&store), control.clone())
-            .expect("fixture facade");
+        let filesystem =
+            open_with_control(config.clone(), Arc::clone(&store), control.clone()).expect("fixture facade");
         Self {
             filesystem,
             store,
@@ -95,8 +92,8 @@ impl AsyncFileSystemFixture for Fixture {
     }
     /// Maps test names without a facade operation.
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        let path = Path::parse_literal(relative)
-            .map_err(|error| FixtureError::with_source("fixture path failed", error))?;
+        let path =
+            Path::parse_literal(relative).map_err(|error| FixtureError::with_source("fixture path failed", error))?;
         self.owned
             .lock()
             .expect("owned key lock")
@@ -105,11 +102,7 @@ impl AsyncFileSystemFixture for Fixture {
     }
     /// Seeds directly through the SDK; facade writes cannot validate
     /// themselves.
-    fn seed_file<'a>(
-        &'a self,
-        relative: &'a str,
-        bytes: &'a [u8],
-    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
             let path = self.path(relative)?;
             let key = self.object_path(&path)?;
@@ -148,18 +141,12 @@ impl AsyncFileSystemFixture for Fixture {
             match self.store.head(&self.object_path(path)?).await {
                 Ok(_) => Ok(FixtureSupport::Supported(true)),
                 Err(object_store::Error::NotFound { .. }) => Ok(FixtureSupport::Supported(false)),
-                Err(error) => Err(FixtureError::with_source(
-                    "independent existence probe failed",
-                    error,
-                )),
+                Err(error) => Err(FixtureError::with_source("independent existence probe failed", error)),
             }
         })
     }
     /// Captures an SDK version independently of facade metadata mapping.
-    fn resource_version<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+    fn resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         Box::pin(async move {
             let metadata = self
                 .store
@@ -172,7 +159,8 @@ impl AsyncFileSystemFixture for Fixture {
                 .unwrap_or(FixtureSupport::Unsupported))
         })
     }
-    /// Observes SDK objects in this namespace without claiming deletion ownership.
+    /// Observes SDK objects in this namespace without claiming deletion
+    /// ownership.
     fn snapshot_namespace_paths(&self) -> FixtureFuture<'_, FixtureSupport<Vec<Path>>> {
         Box::pin(async move {
             let prefix = ObjectPath::parse(&self.config.prefix).unwrap();
@@ -191,9 +179,8 @@ impl AsyncFileSystemFixture for Fixture {
                         .as_ref()
                         .strip_prefix(&boundary)
                         .ok_or_else(|| FixtureError::new("SDK snapshot escaped namespace"))?;
-                    Path::parse_literal(logical).map_err(|error| {
-                        FixtureError::with_source("snapshot logical path failed", error)
-                    })
+                    Path::parse_literal(logical)
+                        .map_err(|error| FixtureError::with_source("snapshot logical path failed", error))
                 })
                 .collect::<FixtureResult<Vec<_>>>()?;
             Ok(FixtureSupport::Supported(paths))
@@ -203,13 +190,7 @@ impl AsyncFileSystemFixture for Fixture {
     fn teardown(&self) -> FixtureFuture<'_, ()> {
         Box::pin(async move {
             self.control.release();
-            let owned: Vec<_> = self
-                .owned
-                .lock()
-                .expect("owned key lock")
-                .iter()
-                .cloned()
-                .collect();
+            let owned: Vec<_> = self.owned.lock().expect("owned key lock").iter().cloned().collect();
             let mut first_error = None;
             for key in owned {
                 match self.store.delete(&key).await {
@@ -251,18 +232,14 @@ impl AsyncFileSystemFixture for Fixture {
                     };
                     WriteOptions::default().with_disposition(WriteDisposition::CreateNew)
                 }
-                WriteScenario::IfAbsent => {
-                    WriteOptions::default().with_precondition(WritePrecondition::IfAbsent)
-                }
+                WriteScenario::IfAbsent => WriteOptions::default().with_precondition(WritePrecondition::IfAbsent),
                 WriteScenario::IfMatch => {
-                    let FixtureSupport::Supported(_) = self.seed_file(relative, b"before").await?
-                    else {
+                    let FixtureSupport::Supported(_) = self.seed_file(relative, b"before").await? else {
                         return Ok(FixturePreparation::Unavailable {
                             reason: "SDK seed unavailable".into(),
                         });
                     };
-                    let FixtureSupport::Supported(version) = self.resource_version(&path).await?
-                    else {
+                    let FixtureSupport::Supported(version) = self.resource_version(&path).await? else {
                         return Ok(FixturePreparation::Unavailable {
                             reason: "SDK has no ETag".into(),
                         });
@@ -285,10 +262,7 @@ impl AsyncFileSystemFixture for Fixture {
 
     /// Supplies a known noncurrent version; ETags observed from SDK remain
     /// separate.
-    fn stale_resource_version<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
+    fn stale_resource_version<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<ResourceVersion>> {
         Box::pin(async move {
             let FixtureSupport::Supported(current) = self.resource_version(path).await? else {
                 return Ok(FixtureSupport::Unsupported);
@@ -355,14 +329,9 @@ impl WriteCancellationProbe for S3WriteProbe {
                     .bytes()
                     .await
                     .map(|bytes| Some(bytes.to_vec()))
-                    .map_err(|error| {
-                        FixtureError::with_source("SDK target body observation failed", error)
-                    }),
+                    .map_err(|error| FixtureError::with_source("SDK target body observation failed", error)),
                 Err(object_store::Error::NotFound { .. }) => Ok(None),
-                Err(error) => Err(FixtureError::with_source(
-                    "SDK target observation failed",
-                    error,
-                )),
+                Err(error) => Err(FixtureError::with_source("SDK target observation failed", error)),
             }
         })
     }

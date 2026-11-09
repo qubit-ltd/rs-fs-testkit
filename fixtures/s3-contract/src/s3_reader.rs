@@ -122,13 +122,23 @@ impl S3Reader {
     ///
     /// The metadata describes the full object. An empty window uses an empty
     /// stream so reading it never polls a payload stream.
+    ///
+    /// # Parameters
+    ///
+    /// - `result`: Object-store response containing metadata and the payload
+    ///   stream.
+    /// - `path`: Logical filesystem path to store in the reader metadata.
+    /// - `empty`: Whether the requested range has zero length or is beyond EOF.
+    ///
+    /// # Returns
+    ///
+    /// A reader over the requested bytes with full-object metadata.
     fn from_result(result: GetResult, path: Path, empty: bool) -> Self {
         let metadata = FileMetadata::new(FileKind::Object)
             .with_len(Some(result.meta.size))
             .with_etag(result.meta.e_tag.clone().map(Into::into));
         Self {
-            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path)
-                .with_metadata(metadata),
+            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path).with_metadata(metadata),
             stream: if empty {
                 Box::pin(empty_stream())
             } else {
@@ -153,6 +163,7 @@ impl S3Reader {
 }
 
 impl AsyncInput for S3Reader {
+    /// Byte type yielded by the reader.
     type Item = u8;
 
     /// Copies available bytes into the caller's buffer without moving the
@@ -162,6 +173,18 @@ impl AsyncInput for S3Reader {
     ///
     /// The caller must ensure `index..index + count` is a valid range in
     /// `output`, as required by [`AsyncInput::poll_read_unchecked`].
+    ///
+    /// # Parameters
+    ///
+    /// - `self`: Pinned reader whose stream supplies the bytes.
+    /// - `cx`: Task context used to register for stream readiness.
+    /// - `output`: Destination buffer for bytes read from the current stream.
+    /// - `index`: Start position in `output` for the copied bytes.
+    /// - `count`: Maximum number of bytes to copy.
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes copied, zero at end of stream, or an I/O error.
     unsafe fn poll_read_unchecked(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -187,9 +210,7 @@ impl AsyncInput for S3Reader {
                     self.offset = 0;
                 }
                 Poll::Ready(Some(Err(error))) => {
-                    return Poll::Ready(Err(
-                        error_mapper::map(error, FsOperation::Read).into_io_error(),
-                    ));
+                    return Poll::Ready(Err(error_mapper::map(error, FsOperation::Read).into_io_error()));
                 }
             }
         }
@@ -202,6 +223,14 @@ impl AsyncInput for S3Reader {
 /// types. Infer the former from GetRange and compare its exact variant through
 /// the source chain. For HTTP, the pinned SDK's status source exposes 416 only
 /// through Display. This narrow fixture boundary must be rechecked on upgrades.
+///
+/// # Parameters
+///
+/// - `error`: Object-store error returned for the requested range.
+///
+/// # Returns
+///
+/// `true` only when the error is the SDK's range-rejection variant or HTTP 416.
 fn is_range_rejection(error: &ObjectStoreError) -> bool {
     let expected = GetRange::Offset(0)
         .as_range(0)
@@ -224,6 +253,19 @@ fn is_range_rejection(error: &ObjectStoreError) -> bool {
 
 /// Compares a private SDK error variant without depending on its unexported
 /// name.
+///
+/// # Type Parameters
+///
+/// - `T`: Concrete error type whose discriminant is compared.
+///
+/// # Parameters
+///
+/// - `actual`: Error in the source chain to inspect.
+/// - `expected`: Value whose concrete variant is expected.
+///
+/// # Returns
+///
+/// `true` when `actual` is the same concrete variant as `expected`.
 fn same_error_variant<T: std::error::Error + 'static>(
     actual: &(dyn std::error::Error + 'static),
     expected: &T,

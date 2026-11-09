@@ -41,6 +41,15 @@ impl AsyncFileSystemContractSuite<'_> {
 
     /// Fixes expected entries from fixture preparation before reading the
     /// stream.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Listing check identity selecting the scenario to run.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when fixture preparation or listing verification
+    /// fails.
     pub(super) async fn check_list_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         if matches!(id, ContractCheckId::ListNamespace | ContractCheckId::ListRawRootPrefix) {
             return self.check_flat_scope_item(id).await;

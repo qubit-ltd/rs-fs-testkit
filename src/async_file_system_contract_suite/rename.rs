@@ -57,6 +57,10 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Returns a [`ContractFailure`] if the identifier is not a rename check,
     /// fixture preparation or observation fails, or the provider violates the
     /// selected rename requirement. Provider failures are retained as sources.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Rename check identity selecting the required behavior.
     pub(super) async fn check_rename_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let (capability, mut options) = match id {
@@ -236,6 +240,20 @@ impl AsyncFileSystemContractSuite<'_> {
     /// The caller supplies distinct paths and confirms the source bytes and
     /// the target's initial state. This stage checks the operation result,
     /// requirement-specific guarantees, and the resulting filesystem state.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Check identity associated with verification failures.
+    /// - `capability`: Rename guarantee required by the selected scenario.
+    /// - `source`: Source path expected to be moved.
+    /// - `target`: Destination path expected to receive the source bytes.
+    /// - `bytes`: Independently prepared source contents.
+    /// - `options`: Rename options issued to the filesystem.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when the outcome, guarantees, or final state is
+    /// invalid.
     async fn verify_rename_publication(
         &mut self,
         id: ContractCheckId,

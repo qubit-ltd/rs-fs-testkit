@@ -30,6 +30,19 @@ use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
     /// Executes only the selected temporary lifecycle scenario for this kind.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered temporary-directory lifecycle check to execute.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the selected lifecycle evidence has been recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when creation, cleanup, persistence, or
+    /// independent observation violates the selected lifecycle contract.
     pub(super) fn execute_temp_directory(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let filesystem = self.fixture.file_system();
         let mut options = TempOptions::default();
@@ -542,6 +555,24 @@ impl FileSystemContractSuite<'_> {
         Ok(())
     }
 
+    /// Seeds and independently confirms the expected direct and nested files
+    /// before testing temporary-directory publication.
+    ///
+    /// # Parameters
+    ///
+    /// - `root`: Temporary directory whose child files are prepared.
+    /// - `id`: Contract check receiving setup or observation failures.
+    /// - `old`: Selects the original contents rather than replacement contents.
+    ///
+    /// # Returns
+    ///
+    /// `true` when all child contents are supported and confirmed; `false`
+    /// when fixture hooks cannot provide the required evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when fixture setup or independent observation
+    /// fails or seeded bytes differ.
     fn prepare_temp_directory_contents(
         &mut self,
         root: &Path,
@@ -599,6 +630,23 @@ impl FileSystemContractSuite<'_> {
         Ok(true)
     }
 
+    /// Verifies that publication retained the expected direct and nested files.
+    ///
+    /// # Parameters
+    ///
+    /// - `root`: Published temporary directory whose children are inspected.
+    /// - `id`: Contract check receiving observation failures.
+    /// - `old`: Selects the original contents rather than replacement contents.
+    ///
+    /// # Returns
+    ///
+    /// `true` when every expected child and byte sequence is confirmed; `false`
+    /// when a fixture observation hook is unsupported.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when an expected child is missing, its bytes
+    /// differ, or an observation fails.
     fn verify_temp_directory_contents(
         &mut self,
         root: &Path,
@@ -643,6 +691,14 @@ impl FileSystemContractSuite<'_> {
         Ok(true)
     }
 
+    /// Records that temporary-directory content could not be verified.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered temporary-directory check whose evidence is
+    ///   incomplete.
+    /// - `reason`: Fixture limitation explaining why contents were not
+    ///   verified.
     fn record_temp_directory_content_unverified(&mut self, id: ContractCheckId, reason: &str) {
         self.context.record_check(
             id,

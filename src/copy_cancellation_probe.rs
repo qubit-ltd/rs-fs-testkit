@@ -59,6 +59,11 @@ pub trait CopyCancellationProbe: Send + Sync {
     fn case(&self) -> &AsyncCopyFixtureCase;
 
     /// Polls until the requested stage has been reached and gated.
+    ///
+    /// # Parameters
+    ///
+    /// - `context`: Task context used to register a wake-up while the stage is
+    ///   still pending.
     fn poll_reached(&self, context: &mut Context<'_>) -> Poll<FixtureResult<()>>;
 
     /// Releases the provider-owned gate without performing I/O.

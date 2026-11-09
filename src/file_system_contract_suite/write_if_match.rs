@@ -96,6 +96,15 @@ impl FileSystemContractSuite<'_> {
     /// # Errors
     ///
     /// Returns a contract failure when fixture preparation fails.
+    ///
+    /// # Parameters
+    ///
+    /// - `relative`: Fixture-relative target name for the conditional write.
+    /// - `bytes`: Payload that the fixture independently prepares.
+    ///
+    /// # Returns
+    ///
+    /// The fixture's prepared, unavailable, or not-applicable write case.
     fn prepare_if_match_case(
         &self,
         relative: &str,
@@ -123,6 +132,17 @@ impl FileSystemContractSuite<'_> {
     ///
     /// Returns a contract failure when request semantics, publication, or the
     /// resulting bytes differ from the prepared request.
+    ///
+    /// # Parameters
+    ///
+    /// - `case`: Independently prepared If-Match request and target path.
+    /// - `path`: Target whose current version and published bytes are observed.
+    /// - `bytes`: Expected payload for the successful current-version write.
+    ///
+    /// # Returns
+    ///
+    /// `Some(())` when the current-version write is published and confirmed, or
+    /// `None` when the fixture cannot provide current-version evidence.
     fn publish_with_current_version(
         &mut self,
         case: &WriteFixtureCase,
@@ -170,6 +190,18 @@ impl FileSystemContractSuite<'_> {
     ///
     /// Returns a contract failure when version evidence, rejection metadata,
     /// or bytes after rejection violate the If-Match contract.
+    ///
+    /// # Parameters
+    ///
+    /// - `case`: Prepared conditional-write request whose options are reused.
+    /// - `path`: Published target used for version and byte observations.
+    /// - `bytes`: Expected payload that stale rejection must preserve.
+    /// - `limit`: Advertised write limit used to bound the rejection payload.
+    ///
+    /// # Returns
+    ///
+    /// `Passed` when stale rejection preserves the publication, or `Unverified`
+    /// when required version evidence is unavailable.
     fn verify_stale_if_match_rejection(
         &mut self,
         case: &WriteFixtureCase,
@@ -224,6 +256,21 @@ impl FileSystemContractSuite<'_> {
 
     /// Confirms that a provider without conditional-write support rejects an
     /// If-Match request before opening a writer.
+    ///
+    /// # Parameters
+    ///
+    /// - `relative`: Fixture-relative target name used for the rejected
+    ///   request.
+    ///
+    /// # Returns
+    ///
+    /// The expected rejection outcome, or a contract failure if rejection is
+    /// not reported as required.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when the path cannot be prepared or the
+    /// provider opens a writer or reports unexpected rejection metadata.
     fn reject_write_if_match_without_capability(
         &self,
         relative: &str,

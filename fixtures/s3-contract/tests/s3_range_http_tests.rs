@@ -35,9 +35,7 @@ async fn test_http_range_conversion_requires_metadata_evidence() {
     .into_iter()
     .enumerate()
     {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("listener");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("listener");
         let address = listener.local_addr().expect("address");
         let server = tokio::spawn(async move {
             let mut statuses = vec![first_status];
@@ -51,9 +49,7 @@ async fn test_http_range_conversion_requires_metadata_evidence() {
                     assert!(count > 0);
                     request.extend_from_slice(&chunk[..count]);
                 }
-                let headers = String::from_utf8(request)
-                    .expect("HTTP headers")
-                    .to_ascii_lowercase();
+                let headers = String::from_utf8(request).expect("HTTP headers").to_ascii_lowercase();
                 if index == 0 {
                     assert!(headers.starts_with("get "));
                     assert!(headers.contains("range: bytes="));
@@ -72,10 +68,7 @@ async fn test_http_range_conversion_requires_metadata_evidence() {
                 let response = format!(
                     "HTTP/1.1 {status} {reason}\r\nContent-Length: {length}\r\nETag: \"version\"\r\nLast-Modified: Wed, 21 Oct 2015 07:28:00 GMT\r\nConnection: close\r\n\r\n"
                 );
-                socket
-                    .write_all(response.as_bytes())
-                    .await
-                    .expect("response");
+                socket.write_all(response.as_bytes()).await.expect("response");
             }
         });
         let config = S3ContractConfig {
@@ -111,9 +104,7 @@ async fn test_http_range_conversion_requires_metadata_evidence() {
                 let result = filesystem
                     .read_all(
                         &Path::parse_literal("key").expect("path"),
-                        ReadOptions::default()
-                            .with_offset(Some(offset))
-                            .with_length(Some(1)),
+                        ReadOptions::default().with_offset(Some(offset)).with_length(Some(1)),
                         1,
                     )
                     .await;
@@ -133,27 +124,21 @@ async fn test_http_range_conversion_requires_metadata_evidence() {
             },
         )
         .await
-        .unwrap_or_else(|error| {
-            panic!("range status {first_status}, request {request_index}: {error}")
-        });
+        .unwrap_or_else(|error| panic!("range status {first_status}, request {request_index}: {error}"));
     }
 }
 
 /// A 416 response without the follow-up HEAD response remains an error.
 #[tokio::test]
 async fn test_http_range_conversion_reports_missing_head_response() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("listener");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let server = tokio::spawn(async move {
         let (mut get_socket, _) = listener.accept().await.expect("GET connection");
         let get_headers = read_http_headers(&mut get_socket).await;
         assert!(get_headers.starts_with("get "), "{get_headers}");
         get_socket
-            .write_all(
-                b"HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-            )
+            .write_all(b"HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             .await
             .expect("416 response");
         drop(get_socket);
@@ -190,25 +175,18 @@ async fn test_http_range_conversion_reports_missing_head_response() {
             .expect("SDK client"),
     );
     let filesystem = open_with_control(config, store, TestControl::default()).expect("facade");
-    common::http_support::run_http_scenario(
-        "range missing HEAD response",
-        server,
-        || {},
-        async move {
-            let error = filesystem
-                .read_all(
-                    &Path::parse_literal("key").expect("path"),
-                    ReadOptions::default()
-                        .with_offset(Some(3))
-                        .with_length(Some(1)),
-                    1,
-                )
-                .await
-                .expect_err("missing HEAD response cannot confirm EOF");
-            assert!(std::error::Error::source(&error).is_some());
-            Ok(())
-        },
-    )
+    common::http_support::run_http_scenario("range missing HEAD response", server, || {}, async move {
+        let error = filesystem
+            .read_all(
+                &Path::parse_literal("key").expect("path"),
+                ReadOptions::default().with_offset(Some(3)).with_length(Some(1)),
+                1,
+            )
+            .await
+            .expect_err("missing HEAD response cannot confirm EOF");
+        assert!(std::error::Error::source(&error).is_some());
+        Ok(())
+    })
     .await
     .unwrap_or_else(|error| panic!("range missing HEAD response: {error}"));
 }
@@ -221,7 +199,5 @@ async fn read_http_headers(socket: &mut tokio::net::TcpStream) -> String {
         assert!(count > 0, "request ended before headers");
         request.extend_from_slice(&chunk[..count]);
     }
-    String::from_utf8(request)
-        .expect("HTTP headers")
-        .to_ascii_lowercase()
+    String::from_utf8(request).expect("HTTP headers").to_ascii_lowercase()
 }

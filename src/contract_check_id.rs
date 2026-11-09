@@ -363,6 +363,10 @@ impl ContractCheckId {
 
 impl Display for ContractCheckId {
     /// Writes the stable name without allocating or exposing provider data.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: The destination for the stable check name.
     #[inline]
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str(self.as_str())

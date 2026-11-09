@@ -79,6 +79,15 @@ impl FileSystemContractSuite<'_> {
     /// before and after deletion. Returns an unverified outcome when required
     /// fixture support is unavailable.
     ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered deletion check that selects the scenario.
+    ///
+    /// # Returns
+    ///
+    /// The observed contract outcome, including whether it is applicable and
+    /// independently verifiable.
+    ///
     /// # Errors
     ///
     /// Returns a [`ContractFailure`] if fixture preparation, file-system
@@ -106,6 +115,16 @@ impl FileSystemContractSuite<'_> {
 
     /// Confirms that unsupported deletion capabilities are rejected as
     /// required by the basic deletion contract.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered deletion check whose capability is unavailable.
+    /// - `relative`: Fixture-relative path used for the rejection request.
+    ///
+    /// # Returns
+    ///
+    /// The expected rejection outcome, or `NotApplicable` for a non-basic
+    /// deletion check.
     ///
     /// # Errors
     ///
@@ -145,6 +164,16 @@ impl FileSystemContractSuite<'_> {
 
     /// Verifies that deleting an absent target with `missing_ok` succeeds
     /// without creating a resource.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered missing-target deletion check.
+    /// - `relative`: Fixture-relative path that must remain absent.
+    ///
+    /// # Returns
+    ///
+    /// The observed outcome, including `Unverified` when absence cannot be
+    /// observed independently.
     ///
     /// # Errors
     ///
@@ -204,6 +233,15 @@ impl FileSystemContractSuite<'_> {
     /// Confirms that conditional deletion without advertised support is
     /// rejected with a requirement error.
     ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered conditional-delete check.
+    /// - `relative`: Fixture-relative path used for the rejected request.
+    ///
+    /// # Returns
+    ///
+    /// The expected conditional-capability rejection outcome.
+    ///
     /// # Errors
     ///
     /// Returns a [`ContractFailure`] if the path cannot be prepared or the
@@ -239,6 +277,17 @@ impl FileSystemContractSuite<'_> {
     ///
     /// Conditional deletion first proves stale versions are rejected and the
     /// current version remains removable.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered deletion check being verified.
+    /// - `scenario`: Prepared deletion behavior, such as basic or If-Match.
+    /// - `relative`: Fixture-relative path for the prepared target.
+    ///
+    /// # Returns
+    ///
+    /// The observed deletion outcome, or `Unverified` when required fixture
+    /// support is unavailable.
     ///
     /// # Errors
     ///

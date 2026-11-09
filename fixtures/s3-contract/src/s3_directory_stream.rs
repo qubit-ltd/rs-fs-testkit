@@ -26,8 +26,8 @@ use qubit_fs::spi::AsyncDirectoryStreamSession;
 use qubit_fs::spi::ResolvedListOptions;
 use qubit_fs::spi::SpiFuture;
 
-use crate::config::S3ContractConfig;
 use crate::error_mapper;
+use crate::s3_contract_config::S3ContractConfig;
 
 /// Streams objects from an S3 namespace as facade directory entries.
 ///
@@ -53,6 +53,14 @@ impl S3DirectoryStream {
     ///
     /// The stream is consumed lazily by the async directory-stream interface,
     /// with a fixed scan budget across matching and filtered objects.
+    ///
+    /// # Parameters
+    ///
+    /// - `config`: Namespace and provider settings associated with this stream.
+    /// - `scope`: Logical directory scope requested by the caller.
+    /// - `stream`: Provider stream of candidate object metadata.
+    /// - `filter`: Literal prefix applied to paths within the requested scope.
+    /// - `include_metadata`: Whether entries include object size metadata.
     pub(crate) fn new(
         config: S3ContractConfig,
         scope: ListScope,
@@ -87,8 +95,7 @@ impl AsyncDirectoryStreamSession for S3DirectoryStream {
                         "S3 fixture listing scan budget exceeded",
                     ));
                 }
-                let meta =
-                    value.map_err(|error| error_mapper::map(error, FsOperation::List))?;
+                let meta = value.map_err(|error| error_mapper::map(error, FsOperation::List))?;
                 let key = meta.location.to_string();
                 let prefix = format!("{}/", self.config.prefix);
                 let logical = key.strip_prefix(&prefix).ok_or_else(|| {
@@ -126,6 +133,18 @@ impl AsyncDirectoryStreamSession for S3DirectoryStream {
 
 /// Converts supported listing filters into the literal prefix used by the S3
 /// object-key listing implementation.
+///
+/// # Parameters
+///
+/// - `options`: Resolved listing options to convert.
+///
+/// # Returns
+///
+/// The literal prefix used to filter object keys.
+///
+/// # Errors
+///
+/// Returns `InvalidOptions` when the caller requests subtree semantics.
 pub(crate) fn filter(options: &ResolvedListOptions) -> FsResult<String> {
     match options.options().filter() {
         Some(ListFilter::LiteralPrefix(prefix)) => Ok(prefix.clone()),
@@ -137,4 +156,3 @@ pub(crate) fn filter(options: &ResolvedListOptions) -> FsResult<String> {
         )),
     }
 }
-

@@ -15,6 +15,14 @@ use std::panic::catch_unwind;
 use std::task::Poll;
 
 /// Polls a future and returns any panic payload as an error.
+///
+/// # Type Parameters
+///
+/// - `F`: The future polled inside the panic-catching boundary.
+///
+/// # Parameters
+///
+/// - `future`: The asynchronous operation whose poll panics are captured.
 pub(crate) async fn catch_unwind_future<F>(future: F) -> Result<F::Output, Box<dyn Any + Send>>
 where
     F: Future,

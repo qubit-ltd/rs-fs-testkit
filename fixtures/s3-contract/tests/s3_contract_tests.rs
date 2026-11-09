@@ -40,12 +40,8 @@ use qubit_fs_testkit::AsyncFileSystemFixture;
 #[tokio::test]
 #[ignore = "requires an explicitly configured, isolated S3-compatible test service"]
 async fn test_s3_contract_requires_explicit_environment() {
-    let mut config = S3ContractConfig::from_env()
-        .expect("explicit S3 configuration required");
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let mut config = S3ContractConfig::from_env().expect("explicit S3 configuration required");
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
     config.prefix = format!("{}/io-{}-{nonce}", config.prefix, process::id());
     let store: Arc<dyn ObjectStore> = Arc::new(
         AmazonS3Builder::new()
@@ -141,12 +137,8 @@ mod common;
 #[tokio::test]
 #[ignore = "requires explicit RS_FS_S3_* configuration; writes exact keys under a unique prefix"]
 async fn test_real_s3_recovery_matrix_preserves_published_targets() {
-    let mut config = S3ContractConfig::from_env()
-        .expect("explicit S3 configuration required");
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time")
-        .as_nanos();
+    let mut config = S3ContractConfig::from_env().expect("explicit S3 configuration required");
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
     config.prefix = format!("{}/recovery-{}-{nonce}", config.prefix, process::id());
     let store: Arc<dyn ObjectStore> = Arc::new(
         AmazonS3Builder::new()

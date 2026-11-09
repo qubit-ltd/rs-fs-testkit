@@ -50,6 +50,10 @@ pub struct ContractSource {
 
 impl ContractSource {
     /// Retains an original typed error without formatting provider internals.
+    ///
+    /// # Parameters
+    ///
+    /// - `error`: The owned provider error to retain for later inspection.
     pub(crate) fn new(error: impl Error + Send + 'static) -> Self {
         Self {
             error: Mutex::new(Some(Box::new(error))),
@@ -79,6 +83,16 @@ impl ContractSource {
     /// None`. Taking the source also transfers explicit recovery
     /// responsibility to the caller.
     ///
+    ///
+    /// # Type Parameters
+    ///
+    /// - `T`: The result produced by the caller's inspection callback.
+    ///
+    /// # Parameters
+    ///
+    /// - `inspect`: A synchronous callback that inspects the retained error
+    ///   while the source mutex is held.
+    ///
     /// # Returns
     ///
     /// Returns `Some` with the result of `inspect` while the source is
@@ -104,6 +118,10 @@ impl ContractSource {
 
 impl Debug for ContractSource {
     /// Formats a stable summary without invoking the retained provider error.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the stable source summary.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str("ContractSource { original_error: retained }")
     }
@@ -111,6 +129,10 @@ impl Debug for ContractSource {
 
 impl Display for ContractSource {
     /// Formats recovery guidance without exposing provider-specific details.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the recovery guidance.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str("original provider failure; inspect the retained source for recovery")
     }

@@ -40,6 +40,10 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Records one selected property check without preparing sibling checks.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered property check to evaluate against the snapshot.
     pub(super) fn check_properties_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let expected = self.context.properties();
@@ -61,6 +65,22 @@ impl FileSystemContractSuite<'_> {
 }
 
 /// Confirms fixture path validation and the provider's advertised path forms.
+///
+/// # Parameters
+///
+/// - `fixture`: Independent fixture hooks used to build a representative path.
+/// - `expected`: Properties snapshot captured when the suite began.
+/// - `actual`: Properties returned by the provider during this check.
+/// - `id`: Registered path-constraint check receiving any failure.
+///
+/// # Returns
+///
+/// `Ok(())` when the fixture path is valid and constraints match the snapshot.
+///
+/// # Errors
+///
+/// Returns a contract failure if the path is invalid or the provider changed
+/// its advertised constraints.
 fn check_path_constraints(
     fixture: &dyn FileSystemFixture,
     expected: &FileSystemProperties,
@@ -82,6 +102,24 @@ fn check_path_constraints(
 }
 
 /// Exercises a bounded path request and verifies the provider's rejection.
+///
+/// # Parameters
+///
+/// - `fixture`: Independent fixture used to construct and submit the path.
+/// - `expected`: Captured properties used to derive the boundary request.
+/// - `id`: Registered path-admission check to evaluate.
+///
+/// # Returns
+///
+/// The expected rejection outcome, or another outcome when no safe probe is
+/// available under the declared limit. The latter is skipped when the limit is
+/// not finite within the probe budget, inapplicable to the path model, or
+/// masked by another path limit.
+///
+/// # Errors
+///
+/// Returns a contract failure if the path is admitted or rejection differs
+/// from the advertised limit.
 fn check_path_admission(
     fixture: &dyn FileSystemFixture,
     expected: &FileSystemProperties,

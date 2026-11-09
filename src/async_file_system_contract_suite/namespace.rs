@@ -29,6 +29,15 @@ impl AsyncFileSystemContractSuite<'_> {
     /// and, for namespace checks, a complete fixture snapshot. Unsupported
     /// requests and unavailable preparation evidence are recorded as outcomes
     /// instead of being inferred from the listing itself.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Namespace listing check identity to execute.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when fixture evidence or the listing violates the
+    /// check.
     pub(super) async fn check_flat_scope_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let capability = FileSystemCapability::List;

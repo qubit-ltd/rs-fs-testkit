@@ -6,7 +6,8 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-/// Tracks whether the buffered write has been published or may have been published.
+/// Tracks whether the buffered write has been published or may have been
+/// published.
 pub(in crate::s3_write_session) enum State {
     /// The session accepts bytes or can retry after a non-publication failure.
     Open,

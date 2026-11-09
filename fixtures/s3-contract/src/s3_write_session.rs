@@ -58,7 +58,8 @@ pub struct S3WriteSession {
     state: State,
     /// Conditional publication mode passed to the object store.
     mode: PutMode,
-    /// Whether a failed conditional create should be reported as a precondition failure.
+    /// Whether a failed conditional create should be reported as a precondition
+    /// failure.
     if_absent: bool,
     /// Fixture controls for pausing and observing write lifecycle stages.
     control: TestControl,
@@ -71,8 +72,10 @@ impl S3WriteSession {
     ///
     /// - `store`: object store that receives the completed PUT.
     /// - `key`: destination object key to parse and write.
-    /// - `options`: write requirements, which must be supported by a single PUT.
-    /// - `control`: fixture controls for observing and pausing lifecycle stages.
+    /// - `options`: write requirements, which must be supported by a single
+    ///   PUT.
+    /// - `control`: fixture controls for observing and pausing lifecycle
+    ///   stages.
     ///
     /// # Returns
     ///
@@ -80,7 +83,8 @@ impl S3WriteSession {
     ///
     /// # Errors
     ///
-    /// Returns an error if the options require unsupported behavior or if `key` is invalid.
+    /// Returns an error if the options require unsupported behavior or if `key`
+    /// is invalid.
     pub fn open(
         store: Arc<dyn ObjectStore>,
         key: String,
@@ -88,10 +92,7 @@ impl S3WriteSession {
         control: TestControl,
     ) -> Result<Self, FsError> {
         let mode = match (options.disposition(), options.precondition()) {
-            (
-                WriteDisposition::CreateNew,
-                WritePrecondition::None | WritePrecondition::IfAbsent,
-            )
+            (WriteDisposition::CreateNew, WritePrecondition::None | WritePrecondition::IfAbsent)
             | (WriteDisposition::CreateOrReplace, WritePrecondition::IfAbsent) => PutMode::Create,
             (WriteDisposition::CreateOrReplace, WritePrecondition::IfMatch(version)) => {
                 PutMode::Update(UpdateVersion {
@@ -129,6 +130,7 @@ impl S3WriteSession {
     }
 }
 impl AsyncOutput for S3WriteSession {
+    /// Byte type accepted by the writer.
     type Item = u8;
 
     /// Copies the requested input range into the session's bounded buffer.
@@ -203,9 +205,7 @@ impl AsyncOutput for S3WriteSession {
     /// The fixture gate does not produce a flush error.
     #[inline]
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        self.control
-            .poll_gate(TestStage::Flush, cx)
-            .map(|()| Ok(()))
+        self.control.poll_gate(TestStage::Flush, cx).map(|()| Ok(()))
     }
 }
 impl AsyncFileWriteSession for S3WriteSession {
@@ -224,9 +224,7 @@ impl AsyncFileWriteSession for S3WriteSession {
     ///
     /// Resolves to a `WriteFailure` that records the filesystem error and
     /// whether publication was prevented or remains indeterminate.
-    fn commit_async<'a>(
-        self: Pin<&'a mut Self>,
-    ) -> SpiFuture<'a, Result<WriteOutcome, WriteFailure>> {
+    fn commit_async<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, Result<WriteOutcome, WriteFailure>> {
         Box::pin(async move {
             if !matches!(self.state, State::Open) {
                 return Err(WriteFailure::new(
@@ -264,32 +262,28 @@ impl AsyncFileWriteSession for S3WriteSession {
                     this.data.clear();
                     this.state = State::Published;
                     this.control.wait(TestStage::AfterPutBeforeResult).await;
-                    Ok(
-                        WriteOutcome::new(AchievedAtomicity::Atomic, PublicationMethod::Direct)
-                            .with_bytes_written(count),
-                    )
+                    Ok(WriteOutcome::new(AchievedAtomicity::Atomic, PublicationMethod::Direct)
+                        .with_bytes_written(count))
                 }
                 Err(e) => {
                     this.state = if matches!(
                         e,
-                        ObjectStoreError::AlreadyExists { .. }
-                            | ObjectStoreError::Precondition { .. }
+                        ObjectStoreError::AlreadyExists { .. } | ObjectStoreError::Precondition { .. }
                     ) {
                         State::Open
                     } else {
                         State::Indeterminate
                     };
-                    let error =
-                        if this.if_absent && matches!(e, ObjectStoreError::AlreadyExists { .. }) {
-                            FsError::with_source(
-                                FsErrorKind::PreconditionFailed,
-                                FsOperation::CommitWriter,
-                                "S3 conditional creation found an existing object",
-                                e,
-                            )
-                        } else {
-                            error_mapper::map(e, FsOperation::CommitWriter)
-                        };
+                    let error = if this.if_absent && matches!(e, ObjectStoreError::AlreadyExists { .. }) {
+                        FsError::with_source(
+                            FsErrorKind::PreconditionFailed,
+                            FsOperation::CommitWriter,
+                            "S3 conditional creation found an existing object",
+                            e,
+                        )
+                    } else {
+                        error_mapper::map(e, FsOperation::CommitWriter)
+                    };
                     Err(WriteFailure::new(
                         error,
                         if matches!(this.state, State::Open) {
@@ -342,7 +336,8 @@ impl AsyncFileWriteSession for S3WriteSession {
     }
 }
 
-/// Constructs the error returned for options outside the fixture's supported write contract.
+/// Constructs the error returned for options outside the fixture's supported
+/// write contract.
 ///
 /// The S3 fixture accepts create-new writes or ETag-conditional replacements
 /// using best-effort, untyped write requirements.

@@ -191,6 +191,26 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Verifies capability declarations before preparing scenario evidence.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered read check whose applicability is evaluated.
+    /// - `scenario`: Read request behavior represented by the check.
+    /// - `capability`: Capability required by the scenario.
+    /// - `optional`: Whether unavailable capability is an optional outcome.
+    /// - `limit`: Advertised maximum range size used to build requests.
+    /// - `relative`: Fixture-relative resource path for the scenario.
+    ///
+    /// # Returns
+    ///
+    /// `Some(outcome)` when the check is inapplicable or a missing required
+    /// capability has been verified as rejected; otherwise `None` when the
+    /// scenario has the capabilities needed to proceed.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when a required capability is not rejected as
+    /// declared or the fixture request cannot be prepared.
     fn check_read_capability(
         &self,
         id: ContractCheckId,
@@ -242,6 +262,23 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Observes the current or stale version required by a conditional read.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered read check receiving observation failures.
+    /// - `scenario`: Determines whether current or stale version evidence is
+    ///   needed.
+    /// - `path`: Prepared resource whose version is observed.
+    ///
+    /// # Returns
+    ///
+    /// The version to use, or a reason when the fixture cannot provide the
+    /// required version evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure if version observation fails or stale
+    /// evidence equals the current version.
     fn read_request_version(
         &self,
         id: ContractCheckId,
@@ -275,6 +312,22 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Checks reads at and beyond the configured range boundary.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered bounded-range check receiving failures.
+    /// - `path`: Independently prepared resource to read.
+    /// - `boundary`: Accepted maximum length and first over-limit length.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the boundary read matches the seed and the first larger
+    /// request is rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when boundary evidence is unavailable,
+    /// bytes differ, or the over-limit request is accepted.
     fn check_read_range_limit(
         &self,
         id: ContractCheckId,
@@ -320,6 +373,23 @@ impl FileSystemContractSuite<'_> {
     }
 
     /// Verifies additional range and caller-buffer-limit read requirements.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered read check receiving any failure.
+    /// - `scenario`: Selects range EOF probes or the basic caller-buffer probe.
+    /// - `limit`: Advertised range limit used to size the EOF request.
+    /// - `path`: Independently prepared resource to read.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the applicable zero-length, EOF, or caller-buffer
+    /// requirement is satisfied.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when a probe errors unexpectedly, returns
+    /// bytes outside the requested range, or exceeds its caller byte limit.
     fn check_read_result(
         &self,
         id: ContractCheckId,

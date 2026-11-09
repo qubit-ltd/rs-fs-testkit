@@ -15,6 +15,10 @@ use std::fmt::Result as FmtResult;
 
 /// A failed streaming operation whose writer remains available for recovery.
 ///
+/// # Type Parameters
+///
+/// - `W`: The writer or owning operation retained for explicit recovery.
+///
 /// `W` is the synchronous or asynchronous writer, or an owning asynchronous
 /// write/copy operation retained after a cancellation diagnostic failure.
 /// Obtain this value through [`crate::ContractSource::take`] and downcast to
@@ -40,12 +44,19 @@ use std::fmt::Result as FmtResult;
 /// ```
 #[must_use]
 pub struct ContractWriterFailure<W> {
+    /// Original typed error retained for inspection and error chaining.
     error: Box<dyn Error + Send>,
+    /// Writer or owning operation retained for explicit recovery.
     writer: W,
 }
 
 impl<W> ContractWriterFailure<W> {
     /// Retains a streaming failure before its writer can leave scope.
+    ///
+    /// # Parameters
+    ///
+    /// - `error`: The original typed error to preserve.
+    /// - `writer`: The still-owned writer or operation to retain.
     pub(crate) fn new(error: impl Error + Send + 'static, writer: W) -> Self {
         Self {
             error: Box::new(error),
@@ -82,18 +93,29 @@ impl<W> ContractWriterFailure<W> {
 }
 
 impl<W> Debug for ContractWriterFailure<W> {
+    /// Formats a stable summary without invoking the retained error formatter.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the stable failure summary.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str("ContractWriterFailure { writer: retained, error: retained }")
     }
 }
 
 impl<W> Display for ContractWriterFailure<W> {
+    /// Formats a stable description of the retained streaming failure.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the failure description.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str("streaming writer failed; original error and recovery writer retained")
     }
 }
 
 impl<W> Error for ContractWriterFailure<W> {
+    /// Exposes the retained original error as the standard error source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(self.error.as_ref())
     }

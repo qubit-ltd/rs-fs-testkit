@@ -29,7 +29,12 @@
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FixturePreparation<T> {
     /// The request and independent initial state are ready to exercise.
-    Ready(T),
+    ///
+    /// The value contains the prepared request data supplied by the fixture.
+    Ready(
+        /// Prepared request data that the suite will exercise.
+        T,
+    ),
     /// The scenario does not exist in this provider configuration.
     NotApplicable {
         /// Concrete provider restriction that excludes this scenario.

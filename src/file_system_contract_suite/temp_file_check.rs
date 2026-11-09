@@ -34,6 +34,19 @@ impl FileSystemContractSuite<'_> {
     /// The selected check determines which lifecycle transitions are exercised;
     /// capability snapshots gate unsupported operations, while fixture hooks
     /// independently observe whether each source and publication target exists.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered temporary-file lifecycle check to execute.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the selected lifecycle evidence has been recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when creation, cleanup, persistence, or
+    /// independent observation violates the selected lifecycle contract.
     pub(super) fn execute_temp_file(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let filesystem = self.fixture.file_system();
         let mut options = TempOptions::default();
@@ -404,6 +417,25 @@ impl FileSystemContractSuite<'_> {
 
     /// Checks the published target identity, achieved atomicity, and externally
     /// observed source and target states after temporary-file persistence.
+    ///
+    /// # Parameters
+    ///
+    /// - `outcome`: Provider-reported persistence result.
+    /// - `source`: Temporary source path expected to be released.
+    /// - `target`: Destination path expected in the result and observation.
+    /// - `atomic`: Whether this check requires atomic publication.
+    /// - `content_supported`: Whether fixture hooks confirmed content evidence.
+    /// - `id`: Registered temporary persistence check receiving failures.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when publication metadata and independent path observations
+    /// satisfy the selected check.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when publication metadata, path state, or
+    /// supported content evidence differs from expectations.
     fn verify_temp_publication(
         &mut self,
         outcome: &PersistOutcome,
@@ -438,6 +470,22 @@ impl FileSystemContractSuite<'_> {
         Ok(())
     }
 
+    /// Seeds and independently confirms content in a temporary file.
+    ///
+    /// # Parameters
+    ///
+    /// - `path`: Temporary file to seed and read back.
+    /// - `id`: Registered check receiving setup or observation failures.
+    ///
+    /// # Returns
+    ///
+    /// `true` when fixture hooks confirm the seeded bytes; `false` when a
+    /// required hook is unsupported.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when seeding or observation fails, or the
+    /// observed bytes differ.
     fn prepare_temp_file_content(&mut self, path: &Path, id: ContractCheckId) -> Result<bool, ContractFailure> {
         const CONTENT: &[u8] = b"temp-data";
         match self
@@ -464,6 +512,22 @@ impl FileSystemContractSuite<'_> {
         }
     }
 
+    /// Verifies that publication preserved the independently seeded bytes.
+    ///
+    /// # Parameters
+    ///
+    /// - `path`: Published temporary file to inspect.
+    /// - `id`: Registered check receiving observation failures.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the expected bytes are confirmed; `false` when the fixture
+    /// read hook is unsupported.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when observation fails or published bytes
+    /// differ from the seed.
     fn verify_temp_file_content(&mut self, path: &Path, id: ContractCheckId) -> Result<bool, ContractFailure> {
         const CONTENT: &[u8] = b"temp-data";
         match self
@@ -482,6 +546,13 @@ impl FileSystemContractSuite<'_> {
         }
     }
 
+    /// Records that temporary-file content could not be independently verified.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered temporary-file check whose evidence is incomplete.
+    /// - `reason`: Fixture limitation explaining why contents were not
+    ///   verified.
     fn record_temp_file_content_unverified(&mut self, id: ContractCheckId, reason: &str) {
         self.context.record_check(
             id,

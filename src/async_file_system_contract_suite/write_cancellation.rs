@@ -32,6 +32,15 @@ use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes only the selected stage, including its own probe preparation.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Write-cancellation check identity selecting the lifecycle stage.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when the selected stage cannot be prepared or
+    /// verified.
     pub(super) async fn check_write_cancellation_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         let stage = match id {
             ContractCheckId::WriteCancelOpen => AsyncWriteCancellationStage::Open,
@@ -73,6 +82,16 @@ impl AsyncFileSystemContractSuite<'_> {
 
     /// Drives a stage-aware probe and preserves its disarm obligation across
     /// every asynchronous suspension point.
+    ///
+    /// # Parameters
+    ///
+    /// - `stage`: Lifecycle stage at which the operation is cancelled.
+    /// - `id`: Check identity associated with the probe result.
+    /// - `probe`: Fixture probe that arms, observes, and disarms the stage.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when the probe or post-cancellation checks fail.
     async fn run_write_cancellation_probe(
         &mut self,
         stage: AsyncWriteCancellationStage,
@@ -215,6 +234,17 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 
     /// Aborts a retained writer and checks the resulting publication evidence.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Check identity associated with recovery failures.
+    /// - `probe`: Probe that prepared the cancelled writer operation.
+    /// - `operation`: Retained whole-file write operation to recover.
+    /// - `before`: Optional target bytes observed before the operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when abort or publication-state evidence is invalid.
     async fn verify_write_cancellation_recovery(
         &mut self,
         id: ContractCheckId,
@@ -275,6 +305,18 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 }
 
+/// Retains a whole-file write operation with the diagnostic that interrupted
+/// the cancellation check.
+///
+/// # Parameters
+///
+/// - `failure`: Diagnostic produced by cancellation verification.
+/// - `operation`: Write operation retained for recovery or inspection.
+/// - `id`: Check identity attached to the resulting failure.
+///
+/// # Returns
+///
+/// A failure that owns the operation and its original diagnostic.
 fn retain_write_operation(
     failure: ContractFailure,
     operation: AsyncWriteAllOperation,

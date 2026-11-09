@@ -57,6 +57,11 @@ pub struct ContractAsyncCopyFailure {
 impl ContractAsyncCopyFailure {
     /// Pairs a failure with the operation that owns its recovery session.
     ///
+    /// # Parameters
+    ///
+    /// - `failure`: The immutable failure snapshot to retain.
+    /// - `operation`: The admitted operation, when request admission succeeded.
+    ///
     /// # Returns
     ///
     /// A wrapper that retains the failure and optional operation together.
@@ -103,6 +108,11 @@ impl ContractAsyncCopyFailure {
 }
 
 impl Debug for ContractAsyncCopyFailure {
+    /// Formats a stable summary without invoking provider error formatting.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the stable summary.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter
             .debug_struct("ContractAsyncCopyFailure")
@@ -112,12 +122,18 @@ impl Debug for ContractAsyncCopyFailure {
 }
 
 impl Display for ContractAsyncCopyFailure {
+    /// Formats a stable description of the retained copy failure.
+    ///
+    /// # Parameters
+    ///
+    /// - `formatter`: Destination for the failure description.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str("copy operation failed; original failure and available operation retained")
     }
 }
 
 impl Error for ContractAsyncCopyFailure {
+    /// Exposes the retained copy failure as the standard error source.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(&self.failure)
     }

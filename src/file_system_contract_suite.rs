@@ -174,6 +174,16 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// A focused check is registered before provider I/O begins so interrupted
     /// execution remains distinguishable from an omitted check.
+    ///
+    /// # Parameters
+    ///
+    /// - `contracts`: Contract phases to execute in this suite session.
+    /// - `selected`: Optional check to execute instead of every check in its
+    ///   phase.
+    ///
+    /// # Returns
+    ///
+    /// The retained run report and any execution or cleanup failures.
     fn run_selected(
         &mut self,
         contracts: &[FileSystemContract],
@@ -228,6 +238,19 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Resolves focused execution without running sibling checks.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered check to dispatch.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the selected synchronous check records its outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when the check requires async execution or its
+    /// contract observation fails.
     fn dispatch_check(&mut self, id: crate::ContractCheckId) -> Result<(), crate::ContractFailure> {
         if !id.supports_synchronous() {
             return Err(crate::ContractFailure::message_only("selected check requires asynchronous execution").at(id));
@@ -249,6 +272,18 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Dispatches one complete contract phase to its synchronous checks.
+    ///
+    /// # Parameters
+    ///
+    /// - `contract`: Contract phase whose registered synchronous checks run.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after every check in the phase records an outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first failure from a check in the phase.
     fn dispatch_contract(&mut self, contract: FileSystemContract) -> Result<(), crate::ContractFailure> {
         match contract {
             FileSystemContract::Properties => self.check_properties()?,

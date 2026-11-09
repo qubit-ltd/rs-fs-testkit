@@ -30,6 +30,7 @@ use crate::ContractCheckOutcome;
 #[must_use]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractReport {
+    /// Checks recorded so far in execution order.
     pub(crate) checks: Vec<ContractCheck>,
     /// Check identities registered by the phase catalog.
     ///
@@ -209,6 +210,11 @@ impl ContractReport {
     }
 
     /// Registers a pending catalog check without completing it.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Stable identity of the check expected from the phase.
+    /// - `capability`: Filesystem capability associated with the check, if any.
     pub(crate) fn register(&mut self, id: ContractCheckId, capability: Option<FileSystemCapability>) {
         if self.expected.contains(&id) {
             self.violations.push(format!("{id} (duplicate registration)"));

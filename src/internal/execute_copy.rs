@@ -15,6 +15,13 @@ use qubit_fs::path::Path;
 use crate::ContractAsyncCopyFailure;
 
 /// Preserves admission or execution failures without losing recovery ownership.
+///
+/// # Parameters
+///
+/// - `filesystem`: The filesystem that admits and executes the copy request.
+/// - `source`: The source path owned by this copy operation.
+/// - `target`: The destination path owned by this copy operation.
+/// - `options`: Copy policy applied during admission and execution.
 pub(crate) async fn execute_copy(
     filesystem: &AsyncFileSystem,
     source: Path,

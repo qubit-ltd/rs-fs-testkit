@@ -51,6 +51,10 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Returns a `ContractFailure` if `id` does not select a temporary
     /// lifecycle entry, or if the selected provider operation or observation
     /// fails to satisfy its contract.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Temporary-resource check identity selecting the lifecycle case.
     pub(super) async fn check_temp_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let file = self.capable(FileSystemCapability::TempFile);

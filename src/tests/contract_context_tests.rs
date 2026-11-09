@@ -11,8 +11,8 @@ use crate::ContractCheckOutcome;
 use crate::ContractFailure;
 use crate::FileSystemContract;
 use crate::FileSystemFixture;
-use crate::common::MemoryFixture;
 use crate::contract_context::ContractContext;
+use crate::tests::common::MemoryFixture;
 
 #[test]
 fn test_fail_without_check_keeps_the_failure_without_changing_check_outcomes() {

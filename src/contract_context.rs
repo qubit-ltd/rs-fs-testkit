@@ -77,6 +77,10 @@ impl ContractContext {
     }
 
     /// Returns a suite-unique relative name for the current contract phase.
+    ///
+    /// # Parameters
+    ///
+    /// - `relative`: The caller-provided suffix for the generated name.
     #[must_use]
     #[inline]
     pub(crate) fn relative_name(&self, relative: &str) -> String {
@@ -431,6 +435,10 @@ impl ContractContext {
     }
 
     /// Saves an observed failure before any later I/O can suspend.
+    ///
+    /// # Parameters
+    ///
+    /// - `failure`: Cleanup failure evidence to append to the run report.
     fn record_cleanup_failure(&mut self, failure: CleanupFailure) {
         self.run.cleanup.failures.push(crate::ContractFailure::with_source(
             format!(
@@ -464,8 +472,8 @@ mod tests {
     use crate::ContractFailure;
     use crate::FileSystemFixture;
     use crate::FixtureSupport;
-    use crate::common::MemoryFault;
-    use crate::common::MemoryFixture;
+    use crate::tests::common::MemoryFault;
+    use crate::tests::common::MemoryFixture;
 
     #[test]
     fn test_counters_saturate_and_duplicate_resources_keep_the_first_owner() {
@@ -601,7 +609,7 @@ mod tests {
 
     #[test]
     fn test_cleanup_stat_errors_preserve_owner_path_and_source() {
-        use crate::common::MemoryFault;
+        use crate::tests::common::MemoryFault;
 
         let fixture = MemoryFixture::with_fault(MemoryFault::CleanupStatError);
         let FixtureSupport::Supported(path) = fixture
@@ -626,7 +634,7 @@ mod tests {
 
     #[test]
     fn test_cleanup_continues_after_a_resource_stat_failure() {
-        use crate::common::MemoryFault;
+        use crate::tests::common::MemoryFault;
 
         let fixture = MemoryFixture::with_fault(MemoryFault::CleanupStatError);
         let FixtureSupport::Supported(first) = fixture
@@ -658,7 +666,7 @@ mod tests {
 
     #[test]
     fn test_cleanup_retains_resource_when_post_delete_stat_errors_or_panics() {
-        use crate::common::MemoryFault;
+        use crate::tests::common::MemoryFault;
 
         for fault in [MemoryFault::CleanupVerifyStatError, MemoryFault::CleanupVerifyStatPanic] {
             let fixture = MemoryFixture::with_fault(fault);
@@ -681,7 +689,7 @@ mod tests {
 
     #[test]
     fn test_cleanup_retains_resource_after_delete_errors_and_noop() {
-        use crate::common::MemoryFault;
+        use crate::tests::common::MemoryFault;
 
         for fault in [
             MemoryFault::CleanupDeleteError,
@@ -755,8 +763,8 @@ mod tests {
     #[test]
     fn test_async_cleanup_retains_resource_after_stat_panics_and_retries() {
         use crate::AsyncFileSystemFixture;
-        use crate::common::AsyncMemoryFixture;
-        use crate::common::async_memory_file_system::run_controlled;
+        use crate::tests::common::AsyncMemoryFixture;
+        use crate::tests::common::async_memory_file_system::run_controlled;
 
         let fixture = AsyncMemoryFixture::new();
         run_controlled(async {
@@ -787,9 +795,9 @@ mod tests {
     #[test]
     fn test_async_cleanup_stat_errors_preserve_owner_path_and_source() {
         use crate::AsyncFileSystemFixture;
-        use crate::common::AsyncMemoryFault;
-        use crate::common::AsyncMemoryFixture;
-        use crate::common::async_memory_file_system::run_controlled;
+        use crate::tests::common::AsyncMemoryFault;
+        use crate::tests::common::AsyncMemoryFixture;
+        use crate::tests::common::async_memory_file_system::run_controlled;
 
         let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::CleanupStatError);
         run_controlled(async {
@@ -819,9 +827,9 @@ mod tests {
     #[test]
     fn test_async_cleanup_retains_resource_when_post_delete_stat_errors_or_panics() {
         use crate::AsyncFileSystemFixture;
-        use crate::common::AsyncMemoryFault;
-        use crate::common::AsyncMemoryFixture;
-        use crate::common::async_memory_file_system::run_controlled;
+        use crate::tests::common::AsyncMemoryFault;
+        use crate::tests::common::AsyncMemoryFixture;
+        use crate::tests::common::async_memory_file_system::run_controlled;
 
         for fault in [
             AsyncMemoryFault::CleanupVerifyStatError,
@@ -852,9 +860,9 @@ mod tests {
     #[test]
     fn test_async_cleanup_retains_resource_after_delete_errors_and_noop() {
         use crate::AsyncFileSystemFixture;
-        use crate::common::AsyncMemoryFault;
-        use crate::common::AsyncMemoryFixture;
-        use crate::common::async_memory_file_system::run_controlled;
+        use crate::tests::common::AsyncMemoryFault;
+        use crate::tests::common::AsyncMemoryFixture;
+        use crate::tests::common::async_memory_file_system::run_controlled;
 
         for fault in [
             AsyncMemoryFault::CleanupDeleteError,
@@ -888,8 +896,8 @@ mod tests {
         use qubit_fs::path::Path;
 
         use crate::AsyncFileSystemFixture;
-        use crate::common::AsyncMemoryFixture;
-        use crate::common::async_memory_file_system::run_controlled;
+        use crate::tests::common::AsyncMemoryFixture;
+        use crate::tests::common::async_memory_file_system::run_controlled;
 
         let fixture = AsyncMemoryFixture::without_operation_capabilities();
         run_controlled(async {
@@ -924,8 +932,8 @@ mod tests {
     #[test]
     fn test_async_cleanup_deletes_recorded_directories() {
         use crate::AsyncFileSystemFixture;
-        use crate::common::AsyncMemoryFixture;
-        use crate::common::async_memory_file_system::run_controlled;
+        use crate::tests::common::AsyncMemoryFixture;
+        use crate::tests::common::async_memory_file_system::run_controlled;
 
         let fixture = AsyncMemoryFixture::new();
         run_controlled(async {

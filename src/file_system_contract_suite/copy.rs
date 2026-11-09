@@ -39,6 +39,10 @@ impl FileSystemContractSuite<'_> {
     ///
     /// Returns the selected check's failure, or a failure identifying an
     /// unsupported check identifier.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered copy check to execute.
     pub(super) fn check_copy_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         match id {
             ContractCheckId::CopyBasic => self.check_basic_copy(id),

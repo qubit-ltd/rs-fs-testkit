@@ -29,6 +29,19 @@ use crate::internal::verify_condition;
 impl FileSystemContractSuite<'_> {
     /// Verifies exactly one required guarantee against independently observed
     /// bytes.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered atomic or durable tree-copy check to execute.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the selected guarantee outcome has been recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure when setup, copy execution, recovery, or independent
+    /// tree-content verification fails.
     pub(super) fn check_strong_tree_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
         self.context.begin(id.as_str());
         let spec = crate::internal::check_catalog::specification(id);

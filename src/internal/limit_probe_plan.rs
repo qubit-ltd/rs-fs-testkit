@@ -13,6 +13,11 @@ use qubit_fs::metadata::FileSystemLimit;
 ///
 /// Unknown and non-finite limits retain the complete sample. The returned
 /// slice borrows `sample` and does not allocate.
+///
+/// # Parameters
+///
+/// - `sample`: Fixed payload bytes available to the probe.
+/// - `limit`: Declared maximum size for one write.
 #[inline]
 pub(crate) fn bounded_payload(sample: &[u8], limit: FileSystemLimit) -> &[u8] {
     match limit {
@@ -29,6 +34,11 @@ pub(crate) const MAX_PROBE_BYTES: u64 = 64 * 1024;
 /// Maximum page-entry hint used by bounded list probes.
 pub(crate) const MAX_PROBE_ENTRIES: u64 = 64;
 /// Returns the boundary value and its checked successor when within budget.
+///
+/// # Parameters
+///
+/// - `maximum`: Declared finite maximum to probe.
+/// - `budget`: Largest value the testkit is willing to allocate or request.
 #[inline]
 pub(crate) const fn bounded_successor(maximum: u64, budget: u64) -> Option<(u64, u64)> {
     if maximum >= budget {
@@ -42,6 +52,11 @@ pub(crate) const fn bounded_successor(maximum: u64, budget: u64) -> Option<(u64,
 
 /// Plans a finite limit probe while keeping allocations within the testkit
 /// budget. Non-finite declarations are intentionally left unprobed.
+///
+/// # Parameters
+///
+/// - `limit`: Declared filesystem limit for the operation.
+/// - `budget`: Largest finite boundary admitted by the testkit.
 #[inline]
 pub(crate) const fn finite_probe(limit: FileSystemLimit, budget: u64) -> Option<(u64, u64)> {
     match limit {
