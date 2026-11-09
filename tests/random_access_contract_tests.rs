@@ -415,6 +415,72 @@ impl FileSystemFixture for DeclaredFixture {
     }
 }
 
+struct ContradictoryDeclarationFixture {
+    inner: RandomFixture,
+}
+
+impl FileSystemFixture for ContradictoryDeclarationFixture {
+    fn file_system(&self) -> &FileSystem {
+        &self.inner.file_system
+    }
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+    fn random_access_operation(&self) -> FixtureSupport<bool> {
+        FixtureSupport::Supported(false)
+    }
+    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+        self.inner.seed_file(relative, bytes)
+    }
+    fn replace_random_access_path(&self, path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
+        self.inner.replace_random_access_path(path, bytes)
+    }
+}
+
+struct PathFailureFixture {
+    inner: MemoryFixture,
+}
+
+impl FileSystemFixture for PathFailureFixture {
+    fn file_system(&self) -> &FileSystem {
+        self.inner.file_system()
+    }
+    fn path(&self, _relative: &str) -> FixtureResult<Path> {
+        Err(qubit_fs_testkit::FixtureError::new("random-access path unavailable"))
+    }
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+    fn random_access_operation(&self) -> FixtureSupport<bool> {
+        FixtureSupport::Supported(false)
+    }
+}
+
+struct SeedFailureFixture {
+    inner: RandomFixture,
+}
+
+impl FileSystemFixture for SeedFailureFixture {
+    fn file_system(&self) -> &FileSystem {
+        &self.inner.file_system
+    }
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+    fn random_access_operation(&self) -> FixtureSupport<bool> {
+        FixtureSupport::Supported(true)
+    }
+    fn seed_file(&self, _relative: &str, _bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+        Err(qubit_fs_testkit::FixtureError::new("random-access seed unavailable"))
+    }
+}
+
 fn outcome(fixture: &dyn FileSystemFixture, id: ContractCheckId) -> ContractCheckOutcome {
     let mut suite = FileSystemContractSuite::new(fixture);
     let _ = suite.run_check(id);
@@ -483,6 +549,45 @@ fn test_random_access_declared_support_is_verified_or_rejected() {
 }
 
 #[test]
+fn test_random_access_false_declaration_rejects_provider_support() {
+    let fixture = ContradictoryDeclarationFixture {
+        inner: RandomFixture::new(true, false, FileSystemLimit::Unknown),
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::RandomAccessBasic);
+    assert_eq!(run.failures().len(), 1);
+    assert!(run.failures()[0]
+        .message()
+        .contains("after declaring the operation unsupported"));
+}
+
+#[test]
+fn test_random_access_unsupported_declaration_reports_path_setup_failure() {
+    let fixture = PathFailureFixture {
+        inner: MemoryFixture::new(),
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::RandomAccessBounds);
+    assert_eq!(run.failures().len(), 1);
+    assert!(run.failures()[0]
+        .message()
+        .contains("random-access path preparation failed"));
+}
+
+#[test]
+fn test_random_access_seed_setup_failure_is_reported() {
+    let fixture = SeedFailureFixture {
+        inner: RandomFixture::new(true, false, FileSystemLimit::Unknown),
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::RandomAccessBasic);
+    assert_eq!(run.failures().len(), 1);
+    assert!(run.failures()[0]
+        .message()
+        .contains("random-access seed preparation failed"));
+}
+
+#[test]
 fn test_random_access_reads_bounds_and_object_identity() {
     let conforming = RandomFixture::new(true, false, FileSystemLimit::Unknown);
     for id in [
@@ -498,6 +603,12 @@ fn test_random_access_reads_bounds_and_object_identity() {
         outcome(&bounded, ContractCheckId::RandomAccessBounds),
         ContractCheckOutcome::Passed
     );
+
+    let limit_exceeds_seed = RandomFixture::new(true, false, FileSystemLimit::Maximum(10));
+    assert!(matches!(
+        outcome(&limit_exceeds_seed, ContractCheckId::RandomAccessBounds),
+        ContractCheckOutcome::SkippedOptional { .. }
+    ));
 
     let huge_limit = RandomFixture::new(true, false, FileSystemLimit::Maximum(u64::MAX));
     assert!(matches!(
