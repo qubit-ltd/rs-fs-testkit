@@ -631,7 +631,10 @@ mod tests {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
         assert!(run.failures().is_empty(), "{:?}", run.failures());
-        assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::RejectedAsExpected);
+        assert_eq!(
+            run.report().checks()[0].outcome(),
+            &ContractCheckOutcome::RejectedAsExpected
+        );
     }
 
     #[test]
@@ -651,7 +654,11 @@ mod tests {
             fn random_access_operation(&self) -> FixtureSupport<bool> {
                 FixtureSupport::Supported(true)
             }
-            fn seed_file<'a>(&'a self, _relative: &'a str, _bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
+            fn seed_file<'a>(
+                &'a self,
+                _relative: &'a str,
+                _bytes: &'a [u8],
+            ) -> FixtureFuture<'a, FixtureSupport<Path>> {
                 Box::pin(async { Ok(FixtureSupport::Unsupported) })
             }
         }
@@ -659,7 +666,10 @@ mod tests {
         let fixture = NoSeed(RandomAccessFixture::new());
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
-        assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Unverified { .. }));
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Unverified { .. }
+        ));
 
         let fixture = RandomAccessFixture::with_options(true, Some(7), false);
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
@@ -680,6 +690,9 @@ mod tests {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
         assert!(run.failures().is_empty(), "{:?}", run.failures());
-        assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::SkippedOptional { .. }));
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::SkippedOptional { .. }
+        ));
     }
 }

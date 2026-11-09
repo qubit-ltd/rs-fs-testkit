@@ -373,9 +373,6 @@ mod tests {
                 crate::ContractCheckOutcome::NotApplicable { .. }
             ));
         });
-        assert!(
-            fixture.is_empty(),
-            "inapplicable probe must not create resources"
-        );
+        assert!(fixture.is_empty(), "inapplicable probe must not create resources");
     }
 }

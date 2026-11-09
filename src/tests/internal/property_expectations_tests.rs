@@ -78,11 +78,7 @@ fn test_snapshot_groups_pass_and_report_mismatches() {
         PathForm::Either,
         SymlinkPolicy::Reject,
     );
-    let limits_failure = check_snapshot(
-        ContractCheckId::PropertiesLimits,
-        &baseline,
-        &changed_limits,
-    )
+    let limits_failure = check_snapshot(ContractCheckId::PropertiesLimits, &baseline, &changed_limits)
         .expect_err("a changed limits snapshot must fail");
     assert_eq!(limits_failure.check(), Some(ContractCheckId::PropertiesLimits));
     assert!(limits_failure.message().ends_with("limits snapshot changed"));
@@ -92,22 +88,18 @@ fn test_snapshot_groups_pass_and_report_mismatches() {
         PathForm::Absolute,
         SymlinkPolicy::FollowWithinFileSystem,
     );
-    let policy_failure = check_snapshot(
-        ContractCheckId::PropertiesSymlinkPolicy,
-        &baseline,
-        &changed_policy,
-    )
+    let policy_failure = check_snapshot(ContractCheckId::PropertiesSymlinkPolicy, &baseline, &changed_policy)
         .expect_err("a changed symlink policy must fail");
     assert_eq!(policy_failure.check(), Some(ContractCheckId::PropertiesSymlinkPolicy));
-    assert!(policy_failure
-        .message()
-        .ends_with("symlink policy snapshot changed"));
+    assert!(policy_failure.message().ends_with("symlink policy snapshot changed"));
     let wrong_driver = check_snapshot(ContractCheckId::ReadBasic, &baseline, &baseline)
         .expect_err("a non-property check must be rejected by the property driver");
     assert_eq!(wrong_driver.check(), Some(ContractCheckId::ReadBasic));
-    assert!(wrong_driver
-        .message()
-        .ends_with("selected check requires a different property driver"));
+    assert!(
+        wrong_driver
+            .message()
+            .ends_with("selected check requires a different property driver")
+    );
 }
 
 #[test]
@@ -252,15 +244,13 @@ fn test_snapshot_rejects_changed_identity_and_capability_sets() {
         SymlinkPolicy::Reject,
     )
     .expect("test properties must be valid");
-    let identity_failure = check_snapshot(
-        ContractCheckId::PropertiesSnapshot,
-        &baseline,
-        &changed_identity,
-    )
+    let identity_failure = check_snapshot(ContractCheckId::PropertiesSnapshot, &baseline, &changed_identity)
         .expect_err("a changed filesystem identity must fail");
-    assert!(identity_failure
-        .message()
-        .ends_with("filesystem information snapshot changed"));
+    assert!(
+        identity_failure
+            .message()
+            .ends_with("filesystem information snapshot changed")
+    );
 
     let changed_provider = FileSystemProperties::new(
         FileSystemInfo::new(
@@ -274,15 +264,13 @@ fn test_snapshot_rejects_changed_identity_and_capability_sets() {
         SymlinkPolicy::Reject,
     )
     .expect("test properties must be valid");
-    let provider_failure = check_snapshot(
-        ContractCheckId::PropertiesSnapshot,
-        &baseline,
-        &changed_provider,
-    )
+    let provider_failure = check_snapshot(ContractCheckId::PropertiesSnapshot, &baseline, &changed_provider)
         .expect_err("a changed provider identity must fail");
-    assert!(provider_failure
-        .message()
-        .ends_with("filesystem information snapshot changed"));
+    assert!(
+        provider_failure
+            .message()
+            .ends_with("filesystem information snapshot changed")
+    );
 
     let changed_capabilities = FileSystemProperties::new(
         baseline.info().clone(),
@@ -292,13 +280,7 @@ fn test_snapshot_rejects_changed_identity_and_capability_sets() {
         SymlinkPolicy::Reject,
     )
     .expect("test properties must be valid");
-    let capability_failure = check_snapshot(
-        ContractCheckId::PropertiesSnapshot,
-        &baseline,
-        &changed_capabilities,
-    )
+    let capability_failure = check_snapshot(ContractCheckId::PropertiesSnapshot, &baseline, &changed_capabilities)
         .expect_err("a changed capability set must fail");
-    assert!(capability_failure
-        .message()
-        .ends_with("capability snapshot changed"));
+    assert!(capability_failure.message().ends_with("capability snapshot changed"));
 }

@@ -136,7 +136,11 @@ impl FileSystemSpi for RandomProvider {
 
     fn open_random_access_reader(&self, request: OpenReaderRequest<'_>) -> FsResult<OpenedRandomAccessReader> {
         if let Some(kind) = self.open_error {
-            return Err(FsError::new(kind, FsOperation::OpenReader, "injected random-access open failure"));
+            return Err(FsError::new(
+                kind,
+                FsOperation::OpenReader,
+                "injected random-access open failure",
+            ));
         }
         if !self.supported {
             return Err(FsError::new(
@@ -150,7 +154,9 @@ impl FileSystemSpi for RandomProvider {
             FileSystemId::new(PROVIDER_ID).expect("valid ID"),
             request.path().clone(),
         )
-        .with_metadata(FileMetadata::new(FileKind::File).with_len(Some(self.reported_len.unwrap_or(bytes.len() as u64))));
+        .with_metadata(
+            FileMetadata::new(FileKind::File).with_len(Some(self.reported_len.unwrap_or(bytes.len() as u64))),
+        );
         Ok(OpenedRandomAccessReader::new(
             info,
             Box::new(RandomSession {
@@ -583,13 +589,7 @@ fn test_random_access_false_declaration_rejects_provider_support() {
 #[test]
 fn test_random_access_false_declaration_reports_unexpected_provider_error() {
     let fixture = ContradictoryDeclarationFixture {
-        inner: RandomFixture::with_open_options(
-            true,
-            false,
-            FileSystemLimit::Unknown,
-            Some(FsErrorKind::Io),
-            None,
-        ),
+        inner: RandomFixture::with_open_options(true, false, FileSystemLimit::Unknown, Some(FsErrorKind::Io), None),
     };
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::RandomAccessBasic);
@@ -644,13 +644,7 @@ fn test_random_access_reads_bounds_and_object_identity() {
         ContractCheckOutcome::Passed
     );
 
-    let incorrect_length = RandomFixture::with_open_options(
-        true,
-        false,
-        FileSystemLimit::Unknown,
-        None,
-        Some(7),
-    );
+    let incorrect_length = RandomFixture::with_open_options(true, false, FileSystemLimit::Unknown, None, Some(7));
     assert!(matches!(
         outcome(&incorrect_length, ContractCheckId::RandomAccessBasic),
         ContractCheckOutcome::Failed { .. }

@@ -18,7 +18,8 @@ use self::common::MemoryFault;
 use self::common::MemoryFixture;
 use self::common::shared_model::FixtureHook;
 
-/// A missing-capability basic-copy probe retains source-path preparation errors.
+/// A missing-capability basic-copy probe retains source-path preparation
+/// errors.
 #[test]
 fn test_sync_basic_copy_attributes_source_path_preparation_error() {
     let id = ContractCheckId::CopyBasic;
@@ -36,7 +37,8 @@ fn test_sync_basic_copy_attributes_source_path_preparation_error() {
     );
 }
 
-/// Basic copy reports fixture observation failures instead of accepting weak evidence.
+/// Basic copy reports fixture observation failures instead of accepting weak
+/// evidence.
 #[test]
 fn test_sync_basic_copy_attributes_source_observation_error() {
     let id = ContractCheckId::CopyBasic;
@@ -47,11 +49,7 @@ fn test_sync_basic_copy_attributes_source_observation_error() {
 
     assert_eq!(run.failures().len(), 1);
     assert_eq!(run.failures()[0].check(), Some(id));
-    assert!(
-        run.failures()[0]
-            .to_string()
-            .contains("copy source observation failed")
-    );
+    assert!(run.failures()[0].to_string().contains("copy source observation failed"));
 }
 
 /// Copy conflict setup errors retain the selected check identity.
@@ -72,7 +70,8 @@ fn test_sync_copy_conflict_attributes_source_setup_error() {
     );
 }
 
-/// A provider error at the accepted range boundary is reported against that read check.
+/// A provider error at the accepted range boundary is reported against that
+/// read check.
 #[test]
 fn test_sync_read_range_limit_attributes_boundary_provider_error() {
     let id = ContractCheckId::ReadRangeLimit;

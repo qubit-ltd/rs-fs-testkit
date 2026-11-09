@@ -95,9 +95,7 @@ fn test_async_suite_records_capability_limits_and_fixture_boundaries() {
             FileSystemLimits::unknown().with_max_path_text_bytes(FileSystemLimit::Maximum(4)),
         );
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        let run = suite
-            .run_check(ContractCheckId::PropertiesLimitPathAdmission)
-            .await;
+        let run = suite.run_check(ContractCheckId::PropertiesLimitPathAdmission).await;
         run.assert_satisfied();
         assert!(matches!(
             run.report().checks()[0].outcome(),
@@ -128,9 +126,7 @@ fn test_async_suite_records_capability_limits_and_fixture_boundaries() {
 
         let fixture = AsyncMemoryFixture::with_unavailable_seed_calls(Some(1), None);
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        let run = suite
-            .run_check(ContractCheckId::RepresentationEmpty)
-            .await;
+        let run = suite.run_check(ContractCheckId::RepresentationEmpty).await;
         assert!(run.failures().is_empty());
         assert!(matches!(
             run.report().checks()[0].outcome(),

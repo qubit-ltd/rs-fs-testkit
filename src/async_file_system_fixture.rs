@@ -942,7 +942,10 @@ mod tests {
         let fixture = fixture_with_file_limit(&memory, 2, 1);
 
         assert!(std::ptr::eq(fixture.file_system(), memory.file_system()));
-        assert_eq!(fixture.path("explicit").expect("map fixture path").as_str(), "/default-fixture/explicit");
+        assert_eq!(
+            fixture.path("explicit").expect("map fixture path").as_str(),
+            "/default-fixture/explicit"
+        );
         let prepared = block_on(fixture.prepare_copy(CopyScenario::DurableTree, "source", "target", b"child"))
             .expect("prepare supported tree copy");
         assert!(matches!(prepared, FixturePreparation::Ready(_)));

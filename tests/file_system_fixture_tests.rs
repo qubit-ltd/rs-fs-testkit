@@ -9,6 +9,8 @@
 pub use ::qubit_fs_testkit;
 
 mod common;
+use std::cell::Cell;
+
 use qubit_fs::FileSystem;
 use qubit_fs::copy::CopyMethod;
 use qubit_fs::copy::CopyOptions;
@@ -23,7 +25,6 @@ use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
 use qubit_fs_testkit::ReadScenario;
 use qubit_fs_testkit::WriteScenario;
-use std::cell::Cell;
 
 use self::common::MemoryFixture;
 /// Fixture that uses every synchronous optional-hook default.
