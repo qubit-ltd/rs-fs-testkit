@@ -124,6 +124,11 @@ metadata length cannot reject a shorter stream before it is read. The suite
 always opens the reader first, including for a zero-length window, so
 not-found, permission, and condition errors are preserved.
 
+For range reads, an offset at or beyond EOF returns an empty window, and a requested
+length extending past EOF is truncated. A zero-length request still opens the
+resource, preserving not-found, permission, and condition errors. Opening a
+reader does not promise a snapshot of the resource contents.
+
 The `ReadRange` check also reads the same non-empty, non-zero-offset window
 with a caller budget equal to its length and verifies those exact bytes, then
 retries the request with a budget one byte smaller and requires
@@ -361,6 +366,38 @@ empty destination and checks the published replacement contents. It does not
 claim that providers must overwrite non-empty directories. When a cancellation
 check reports `Published`, treat that as evidence that a target is observable;
 the suite does not require it to equal the complete requested payload.
+
+## Bounded asynchronous runs and cleanup
+
+The testkit does not choose a runtime or deadline. A caller can bound the run
+and cleanup independently. Keep the fixture and suite outside the timed async
+block so the suite remains available after cancellation:
+
+```rust,ignore
+use std::time::Duration;
+use qubit_fs_testkit::{AsyncFileSystemFixture, AsyncFileSystemContractSuite, ContractCheckId};
+
+async fn check_with_deadlines<F: AsyncFileSystemFixture>(fixture: &F, id: ContractCheckId) {
+    let mut suite = AsyncFileSystemContractSuite::new(fixture);
+    let run = tokio::time::timeout(Duration::from_secs(30), async {
+        suite.run_check(id).await;
+    }).await;
+    if run.is_err() {
+        let interrupted = suite.run().was_interrupted();
+        let cleanup = tokio::time::timeout(Duration::from_secs(30), suite.finish()).await;
+        panic!("contract {id}: run deadline reached; interrupted={interrupted}; cleanup completed={}", cleanup.is_ok() && suite.run().cleanup().completed());
+    }
+    suite.run().assert_satisfied_with(&[id]);
+}
+```
+
+The run and cleanup budgets are separate and may be adjusted for the provider.
+The outer block returns `()`, so it does not keep a borrow of the suite alive.
+After a run deadline, inspect retained interruption evidence, attempt cleanup,
+then fail the original contract test even if cleanup succeeds. If cleanup also
+times out, report cleanup as incomplete and let the fixture owner continue
+recovery; do not claim asynchronous resources were reclaimed. Cooperative
+runtime timeouts cannot preempt a blocking `poll`.
 
 ## Whole-file asynchronous write recovery
 

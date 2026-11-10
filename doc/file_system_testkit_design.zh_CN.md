@@ -326,21 +326,23 @@ testkit 自身的 recording provider 和故障 fixture 用于验证套件记账�
 
 ### 8.1 Metadata 与 read
 
-验证：
+当前 suite 的实际检查与责任边界如下：
 
-- `stat` 的 kind、size、logical path 和 final-symlink 语义；
-- `exists` 只吞掉 `NotFound`；
-- reader 的 `OpenedFileInfo(FileSystemId + Path)` 与请求一致；
-- open-time metadata 是 snapshot；
-- `read_all` 同时遵守 caller limit 和 filesystem limit；
-- range、condition 与 checksum requirement。
+| 范围 | Suite 当前证据 | 其他责任／未由本 suite 证明 |
+| --- | --- | --- |
+| `stat` | `StatBasic` 对独立生成的 missing path 检查结构化 `NotFound/Stat`；`StatFileKind` 对独立 seed 的资源检查 file-like kind，并在长度已知时比较 seed 长度 | `len == None` 被允许；logical path、final-symlink 解析与平台行为由核心门面和 provider 各自测试负责，本轮未确认这些保证的具体下游测试位置 |
+| `exists` | provider suite 没有具名检查独立验证 `exists` 对错误的吞并行为 | “只吞掉 NotFound”的门面分派语义由核心测试负责 |
+| reader/read | `ReadBasic` 等场景检查 seeded 内容和相应结构化错误；`ReadIfMatch*`、`ReadIfNoneMatch*`、`ReadChecksum` 和 `ReadChecksumCorruption` 在适用时验证条件／checksum 场景；范围检查包含零长度、EOF 及 EOF 之后的空窗口 | reader 的 `FileSystemId + Path` 身份与 open-time snapshot 不是普通 reader 检查的独立证据；reader identity、snapshot 与 final-symlink 语义由核心/provider 测试负责。随机访问 identity 检查不代表普通 reader identity 覆盖 |
+| range/limits | `read_all` 按所选窗口实际消费字节应用 caller limit；range 检查独立验证内容、EOF 截断/空窗口和适用的 filesystem range limit | 不证明读取内容来自不可变快照，也不证明服务端实际采用特定分页或范围实现 |
+
+suite 的 missing-path `stat` 和 read scenario 观察不能证明门面 `exists` 只吞掉 `NotFound`；该分派语义属于核心测试责任。上表未标为 suite 证据的属性不应被描述成 provider contract suite 已验证。
 
 `read_all` 的 `max_bytes` 预算按本次读取窗口实际消费的字节计算。打开元数据中的 `len`
 仍表示完整资源长度，但不用于预先拒绝读取。完整资源为 `0123456789` 时，
 `offset = 2, length = 3, max_bytes = 3` 必须成功并返回 `234`，`max_bytes = 2` 必须返回
 `ResourceLimitExceeded`；即使元数据高估长度，实际较短的流也应成功。窗口长度为零也
-必须先执行 open，以保留 NotFound、权限和条件错误。offset 超出 EOF 是否成功属于 provider 的
-range 契约，核心只保证不会因完整资源长度而额外误拒绝已成功打开的窗口。
+必须先执行 open，以保留 NotFound、权限和条件错误。offset 位于 EOF 或之后时，范围读取返回空窗口；
+请求长度超过 EOF 时截断。成功打开不表示读取到资源内容快照，窗口内容也不保证来自同一时刻的资源状态。
 
 ### 8.2 Write
 
@@ -471,6 +473,15 @@ testkit 的可控 future 和故障模型自验证 `AsyncCopyOperation`：
 取消测试不绑定具体 runtime：testkit 自验证使用可控 `Pending` future 手工 poll；
 真实 provider suite 只有在 fixture 提供对应 fault/cancellation hook 时才运行阶段性
 取消 probe。
+
+### 调用方控制异步 deadline
+
+runtime-neutral suite 不内置 deadline。调用方可用所用 runtime 的 timeout 包裹手动管理的
+`run_check` future；计时 future 被 drop 后，可检查 `suite.run()` 保留的运行证据，并使用独立的
+cleanup budget 调用 `suite.finish()`。即使清理完成，run timeout 仍表示 contract 失败。若清理也超时，
+保留的 cleanup evidence 不证明异步资源已经回收。协作式 timeout 无法抢占阻塞的 `poll`。
+注册宏 runner 拥有整个 fixture/suite wrapper；超时丢弃 wrapper 后，调用方无法取回 retained run
+进行检查或重试 `finish()`。
 
 ## 12. Testkit 自验证
 

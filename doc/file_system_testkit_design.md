@@ -22,7 +22,10 @@ of a check.
 The `read_all` budget applies to bytes consumed from the selected window, not
 the full resource or its opened metadata length. A stale length overestimate
 cannot reject a shorter stream before reading it. The suite opens the reader
-even for a zero-length window so provider errors remain observable.
+even for a zero-length window so provider errors remain observable. For a range
+read, an offset at EOF or beyond EOF returns an empty window, and a requested
+length extending past EOF is truncated. This successful open/read does not
+promise a content snapshot.
 
 ## Evidence boundaries
 
@@ -72,6 +75,17 @@ but excludes grandchildren. `ListPrefix` uses a `Subtree` filter and recursive
 traversal, and its expected set includes the selected directory and all seeded
 descendants. Fixtures must seed directories independently with
 `seed_empty_directory`; file seeding does not imply directory visibility.
+
+## Metadata and read evidence boundaries
+
+| Area | Evidence checked by this suite | Other ownership / not established here |
+| --- | --- | --- |
+| `stat` | `StatBasic` checks structured `NotFound/Stat` for an independently generated missing path. `StatFileKind` checks file-like kind for an independently seeded resource and compares its length when known. | `len == None` is allowed. Logical path, final-symlink resolution, and platform behavior belong to core facade and provider tests; this pass did not confirm specific downstream test locations. |
+| `exists` | No named provider-suite check independently verifies `exists` error swallowing. | The facade rule that only `NotFound` is swallowed belongs to core dispatch tests. |
+| reader/read | `ReadBasic` and related scenarios check seeded content and applicable structured errors. `ReadIfMatch*`, `ReadIfNoneMatch*`, `ReadChecksum`, and `ReadChecksumCorruption` exercise their declared conditional/checksum cases when applicable. Range checks include zero-length, EOF, and beyond-EOF empty windows. | Ordinary reader checks do not independently prove `FileSystemId + Path` identity or open-time snapshot semantics. Reader identity, snapshots, and final-symlink behavior belong to core/provider tests. Random-access identity checks do not establish ordinary reader identity coverage. |
+| range/limits | `read_all` applies the caller limit to bytes consumed from the selected window; range checks independently verify bytes, EOF truncation/empty windows, and applicable filesystem range limits. | These checks do not prove immutable snapshot contents or a specific service-side range implementation. |
+
+The suite's missing-path `stat` and read-scenario observations do not establish that the facade's `exists` swallows only `NotFound`; that dispatch rule is owned by core tests. Do not describe properties absent from the evidence column as provider-suite guarantees.
 
 ## Typed catalog and execution
 
@@ -186,6 +200,18 @@ Cancellation diagnostics use the following ownership mapping:
 The second form also retains operations without an opened writer, preserving
 their diagnostic state. If recovery is present, the caller explicitly aborts
 the recovered writer; taking the source transfers that responsibility.
+
+### Caller-owned asynchronous deadlines
+
+The runtime-neutral suite has no built-in deadline. Callers may wrap a
+manually managed `run_check` future in their runtime's timeout, then inspect
+`suite.run()` after the timed future is dropped and call `suite.finish()` under
+a separate cleanup budget. A run timeout remains a failed contract even when
+cleanup completes. If cleanup also times out, retained cleanup evidence does
+not prove that asynchronous resources were reclaimed. Cooperative timeouts
+cannot preempt a blocking `poll`. The registration macro runner owns the whole
+fixture/suite wrapper; timing out that wrapper does not expose its retained run
+for inspection or another `finish()` attempt.
 
 Temporary-resource checks independently seed and verify non-empty file bytes
 and directory child contents across keep, persist, overwrite, and repeated

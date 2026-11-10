@@ -240,6 +240,8 @@ struct CopyGate {
     execution_live: bool,
     ever_reached: bool,
     fail_acknowledgement: bool,
+    never_acknowledges: bool,
+    acknowledgement_polls: usize,
     fail_disarm: bool,
     waker: Option<Waker>,
 }
@@ -257,6 +259,8 @@ impl CopyGate {
             execution_live: false,
             ever_reached: false,
             fail_acknowledgement: false,
+            never_acknowledges: false,
+            acknowledgement_polls: 0,
             fail_disarm: false,
             waker: None,
         }
@@ -267,6 +271,7 @@ impl CopyGate {
         self.stage = stage;
         self.pending_before_reached = 2;
         self.target_reached = false;
+        self.acknowledgement_polls = 0;
         self.armed = true;
         self.waker = None;
     }
@@ -297,6 +302,11 @@ impl CopyGate {
 
     /// Polls stage acknowledgement using the caller's real waker.
     fn poll_reached(&mut self, context: &Context<'_>) -> Poll<FixtureResult<()>> {
+        self.acknowledgement_polls += 1;
+        if self.never_acknowledges {
+            self.waker = Some(context.waker().clone());
+            return Poll::Pending;
+        }
         if self.target_reached {
             if self.fail_acknowledgement {
                 return Poll::Ready(Err(FixtureError::new("injected copy acknowledgement failure")));
@@ -472,6 +482,8 @@ pub enum AsyncMemoryFault {
     ServerSideCopyFallsBack,
     /// Fails stage acknowledgement in the copy cancellation probe.
     CopyCancelAcknowledgeFails,
+    /// Keeps provider-stage acknowledgement pending after the stage is reached.
+    CopyCancelNeverAcknowledges,
     /// Fails probe disarm after releasing the copy gate.
     CopyCancelDisarmFails,
     /// Fails copy execution before the selected cancellation stage is reached.
@@ -508,6 +520,8 @@ pub enum AsyncMemoryFault {
     WriteCancelObserveFails,
     /// Fails stage acknowledgement in the owning-write cancellation probe.
     WriteCancelAcknowledgeFails,
+    /// Keeps owning-write stage acknowledgement pending after the stage is reached.
+    WriteCancelNeverAcknowledges,
     /// Fails accepted-byte observation in the owning-write cancellation probe.
     WriteCancelAcceptedBytesFails,
     /// Fails probe disarm after releasing the provider gate.
@@ -1207,6 +1221,31 @@ impl AsyncMemoryFixture {
         self.write_gate.lock().expect("write gate lock").is_armed()
     }
 
+    /// Reports whether the armed write provider stage was reached.
+    pub fn write_cancellation_stage_reached(&self) -> bool {
+        self.write_gate.lock().expect("write gate lock").stage_reached()
+    }
+
+    /// Counts polls of the write cancellation acknowledgement probe.
+    pub fn write_acknowledgement_polls(&self) -> usize {
+        self.write_gate.lock().expect("write gate lock").acknowledgement_polls()
+    }
+
+    /// Reports whether the copy cancellation gate remains armed.
+    pub fn copy_cancellation_is_armed(&self) -> bool {
+        self.copy_gate.lock().expect("async copy gate lock").armed
+    }
+
+    /// Reports whether the copy provider stage was reached.
+    pub fn copy_cancellation_stage_reached(&self) -> bool {
+        self.copy_gate.lock().expect("async copy gate lock").ever_reached
+    }
+
+    /// Counts polls of the copy cancellation acknowledgement probe.
+    pub fn copy_acknowledgement_polls(&self) -> usize {
+        self.copy_gate.lock().expect("async copy gate lock").acknowledgement_polls
+    }
+
     /// Returns stages acknowledged by the provider's actual write gate.
     #[inline]
     pub fn write_cancellation_stages(&self) -> Vec<AsyncWriteCancellationStage> {
@@ -1856,7 +1895,11 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 return Ok(FixtureSupport::Unsupported);
             }
             let path = self.path(relative)?;
-            self.write_gate.lock().expect("write gate lock").arm(stage);
+            {
+                let mut gate = self.write_gate.lock().expect("write gate lock");
+                gate.arm(stage);
+                gate.never_acknowledges = self.fault == AsyncMemoryFault::WriteCancelNeverAcknowledges;
+            }
             let mut bytes = b"write cancellation bytes".to_vec();
             if let Some(maximum) = self.limits.max_write_bytes().maximum() {
                 bytes.truncate(maximum.min(bytes.len() as u64) as usize);
@@ -1875,6 +1918,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                     }
                     AsyncMemoryFault::WriteCancelAcceptedBytesFails => {
                         Some(super::async_memory_write_cancellation_probe::ProbeFault::AcceptedBytes)
+                    }
+                    AsyncMemoryFault::WriteCancelNeverAcknowledges => {
+                        Some(super::async_memory_write_cancellation_probe::ProbeFault::NeverAcknowledges)
                     }
                     AsyncMemoryFault::WriteCancelDisarmFails => {
                         Some(super::async_memory_write_cancellation_probe::ProbeFault::Disarm)
@@ -1899,6 +1945,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             let mut gate = self.copy_gate.lock().expect("async copy gate lock must succeed");
             gate.arm(stage);
             gate.fail_acknowledgement = self.fault == AsyncMemoryFault::CopyCancelAcknowledgeFails;
+            gate.never_acknowledges = self.fault == AsyncMemoryFault::CopyCancelNeverAcknowledges;
             gate.fail_disarm = self.fault == AsyncMemoryFault::CopyCancelDisarmFails;
             drop(gate);
             let source_relative = format!("{relative}-source");

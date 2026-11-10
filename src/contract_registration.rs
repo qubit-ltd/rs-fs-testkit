@@ -87,6 +87,13 @@ macro_rules! register_file_system_contract_tests {
 /// when present, is a function or closure evaluated once per phase before the
 /// runner starts. It selects optional checks that must have evidence; IDs
 /// outside the selected phase fail the normal contract assertion.
+///
+/// The runner receives the whole future that owns the fixture and suite. A
+/// timeout around that future can end a test, but it drops the wrapper and
+/// gives the caller no retained suite with which to inspect an interrupted
+/// run or retry `finish()`. For bounded remote-provider checks that need those
+/// diagnostics, use a manually managed suite and separate run/cleanup budgets
+/// as shown in the [user guide](../doc/user_guide.md#bounded-asynchronous-runs-and-cleanup).
 #[macro_export]
 macro_rules! register_async_file_system_contract_tests {
     (

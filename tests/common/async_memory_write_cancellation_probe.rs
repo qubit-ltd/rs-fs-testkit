@@ -34,6 +34,7 @@ pub(crate) enum ProbeFault {
     Acknowledge,
     AcceptedBytes,
     Disarm,
+    NeverAcknowledges,
 }
 
 impl WriteCancellationProbe for AsyncMemoryWriteCancellationProbe {
@@ -41,6 +42,10 @@ impl WriteCancellationProbe for AsyncMemoryWriteCancellationProbe {
         &self.case
     }
     fn poll_reached(&self, _: &mut Context<'_>) -> Poll<FixtureResult<()>> {
+        if self.fault == Some(ProbeFault::NeverAcknowledges) {
+            let _ = self.gate.lock().expect("write gate lock").poll_reached();
+            return Poll::Pending;
+        }
         if self.fault == Some(ProbeFault::Acknowledge) {
             return Poll::Ready(Err(FixtureError::new("injected write acknowledgement failure")));
         }

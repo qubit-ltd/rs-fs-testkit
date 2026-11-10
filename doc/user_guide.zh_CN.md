@@ -111,6 +111,9 @@ SPI 分派、预检由 core 自身测试负责；native 行为、平台语义和
 实际较短的流。套件始终先打开 reader，即使窗口长度为零也如此，因此 NotFound、权限和
 条件错误仍会保留。
 
+范围读取的 offset 位于 EOF 或之后时返回空窗口；请求长度超过 EOF 时截断。零长度请求仍会打开资源，
+以保留 not-found、权限和条件错误。打开 reader 不承诺资源内容快照。
+
 `ReadRange` 检查还会用等于窗口长度的 caller budget 再次读取同一个非空、非零偏移窗口，
 并核对精确字节；随后将预算减少一个字节，要求 `Read` 操作返回
 `ResourceLimitExceeded`。caller budget 由门面执行，与 provider 声明的最大范围长度是不同约束。
@@ -281,6 +284,34 @@ S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create
 通过不能作为远程后端证据；
 任何关于 S3 兼容性的结论都必须同时记录该 crate 的环境、后端版本、lockfile 和运行输出。
 本手册只说明验证边界，不声称远程套件已经运行。
+
+## 异步运行与清理的独立超时
+
+testkit 不选择 runtime 或 deadline。调用方可以分别限制运行和清理时间；fixture 与 suite
+必须留在计时 async block 外，以便取消后继续访问 suite：
+
+```rust,ignore
+use std::time::Duration;
+use qubit_fs_testkit::{AsyncFileSystemFixture, AsyncFileSystemContractSuite, ContractCheckId};
+
+async fn check_with_deadlines<F: AsyncFileSystemFixture>(fixture: &F, id: ContractCheckId) {
+    let mut suite = AsyncFileSystemContractSuite::new(fixture);
+    let run = tokio::time::timeout(Duration::from_secs(30), async {
+        suite.run_check(id).await;
+    }).await;
+    if run.is_err() {
+        let interrupted = suite.run().was_interrupted();
+        let cleanup = tokio::time::timeout(Duration::from_secs(30), suite.finish()).await;
+        panic!("contract {id}: run deadline reached; interrupted={interrupted}; cleanup completed={}", cleanup.is_ok() && suite.run().cleanup().completed());
+    }
+    suite.run().assert_satisfied_with(&[id]);
+}
+```
+
+运行和清理使用独立预算，可按 provider 调整。外层 block 返回 `()`，不会让 suite 借用逃逸。
+运行超时后先读取保留的中断证据，再尝试清理；即使清理成功，原 contract 测试仍必须失败。
+清理也超时时，应报告清理尚未完成，并由 fixture 所有者继续恢复；不能声称异步资源已经回收。
+协作式 runtime timeout 不能抢占阻塞的 `poll`。
 
 ## 异步整文件写入恢复
 

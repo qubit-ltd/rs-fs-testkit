@@ -390,6 +390,90 @@ fn test_partial_published_write_cancellation_is_observable() {
     assert!(fixture.is_empty(), "partial write cancellation must teardown");
 }
 
+/// A never-acknowledging write probe remains pending after its stage is reached.
+#[test]
+fn test_write_cancel_open_can_be_cancelled_while_acknowledgement_is_pending() {
+    let fixture = AsyncMemoryFixture::with_fault(
+        self::common::async_memory_file_system::AsyncMemoryFault::WriteCancelNeverAcknowledges,
+    );
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let mut execution = Box::pin(suite.run_check(ContractCheckId::WriteCancelOpen));
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    for _ in 0..64 {
+        assert!(execution.as_mut().poll(&mut context).is_pending());
+        if fixture.write_cancellation_stage_reached()
+            && fixture.write_acknowledgement_polls() > 0
+        {
+            break;
+        }
+    }
+    assert!(fixture.write_cancellation_stage_reached(), "provider stage was not reached");
+    assert!(fixture.write_acknowledgement_polls() > 0, "probe was not polled");
+    assert!(execution.as_mut().poll(&mut context).is_pending());
+    assert!(execution.as_mut().poll(&mut context).is_pending());
+    drop(execution);
+    assert!(suite.run().was_interrupted());
+    assert!(!suite.run().requirements_satisfied());
+    assert!(!matches!(
+        suite
+            .run()
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == ContractCheckId::WriteCancelOpen)
+            .expect("registered write cancellation check")
+            .outcome(),
+        ContractCheckOutcome::Passed
+    ));
+    run_controlled(suite.finish());
+    assert!(!fixture.write_cancellation_is_armed());
+    assert!(fixture.is_empty());
+    assert!(!suite.run().requirements_satisfied());
+}
+
+/// A never-acknowledging copy probe remains pending after its native stage.
+#[test]
+fn test_copy_cancel_native_attempt_can_be_cancelled_while_acknowledgement_is_pending() {
+    let fixture = AsyncMemoryFixture::with_fault(
+        self::common::async_memory_file_system::AsyncMemoryFault::CopyCancelNeverAcknowledges,
+    );
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let mut execution = Box::pin(suite.run_check(ContractCheckId::AsyncCopyCancelNativeAttempt));
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    for _ in 0..64 {
+        assert!(execution.as_mut().poll(&mut context).is_pending());
+        if fixture.copy_cancellation_stage_reached()
+            && fixture.copy_acknowledgement_polls() > 0
+        {
+            break;
+        }
+    }
+    assert!(fixture.copy_cancellation_stage_reached(), "provider stage was not reached");
+    assert!(fixture.copy_acknowledgement_polls() > 0, "probe was not polled");
+    assert!(execution.as_mut().poll(&mut context).is_pending());
+    assert!(execution.as_mut().poll(&mut context).is_pending());
+    drop(execution);
+    assert!(suite.run().was_interrupted());
+    assert!(!suite.run().requirements_satisfied());
+    assert!(!matches!(
+        suite
+            .run()
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == ContractCheckId::AsyncCopyCancelNativeAttempt)
+            .expect("registered copy cancellation check")
+            .outcome(),
+        ContractCheckOutcome::Passed
+    ));
+    run_controlled(suite.finish());
+    assert!(!fixture.copy_cancellation_is_armed());
+    assert!(fixture.is_empty());
+    assert!(!suite.run().requirements_satisfied());
+}
+
 /// A directly published partial copy target is valid Published cancellation
 /// evidence.
 #[test]

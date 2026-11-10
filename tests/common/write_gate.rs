@@ -20,6 +20,8 @@ pub(crate) struct WriteGate {
     stage: Option<AsyncWriteCancellationStage>,
     remaining: usize,
     reached: bool,
+    acknowledgement_polls: usize,
+    pub(crate) never_acknowledges: bool,
     pub(crate) accepted: u64,
     pub(crate) observed: Vec<AsyncWriteCancellationStage>,
 }
@@ -31,6 +33,8 @@ impl WriteGate {
             stage: None,
             remaining: 0,
             reached: false,
+            acknowledgement_polls: 0,
+            never_acknowledges: false,
             accepted: 0,
             observed: Vec::new(),
         }
@@ -49,6 +53,7 @@ impl WriteGate {
         self.stage = Some(stage);
         self.remaining = 2;
         self.reached = false;
+        self.acknowledgement_polls = 0;
         self.accepted = 0;
     }
 
@@ -70,7 +75,11 @@ impl WriteGate {
 
     /// Reports whether the armed stage has been reached, or an early-disarm
     /// error.
-    pub(crate) fn poll_reached(&self) -> Poll<FixtureResult<()>> {
+    pub(crate) fn poll_reached(&mut self) -> Poll<FixtureResult<()>> {
+        self.acknowledgement_polls += 1;
+        if self.never_acknowledges {
+            return Poll::Pending;
+        }
         if self.stage.is_none() {
             return Poll::Ready(Err(FixtureError::new("write gate disarmed before acknowledgement")));
         }
@@ -79,6 +88,14 @@ impl WriteGate {
         } else {
             Poll::Pending
         }
+    }
+
+    pub(crate) fn stage_reached(&self) -> bool {
+        self.reached
+    }
+
+    pub(crate) fn acknowledgement_polls(&self) -> usize {
+        self.acknowledgement_polls
     }
 
     /// Disarms the gate so subsequent polls are immediately ready.

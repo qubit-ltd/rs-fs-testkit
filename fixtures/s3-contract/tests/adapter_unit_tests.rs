@@ -73,6 +73,72 @@ fn test_configuration_debug_does_not_expose_credentials() {
 
 mod common;
 
+/// Runs one check with caller-owned run and cleanup deadlines.
+async fn run_check_with_deadlines(
+    fixture: &common::Fixture,
+    id: qubit_fs_testkit::ContractCheckId,
+) {
+    use std::time::Duration;
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+
+    let mut suite = AsyncFileSystemContractSuite::new(fixture);
+    let run = tokio::time::timeout(Duration::from_secs(30), async {
+        suite.run_check(id).await;
+    })
+    .await;
+    if run.is_err() {
+        let interrupted = suite.run().was_interrupted();
+        let cleanup = tokio::time::timeout(Duration::from_secs(30), suite.finish()).await;
+        panic!(
+            "contract {id}: run deadline reached; interrupted={interrupted}; cleanup completed={}",
+            cleanup.is_ok() && suite.run().cleanup().completed()
+        );
+    }
+    suite.run().assert_satisfied_with(&[id]);
+}
+
+#[tokio::test]
+async fn test_documented_bounded_run_helper_compiles_and_runs() {
+    run_check_with_deadlines(
+        &common::Fixture::memory("bounded-run"),
+        qubit_fs_testkit::ContractCheckId::StatBasic,
+    )
+    .await;
+}
+
+/// Covers Tokio's three deadline outcomes; suite evidence and cleanup retries
+/// are checked separately by the runtime-neutral cancellation regressions.
+#[tokio::test(start_paused = true)]
+async fn test_run_and_cleanup_deadlines_are_independent() {
+    use std::future::pending;
+    use std::time::Duration;
+
+    let normal_run = tokio::time::timeout(Duration::from_secs(1), async {}).await;
+    assert!(
+        normal_run.is_ok(),
+        "normal run should complete within its budget"
+    );
+
+    let timed_out_run = tokio::time::timeout(Duration::ZERO, pending::<()>()).await;
+    assert!(
+        timed_out_run.is_err(),
+        "pending run should hit its deadline"
+    );
+    let successful_cleanup = tokio::time::timeout(Duration::from_secs(1), async {}).await;
+    assert!(
+        successful_cleanup.is_ok(),
+        "cleanup has its own successful budget"
+    );
+
+    let timed_out_run = tokio::time::timeout(Duration::ZERO, pending::<()>()).await;
+    assert!(timed_out_run.is_err(), "run deadline remains a failure");
+    let timed_out_cleanup = tokio::time::timeout(Duration::ZERO, pending::<()>()).await;
+    assert!(
+        timed_out_cleanup.is_err(),
+        "cleanup timeout must remain observable"
+    );
+}
+
 /// Each supported contract runs against a fresh independent SDK fixture.
 #[tokio::test]
 async fn test_in_memory_adapter_runs_the_supported_contract_matrix() {
