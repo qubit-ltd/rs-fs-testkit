@@ -768,6 +768,23 @@ fn test_random_access_cancel_releases_futures_and_reuses_reader() {
 
 #[cfg(feature = "async")]
 #[test]
+fn test_random_access_cancel_reuses_reader_with_one_byte_range_limit() {
+    let fixture = AsyncRandomFixture::with_limit(true, false, FileSystemLimit::Maximum(1));
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+    assert!(
+        run.failures().is_empty(),
+        "one-byte random-access limit should support cancellation and reuse: {:?}",
+        run.failures()
+    );
+    assert_eq!(
+        run.report().checks()[0].outcome(),
+        &ContractCheckOutcome::Passed
+    );
+}
+
+#[cfg(feature = "async")]
+#[test]
 fn test_random_access_cancel_reports_unverified_and_detects_rebinding() {
     let no_pending = AsyncRandomFixture::new(false, false);
     let mut suite = AsyncFileSystemContractSuite::new(&no_pending);

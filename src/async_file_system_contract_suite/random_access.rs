@@ -93,7 +93,7 @@ impl AsyncFileSystemContractSuite<'_> {
         };
         self.context.record_created(path.clone());
         if id == ContractCheckId::RandomAccessCancel {
-            return self.execute_random_access_cancel(&path, id).await;
+            return self.execute_random_access_cancel(&path, range_limit, id).await;
         }
         let mut reader = self
             .fixture
@@ -222,6 +222,7 @@ impl AsyncFileSystemContractSuite<'_> {
     async fn execute_random_access_cancel(
         &mut self,
         path: &qubit_fs::path::Path,
+        range_limit: FileSystemLimit,
         id: ContractCheckId,
     ) -> Result<ContractCheckOutcome, ContractFailure> {
         let FixtureSupport::Supported(()) = self
@@ -247,15 +248,24 @@ impl AsyncFileSystemContractSuite<'_> {
         if reader.len() != SEED.len() as u64 {
             return Err(ContractFailure::message_only("random-access open-time length did not match the seed").at(id));
         }
+        let probe_len = range_limit
+            .maximum()
+            .and_then(|maximum| usize::try_from(maximum).ok())
+            .map_or(2, |maximum| maximum.min(2));
+        if probe_len == 0 {
+            return Ok(ContractCheckOutcome::Unverified {
+                reason: "random-access range limit prevents a non-empty pending-read probe".to_owned(),
+            });
+        }
         let waker = Waker::noop();
         let mut context = Context::from_waker(waker);
         {
-            let output = &mut [0; 2];
-            let read = reader.read_at(0, output);
+            let mut output = vec![0; probe_len];
+            let read = reader.read_at(0, &mut output);
             drop(read);
         }
         let observed_pending = {
-            let mut output = [0; 2];
+            let mut output = vec![0; probe_len];
             let mut read = pin!(reader.read_at(0, &mut output));
             matches!(read.as_mut().poll(&mut context), Poll::Pending)
         };
