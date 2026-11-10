@@ -77,6 +77,7 @@ mod common;
 struct ControlledDeadlineFixture {
     inner: common::Fixture,
     teardown_pending: bool,
+    probe_acknowledgement_polls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -92,6 +93,7 @@ enum DeadlineOutcome {
 
 struct NeverAcknowledgeProbe {
     inner: Box<dyn qubit_fs_testkit::WriteCancellationProbe>,
+    acknowledgement_polls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl qubit_fs_testkit::WriteCancellationProbe for NeverAcknowledgeProbe {
@@ -103,6 +105,8 @@ impl qubit_fs_testkit::WriteCancellationProbe for NeverAcknowledgeProbe {
         &self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<qubit_fs_testkit::FixtureResult<()>> {
+        self.acknowledgement_polls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         match self.inner.poll_reached(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Pending,
             result => result,
@@ -145,7 +149,12 @@ impl qubit_fs_testkit::AsyncFileSystemFixture for ControlledDeadlineFixture {
             match prepared.await? {
                 qubit_fs_testkit::FixtureSupport::Supported(probe) => {
                     let probe: Box<dyn qubit_fs_testkit::WriteCancellationProbe> =
-                        Box::new(NeverAcknowledgeProbe { inner: probe });
+                        Box::new(NeverAcknowledgeProbe {
+                            inner: probe,
+                            acknowledgement_polls: std::sync::Arc::clone(
+                                &self.probe_acknowledgement_polls,
+                            ),
+                        });
                     Ok(qubit_fs_testkit::FixtureSupport::Supported(probe))
                 }
                 qubit_fs_testkit::FixtureSupport::Unsupported => {
@@ -166,8 +175,8 @@ impl qubit_fs_testkit::AsyncFileSystemFixture for ControlledDeadlineFixture {
 
 /// Executes a real suite check under separate run and cleanup budgets.
 ///
-/// When `control` is provided, the run is held after the real provider reaches
-/// its write-open gate, so timeout assertions inspect retained suite evidence.
+/// When `control` is provided, a concurrent observer waits for the real
+/// provider's write-open gate while the timeout continues to drive the suite.
 async fn run_suite_check_with_budgets(
     suite: &mut qubit_fs_testkit::AsyncFileSystemContractSuite<'_>,
     id: qubit_fs_testkit::ContractCheckId,
@@ -177,24 +186,21 @@ async fn run_suite_check_with_budgets(
 ) -> DeadlineOutcome {
     use std::future::poll_fn;
 
-    let mut provider_stage_reached = false;
-    let run = tokio::time::timeout(run_budget, async {
-        if let Some(control) = control {
-            tokio::select! {
-                _ = suite.run_check(id) => {
-                    panic!("write-open cancellation check completed before its deadline");
-                }
-                _ = poll_fn(|cx| control.poll_reached(cx)) => {
-                    provider_stage_reached = true;
-                    std::future::pending::<()>().await;
-                }
-            }
-        } else {
-            suite.run_check(id).await;
-        }
-    })
-    .await;
-    if run.is_err() {
+    let (run_timed_out, provider_stage_reached) = if let Some(control) = control {
+        let (run, stage) = tokio::join!(
+            tokio::time::timeout(run_budget, suite.run_check(id)),
+            tokio::time::timeout(run_budget, poll_fn(|cx| control.poll_reached(cx))),
+        );
+        let run_timed_out = run.is_err();
+        drop(run);
+        (run_timed_out, stage.is_ok())
+    } else {
+        let run = tokio::time::timeout(run_budget, suite.run_check(id)).await;
+        let run_timed_out = run.is_err();
+        drop(run);
+        (run_timed_out, false)
+    };
+    if run_timed_out {
         let interrupted = suite.run().was_interrupted();
         let cleanup = tokio::time::timeout(cleanup_budget, suite.finish()).await;
         return DeadlineOutcome::RunTimedOut {
@@ -255,6 +261,7 @@ async fn test_real_suite_run_timeout_retains_evidence_and_cleanup_succeeds() {
     let fixture = ControlledDeadlineFixture {
         inner: common::Fixture::memory("run-timeout-cleanup-ok"),
         teardown_pending: false,
+        probe_acknowledgement_polls: std::sync::Arc::default(),
     };
     let control = fixture.inner.control.clone();
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
@@ -281,6 +288,10 @@ async fn test_real_suite_run_timeout_retains_evidence_and_cleanup_succeeds() {
         suite.run().report().checks()[0].outcome(),
         &qubit_fs_testkit::ContractCheckOutcome::Passed
     );
+    assert!(
+        fixture.probe_acknowledgement_polls.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "the actual cancellation probe must be polled before the deadline"
+    );
 
     assert!(suite.run().cleanup().completed());
     assert!(!suite.run().requirements_satisfied(), "cleanup cannot turn a run timeout into a pass");
@@ -295,6 +306,7 @@ async fn test_real_suite_run_and_cleanup_timeouts_retain_incomplete_cleanup() {
     let fixture = ControlledDeadlineFixture {
         inner: common::Fixture::memory("run-and-cleanup-timeout"),
         teardown_pending: true,
+        probe_acknowledgement_polls: std::sync::Arc::default(),
     };
     let control = fixture.inner.control.clone();
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
@@ -320,6 +332,10 @@ async fn test_real_suite_run_and_cleanup_timeouts_retain_incomplete_cleanup() {
     assert_ne!(
         suite.run().report().checks()[0].outcome(),
         &qubit_fs_testkit::ContractCheckOutcome::Passed
+    );
+    assert!(
+        fixture.probe_acknowledgement_polls.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "the actual cancellation probe must be polled before the deadline"
     );
 
     assert!(!suite.run().cleanup().completed());
