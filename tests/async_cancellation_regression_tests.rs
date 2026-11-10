@@ -390,7 +390,8 @@ fn test_partial_published_write_cancellation_is_observable() {
     assert!(fixture.is_empty(), "partial write cancellation must teardown");
 }
 
-/// A never-acknowledging write probe remains pending after its stage is reached.
+/// A never-acknowledging write probe remains pending after its stage is
+/// reached.
 #[test]
 fn test_write_cancel_open_can_be_cancelled_while_acknowledgement_is_pending() {
     let fixture = AsyncMemoryFixture::with_fault(
@@ -402,13 +403,14 @@ fn test_write_cancel_open_can_be_cancelled_while_acknowledgement_is_pending() {
     let mut context = Context::from_waker(waker);
     for _ in 0..64 {
         assert!(execution.as_mut().poll(&mut context).is_pending());
-        if fixture.write_cancellation_stage_reached()
-            && fixture.write_acknowledgement_polls() > 0
-        {
+        if fixture.write_cancellation_stage_reached() && fixture.write_acknowledgement_polls() > 0 {
             break;
         }
     }
-    assert!(fixture.write_cancellation_stage_reached(), "provider stage was not reached");
+    assert!(
+        fixture.write_cancellation_stage_reached(),
+        "provider stage was not reached"
+    );
     assert!(fixture.write_acknowledgement_polls() > 0, "probe was not polled");
     assert!(execution.as_mut().poll(&mut context).is_pending());
     assert!(execution.as_mut().poll(&mut context).is_pending());
@@ -444,13 +446,14 @@ fn test_copy_cancel_native_attempt_can_be_cancelled_while_acknowledgement_is_pen
     let mut context = Context::from_waker(waker);
     for _ in 0..64 {
         assert!(execution.as_mut().poll(&mut context).is_pending());
-        if fixture.copy_cancellation_stage_reached()
-            && fixture.copy_acknowledgement_polls() > 0
-        {
+        if fixture.copy_cancellation_stage_reached() && fixture.copy_acknowledgement_polls() > 0 {
             break;
         }
     }
-    assert!(fixture.copy_cancellation_stage_reached(), "provider stage was not reached");
+    assert!(
+        fixture.copy_cancellation_stage_reached(),
+        "provider stage was not reached"
+    );
     assert!(fixture.copy_acknowledgement_polls() > 0, "probe was not polled");
     assert!(execution.as_mut().poll(&mut context).is_pending());
     assert!(execution.as_mut().poll(&mut context).is_pending());

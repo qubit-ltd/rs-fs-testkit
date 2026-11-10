@@ -520,7 +520,8 @@ pub enum AsyncMemoryFault {
     WriteCancelObserveFails,
     /// Fails stage acknowledgement in the owning-write cancellation probe.
     WriteCancelAcknowledgeFails,
-    /// Keeps owning-write stage acknowledgement pending after the stage is reached.
+    /// Keeps owning-write stage acknowledgement pending after the stage is
+    /// reached.
     WriteCancelNeverAcknowledges,
     /// Fails accepted-byte observation in the owning-write cancellation probe.
     WriteCancelAcceptedBytesFails,
@@ -1243,7 +1244,10 @@ impl AsyncMemoryFixture {
 
     /// Counts polls of the copy cancellation acknowledgement probe.
     pub fn copy_acknowledgement_polls(&self) -> usize {
-        self.copy_gate.lock().expect("async copy gate lock").acknowledgement_polls
+        self.copy_gate
+            .lock()
+            .expect("async copy gate lock")
+            .acknowledgement_polls
     }
 
     /// Returns stages acknowledged by the provider's actual write gate.
