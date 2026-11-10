@@ -32,6 +32,8 @@ pub(crate) use catch_unwind_future::catch_unwind_future;
 
 mod verify_open_failure;
 pub(crate) use verify_open_failure::verify_open_failure;
+mod verify_rename_preflight;
+pub(crate) use verify_rename_preflight::is_expected_unavailable_rename;
 
 pub(crate) mod finish_expected_write_failure;
 

@@ -21,6 +21,7 @@ use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 use crate::ContractFailure;
 use crate::FixtureSupport;
+use crate::internal::is_expected_unavailable_rename;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
@@ -166,20 +167,15 @@ impl AsyncFileSystemContractSuite<'_> {
                     return Err(ContractFailure::message_only("unavailable rename requirement succeeded").at(id));
                 }
             };
-            let kind = if capability == FileSystemCapability::Rename {
-                FsErrorKind::UnsupportedCapability
-            } else {
-                FsErrorKind::RequirementNotMet
-            };
             let error = failure.error();
-            if error.kind() != kind
-                || error.operation() != FsOperation::Rename
-                || error.path() != Some(&source)
-                || error.target() != Some(&target)
-                || error.provider() != Some(self.context.properties().info().provider_id())
-                || error.required_capability() != Some(capability)
-                || failure.state() != RenameFailureState::Unchanged
-            {
+            if !is_expected_unavailable_rename(
+                error,
+                failure.state(),
+                &source,
+                &target,
+                self.context.properties().info().provider_id(),
+                capability,
+            ) {
                 return Err(ContractFailure::with_source("rename preflight rejection differs", failure).at(id));
             }
             if let Some(expected) = &baseline {
