@@ -267,6 +267,10 @@ pub enum MemoryFault {
     WrongPersistTarget,
     /// Returns no entries for a non-empty requested directory.
     EmptyList,
+    /// Ignores non-recursive depth limits while preserving path filters.
+    ListAlwaysRecursive,
+    /// Returns direct children only, even for recursive filtered requests.
+    ListAlwaysDirectChildren,
     /// Returns bytes different from the provider's stored content.
     ReadWrongBytes,
     /// Fails when opening a provider-owned reader.
@@ -1777,6 +1781,8 @@ impl FileSystemSpi for MemorySpi {
                 request.scope().path().expect("hierarchical fixture scope"),
                 request.options().options(),
                 state.fault != MemoryFault::ListDropsMetadata,
+                state.fault == MemoryFault::ListAlwaysRecursive,
+                state.fault == MemoryFault::ListAlwaysDirectChildren,
             )
         };
         Ok(OpenedDirectoryStream::new(Box::new(MemoryDirectoryStream {
@@ -2308,13 +2314,15 @@ pub(crate) fn listed_entries(
     root: &Path,
     options: &ListOptions,
     include_metadata: bool,
+    force_recursive: bool,
+    force_direct_children: bool,
 ) -> Vec<DirEntry> {
     let prefix = format!("{}/", root.as_str().trim_end_matches('/'));
     entries
         .iter()
         .filter_map(|(text, entry)| {
             let relative = text.strip_prefix(&prefix)?;
-            if relative.is_empty() || (!options.recursive() && options.prefix().is_none() && relative.contains('/')) {
+            if relative.is_empty() {
                 return None;
             }
             if !options.prefix().is_none_or(|prefix| {
@@ -2323,6 +2331,16 @@ pub(crate) fn listed_entries(
                         .strip_prefix(prefix)
                         .is_some_and(|remaining| remaining.starts_with('/'))
             }) {
+                return None;
+            }
+            let selected_relative = options
+                .prefix()
+                .and_then(|selected| relative.strip_prefix(selected))
+                .and_then(|remainder| remainder.strip_prefix('/'))
+                .unwrap_or(relative);
+            if (force_direct_children && selected_relative.contains('/'))
+                || (!options.recursive() && !force_recursive && options.prefix().is_none() && relative.contains('/'))
+            {
                 return None;
             }
             let kind = match entry {

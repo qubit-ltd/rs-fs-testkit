@@ -450,6 +450,10 @@ pub enum AsyncMemoryFault {
     ListEscapesNamespace,
     /// Returns no entries for a non-empty requested directory.
     EmptyList,
+    /// Ignores non-recursive depth limits while preserving path filters.
+    ListAlwaysRecursive,
+    /// Returns direct children only, even for recursive filtered requests.
+    ListAlwaysDirectChildren,
     /// Omits metadata explicitly requested by the caller.
     ListDropsMetadata,
     /// Reports deletion success without removing the resource.
@@ -2171,6 +2175,8 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 request.scope().path().expect("hierarchical fixture scope"),
                 request.options().options(),
                 self.fault != AsyncMemoryFault::ListDropsMetadata,
+                self.fault == AsyncMemoryFault::ListAlwaysRecursive,
+                self.fault == AsyncMemoryFault::ListAlwaysDirectChildren,
             )
         };
         Box::pin(async move {

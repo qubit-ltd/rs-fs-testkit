@@ -122,18 +122,44 @@ impl AsyncFileSystemContractSuite<'_> {
         }
         let mut expected = Vec::new();
         if id == ContractCheckId::ListPrefix {
-            let prefix = format!("{relative}/prefixed");
+            let directories: &[&str] = if hierarchical {
+                &["prefixed", "prefixed/nested"]
+            } else {
+                &["prefixed"]
+            };
+            for directory in directories {
+                let prepared = self
+                    .fixture
+                    .seed_empty_directory(&format!("{relative}/{directory}"))
+                    .await
+                    .map_err(|error| ContractFailure::with_source("list subtree preparation failed", error).at(id))?;
+                let FixtureSupport::Supported(path) = prepared else {
+                    self.context.record_check(
+                        id,
+                        Some(capability),
+                        ContractCheckOutcome::Unverified {
+                            reason: "subtree listing needs independently prepared directories".to_owned(),
+                        },
+                    );
+                    return Ok(());
+                };
+                self.context.record_created(path.clone());
+                expected.push(path);
+            }
+        } else if id == ContractCheckId::ListBasic && hierarchical {
             let prepared = self
                 .fixture
-                .seed_empty_directory(&prefix)
+                .seed_empty_directory(&format!("{relative}/nested"))
                 .await
-                .map_err(|error| ContractFailure::with_source("list subtree preparation failed", error).at(id))?;
+                .map_err(|error| {
+                    ContractFailure::with_source("list child directory preparation failed", error).at(id)
+                })?;
             let FixtureSupport::Supported(path) = prepared else {
                 self.context.record_check(
                     id,
                     Some(capability),
                     ContractCheckOutcome::Unverified {
-                        reason: "subtree listing needs an independently prepared directory".to_owned(),
+                        reason: "hierarchical listing needs an independently prepared child directory".to_owned(),
                     },
                 );
                 return Ok(());
@@ -142,10 +168,14 @@ impl AsyncFileSystemContractSuite<'_> {
             expected.push(path);
         }
         let names: &[&str] = match id {
+            ContractCheckId::ListPrefix if hierarchical => {
+                &["prefixed/first", "prefixed/second", "prefixed/nested/child", "decoy"]
+            }
             ContractCheckId::ListPrefix => &["prefixed/first", "prefixed/second", "decoy"],
             ContractCheckId::ListLiteralPrefix => &["literal[1]-match", "literal1-decoy"],
             ContractCheckId::ListPagination => &["first", "second", "third"],
             _ if !hierarchical => &["first", "nested/second"],
+            _ if hierarchical => &["first", "second", "nested/child"],
             _ => &["first", "second"],
         };
         for name in names {
@@ -167,6 +197,7 @@ impl AsyncFileSystemContractSuite<'_> {
             self.context.record_created(path.clone());
             let selected = match id {
                 ContractCheckId::ListPrefix => name.starts_with("prefixed/"),
+                ContractCheckId::ListBasic if hierarchical => *name != "nested/child",
                 ContractCheckId::ListLiteralPrefix => name.starts_with("literal[1]"),
                 _ => true,
             };
