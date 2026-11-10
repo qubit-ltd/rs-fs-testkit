@@ -42,6 +42,20 @@ are not established by provider-suite observations. Core facade/SPI tests own
 core dispatch and preflight guarantees; providers own native behavior, platform
 semantics, and service-specific guarantees beyond the suite's observations.
 
+| Evidence claim | Responsible tests |
+| --- | --- |
+| Public facade results and side effects independently observed by a provider fixture | The provider contract suite, for the checks it executes with complete evidence |
+| Suite bookkeeping, recovery ownership, and rejection of injected violations | Testkit self-validation with recording and deliberately faulty fixtures |
+| SPI dispatch/preflight, compile-time borrowing properties, drop/runtime behavior, and provider-specific platform or service guarantees | Core or provider tests at the layer that owns the behavior |
+
+Positive random-access samples respect the declared `max_read_range_bytes`
+limit and accumulate short reads until the expected sample is complete. A
+separate bounds probe still submits an over-limit request to verify rejection.
+An expected rename rejection is `RejectedAsExpected` only when its structured
+error is correct and independent before/after observations prove the relevant
+paths unchanged. A provider-reported `RenameFailureState::Unchanged` is not
+independent evidence; missing required observations produce `Unverified`.
+
 Listing checks compare independently prepared entry sets, paths, and filters,
 and require metadata presence when requested. A `page_size` hint of one tests
 result completeness, not actual service pagination or SPI arguments. The page

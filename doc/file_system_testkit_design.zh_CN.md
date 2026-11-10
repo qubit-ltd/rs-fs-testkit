@@ -295,6 +295,17 @@ Limit contract 至少覆盖：
 提供的前置条件和结果。若无法独立观察必要事实，结果为 `Unverified`，不代表通过。取消恢复结果
 `Published` 只表示目标可被独立观察，不表示目标必然包含完整请求载荷。
 
+| 证据主张 | 负责验证的测试 |
+| --- | --- |
+| provider fixture 通过公开门面和独立 hook 实际观察到的结果及副作用 | 对证据完整且实际执行的检查，由 provider contract suite 负责 |
+| 套件记账、恢复所有权，以及对注入违规的拒绝能力 | 使用 recording provider 和故障 fixture 的 testkit 自验证 |
+| SPI 分派／预检、编译期借用性质、drop/runtime 行为，以及 provider 专属平台或服务保证 | 由拥有该行为的 core 或 provider 测试负责 |
+
+随机读取的正向样本请求遵守声明的 `max_read_range_bytes`，并累积短读直到取得完整期望样本；
+独立的 bounds 探针仍会提交超限请求以验证拒绝。rename 只有在结构化错误正确，且独立的前后
+观测证明相关路径保持不变时，才能记为 `RejectedAsExpected`。provider 返回的
+`RenameFailureState::Unchanged` 不能替代独立证据；缺少必需观测时结果为 `Unverified`。
+
 testkit 自身的 recording provider 和故障 fixture 用于验证套件记账、恢复所有权及已覆盖检查能否拒绝
 指定违规；这些自测不构成 provider 的行为保证。Provider suite 的黑盒观察不能证明 properties getter
 不执行 I/O、facade clone 共享同一 snapshot identity，或 diagnostics 不含 credential-like key。这些要求
@@ -370,6 +381,10 @@ provider 违规识别不由本段套件结果统一证明，应分别参考核�
 - required atomicity 不降级；
 - outcome source/target context 完整。
 
+缺能力的 rename 拒绝还需要独立确认初始资源状态及请求后的状态。资源变化或观察错误是失败；
+缺少必需观察能力时记为 `Unverified`。门面是否在进入 SPI 前完成预检，仍由 `qubit-fs` 的
+recording SPI 测试验证。
+
 ## 9. Temporary resource contract
 
 同步与异步 suite 都覆盖：
@@ -425,17 +440,14 @@ Provider 返回非法 opened identity、entry 或 outcome 时，门面必须产�
 I/O driver 和 cancellation assertion 分开实现。公共 API 不通过宏生成，以免同步和异步
 差异被隐藏。
 
-异步 suite 特别验证：
+异步 provider suite 只能验证通过 fixture hook 和公开门面实际可观察的行为，例如已提供取消探针时
+取消后的结果与清理状态。future 借用生命周期、drop 是否启动 executor 或阻塞、SPI 分派以及完整的
+stream/backpressure 保证，不由一次真实 provider suite 的黑盒结果证明，应由编译期、core 或
+`qubit-io` 专项测试负责。
 
-- open 本身是异步的；
-- future 不借用短生命周期临时配置；
-- cancellation 后 handle state 正确；
-- drop 不启动 executor 或阻塞；
-- stream/backpressure 行为符合 `qubit-io` contract。
+testkit 的可控 future 和故障模型自验证 `AsyncCopyOperation`：
 
-`AsyncCopyOperation` 单独覆盖：
-
-- `begin_copy` 只执行同步 preflight，不调用 provider；
+- `begin_copy` 的状态与 testkit 预期一致；facade 是否未调用 provider 由 `qubit-fs` recording SPI 测试负责；
 - `Ready → Running → Completed` 成功路径；
 - explicit failure 进入 `Failed(reported CopyFailureState)`；
 - 在 native attempt、reader、writer 和 commit await 点取消时进入
@@ -445,6 +457,8 @@ I/O driver 和 cancellation assertion 分开实现。公共 API 不通过宏生�
 - 未 poll 的 execute future 被 drop 不改变 `Ready`；
 - operation drop 不执行 I/O；
 - 非 `Ready` operation 不能盲目重新 execute。
+
+这些自验证说明 testkit 的故障模型和断言有效，不构成 provider 自身行为保证。
 
 取消测试不绑定具体 runtime：testkit 自验证使用可控 `Pending` future 手工 poll；
 真实 provider suite 只有在 fixture 提供对应 fault/cancellation hook 时才运行阶段性
