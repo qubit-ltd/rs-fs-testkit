@@ -132,9 +132,132 @@ impl AsyncFileSystemContractSuite<'_> {
             return Ok(());
         }
         self.verify_create_directory_exists_ok(id, recursive, &target).await?;
+        if !self
+            .verify_create_directory_rejection(id, capability, recursive, &parent, &target)
+            .await?
+        {
+            return Ok(());
+        }
         self.context
             .record_check(id, Some(capability), ContractCheckOutcome::Passed);
         Ok(())
+    }
+
+    /// Requires an existing directory to be rejected when `exists_ok` is off,
+    /// then independently confirms the rejection preserved both paths.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - Contract check used to attribute a failure.
+    /// * `capability` - Directory-creation capability associated with the
+    ///   check.
+    /// * `recursive` - Whether parent creation is enabled for the request.
+    /// * `parent` - Existing parent directory to preserve.
+    /// * `target` - Existing target directory to reject and preserve.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` when independent evidence verifies the rejection, or
+    /// `false` when required fixture observation is unsupported.
+    ///
+    /// # Errors
+    ///
+    /// Returns an attributed contract failure when the request or its
+    /// independent state checks violate the contract.
+    async fn verify_create_directory_rejection(
+        &mut self,
+        id: ContractCheckId,
+        capability: FileSystemCapability,
+        recursive: bool,
+        parent: &Path,
+        target: &Path,
+    ) -> Result<bool, ContractFailure> {
+        let mut observation_unsupported = false;
+        for path in [parent, target] {
+            let observed = self.fixture.exists_out_of_band(path).await.map_err(|error| {
+                ContractFailure::with_source("directory rejection precondition observation failed", error).at(id)
+            })?;
+            if matches!(observed, FixtureSupport::Unsupported) {
+                observation_unsupported = true;
+                continue;
+            }
+            verify_condition(
+                matches!(observed, FixtureSupport::Supported(true)),
+                id,
+                "directory rejection precondition path is missing",
+            )?;
+            let metadata = self.fixture.file_system().stat(path).await.map_err(|error| {
+                ContractFailure::with_source("directory rejection precondition metadata failed", error).at(id)
+            })?;
+            verify_condition(
+                metadata.is_directory_like(),
+                id,
+                "directory rejection precondition is not directory-like",
+            )?;
+        }
+        let error = match self
+            .fixture
+            .file_system()
+            .create_directory(target, CreateDirectoryOptions::default().with_recursive(recursive))
+            .await
+        {
+            Err(error) => error,
+            Ok(_) => {
+                return Err(ContractFailure::message_only("existing directory was accepted without exists_ok").at(id));
+            }
+        };
+        let provider_id = self.context.properties().info().provider_id();
+        if error.provider() != Some(provider_id) {
+            return Err(ContractFailure::with_source(
+                "directory rejection error omitted or mismatched provider ID",
+                error,
+            )
+            .at(id));
+        }
+        verify_fs_error(
+            error,
+            FsErrorKind::AlreadyExists,
+            FsOperation::CreateDir,
+            target,
+            provider_id,
+            None,
+            id,
+        )?;
+        for path in [parent, target] {
+            let observed = self.fixture.exists_out_of_band(path).await.map_err(|error| {
+                ContractFailure::with_source("directory rejection observation failed", error).at(id)
+            })?;
+            if matches!(observed, FixtureSupport::Unsupported) {
+                observation_unsupported = true;
+                continue;
+            }
+            verify_condition(
+                matches!(observed, FixtureSupport::Supported(true)),
+                id,
+                "directory rejection removed a requested path",
+            )?;
+            let metadata =
+                self.fixture.file_system().stat(path).await.map_err(|error| {
+                    ContractFailure::with_source("directory rejection metadata failed", error).at(id)
+                })?;
+            verify_condition(
+                metadata.is_directory_like(),
+                id,
+                "rejected directory is no longer directory-like",
+            )?;
+        }
+        if observation_unsupported {
+            self.context.record_check(
+                id,
+                Some(capability),
+                ContractCheckOutcome::Unverified {
+                    reason: "fixture.exists_out_of_band cannot confirm directory rejection preserved the paths"
+                        .to_owned(),
+                },
+            );
+            return Ok(false);
+        }
+        Ok(true)
     }
 
     /// Verifies that a provider rejects a directory request for an unavailable

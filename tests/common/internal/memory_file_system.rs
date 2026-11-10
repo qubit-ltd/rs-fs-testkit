@@ -253,6 +253,14 @@ pub enum MemoryFault {
     RecursiveCreateLeavesParentsMissing,
     /// Fails directory creation before publishing any path.
     CreateDirectoryFails,
+    /// Ignores `exists_ok = false` for an already existing directory.
+    IgnoreDirectoryExistsOk,
+    /// Rejects an existing directory with the wrong error kind.
+    DirectoryRejectPermissionDenied,
+    /// Rejects an existing directory with an incorrect provider identity.
+    DirectoryRejectWrongProvider,
+    /// Returns `AlreadyExists` after removing the existing directory.
+    DirectoryRejectRemovesTarget,
     /// Leaves a cleaned temporary resource in the namespace.
     KeepTempOnCleanup,
     /// Reports a persisted target different from the requested target.
@@ -1895,6 +1903,45 @@ impl FileSystemSpi for MemorySpi {
 
     fn create_directory(&self, request: CreateDirectoryRequest<'_>) -> FsResult<CreateDirectoryOutcome> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        let exists_ok = request.options().options().exists_ok();
+        let already_existed = state.entries.contains_key(request.path().as_str());
+        if already_existed && !exists_ok {
+            match state.fault {
+                MemoryFault::IgnoreDirectoryExistsOk => {
+                    return Ok(CreateDirectoryOutcome::new(true));
+                }
+                MemoryFault::DirectoryRejectPermissionDenied => {
+                    return Err(FsError::new(
+                        FsErrorKind::PermissionDenied,
+                        FsOperation::CreateDir,
+                        "injected incorrect existing-directory rejection",
+                    ));
+                }
+                MemoryFault::DirectoryRejectWrongProvider => {
+                    return Err(FsError::new(
+                        FsErrorKind::AlreadyExists,
+                        FsOperation::CreateDir,
+                        "injected existing-directory rejection with wrong provider",
+                    )
+                    .with_provider("unexpected-provider"));
+                }
+                MemoryFault::DirectoryRejectRemovesTarget => {
+                    let _ = remove_entry(&mut state, request.path().as_str());
+                    return Err(FsError::new(
+                        FsErrorKind::AlreadyExists,
+                        FsOperation::CreateDir,
+                        "injected existing-directory rejection after removal",
+                    ));
+                }
+                _ => {
+                    return Err(FsError::new(
+                        FsErrorKind::AlreadyExists,
+                        FsOperation::CreateDir,
+                        "memory directory already exists",
+                    ));
+                }
+            }
+        }
         if state.fault == MemoryFault::CreateDirectoryFails {
             return Err(FsError::new(
                 FsErrorKind::PermissionDenied,
@@ -1902,7 +1949,6 @@ impl FileSystemSpi for MemorySpi {
                 "injected directory creation failure",
             ));
         }
-        let already_existed = state.entries.contains_key(request.path().as_str());
         let mut created_ancestors = 0;
         if request.options().options().recursive() && state.fault != MemoryFault::RecursiveCreateLeavesParentsMissing {
             for (index, _) in request

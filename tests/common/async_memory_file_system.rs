@@ -428,6 +428,14 @@ pub enum AsyncMemoryFault {
     RecursiveCreateLeavesParentsMissing,
     /// Fails directory creation before publishing any path.
     CreateDirectoryFails,
+    /// Ignores `exists_ok = false` for an already existing directory.
+    IgnoreDirectoryExistsOk,
+    /// Rejects an existing directory with the wrong error kind.
+    DirectoryRejectPermissionDenied,
+    /// Rejects an existing directory with an incorrect provider identity.
+    DirectoryRejectWrongProvider,
+    /// Returns `AlreadyExists` after removing the existing directory.
+    DirectoryRejectRemovesTarget,
     /// Ignores an explicitly stale deletion condition.
     IgnoreDeleteIfMatch,
     /// Returns bytes different from the provider's seeded content.
@@ -2336,10 +2344,49 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
     ) -> SpiFuture<'a, FsResult<CreateDirectoryOutcome>> {
         let path = request.path().clone();
         let recursive = request.options().options().recursive();
+        let exists_ok = request.options().options().exists_ok();
         let entries = Arc::clone(&self.entries);
         let fault = self.fault;
         Box::pin(async move {
             let mut entries = entries.lock().expect("async memory state lock must succeed");
+            let already_existed = entries.contains_key(path.as_str());
+            if already_existed && !exists_ok {
+                match fault {
+                    AsyncMemoryFault::IgnoreDirectoryExistsOk => {
+                        return Ok(CreateDirectoryOutcome::new(true));
+                    }
+                    AsyncMemoryFault::DirectoryRejectPermissionDenied => {
+                        return Err(FsError::new(
+                            FsErrorKind::PermissionDenied,
+                            FsOperation::CreateDir,
+                            "injected incorrect existing-directory rejection",
+                        ));
+                    }
+                    AsyncMemoryFault::DirectoryRejectWrongProvider => {
+                        return Err(FsError::new(
+                            FsErrorKind::AlreadyExists,
+                            FsOperation::CreateDir,
+                            "injected existing-directory rejection with wrong provider",
+                        )
+                        .with_provider("unexpected-provider"));
+                    }
+                    AsyncMemoryFault::DirectoryRejectRemovesTarget => {
+                        entries.remove(path.as_str());
+                        return Err(FsError::new(
+                            FsErrorKind::AlreadyExists,
+                            FsOperation::CreateDir,
+                            "injected existing-directory rejection after removal",
+                        ));
+                    }
+                    _ => {
+                        return Err(FsError::new(
+                            FsErrorKind::AlreadyExists,
+                            FsOperation::CreateDir,
+                            "async memory directory already exists",
+                        ));
+                    }
+                }
+            }
             if fault == AsyncMemoryFault::CreateDirectoryFails {
                 return Err(FsError::new(
                     FsErrorKind::PermissionDenied,
