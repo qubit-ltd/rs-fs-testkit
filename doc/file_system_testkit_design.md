@@ -51,6 +51,10 @@ semantics, and service-specific guarantees beyond the suite's observations.
 Positive random-access samples respect the declared `max_read_range_bytes`
 limit and accumulate short reads until the expected sample is complete. A
 separate bounds probe still submits an over-limit request to verify rejection.
+Random-access checks apply only when the captured filesystem properties include
+`Read`. Without `Read`, each random-access check is `NotApplicable` before any
+random-access declaration or preparation hook runs; `ReadBasic` still verifies
+the facade's structured capability rejection independently.
 An expected rename rejection is `RejectedAsExpected` only when its structured
 error is correct and independent before/after observations prove the relevant
 paths unchanged. A provider-reported `RenameFailureState::Unchanged` is not
@@ -63,6 +67,11 @@ limit property check exercises the public clamp calculation. These observations
 do not establish every metadata field's absent/unknown semantics, stream
 termination after errors, or all provider-violation detection; core and
 provider-specific tests own those additional guarantees.
+For hierarchical paths, `ListBasic` includes direct files and child directories
+but excludes grandchildren. `ListPrefix` uses a `Subtree` filter and recursive
+traversal, and its expected set includes the selected directory and all seeded
+descendants. Fixtures must seed directories independently with
+`seed_empty_directory`; file seeding does not imply directory visibility.
 
 ## Typed catalog and execution
 

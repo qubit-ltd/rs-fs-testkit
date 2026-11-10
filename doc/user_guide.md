@@ -320,6 +320,16 @@ size hint of one. Hierarchical paths use subtree filters, while raw object keys
 use `ListOptions::object_keys()` and literal-prefix filters. Cross-model filters
 must produce structured rejection. Returned entries are bounded so duplicates
 or unexpected entries cannot grow the collected result without limit.
+For hierarchical paths, `ListBasic` checks direct files and child directories
+while excluding grandchildren. `ListPrefix` checks recursive traversal under
+its selected subtree, including the subtree directory and deeper descendants.
+Use `seed_empty_directory` to prepare every directory independently; do not rely
+on file seeding to make parent directories visible.
+
+Random-access checks are applicable only when the captured filesystem
+properties include `Read`. Without it, the checks are recorded as
+`NotApplicable` before random-access declaration or preparation hooks run.
+`ReadBasic` still checks the facade's structured rejection for missing `Read`.
 
 Property path-limit probes submit oversized `stat` requests through the facade
 and require structured resource-limit rejection. Requests remain within the

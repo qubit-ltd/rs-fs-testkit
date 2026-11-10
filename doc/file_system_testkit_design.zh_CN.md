@@ -308,6 +308,8 @@ Limit contract 至少覆盖：
 独立的 bounds 探针仍会提交超限请求以验证拒绝。rename 只有在结构化错误正确，且独立的前后
 观测证明相关路径保持不变时，才能记为 `RejectedAsExpected`。provider 返回的
 `RenameFailureState::Unchanged` 不能替代独立证据；缺少必需观测时结果为 `Unverified`。
+随机读取检查仅在捕获的文件系统属性包含 `Read` 时适用。缺少 `Read` 时，每项随机读取检查
+会在调用随机读取声明或准备 hook 前记为 `NotApplicable`；`ReadBasic` 仍独立验证门面返回结构化的能力拒绝。
 
 testkit 自身的 recording provider 和故障 fixture 用于验证套件记账、恢复所有权及已覆盖检查能否拒绝
 指定违规；这些自测不构成 provider 的行为保证。Provider suite 的黑盒观察不能证明 properties getter
@@ -316,6 +318,9 @@ testkit 自身的 recording provider 和故障 fixture 用于验证套件记账�
 语义及套件观察范围以外的服务保证由 provider 自己验证。
 
 测试只在可安全构造边界输入时探测，不通过可能耗尽 CI 资源的巨大分配验证 limit。
+对于层次路径，`ListBasic` 包含直接文件和子目录，但排除孙级条目。`ListPrefix` 使用
+`Subtree` 过滤和递归遍历，期望集合包括所选目录及其全部预置后代。Fixture 必须通过
+`seed_empty_directory` 独立预置目录；预置文件不代表目录一定可见。
 
 ## 8. I/O 与 namespace contract
 
