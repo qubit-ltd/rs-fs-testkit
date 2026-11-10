@@ -70,8 +70,24 @@ example linked above:
 qubit_fs_testkit::register_file_system_contract_tests! {
     module: provider_contracts,
     fixture: super::RootedFixture::new,
+    required_checks: |phase| match phase {
+        qubit_fs_testkit::FileSystemContract::Read => vec![
+            qubit_fs_testkit::ContractCheckId::RandomAccessIdentity,
+        ],
+        _ => Vec::new(),
+    },
 }
 ```
+
+The trailing `required_checks` field is optional and accepts a function or
+closure with the logical signature
+`FnOnce(FileSystemContract) -> Vec<ContractCheckId>`. It is evaluated once for
+each generated phase before that phase runs. Returning an empty vector leaves
+optional checks optional; selecting a skipped or unverified check makes the
+assertion fail. A check ID that is not part of that phase also fails with an
+“outside this run” diagnostic. `NotApplicable` outcomes keep the suite's
+existing applicability rules, and failures from checks that did run always
+fail. Omitting the field keeps the previous default behavior.
 
 For manual control, keep the suite and fixture alive for the entire run, then
 assert both the contract result and independent cleanup:
@@ -150,8 +166,13 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
     module: async_provider_contracts,
     fixture: super::MyAsyncProviderFixture::new,
     runner: super::run_on_tokio,
+    required_checks: super::required_checks,
 }
 ```
+
+The callback has the same phase-to-ID behavior as the synchronous macro. The
+async wrapper evaluates it once outside the runner, then moves its list into
+the future and checks it after the phase completes.
 
 ## Advanced Usage
 

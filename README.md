@@ -105,7 +105,9 @@ stays in development dependencies and out of production graphs.
   The suite retains the `ContractRun`, including check evidence and cleanup
   failures. Call `run.assert_satisfied()` to enforce the complete result.
 - Registration macros that create one isolated, cleanup-safe test per named
-  `FileSystemContract` phase.
+  `FileSystemContract` phase. Their optional `required_checks` callback can
+  require selected optional evidence for each phase; omitting it preserves the
+  existing default policy.
 - Contracts for facade properties, core operations, capability preflight,
   structured error context, cleanup, and supported optional operations. Both
   suites cover every `FileSystemCapability`, including ranges, conditions,

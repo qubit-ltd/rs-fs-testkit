@@ -89,7 +89,8 @@ qubit-fs-testkit = { version = "0.9", features = ["async"] }
 - 两个套件均提供借用式 `run_all()` 和 `run_contract(...)` 入口。
   套件保留包含检查证据和清理失败的 `ContractRun`；调用 `run.assert_satisfied()`
   对完整运行结果执行严格断言。
-- 注册宏为每个具名 `FileSystemContract` 阶段生成独立 fixture、自动清理的测试。
+- 注册宏为每个具名 `FileSystemContract` 阶段生成独立 fixture、自动清理的测试。可选的
+  `required_checks` 回调可按阶段强制要求指定的可选证据；省略时保持现有默认策略。
 - 覆盖门面属性、核心操作、capability 预检、结构化错误上下文、清理和已支持的可选操作的契约。
   同步与异步套件对全部 `FileSystemCapability` 保持对称覆盖，包括范围/条件读取、checksum、
   representation、copy policy、强化保证和临时资源持久化。

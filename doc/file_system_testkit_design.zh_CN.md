@@ -197,10 +197,13 @@ fn test_file_system_contract() {
 也可以为受限 provider 单独运行适用方法。
 
 `register_file_system_contract_tests!` 和异步对应宏为 Rust test harness
-生成多个独立 `#[test]` wrapper，以获得并行执行和精确测试名称。该 macro 只能调用
-`run_contract(FileSystemContract)` 并对返回的 ContractRun 调用 `assert_satisfied()`，
-不能自行实现契约 assertion、fixture mutation 或 capability 判断；不使用 macro
-的 provider 必须能获得完全相同的 contract coverage。
+生成多个独立 `#[test]` wrapper，以获得并行执行和精确测试名称。两个宏都可在末尾接受
+`required_checks` 回调：输入当前阶段，返回要强制要求的 `ContractCheckId` 列表。wrapper 在 suite
+运行前求值一次，并将列表交给 `assert_satisfied_with`；省略时使用空列表，保持既有行为。宏不会过滤
+ID：若请求的 ID 不属于当前阶段，正常断言会报告失败。异步 wrapper 在调用 runner 前求值，并将列表
+移动到 future 中。wrapper 不自行实现契约 assertion、fixture mutation 或 capability 判断；不使用宏的
+provider 必须能获得完全相同的 contract coverage。目录拒绝和独立负面副作用证据仍由 suite 与 fixture
+hooks 负责；回调只选择证据，不定义或伪造证据。
 
 ## 5. Suite 运行上下文
 

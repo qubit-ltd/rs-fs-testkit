@@ -61,8 +61,20 @@ cargo run --manifest-path ../rs-fs-local/Cargo.toml --example fs_testkit_contrac
 qubit_fs_testkit::register_file_system_contract_tests! {
     module: provider_contracts,
     fixture: super::RootedFixture::new,
+    required_checks: |phase| match phase {
+        qubit_fs_testkit::FileSystemContract::Read => vec![
+            qubit_fs_testkit::ContractCheckId::RandomAccessIdentity,
+        ],
+        _ => Vec::new(),
+    },
 }
 ```
+
+末尾的 `required_checks` 是可选字段，接受逻辑签名为
+`FnOnce(FileSystemContract) -> Vec<ContractCheckId>` 的函数或闭包。每个生成阶段运行前调用一次。
+返回空列表时，可选检查仍保持可选；若选中的检查被跳过或未验证，断言会失败。传入不属于当前阶段的
+检查 ID 也会失败，并显示 “outside this run”。`NotApplicable` 结果继续遵循套件现有适用性规则；
+已经执行的检查若失败，运行始终失败。省略字段时保持旧默认行为。
 
 如果需要手动选择执行范围，应让 fixture 和 suite 覆盖整个运行周期，并同时断言契约结果与独立清理结果：
 
@@ -134,8 +146,12 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
     module: async_provider_contracts,
     fixture: super::MyAsyncProviderFixture::new,
     runner: super::run_on_tokio,
+    required_checks: super::required_checks,
 }
 ```
+
+回调的阶段到 ID 行为与同步宏一致。异步 wrapper 在 runner 外调用回调一次，再将列表移动到
+future 中，并在阶段完成后检查。
 
 ## 进阶用法
 

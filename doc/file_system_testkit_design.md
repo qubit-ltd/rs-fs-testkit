@@ -99,6 +99,19 @@ remains available for diagnostics.
 
 ## Compatibility and verification policy
 
+The synchronous and asynchronous registration macros accept an optional
+trailing `required_checks` function or closure. It maps each generated
+`FileSystemContract` phase to a `Vec<ContractCheckId>` and is evaluated once
+before that phase runs. The wrapper forwards the list to
+`ContractRun::assert_satisfied_with`; no field means an empty list and retains
+the prior policy. The wrapper does not filter IDs, so a check selected outside
+the current phase fails with the report's normal diagnostic. Async registration
+evaluates the callback before calling the runner and moves the list into its
+future. Macros only wrap phase execution and assertions; they do not make
+capability decisions or implement evidence checks. Directory rejection and
+independent negative side-effect evidence remain responsibilities of the suite
+and its fixture hooks, not the selector callback.
+
 The testkit checks advertised capability preconditions before side effects and
 requires structured `UnsupportedCapability` or `RequirementNotMet` errors when
 an operation or stronger guarantee is unavailable. Copy checks separately
