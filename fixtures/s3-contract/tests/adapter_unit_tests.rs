@@ -73,28 +73,168 @@ fn test_configuration_debug_does_not_expose_credentials() {
 
 mod common;
 
+/// A fixture decorator that keeps probe acknowledgement and optional teardown pending.
+struct ControlledDeadlineFixture {
+    inner: common::Fixture,
+    teardown_pending: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum DeadlineOutcome {
+    Completed,
+    RunTimedOut {
+        provider_stage_reached: bool,
+        interrupted: bool,
+        cleanup_timed_out: bool,
+        cleanup_completed: bool,
+    },
+}
+
+struct NeverAcknowledgeProbe {
+    inner: Box<dyn qubit_fs_testkit::WriteCancellationProbe>,
+}
+
+impl qubit_fs_testkit::WriteCancellationProbe for NeverAcknowledgeProbe {
+    fn case(&self) -> &qubit_fs_testkit::AsyncWriteFixtureCase {
+        self.inner.case()
+    }
+
+    fn poll_reached(
+        &self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<qubit_fs_testkit::FixtureResult<()>> {
+        match self.inner.poll_reached(cx) {
+            std::task::Poll::Ready(Ok(())) => std::task::Poll::Pending,
+            result => result,
+        }
+    }
+
+    fn accepted_bytes(&self) -> qubit_fs_testkit::FixtureResult<u64> {
+        self.inner.accepted_bytes()
+    }
+
+    fn observe_target(&self) -> qubit_fs_testkit::FixtureFuture<'_, Option<Vec<u8>>> {
+        self.inner.observe_target()
+    }
+
+    fn disarm(&self) -> qubit_fs_testkit::FixtureResult<()> {
+        self.inner.disarm()
+    }
+}
+
+impl qubit_fs_testkit::AsyncFileSystemFixture for ControlledDeadlineFixture {
+    fn file_system(&self) -> &qubit_fs::AsyncFileSystem {
+        &self.inner.filesystem
+    }
+
+    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<qubit_fs::Path> {
+        qubit_fs_testkit::AsyncFileSystemFixture::path(&self.inner, relative)
+    }
+
+    fn prepare_write_cancellation<'a>(
+        &'a self,
+        stage: qubit_fs_testkit::AsyncWriteCancellationStage,
+        relative: &'a str,
+    ) -> qubit_fs_testkit::FixtureFuture<'a, qubit_fs_testkit::FixtureSupport<Box<dyn qubit_fs_testkit::WriteCancellationProbe>>> {
+        let prepared = qubit_fs_testkit::AsyncFileSystemFixture::prepare_write_cancellation(
+            &self.inner,
+            stage,
+            relative,
+        );
+        Box::pin(async move {
+            match prepared.await? {
+                qubit_fs_testkit::FixtureSupport::Supported(probe) => {
+                    let probe: Box<dyn qubit_fs_testkit::WriteCancellationProbe> =
+                        Box::new(NeverAcknowledgeProbe { inner: probe });
+                    Ok(qubit_fs_testkit::FixtureSupport::Supported(probe))
+                }
+                qubit_fs_testkit::FixtureSupport::Unsupported => {
+                    Ok(qubit_fs_testkit::FixtureSupport::Unsupported)
+                }
+            }
+        })
+    }
+
+    fn teardown(&self) -> qubit_fs_testkit::FixtureFuture<'_, ()> {
+        if self.teardown_pending {
+            Box::pin(std::future::pending::<qubit_fs_testkit::FixtureResult<()>>())
+        } else {
+            qubit_fs_testkit::AsyncFileSystemFixture::teardown(&self.inner)
+        }
+    }
+}
+
+/// Executes a real suite check under separate run and cleanup budgets.
+///
+/// When `control` is provided, the run is held after the real provider reaches
+/// its write-open gate, so timeout assertions inspect retained suite evidence.
+async fn run_suite_check_with_budgets(
+    suite: &mut qubit_fs_testkit::AsyncFileSystemContractSuite<'_>,
+    id: qubit_fs_testkit::ContractCheckId,
+    run_budget: std::time::Duration,
+    cleanup_budget: std::time::Duration,
+    control: Option<&qubit_fs_s3_contract::TestControl>,
+) -> DeadlineOutcome {
+    use std::future::poll_fn;
+
+    let mut provider_stage_reached = false;
+    let run = tokio::time::timeout(run_budget, async {
+        if let Some(control) = control {
+            tokio::select! {
+                _ = suite.run_check(id) => {
+                    panic!("write-open cancellation check completed before its deadline");
+                }
+                _ = poll_fn(|cx| control.poll_reached(cx)) => {
+                    provider_stage_reached = true;
+                    std::future::pending::<()>().await;
+                }
+            }
+        } else {
+            suite.run_check(id).await;
+        }
+    })
+    .await;
+    if run.is_err() {
+        let interrupted = suite.run().was_interrupted();
+        let cleanup = tokio::time::timeout(cleanup_budget, suite.finish()).await;
+        return DeadlineOutcome::RunTimedOut {
+            provider_stage_reached,
+            interrupted,
+            cleanup_timed_out: cleanup.is_err(),
+            cleanup_completed: suite.run().cleanup().completed(),
+        };
+    }
+    suite.run().assert_satisfied_with(&[id]);
+    DeadlineOutcome::Completed
+}
+
 /// Runs one check with caller-owned run and cleanup deadlines.
 async fn run_check_with_deadlines(
     fixture: &common::Fixture,
     id: qubit_fs_testkit::ContractCheckId,
 ) {
-    use std::time::Duration;
     use qubit_fs_testkit::AsyncFileSystemContractSuite;
 
     let mut suite = AsyncFileSystemContractSuite::new(fixture);
-    let run = tokio::time::timeout(Duration::from_secs(30), async {
-        suite.run_check(id).await;
-    })
-    .await;
-    if run.is_err() {
-        let interrupted = suite.run().was_interrupted();
-        let cleanup = tokio::time::timeout(Duration::from_secs(30), suite.finish()).await;
-        panic!(
-            "contract {id}: run deadline reached; interrupted={interrupted}; cleanup completed={}",
-            cleanup.is_ok() && suite.run().cleanup().completed()
-        );
+    match run_suite_check_with_budgets(
+        &mut suite,
+        id,
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_secs(30),
+        None,
+    )
+    .await
+    {
+        DeadlineOutcome::Completed => {}
+        DeadlineOutcome::RunTimedOut {
+            provider_stage_reached,
+            interrupted,
+            cleanup_timed_out,
+            cleanup_completed,
+        } => panic!(
+            "contract {id}: run deadline reached; provider stage reached={provider_stage_reached}; interrupted={interrupted}; cleanup timed out={cleanup_timed_out}; cleanup completed={cleanup_completed}"
+        ),
     }
-    suite.run().assert_satisfied_with(&[id]);
 }
 
 #[tokio::test]
@@ -106,37 +246,85 @@ async fn test_documented_bounded_run_helper_compiles_and_runs() {
     .await;
 }
 
-/// Covers Tokio's three deadline outcomes; suite evidence and cleanup retries
-/// are checked separately by the runtime-neutral cancellation regressions.
+/// A provider-stage timeout retains interruption evidence and cleans successfully.
 #[tokio::test(start_paused = true)]
-async fn test_run_and_cleanup_deadlines_are_independent() {
-    use std::future::pending;
+async fn test_real_suite_run_timeout_retains_evidence_and_cleanup_succeeds() {
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
     use std::time::Duration;
 
-    let normal_run = tokio::time::timeout(Duration::from_secs(1), async {}).await;
-    assert!(
-        normal_run.is_ok(),
-        "normal run should complete within its budget"
+    let fixture = ControlledDeadlineFixture {
+        inner: common::Fixture::memory("run-timeout-cleanup-ok"),
+        teardown_pending: false,
+    };
+    let control = fixture.inner.control.clone();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+
+    assert_eq!(
+        run_suite_check_with_budgets(
+            &mut suite,
+            qubit_fs_testkit::ContractCheckId::WriteCancelOpen,
+            Duration::from_secs(1),
+            Duration::from_secs(5),
+            Some(&control),
+        )
+        .await,
+        DeadlineOutcome::RunTimedOut {
+            provider_stage_reached: true,
+            interrupted: true,
+            cleanup_timed_out: false,
+            cleanup_completed: true,
+        }
+    );
+    assert!(suite.run().was_interrupted());
+    assert!(!suite.run().requirements_satisfied());
+    assert_ne!(
+        suite.run().report().checks()[0].outcome(),
+        &qubit_fs_testkit::ContractCheckOutcome::Passed
     );
 
-    let timed_out_run = tokio::time::timeout(Duration::ZERO, pending::<()>()).await;
-    assert!(
-        timed_out_run.is_err(),
-        "pending run should hit its deadline"
+    assert!(suite.run().cleanup().completed());
+    assert!(!suite.run().requirements_satisfied(), "cleanup cannot turn a run timeout into a pass");
+}
+
+/// A provider-stage run timeout remains interrupted when cleanup also expires.
+#[tokio::test(start_paused = true)]
+async fn test_real_suite_run_and_cleanup_timeouts_retain_incomplete_cleanup() {
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+    use std::time::Duration;
+
+    let fixture = ControlledDeadlineFixture {
+        inner: common::Fixture::memory("run-and-cleanup-timeout"),
+        teardown_pending: true,
+    };
+    let control = fixture.inner.control.clone();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+
+    assert_eq!(
+        run_suite_check_with_budgets(
+            &mut suite,
+            qubit_fs_testkit::ContractCheckId::WriteCancelOpen,
+            Duration::from_secs(1),
+            Duration::from_secs(5),
+            Some(&control),
+        )
+        .await,
+        DeadlineOutcome::RunTimedOut {
+            provider_stage_reached: true,
+            interrupted: true,
+            cleanup_timed_out: true,
+            cleanup_completed: false,
+        }
     );
-    let successful_cleanup = tokio::time::timeout(Duration::from_secs(1), async {}).await;
-    assert!(
-        successful_cleanup.is_ok(),
-        "cleanup has its own successful budget"
+    assert!(suite.run().was_interrupted());
+    assert!(!suite.run().requirements_satisfied());
+    assert_ne!(
+        suite.run().report().checks()[0].outcome(),
+        &qubit_fs_testkit::ContractCheckOutcome::Passed
     );
 
-    let timed_out_run = tokio::time::timeout(Duration::ZERO, pending::<()>()).await;
-    assert!(timed_out_run.is_err(), "run deadline remains a failure");
-    let timed_out_cleanup = tokio::time::timeout(Duration::ZERO, pending::<()>()).await;
-    assert!(
-        timed_out_cleanup.is_err(),
-        "cleanup timeout must remain observable"
-    );
+    assert!(!suite.run().cleanup().completed());
+    assert_eq!(suite.run().cleanup().attempts(), 1);
+    assert!(!suite.run().requirements_satisfied());
 }
 
 /// Each supported contract runs against a fresh independent SDK fixture.
