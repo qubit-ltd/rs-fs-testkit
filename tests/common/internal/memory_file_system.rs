@@ -134,6 +134,7 @@ struct State {
     native_copy: bool,
     fallback_only: bool,
     delete_attempts: usize,
+    rename_calls: usize,
     limits: FileSystemLimits,
     unavailable_case: Option<UnavailableScenario>,
     read_only: bool,
@@ -924,6 +925,7 @@ impl MemoryFixture {
             native_copy: false,
             fallback_only: provider_id == "memory-fallback-provider",
             delete_attempts: 0,
+            rename_calls: 0,
             limits,
             unavailable_case: None,
             read_only: provider_id == "memory-read-only-provider",
@@ -975,6 +977,13 @@ impl MemoryFixture {
             .lock()
             .expect("memory state lock must succeed")
             .delete_attempts
+    }
+
+    /// Returns how many calls reached the provider's rename SPI primitive.
+    #[must_use]
+    #[inline]
+    pub fn rename_spi_call_count(&self) -> usize {
+        self.state.lock().expect("memory state lock must succeed").rename_calls
     }
 
     /// Returns how many contract paths the suite requested from this fixture.
@@ -2148,6 +2157,7 @@ impl FileSystemSpi for MemorySpi {
 
     fn rename(&self, request: RenameRequest<'_>) -> Result<RenameOutcome, SpiRenameFailure> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        state.rename_calls = state.rename_calls.saturating_add(1);
         let _durability = request.options().options().durability();
         if !request.options().options().overwrite() && state.entries.contains_key(request.target().as_str()) {
             return Err(SpiRenameFailure::new(

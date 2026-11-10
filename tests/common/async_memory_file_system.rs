@@ -227,6 +227,7 @@ pub struct AsyncMemoryFixture {
     read_requests: Arc<Mutex<Vec<RecordedReadRequest>>>,
     reader_calls: Arc<AtomicUsize>,
     read_error_call: Arc<AtomicUsize>,
+    rename_calls: Arc<AtomicUsize>,
 }
 
 /// Shared stage gate used by the asynchronous cancellation self-test.
@@ -1121,6 +1122,7 @@ impl AsyncMemoryFixture {
         let read_requests = Arc::new(Mutex::new(Vec::new()));
         let reader_calls = Arc::new(AtomicUsize::new(0));
         let read_error_call = Arc::new(AtomicUsize::new(usize::MAX));
+        let rename_calls = Arc::new(AtomicUsize::new(0));
         let file_system = AsyncFileSystem::from_spi(AsyncMemorySpi {
             stage: Arc::clone(&stage),
             copy_gate: Arc::clone(&copy_gate),
@@ -1145,6 +1147,7 @@ impl AsyncMemoryFixture {
             read_requests: Arc::clone(&read_requests),
             reader_calls: Arc::clone(&reader_calls),
             read_error_call: Arc::clone(&read_error_call),
+            rename_calls: Arc::clone(&rename_calls),
         })
         .expect("async memory SPI properties must be valid");
         Self {
@@ -1181,6 +1184,7 @@ impl AsyncMemoryFixture {
             read_requests,
             reader_calls,
             read_error_call,
+            rename_calls,
         }
     }
 
@@ -1214,6 +1218,13 @@ impl AsyncMemoryFixture {
             .lock()
             .expect("async read request lock must succeed")
             .clone()
+    }
+
+    /// Returns how many calls reached the provider's rename SPI primitive.
+    #[must_use]
+    #[inline]
+    pub fn rename_spi_call_count(&self) -> usize {
+        self.rename_calls.load(Ordering::Relaxed)
     }
 
     /// Returns how many contract paths the suite requested from this fixture.
@@ -1953,6 +1964,7 @@ struct AsyncMemorySpi {
     read_requests: Arc<Mutex<Vec<RecordedReadRequest>>>,
     reader_calls: Arc<AtomicUsize>,
     read_error_call: Arc<AtomicUsize>,
+    rename_calls: Arc<AtomicUsize>,
 }
 
 #[cfg(feature = "async")]
@@ -2601,6 +2613,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
     }
 
     fn rename<'a>(&'a self, request: RenameRequest<'a>) -> SpiFuture<'a, Result<RenameOutcome, SpiRenameFailure>> {
+        self.rename_calls.fetch_add(1, Ordering::Relaxed);
         let source = request.source().clone();
         let target = request.target().clone();
         let entries = Arc::clone(&self.entries);
