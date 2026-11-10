@@ -246,6 +246,7 @@ struct AsyncState {
 #[cfg(feature = "async")]
 struct AsyncRandomProvider {
     state: Arc<Mutex<AsyncState>>,
+    range_limit: FileSystemLimit,
 }
 
 #[cfg(feature = "async")]
@@ -294,7 +295,7 @@ impl AsyncFileSystemSpi for AsyncRandomProvider {
                 .with(ProviderOperation::OpenReader)
                 .with(ProviderOperation::OpenRandomAccessReader),
             FileSystemCapabilities::new().with_guaranteed(FileSystemCapability::Read),
-            FileSystemLimits::unknown().with_max_read_range_bytes(FileSystemLimit::Maximum(2)),
+            FileSystemLimits::unknown().with_max_read_range_bytes(self.range_limit),
             PathConstraints::absolute(),
             SymlinkPolicy::Reject,
         )
@@ -341,13 +342,20 @@ struct AsyncRandomFixture {
 #[cfg(feature = "async")]
 impl AsyncRandomFixture {
     fn new(inject_pending: bool, reopen_path: bool) -> Self {
+        Self::with_limit(inject_pending, reopen_path, FileSystemLimit::Maximum(2))
+    }
+
+    fn with_limit(inject_pending: bool, reopen_path: bool, range_limit: FileSystemLimit) -> Self {
         let state = Arc::new(Mutex::new(AsyncState {
             inject_pending,
             reopen_path,
             ..AsyncState::default()
         }));
-        let file_system = AsyncFileSystem::from_spi(AsyncRandomProvider { state: state.clone() })
-            .expect("async provider facade initializes");
+        let file_system = AsyncFileSystem::from_spi(AsyncRandomProvider {
+            state: state.clone(),
+            range_limit,
+        })
+        .expect("async provider facade initializes");
         Self { file_system, state }
     }
 }
@@ -382,6 +390,14 @@ impl AsyncFileSystemFixture for AsyncRandomFixture {
                 Path::parse("/random-access").expect("valid path"),
             ))
         })
+    }
+    fn replace_random_access_path<'a>(
+        &'a self,
+        _path: &'a Path,
+        bytes: &'a [u8],
+    ) -> FixtureFuture<'a, FixtureSupport<()>> {
+        self.state.lock().expect("async fixture state").bytes = Arc::from(bytes);
+        Box::pin(async { Ok(FixtureSupport::Supported(())) })
     }
     fn arm_random_access_pending_read(&self, _path: &Path) -> FixtureResult<FixtureSupport<()>> {
         let mut state = self.state.lock().expect("async fixture state");
@@ -644,6 +660,19 @@ fn test_random_access_reads_bounds_and_object_identity() {
         ContractCheckOutcome::Passed
     );
 
+    let tiny_bounded = RandomFixture::new(true, false, FileSystemLimit::Maximum(1));
+    for id in [
+        ContractCheckId::RandomAccessBasic,
+        ContractCheckId::RandomAccessBounds,
+        ContractCheckId::RandomAccessIdentity,
+    ] {
+        assert_eq!(
+            outcome(&tiny_bounded, id),
+            ContractCheckOutcome::Passed,
+            "{id}"
+        );
+    }
+
     let incorrect_length = RandomFixture::with_open_options(true, false, FileSystemLimit::Unknown, None, Some(7));
     assert!(matches!(
         outcome(&incorrect_length, ContractCheckId::RandomAccessBasic),
@@ -681,6 +710,42 @@ fn test_async_random_access_bounds_accept_finite_ranges() {
     );
     assert_eq!(run.report().checks()[0].id(), ContractCheckId::RandomAccessBounds);
     assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_checks_accept_one_byte_ranges() {
+    let fixture = AsyncRandomFixture::with_limit(true, false, FileSystemLimit::Maximum(1));
+    for id in [
+        ContractCheckId::RandomAccessBasic,
+        ContractCheckId::RandomAccessBounds,
+        ContractCheckId::RandomAccessIdentity,
+    ] {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = ready(suite.run_check(id));
+        assert!(
+            run.failures().is_empty(),
+            "async {id}: {:?}",
+            run.failures()
+        );
+        assert_eq!(
+            run.report().checks()[0].outcome(),
+            &ContractCheckOutcome::Passed,
+            "{id}"
+        );
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_identity_detects_path_reopening() {
+    let fixture = AsyncRandomFixture::with_limit(true, true, FileSystemLimit::Maximum(1));
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessIdentity));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
 }
 
 #[cfg(feature = "async")]

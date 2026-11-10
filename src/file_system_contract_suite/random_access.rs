@@ -70,6 +70,7 @@ impl FileSystemContractSuite<'_> {
             FixtureSupport::Supported(true) => {}
         }
 
+        let range_limit = self.context.properties().limits().max_read_range_bytes();
         let relative = self.context.relative_name("random-access");
         let path = match self
             .fixture
@@ -94,9 +95,9 @@ impl FileSystemContractSuite<'_> {
         }
 
         if id == ContractCheckId::RandomAccessBasic {
-            verify_sample(&mut reader, 4, b"ef", id)?;
-            verify_sample(&mut reader, 0, b"ab", id)?;
-            verify_sample(&mut reader, 4, b"ef", id)?;
+            verify_sample(&mut reader, 4, b"ef", range_limit, id)?;
+            verify_sample(&mut reader, 0, b"ab", range_limit, id)?;
+            verify_sample(&mut reader, 4, b"ef", range_limit, id)?;
         } else if id == ContractCheckId::RandomAccessBounds {
             let mut empty = [];
             if reader
@@ -147,7 +148,7 @@ impl FileSystemContractSuite<'_> {
                     });
                 }
                 if accepted > 0 {
-                    verify_sample(&mut reader, 0, &SEED[..accepted as usize], id)?;
+                    verify_sample(&mut reader, 0, &SEED[..accepted as usize], range_limit, id)?;
                 }
                 let mut rejected_buffer = vec![0; rejected as usize];
                 let error = reader
@@ -160,7 +161,7 @@ impl FileSystemContractSuite<'_> {
                     .at(id));
                 }
             }
-            verify_sample(&mut reader, 0, b"ab", id)?;
+            verify_sample(&mut reader, 0, b"ab", range_limit, id)?;
         } else {
             let FixtureSupport::Supported(()) = self
                 .fixture
@@ -171,13 +172,13 @@ impl FileSystemContractSuite<'_> {
                     reason: "fixture cannot replace the random-access path independently".to_owned(),
                 });
             };
-            verify_sample(&mut reader, 0, b"ab", id)?;
+            verify_sample(&mut reader, 0, b"ab", range_limit, id)?;
             let mut replacement = self
                 .fixture
                 .file_system()
                 .open_random_access_reader(&path, ReadOptions::default())
                 .map_err(|error| ContractFailure::with_source("replacement random-access open failed", error).at(id))?;
-            verify_sample(&mut replacement, 0, b"WX", id)?;
+            verify_sample(&mut replacement, 0, b"WX", range_limit, id)?;
         }
         Ok(ContractCheckOutcome::Passed)
     }
@@ -191,19 +192,32 @@ impl FileSystemContractSuite<'_> {
 /// * `reader` — the open random-access reader used to retrieve the sample.
 /// * `offset` — the byte position from which the random-access sample is read.
 /// * `expected` — the bytes or value required by the selected contract check.
+/// * `range_limit` — the maximum byte count permitted for one read request.
 /// * `id` — the stable identity of the contract check being executed or
 ///   recorded.
 fn verify_sample(
     reader: &mut qubit_fs::read::RandomAccessReader,
     offset: u64,
     expected: &[u8],
+    range_limit: FileSystemLimit,
     id: ContractCheckId,
 ) -> Result<(), ContractFailure> {
     let mut actual = vec![0; expected.len()];
+    let maximum = range_limit
+        .maximum()
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(usize::MAX);
     let mut filled = 0;
     while filled < actual.len() {
+        let request_len = (actual.len() - filled).min(maximum);
+        if request_len == 0 {
+            return Err(ContractFailure::message_only(
+                "random-access range limit prevents a non-empty sample read",
+            )
+            .at(id));
+        }
         let count = reader
-            .read_at(offset + filled as u64, &mut actual[filled..])
+            .read_at(offset + filled as u64, &mut actual[filled..filled + request_len])
             .map_err(|error| ContractFailure::with_source("random-access sample read failed", error).at(id))?;
         if count == 0 {
             break;
