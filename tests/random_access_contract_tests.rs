@@ -67,6 +67,7 @@ use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractCheckOutcome;
+use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
 #[cfg(feature = "async")]
@@ -552,6 +553,74 @@ fn test_random_access_checks_have_distinct_ids_and_default_to_skipped() {
     }
 }
 
+struct NoReadRandomFixture {
+    inner: MemoryFixture,
+    declaration: FixtureSupport<bool>,
+    declaration_calls: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl FileSystemFixture for NoReadRandomFixture {
+    fn file_system(&self) -> &FileSystem {
+        self.inner.file_system()
+    }
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+    fn random_access_operation(&self) -> FixtureSupport<bool> {
+        self.declaration_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.declaration.clone()
+    }
+    fn seed_file(&self, _: &str, _: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+        panic!("random-access seed called without Read")
+    }
+    fn replace_random_access_path(&self, _: &Path, _: &[u8]) -> FixtureResult<FixtureSupport<()>> {
+        panic!("replacement hook called without Read")
+    }
+}
+
+#[test]
+fn test_random_access_checks_are_not_applicable_without_read() {
+    for declaration in [
+        FixtureSupport::Unsupported,
+        FixtureSupport::Supported(false),
+        FixtureSupport::Supported(true),
+    ] {
+        let declaration_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let fixture = NoReadRandomFixture {
+            inner: MemoryFixture::without_operation_capabilities(),
+            declaration,
+            declaration_calls: declaration_calls.clone(),
+        };
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_contract(FileSystemContract::Read);
+        assert!(run.failures().is_empty(), "{:?}", run.failures());
+        let checks = run.report().checks();
+        assert_eq!(
+            checks
+                .iter()
+                .find(|check| check.id() == ContractCheckId::ReadBasic)
+                .unwrap()
+                .outcome(),
+            &ContractCheckOutcome::RejectedAsExpected
+        );
+        for id in [
+            ContractCheckId::RandomAccessBasic,
+            ContractCheckId::RandomAccessBounds,
+            ContractCheckId::RandomAccessIdentity,
+        ] {
+            let check = checks.iter().find(|check| check.id() == id).unwrap();
+            match check.outcome() {
+                ContractCheckOutcome::NotApplicable { reason } => assert!(!reason.trim().is_empty()),
+                other => panic!("{id} should be not applicable, got {other:?}"),
+            }
+        }
+        assert_eq!(declaration_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+}
+
 #[test]
 fn test_random_access_declared_support_is_verified_or_rejected() {
     let unsupported = DeclaredFixture {
@@ -756,6 +825,84 @@ fn test_random_access_cancel_releases_futures_and_reuses_reader() {
     assert_eq!(state.disarm_calls, 1);
     assert_eq!(state.teardown_calls, 1);
     assert!(!state.probe_armed, "teardown leaves no pending-read probe armed");
+}
+
+#[cfg(feature = "async")]
+struct AsyncNoReadRandomFixture {
+    inner: common::AsyncMemoryFixture,
+    declaration: FixtureSupport<bool>,
+    declaration_calls: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[cfg(feature = "async")]
+impl AsyncFileSystemFixture for AsyncNoReadRandomFixture {
+    fn file_system(&self) -> &qubit_fs::AsyncFileSystem {
+        self.inner.file_system()
+    }
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+    fn teardown(&self) -> FixtureFuture<'_, ()> {
+        self.inner.teardown()
+    }
+    fn random_access_operation(&self) -> FixtureSupport<bool> {
+        self.declaration_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.declaration.clone()
+    }
+    fn seed_file<'a>(&'a self, _: &'a str, _: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
+        panic!("random-access seed called without Read")
+    }
+    fn replace_random_access_path<'a>(&'a self, _: &'a Path, _: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<()>> {
+        panic!("replacement hook called without Read")
+    }
+    fn arm_random_access_pending_read(&self, _: &Path) -> FixtureResult<FixtureSupport<()>> {
+        panic!("cancellation hook called without Read")
+    }
+    fn disarm_random_access_pending_read(&self, _: &Path) -> FixtureResult<()> {
+        panic!("cancellation cleanup called without Read")
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_checks_are_not_applicable_without_read() {
+    for declaration in [
+        FixtureSupport::Unsupported,
+        FixtureSupport::Supported(false),
+        FixtureSupport::Supported(true),
+    ] {
+        let declaration_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let fixture = AsyncNoReadRandomFixture {
+            inner: common::AsyncMemoryFixture::without_operation_capabilities(),
+            declaration,
+            declaration_calls: declaration_calls.clone(),
+        };
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = ready(suite.run_contract(FileSystemContract::Read));
+        assert!(run.failures().is_empty(), "{:?}", run.failures());
+        let checks = run.report().checks();
+        assert_eq!(
+            checks
+                .iter()
+                .find(|check| check.id() == ContractCheckId::ReadBasic)
+                .unwrap()
+                .outcome(),
+            &ContractCheckOutcome::RejectedAsExpected
+        );
+        for id in [
+            ContractCheckId::RandomAccessBasic,
+            ContractCheckId::RandomAccessBounds,
+            ContractCheckId::RandomAccessIdentity,
+            ContractCheckId::RandomAccessCancel,
+        ] {
+            let check = checks.iter().find(|check| check.id() == id).unwrap();
+            match check.outcome() {
+                ContractCheckOutcome::NotApplicable { reason } => assert!(!reason.trim().is_empty()),
+                other => panic!("{id} should be not applicable, got {other:?}"),
+            }
+        }
+        assert_eq!(declaration_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
 }
 
 #[cfg(feature = "async")]

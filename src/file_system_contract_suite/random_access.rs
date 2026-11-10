@@ -9,6 +9,7 @@
 
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
+use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::read::ReadOptions;
 
@@ -23,6 +24,10 @@ const SEED: &[u8] = b"abcdef";
 impl FileSystemContractSuite<'_> {
     /// Executes one independently prepared random-access check.
     ///
+    /// Random-access fixture declarations are consulted only when the captured
+    /// provider properties include `Read`; otherwise the check is not
+    /// applicable.
+    ///
     /// # Parameters
     ///
     /// * `id` — the stable identity of the contract check being executed or
@@ -31,6 +36,11 @@ impl FileSystemContractSuite<'_> {
         &mut self,
         id: ContractCheckId,
     ) -> Result<ContractCheckOutcome, ContractFailure> {
+        if !self.capable(FileSystemCapability::Read) {
+            return Ok(ContractCheckOutcome::NotApplicable {
+                reason: "random-access checks require the Read capability".to_owned(),
+            });
+        }
         match self.fixture.random_access_operation() {
             FixtureSupport::Unsupported => {
                 return Ok(ContractCheckOutcome::SkippedOptional {
