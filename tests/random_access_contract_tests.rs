@@ -666,11 +666,7 @@ fn test_random_access_reads_bounds_and_object_identity() {
         ContractCheckId::RandomAccessBounds,
         ContractCheckId::RandomAccessIdentity,
     ] {
-        assert_eq!(
-            outcome(&tiny_bounded, id),
-            ContractCheckOutcome::Passed,
-            "{id}"
-        );
+        assert_eq!(outcome(&tiny_bounded, id), ContractCheckOutcome::Passed, "{id}");
     }
 
     let incorrect_length = RandomFixture::with_open_options(true, false, FileSystemLimit::Unknown, None, Some(7));
@@ -723,11 +719,7 @@ fn test_async_random_access_checks_accept_one_byte_ranges() {
     ] {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(id));
-        assert!(
-            run.failures().is_empty(),
-            "async {id}: {:?}",
-            run.failures()
-        );
+        assert!(run.failures().is_empty(), "async {id}: {:?}", run.failures());
         assert_eq!(
             run.report().checks()[0].outcome(),
             &ContractCheckOutcome::Passed,
@@ -777,10 +769,7 @@ fn test_random_access_cancel_reuses_reader_with_one_byte_range_limit() {
         "one-byte random-access limit should support cancellation and reuse: {:?}",
         run.failures()
     );
-    assert_eq!(
-        run.report().checks()[0].outcome(),
-        &ContractCheckOutcome::Passed
-    );
+    assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
 }
 
 #[cfg(feature = "async")]

@@ -211,10 +211,9 @@ fn verify_sample(
     while filled < actual.len() {
         let request_len = (actual.len() - filled).min(maximum);
         if request_len == 0 {
-            return Err(ContractFailure::message_only(
-                "random-access range limit prevents a non-empty sample read",
-            )
-            .at(id));
+            return Err(
+                ContractFailure::message_only("random-access range limit prevents a non-empty sample read").at(id),
+            );
         }
         let count = reader
             .read_at(offset + filled as u64, &mut actual[filled..filled + request_len])

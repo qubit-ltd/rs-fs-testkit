@@ -25,12 +25,6 @@ use crate::FileSystemContractSuite;
 use crate::FixtureSupport;
 use crate::internal::verify_condition;
 
-enum RejectionBaseline {
-    Present(Vec<u8>),
-    Absent,
-    Unobservable,
-}
-
 impl FileSystemContractSuite<'_> {
     /// Runs each rename requirement against independently prepared paths.
     ///
@@ -95,12 +89,14 @@ impl FileSystemContractSuite<'_> {
         let source_relative = self.context.relative_name("rename-source");
         let target_relative = self.context.relative_name("rename-target");
         if !self.capable(capability) {
-            let source = self.fixture.path(&source_relative).map_err(|error| {
-                ContractFailure::with_source("rename source path preparation failed", error).at(id)
-            })?;
-            let target = self.fixture.path(&target_relative).map_err(|error| {
-                ContractFailure::with_source("rename target path preparation failed", error).at(id)
-            })?;
+            let source = self
+                .fixture
+                .path(&source_relative)
+                .map_err(|error| ContractFailure::with_source("rename source path preparation failed", error).at(id))?;
+            let target = self
+                .fixture
+                .path(&target_relative)
+                .map_err(|error| ContractFailure::with_source("rename target path preparation failed", error).at(id))?;
             verify_condition(source != target, id, "rename fixture requires distinct paths")?;
             // Build an independent baseline before the facade preflight. A
             // successful seed is registered immediately so failures in later
@@ -109,46 +105,35 @@ impl FileSystemContractSuite<'_> {
                 .fixture
                 .seed_file(&source_relative, b"rename rejection source")
                 .map_err(|error| {
-                    ContractFailure::with_source(
-                        "rename rejection source preparation failed",
-                        error,
-                    )
-                    .at(id)
+                    ContractFailure::with_source("rename rejection source preparation failed", error).at(id)
                 })?;
+            let mut source_expected_absent = false;
             let baseline = match seed {
                 FixtureSupport::Supported(path) => {
                     self.context.record_created(path.clone());
                     verify_condition(path == source, id, "rename rejection source path differs")?;
                     match self.fixture.read_file(&source).map_err(|error| {
-                        ContractFailure::with_source(
-                            "rename rejection baseline observation failed",
-                            error,
-                        )
-                        .at(id)
+                        ContractFailure::with_source("rename rejection baseline observation failed", error).at(id)
                     })? {
-                        FixtureSupport::Supported(bytes) if bytes == b"rename rejection source" => {
-                            RejectionBaseline::Present(bytes)
-                        }
-                        FixtureSupport::Unsupported => RejectionBaseline::Unobservable,
+                        FixtureSupport::Supported(bytes) if bytes == b"rename rejection source" => Some(bytes),
+                        FixtureSupport::Unsupported => None,
                         FixtureSupport::Supported(_) => {
-                            return Err(ContractFailure::message_only(
-                                "rename rejection source baseline differs",
-                            )
-                            .at(id));
+                            return Err(
+                                ContractFailure::message_only("rename rejection source baseline differs").at(id),
+                            );
                         }
                     }
                 }
-                FixtureSupport::Unsupported => RejectionBaseline::Absent,
+                FixtureSupport::Unsupported => {
+                    source_expected_absent = true;
+                    None
+                }
             };
-            let mut unverifiable = matches!(baseline, RejectionBaseline::Unobservable);
-            if matches!(baseline, RejectionBaseline::Absent) {
+            let mut unverifiable = baseline.is_none() && !source_expected_absent;
+            if source_expected_absent {
                 for path in [&source, &target] {
                     match self.fixture.exists_out_of_band(path).map_err(|error| {
-                        ContractFailure::with_source(
-                            "rename rejection absence baseline failed",
-                            error,
-                        )
-                        .at(id)
+                        ContractFailure::with_source("rename rejection absence baseline failed", error).at(id)
                     })? {
                         FixtureSupport::Supported(false) => {}
                         FixtureSupport::Supported(true) => {
@@ -165,17 +150,15 @@ impl FileSystemContractSuite<'_> {
                     }
                 }
             }
-            if !matches!(baseline, RejectionBaseline::Absent) {
+            if !source_expected_absent {
                 match self.fixture.exists_out_of_band(&target).map_err(|error| {
-                    ContractFailure::with_source("rename rejection target baseline failed", error)
-                        .at(id)
+                    ContractFailure::with_source("rename rejection target baseline failed", error).at(id)
                 })? {
                     FixtureSupport::Supported(false) => {}
                     FixtureSupport::Supported(true) => {
-                        return Err(ContractFailure::message_only(
-                            "rename rejection target baseline was not empty",
-                        )
-                        .at(id));
+                        return Err(
+                            ContractFailure::message_only("rename rejection target baseline was not empty").at(id),
+                        );
                     }
                     FixtureSupport::Unsupported => unverifiable = true,
                 }
@@ -183,10 +166,7 @@ impl FileSystemContractSuite<'_> {
             let failure = match self.fixture.file_system().rename(&source, &target, options) {
                 Err(failure) => failure,
                 Ok(_) => {
-                    return Err(ContractFailure::message_only(
-                        "unavailable rename requirement succeeded",
-                    )
-                    .at(id));
+                    return Err(ContractFailure::message_only("unavailable rename requirement succeeded").at(id));
                 }
             };
             let kind = if capability == FileSystemCapability::Rename {
@@ -203,48 +183,28 @@ impl FileSystemContractSuite<'_> {
                 || error.required_capability() != Some(capability)
                 || failure.state() != RenameFailureState::Unchanged
             {
-                return Err(ContractFailure::with_source(
-                    "rename preflight rejection differs",
-                    failure,
-                )
-                .at(id));
+                return Err(ContractFailure::with_source("rename preflight rejection differs", failure).at(id));
             }
-            match &baseline {
-                RejectionBaseline::Present(expected) => {
-                    match self.fixture.read_file(&source).map_err(|error| {
-                        ContractFailure::with_source(
-                            "rename rejection source final observation failed",
-                            error,
-                        )
-                        .at(id)
-                    })? {
-                        FixtureSupport::Supported(actual) if actual == *expected => {}
-                        FixtureSupport::Supported(_) => {
-                            return Err(ContractFailure::message_only(
-                                "rename rejection changed source contents",
-                            )
-                            .at(id));
-                        }
-                        FixtureSupport::Unsupported => unverifiable = true,
+            if let Some(expected) = &baseline {
+                match self.fixture.read_file(&source).map_err(|error| {
+                    ContractFailure::with_source("rename rejection source final observation failed", error).at(id)
+                })? {
+                    FixtureSupport::Supported(actual) if actual == *expected => {}
+                    FixtureSupport::Supported(_) => {
+                        return Err(ContractFailure::message_only("rename rejection changed source contents").at(id));
                     }
+                    FixtureSupport::Unsupported => unverifiable = true,
                 }
-                RejectionBaseline::Absent => {}
-                RejectionBaseline::Unobservable => {}
             }
-            for (path, expected) in [
-                (&source, matches!(baseline, RejectionBaseline::Absent)),
-                (&target, true),
-            ] {
+            for (path, expected) in [(&source, source_expected_absent), (&target, true)] {
                 match self.fixture.exists_out_of_band(path).map_err(|error| {
-                    ContractFailure::with_source("rename rejection final observation failed", error)
-                        .at(id)
+                    ContractFailure::with_source("rename rejection final observation failed", error).at(id)
                 })? {
                     FixtureSupport::Supported(actual) if actual == !expected => {}
                     FixtureSupport::Supported(_) => {
-                        return Err(ContractFailure::message_only(
-                            "rename rejection changed resource existence",
-                        )
-                        .at(id));
+                        return Err(
+                            ContractFailure::message_only("rename rejection changed resource existence").at(id),
+                        );
                     }
                     FixtureSupport::Unsupported => unverifiable = true,
                 }
@@ -254,8 +214,7 @@ impl FileSystemContractSuite<'_> {
                 Some(capability),
                 if unverifiable {
                     ContractCheckOutcome::Unverified {
-                        reason: "rename rejection lacks complete independent resource observations"
-                            .to_owned(),
+                        reason: "rename rejection lacks complete independent resource observations".to_owned(),
                     }
                 } else {
                     ContractCheckOutcome::RejectedAsExpected
