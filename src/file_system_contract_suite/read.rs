@@ -408,6 +408,38 @@ impl FileSystemContractSuite<'_> {
         path: &Path,
     ) -> Result<(), ContractFailure> {
         if scenario == ReadScenario::Range {
+            let (offset, length, accepted_budget, rejected_budget) = read_expectations::window_budget_plan(limit);
+            let window_options = ReadOptions::default()
+                .with_offset(Some(offset))
+                .with_length(Some(length));
+            let actual = self
+                .fixture
+                .file_system()
+                .read_all(path, window_options.clone(), accepted_budget)
+                .map_err(|error| ContractFailure::with_source("range caller budget read failed", error).at(id))?;
+            let expected = &read_expectations::CONTENT[offset as usize..(offset + length) as usize];
+            verify_condition(actual == expected, id, "range caller budget returned different bytes")?;
+            if let Some(rejected_budget) = rejected_budget {
+                let error = match self
+                    .fixture
+                    .file_system()
+                    .read_all(path, window_options, rejected_budget)
+                {
+                    Err(error) => error,
+                    Ok(_) => {
+                        return Err(ContractFailure::message_only("range caller byte budget was ignored").at(id));
+                    }
+                };
+                verify_fs_error(
+                    error,
+                    FsErrorKind::ResourceLimitExceeded,
+                    FsOperation::Read,
+                    path,
+                    self.context.properties().info().provider_id(),
+                    None,
+                    id,
+                )?;
+            }
             let eof = read_expectations::CONTENT.len() as u64;
             let length = limit.maximum().unwrap_or(1).min(1);
             for options in [

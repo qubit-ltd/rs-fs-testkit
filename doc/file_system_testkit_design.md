@@ -127,6 +127,19 @@ cancellation probes are explicit skips; executed probe failures remain failures.
 Existing check IDs remain unchanged; range checks now include zero and EOF
 windows when capability permits.
 
+`ReadRange` also exercises the caller's `read_all` byte budget on its selected
+window: a budget equal to the window length must return the seeded bytes, and
+one byte less must fail with `ResourceLimitExceeded` for `Read`. This is a
+facade budget check, separate from the provider's `max_read_range_bytes` limit.
+The `max_bytes` budget is enforced by the facade and is not passed in the SPI
+request; this checks caller-side consumption, not a provider or service-side
+byte budget.
+`WriteLimit` captures an independent existence baseline before the rejected
+request, captures existing bytes when the fixture prepared `CreateOrReplace`,
+cleans any retained recovery session, then independently confirms the target
+remains absent or unchanged. Missing observation support is unverified; errors
+or changed target state fail the check.
+
 Cancellation diagnostics use the following ownership mapping:
 
 | Failure path | Retained source | Recovery |

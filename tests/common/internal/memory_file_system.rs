@@ -97,10 +97,12 @@ use qubit_fs::write::WriteOptions;
 use qubit_fs::write::WritePrecondition;
 use qubit_io::Output;
 
+use super::super::UnavailableScenario;
+
+type RecordedReadRequest = (Option<u64>, Option<u64>);
 use super::super::shared_model::Entry;
 use super::super::shared_model::FixtureHook;
 use super::super::shared_model::FixtureHookErrorPlan;
-use crate::common::UnavailableScenario;
 use crate::qubit_fs_testkit as testkit;
 use crate::qubit_fs_testkit::CopyFixtureCase;
 use crate::qubit_fs_testkit::FileSystemFixture;
@@ -114,6 +116,8 @@ struct State {
     next_temp: u64,
     temp_creation_calls: usize,
     temp_creation_error_call: Option<usize>,
+    temp_cleanup_calls: usize,
+    temp_cleanup_error_call: Option<usize>,
     fault: MemoryFault,
     delete_capability: bool,
     core_capabilities: bool,
@@ -136,6 +140,9 @@ struct State {
     fixture_hook_errors: FixtureHookErrorPlan,
     exists_calls: usize,
     exists_error_call: Option<usize>,
+    read_requests: Vec<RecordedReadRequest>,
+    reader_calls: usize,
+    read_error_call: Option<usize>,
 }
 
 #[must_use]
@@ -577,6 +584,17 @@ impl MemoryFixture {
         fixture
     }
 
+    /// Creates a fixture that fails one indexed temporary-resource cleanup.
+    pub fn with_temp_cleanup_error_call(call: usize) -> Self {
+        let fixture = Self::with_all_capabilities();
+        fixture
+            .state
+            .lock()
+            .expect("memory state lock must succeed")
+            .temp_cleanup_error_call = Some(call);
+        fixture
+    }
+
     /// Creates a fixture which cannot prepare one conditional case.
     pub fn with_conditional_case_unavailable(case: UnavailableScenario) -> Self {
         let fixture = Self::with_configuration(
@@ -722,6 +740,43 @@ impl MemoryFixture {
         fixture
     }
 
+    /// Creates a fixture that reports one indexed observation hook as
+    /// unsupported.
+    pub fn with_unsupported_fixture_hook(hook: FixtureHook, call: usize) -> Self {
+        let fixture = Self::with_all_capabilities();
+        fixture
+            .state
+            .lock()
+            .expect("memory state lock must succeed")
+            .fixture_hook_errors
+            .mark_unsupported_at(hook, call);
+        fixture
+    }
+
+    /// Creates a bounded fixture that reports one observation hook as
+    /// unsupported.
+    pub fn with_unsupported_fixture_hook_and_limits(hook: FixtureHook, call: usize, limits: FileSystemLimits) -> Self {
+        let fixture = Self::with_limits(limits);
+        fixture
+            .state
+            .lock()
+            .expect("memory state lock must succeed")
+            .fixture_hook_errors
+            .mark_unsupported_at(hook, call);
+        fixture
+    }
+
+    /// Creates a bounded fixture that fails one indexed reader-open request.
+    pub fn with_reader_error_call_and_limits(call: usize, limits: FileSystemLimits) -> Self {
+        let fixture = Self::with_fault_and_limits(MemoryFault::None, limits);
+        fixture
+            .state
+            .lock()
+            .expect("memory state lock must succeed")
+            .read_error_call = Some(call);
+        fixture
+    }
+
     /// Creates a conforming fixture whose filesystem and provider identifiers
     /// are identical.
     pub fn with_matching_ids() -> Self {
@@ -786,6 +841,16 @@ impl MemoryFixture {
         fixture
     }
 
+    /// Returns provider reader requests as offset/length pairs for contract
+    /// self-tests.
+    pub fn read_requests(&self) -> Vec<RecordedReadRequest> {
+        self.state
+            .lock()
+            .expect("memory state lock must succeed")
+            .read_requests
+            .clone()
+    }
+
     /// Creates a fixture with one injected fault and deletion-capability value.
     ///
     /// `fault` selects the provider defect; `delete_capability` controls the
@@ -841,6 +906,8 @@ impl MemoryFixture {
             next_temp: 0,
             temp_creation_calls: 0,
             temp_creation_error_call: None,
+            temp_cleanup_calls: 0,
+            temp_cleanup_error_call: None,
             fault,
             delete_capability,
             core_capabilities,
@@ -863,6 +930,9 @@ impl MemoryFixture {
             fixture_hook_errors: FixtureHookErrorPlan::default(),
             exists_calls: 0,
             exists_error_call: None,
+            read_requests: Vec::new(),
+            reader_calls: 0,
+            read_error_call: None,
         }));
         let path_calls = Arc::new(AtomicUsize::new(0));
         let file_system = FileSystem::from_spi(MemorySpi {
@@ -1310,6 +1380,9 @@ impl FileSystemFixture for MemoryFixture {
         if state.fixture_hook_errors.should_fail(FixtureHook::ReadFile) {
             return Err(FixtureError::new("injected file observation failure"));
         }
+        if state.fixture_hook_errors.should_be_unsupported(FixtureHook::ReadFile) {
+            return Ok(FixtureSupport::Unsupported);
+        }
         let entry = state.entries.get(path.as_str()).cloned();
         Ok(match entry {
             Some(Entry::File(bytes)) => FixtureSupport::Supported(bytes),
@@ -1350,6 +1423,12 @@ impl FileSystemFixture for MemoryFixture {
         if state.exists_error_call == Some(state.exists_calls) {
             return Err(FixtureError::new("injected existence observation failure"));
         }
+        if state.fixture_hook_errors.should_fail(FixtureHook::Exists) {
+            return Err(FixtureError::new("injected existence observation hook failure"));
+        }
+        if state.fixture_hook_errors.should_be_unsupported(FixtureHook::Exists) {
+            return Ok(FixtureSupport::Unsupported);
+        }
         Ok(FixtureSupport::Supported(state.entries.contains_key(path.as_str())))
     }
 
@@ -1360,6 +1439,9 @@ impl FileSystemFixture for MemoryFixture {
         }
         if state.fixture_hook_errors.should_fail(FixtureHook::WriteFile) {
             return Err(FixtureError::new("injected out-of-band write failure"));
+        }
+        if state.fixture_hook_errors.should_be_unsupported(FixtureHook::WriteFile) {
+            return Ok(FixtureSupport::Unsupported);
         }
         publish_entry(&mut state, path.as_str(), Entry::File(bytes.to_vec()));
         Ok(FixtureSupport::Supported(()))
@@ -1686,7 +1768,19 @@ impl FileSystemSpi for MemorySpi {
     }
 
     fn open_reader(&self, request: OpenReaderRequest<'_>) -> FsResult<OpenedReader> {
-        let state = self.state.lock().expect("memory state lock must succeed");
+        let mut state = self.state.lock().expect("memory state lock must succeed");
+        state.reader_calls += 1;
+        state.read_requests.push((
+            request.options().options().offset(),
+            request.options().options().length(),
+        ));
+        if state.read_error_call == Some(state.reader_calls) {
+            return Err(FsError::new(
+                FsErrorKind::PermissionDenied,
+                FsOperation::OpenReader,
+                "injected indexed reader failure",
+            ));
+        }
         if state.fault == MemoryFault::ReadFails
             || (state.fault == MemoryFault::ReadFailsOnEmptyRange && request.options().options().length() == Some(0))
         {
@@ -2500,6 +2594,14 @@ impl TempResourceSpi for TempSession {
 
     fn cleanup(&mut self) -> FsResult<()> {
         let mut state = self.state.lock().expect("memory state lock must succeed");
+        state.temp_cleanup_calls = state.temp_cleanup_calls.saturating_add(1);
+        if state.temp_cleanup_error_call == Some(state.temp_cleanup_calls) {
+            return Err(FsError::new(
+                FsErrorKind::PermissionDenied,
+                FsOperation::CleanupTemp,
+                "injected indexed temp cleanup failure",
+            ));
+        }
         if state.fault == MemoryFault::TempCleanupFailsOnce {
             state.fault = MemoryFault::None;
             return Err(FsError::new(

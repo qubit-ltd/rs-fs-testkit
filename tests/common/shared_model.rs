@@ -14,6 +14,7 @@ pub(crate) enum FixtureHook {
     Snapshot,
     ReadFile,
     WriteFile,
+    Exists,
     ResourceVersion,
     StaleResourceVersion,
     ChecksumFailureCase,
@@ -24,6 +25,7 @@ pub(crate) enum FixtureHook {
 #[derive(Default)]
 pub(crate) struct FixtureHookErrorPlan {
     target: Option<(FixtureHook, usize)>,
+    unsupported_target: Option<(FixtureHook, usize)>,
     calls: HashMap<FixtureHook, usize>,
 }
 
@@ -35,6 +37,16 @@ impl FixtureHookErrorPlan {
 
     pub(crate) fn fail_at(&mut self, hook: FixtureHook, call: usize) {
         self.target = Some((hook, call));
+    }
+
+    pub(crate) fn mark_unsupported_at(&mut self, hook: FixtureHook, call: usize) {
+        self.unsupported_target = Some((hook, call));
+    }
+
+    #[must_use]
+    pub(crate) fn should_be_unsupported(&self, hook: FixtureHook) -> bool {
+        let call = self.calls.get(&hook).copied().unwrap_or(0);
+        self.unsupported_target == Some((hook, call))
     }
 
     #[must_use]
