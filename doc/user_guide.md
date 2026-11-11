@@ -324,7 +324,10 @@ Each rename check prepares distinct source and destination paths. Conflict check
 confirm that rejection preserves both contents before testing explicit overwrite.
 Successful basic, atomic and durable renames all require independent evidence of
 source removal and exact destination content, in addition to the requested
-guarantee and returned path identities.
+guarantee and returned path identities. If a required observation hook returns
+`Unsupported`, the check is `Unverified` and stops before another rename depends
+on that missing evidence. Incorrect supported observations and fixture errors
+remain failures.
 
 Listing checks prepare separate namespaces. Subtree results use a fixed expected
 directory and file set; pagination has its own three-entry request with a page
@@ -336,7 +339,10 @@ For hierarchical paths, `ListBasic` checks direct files and child directories
 while excluding grandchildren. `ListPrefix` checks recursive traversal under
 its selected subtree, including the subtree directory and deeper descendants.
 Use `seed_empty_directory` to prepare every directory independently; do not rely
-on file seeding to make parent directories visible.
+on file seeding to make parent directories visible. The suite checks each
+returned entry against its seed category: directories must be `Directory`, and
+seeded files may be `File` or `Object`. It does not infer directory type from a
+path string or claim that every metadata field is verified.
 
 Random-access checks are applicable only when the captured filesystem
 properties include `Read`. Without it, the checks are recorded as

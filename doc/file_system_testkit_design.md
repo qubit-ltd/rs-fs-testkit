@@ -86,6 +86,10 @@ An expected rename rejection is `RejectedAsExpected` only when its structured
 error is correct and independent before/after observations prove the relevant
 paths unchanged. A provider-reported `RenameFailureState::Unchanged` is not
 independent evidence; missing required observations produce `Unverified`.
+For successful rename checks, `Unsupported` from a required observation hook
+also produces `Unverified` and stops the check before another rename depends on
+the missing evidence. A supported but incorrect observation and a fixture error
+remain failures.
 
 Listing checks compare independently prepared entry sets, paths, and filters,
 and require metadata presence when requested. A `page_size` hint of one tests
@@ -94,6 +98,10 @@ limit property check exercises the public clamp calculation. These observations
 do not establish every metadata field's absent/unknown semantics, stream
 termination after errors, or all provider-violation detection; core and
 provider-specific tests own those additional guarantees.
+For independently seeded entries, the suite also checks the reported category:
+directories must be `Directory`, while seeded files may be `File` or `Object`.
+It does not infer directory expectations from path text or verify every
+metadata field.
 For hierarchical paths, `ListBasic` includes direct files and child directories
 but excludes grandchildren. `ListPrefix` uses a `Subtree` filter and recursive
 traversal, and its expected set includes the selected directory and all seeded

@@ -387,7 +387,9 @@ abort，且目标内容仍可读取。只有 `RetryableNotPublished` 才允许�
 
 验证：
 
-列举契约比较独立准备的条目集合、路径和过滤结果；请求 metadata 时检查其存在性。分页检查以
+列举契约比较独立准备的条目集合、路径和过滤结果；请求 metadata 时检查其存在性。独立 seed 的
+资源类别也会被核对：目录必须报告 `Directory`，文件可报告 `File` 或 `Object`。类别来自
+seed 操作，不会从路径文本推断目录，也不表示所有 metadata 字段都已验证。分页检查以
 `page_size = 1` 请求并验证结果完整，不证明真实服务分页大小或实际 SPI 参数。页大小属性检查验证公开
 clamp 计算。metadata 字段 absent/unknown 的完整语义、SPI 分派参数、流错误后的终止状态和全部
 provider 违规识别不由本段套件结果统一证明，应分别参考核心白盒回归或 provider 自有验证。
@@ -416,6 +418,8 @@ provider 违规识别不由本段套件结果统一证明，应分别参考核�
 缺能力的 rename 拒绝还需要独立确认初始资源状态及请求后的状态。资源变化或观察错误是失败；
 缺少必需观察能力时记为 `Unverified`。门面是否在进入 SPI 前完成预检，仍由 `qubit-fs` 的
 recording SPI 测试验证。
+成功 rename 的必需观察 hook 返回 `Unsupported` 时也记为 `Unverified`，并在缺少的证据被
+后续 rename 依赖前停止检查；已支持但不正确的观察结果及 fixture 错误仍为失败。
 
 ## 9. Temporary resource contract
 
