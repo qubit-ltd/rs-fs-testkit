@@ -67,6 +67,7 @@ impl FileSystemContractSuite<'_> {
             id,
             ContractCheckId::RandomAccessBasic
                 | ContractCheckId::RandomAccessBounds
+                | ContractCheckId::RandomAccessRangeLimit
                 | ContractCheckId::RandomAccessIdentity
         ) {
             let outcome = self.execute_random_access(id)?;

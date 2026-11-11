@@ -118,6 +118,8 @@ pub enum ContractCheckId {
     RandomAccessBasic,
     /// Evidence for the `read/random-access-bounds` contract.
     RandomAccessBounds,
+    /// Evidence for the `read/random-access-range-limit` contract.
+    RandomAccessRangeLimit,
     /// Evidence for the `read/random-access-identity` contract.
     RandomAccessIdentity,
     /// Evidence for the `read/random-access-cancel` contract.
@@ -226,6 +228,7 @@ impl ContractCheckId {
         Self::ReadRangeLimit,
         Self::RandomAccessBasic,
         Self::RandomAccessBounds,
+        Self::RandomAccessRangeLimit,
         Self::RandomAccessIdentity,
         Self::RandomAccessCancel,
         Self::RenameAtomic,
@@ -344,6 +347,7 @@ impl ContractCheckId {
             Self::ReadRangeLimit => "read/range-limit",
             Self::RandomAccessBasic => "read/random-access-basic",
             Self::RandomAccessBounds => "read/random-access-bounds",
+            Self::RandomAccessRangeLimit => "read/random-access-range-limit",
             Self::RandomAccessIdentity => "read/random-access-identity",
             Self::RandomAccessCancel => "read/random-access-cancel",
             Self::RenameAtomic => "rename/atomic",

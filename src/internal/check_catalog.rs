@@ -443,6 +443,7 @@ pub(crate) const fn specification(id: ContractCheckId) -> CheckSpec {
         },
         ContractCheckId::RandomAccessBasic
         | ContractCheckId::RandomAccessBounds
+        | ContractCheckId::RandomAccessRangeLimit
         | ContractCheckId::RandomAccessIdentity => CheckSpec {
             id,
             copy_scenario: None,

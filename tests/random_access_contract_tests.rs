@@ -537,6 +537,7 @@ fn test_random_access_checks_have_distinct_ids_and_default_to_skipped() {
     for (id, name) in [
         (ContractCheckId::RandomAccessBasic, "read/random-access-basic"),
         (ContractCheckId::RandomAccessBounds, "read/random-access-bounds"),
+        (ContractCheckId::RandomAccessRangeLimit, "read/random-access-range-limit"),
         (ContractCheckId::RandomAccessIdentity, "read/random-access-identity"),
     ] {
         assert_eq!(id.as_str(), name);
@@ -606,6 +607,7 @@ fn test_random_access_checks_are_not_applicable_without_read() {
         for id in [
             ContractCheckId::RandomAccessBasic,
             ContractCheckId::RandomAccessBounds,
+            ContractCheckId::RandomAccessRangeLimit,
             ContractCheckId::RandomAccessIdentity,
         ] {
             let check = checks.iter().find(|check| check.id() == id).unwrap();
@@ -745,7 +747,7 @@ fn test_random_access_limit_seed_unavailability_is_unverified_and_cleanup_comple
         fail: false,
     };
     let mut suite = FileSystemContractSuite::new(&fixture);
-    let run = suite.run_check(ContractCheckId::RandomAccessBounds);
+    let run = suite.run_check(ContractCheckId::RandomAccessRangeLimit);
     assert!(run.failures().is_empty(), "{:?}", run.failures());
     assert!(run.cleanup().completed());
     assert!(matches!(
@@ -759,7 +761,7 @@ fn test_random_access_limit_seed_unavailability_is_unverified_and_cleanup_comple
         fail: true,
     };
     let mut suite = FileSystemContractSuite::new(&fixture);
-    let run = suite.run_check(ContractCheckId::RandomAccessBounds);
+    let run = suite.run_check(ContractCheckId::RandomAccessRangeLimit);
     assert_eq!(run.failures().len(), 1);
     assert!(run.failures()[0].message().contains("limit seed preparation failed"));
     assert!(run.cleanup().completed());
@@ -808,6 +810,7 @@ fn test_random_access_reads_bounds_and_object_identity() {
             "Maximum({maximum})"
         );
         assert!(run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+        assert_eq!(outcome(&fixture, ContractCheckId::RandomAccessRangeLimit), ContractCheckOutcome::Passed);
     }
 
     for maximum in [64, u64::MAX] {
@@ -815,11 +818,20 @@ fn test_random_access_reads_bounds_and_object_identity() {
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::RandomAccessBounds);
         assert_eq!(run.failures().len(), 0, "Maximum({maximum}): {:?}", run.failures());
-        assert!(matches!(
-            run.report().checks()[0].outcome(),
-            ContractCheckOutcome::SkippedOptional { .. }
-        ));
-        assert!(!run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+        assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
+        assert!(run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+        let range = outcome(&fixture, ContractCheckId::RandomAccessRangeLimit);
+        assert!(matches!(range, ContractCheckOutcome::SkippedOptional { .. }));
+    }
+
+    for maximum in [1, 2, 5, 6, 10, 63] {
+        let fixture = RandomFixture::new(true, false, FileSystemLimit::Maximum(maximum));
+        assert_eq!(outcome(&fixture, ContractCheckId::RandomAccessBounds), ContractCheckOutcome::Passed);
+        assert_eq!(outcome(&fixture, ContractCheckId::RandomAccessRangeLimit), ContractCheckOutcome::Passed);
+    }
+    for limit in [FileSystemLimit::Unknown, FileSystemLimit::Unbounded, FileSystemLimit::NotApplicable] {
+        let fixture = RandomFixture::new(true, false, limit);
+        assert!(matches!(outcome(&fixture, ContractCheckId::RandomAccessRangeLimit), ContractCheckOutcome::NotApplicable { .. }));
     }
 
     let reopens_path = RandomFixture::new(true, true, FileSystemLimit::Unknown);
@@ -832,7 +844,7 @@ fn test_random_access_reads_bounds_and_object_identity() {
 #[cfg(feature = "async")]
 #[test]
 fn test_async_random_access_bounds_accept_finite_ranges() {
-    for maximum in [5, 6, 10, 63] {
+    for maximum in [1, 2, 5, 6, 10, 63] {
         let fixture = AsyncRandomFixture::with_limit(true, false, FileSystemLimit::Maximum(maximum));
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
@@ -848,6 +860,9 @@ fn test_async_random_access_bounds_accept_finite_ranges() {
             "Maximum({maximum})"
         );
         assert!(run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+        let mut range_suite = AsyncFileSystemContractSuite::new(&fixture);
+        let range_run = ready(range_suite.run_check(ContractCheckId::RandomAccessRangeLimit));
+        assert_eq!(range_run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
     }
 
     for maximum in [64, u64::MAX] {
@@ -859,11 +874,17 @@ fn test_async_random_access_bounds_accept_finite_ranges() {
             "async Maximum({maximum}): {:?}",
             run.failures()
         );
-        assert!(matches!(
-            run.report().checks()[0].outcome(),
-            ContractCheckOutcome::SkippedOptional { .. }
-        ));
-        assert!(!run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+        assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
+        let mut range_suite = AsyncFileSystemContractSuite::new(&fixture);
+        let range = ready(range_suite.run_check(ContractCheckId::RandomAccessRangeLimit));
+        assert!(matches!(range.report().checks()[0].outcome(), ContractCheckOutcome::SkippedOptional { .. }));
+    }
+
+    for limit in [FileSystemLimit::Unknown, FileSystemLimit::Unbounded, FileSystemLimit::NotApplicable] {
+        let fixture = AsyncRandomFixture::with_limit(true, false, limit);
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = ready(suite.run_check(ContractCheckId::RandomAccessRangeLimit));
+        assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::NotApplicable { .. }));
     }
 }
 
@@ -874,6 +895,7 @@ fn test_async_random_access_checks_accept_one_byte_ranges() {
     for id in [
         ContractCheckId::RandomAccessBasic,
         ContractCheckId::RandomAccessBounds,
+        ContractCheckId::RandomAccessRangeLimit,
         ContractCheckId::RandomAccessIdentity,
     ] {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
@@ -982,6 +1004,7 @@ fn test_async_random_access_checks_are_not_applicable_without_read() {
         for id in [
             ContractCheckId::RandomAccessBasic,
             ContractCheckId::RandomAccessBounds,
+            ContractCheckId::RandomAccessRangeLimit,
             ContractCheckId::RandomAccessIdentity,
             ContractCheckId::RandomAccessCancel,
         ] {

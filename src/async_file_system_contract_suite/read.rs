@@ -68,6 +68,7 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             ContractCheckId::RandomAccessBasic
                 | ContractCheckId::RandomAccessBounds
+                | ContractCheckId::RandomAccessRangeLimit
                 | ContractCheckId::RandomAccessIdentity
                 | ContractCheckId::RandomAccessCancel
         ) {

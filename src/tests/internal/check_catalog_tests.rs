@@ -26,6 +26,7 @@ fn test_each_executable_check_has_one_owner() {
                     check.id,
                     ContractCheckId::RandomAccessBasic
                         | ContractCheckId::RandomAccessBounds
+                        | ContractCheckId::RandomAccessRangeLimit
                         | ContractCheckId::RandomAccessIdentity
                         | ContractCheckId::RandomAccessCancel
                 );
@@ -79,4 +80,14 @@ fn test_required_copy_scenario_returns_and_rejects_catalog_entries() {
         .expect_err("read checks have no copy scenario");
     assert_eq!(failure.check(), Some(ContractCheckId::ReadBasic));
     assert_eq!(failure.message(), "missing copy scenario");
+}
+
+#[test]
+fn test_random_access_range_limit_is_an_optional_read_capability_check() {
+    let spec = specification(ContractCheckId::RandomAccessRangeLimit);
+    assert_eq!(spec.contract, FileSystemContract::Read);
+    assert_eq!(spec.capability, Some(qubit_fs::metadata::FileSystemCapability::Read));
+    assert_eq!(spec.read_scenario, None);
+    assert!(spec.optional);
+    assert!(!spec.asynchronous_only);
 }
