@@ -169,7 +169,13 @@ before that phase runs. The wrapper forwards the list to
 the prior policy. The wrapper does not filter IDs, so a check selected outside
 the current phase fails with the report's normal diagnostic. Async registration
 evaluates the callback before calling the runner and moves the list into its
-future. Macros only wrap phase execution and assertions; they do not make
+future. The runner must poll that future until its contract assertions finish.
+The wrapper checks a shared completion marker after the runner returns and
+fails with `[fs-testkit:runner/incomplete]` if execution is dropped early or
+an assertion panic is caught. The marker is set only after the suite leaves
+scope and the assertions succeed. It does not provide a deadline or recover
+async cleanup after a drop; callers needing retained run state should manage
+the suite directly. Macros only wrap phase execution and assertions; they do not make
 capability decisions or implement evidence checks. Directory rejection and
 independent negative side-effect evidence remain responsibilities of the suite
 and its fixture hooks, not the selector callback.

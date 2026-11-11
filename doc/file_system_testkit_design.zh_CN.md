@@ -205,7 +205,10 @@ fn test_file_system_contract() {
 `required_checks` 回调：输入当前阶段，返回要强制要求的 `ContractCheckId` 列表。wrapper 在 suite
 运行前求值一次，并将列表交给 `assert_satisfied_with`；省略时使用空列表，保持既有行为。宏不会过滤
 ID：若请求的 ID 不属于当前阶段，正常断言会报告失败。异步 wrapper 在调用 runner 前求值，并将列表
-移动到 future 中。wrapper 不自行实现契约 assertion、fixture mutation 或 capability 判断；不使用宏的
+移动到 future 中。Runner 必须驱动 future 直到契约断言完成。wrapper 在 runner 返回后检查共享完成标记；
+若执行提前被丢弃或断言 panic 被捕获，则以 `[fs-testkit:runner/incomplete]` 失败。只有 suite 退出作用域
+且断言成功后才设置标记。此标记不提供 deadline，也不在 future 丢弃后恢复异步清理；需要保留运行状态的
+调用方应直接管理 suite。wrapper 不自行实现契约 assertion、fixture mutation 或 capability 判断；不使用宏的
 provider 必须能获得完全相同的 contract coverage。目录拒绝和独立负面副作用证据仍由 suite 与 fixture
 hooks 负责；回调只选择证据，不定义或伪造证据。
 

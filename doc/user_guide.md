@@ -163,6 +163,13 @@ fn run_on_tokio<F: Future<Output = ()>>(future: F) {
 }
 ```
 
+The runner must drive the supplied future until it finishes. If it returns
+early or catches a contract assertion panic, the generated test fails with a
+`[fs-testkit:runner/incomplete]` diagnostic. This check does not impose a
+deadline or recover async cleanup after the future is dropped. To keep run
+state and retry cleanup after a timeout, manage the suite directly and use
+separate run and cleanup budgets.
+
 Then register the provider's `AsyncFileSystemFixture` implementation and that
 defined runner:
 

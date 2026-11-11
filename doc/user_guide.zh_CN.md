@@ -156,6 +156,10 @@ qubit_fs_testkit::register_async_file_system_contract_tests! {
 回调的阶段到 ID 行为与同步宏一致。异步 wrapper 在 runner 外调用回调一次，再将列表移动到
 future 中，并在阶段完成后检查。
 
+Runner 必须驱动传入的 future 直到完成。若它提前返回或捕获了契约断言 panic，生成的测试会以
+`[fs-testkit:runner/incomplete]` 诊断失败。此检查不设置 deadline，也不会在 future 被丢弃后恢复异步清理。
+需要在超时后保留运行状态并重试清理时，应直接管理 suite，并分别设置运行和清理预算。
+
 ## 进阶用法
 
 只有当通用套件需要在被测操作外进行 provider 所有的观察时，才实现可选 fixture hook。例如

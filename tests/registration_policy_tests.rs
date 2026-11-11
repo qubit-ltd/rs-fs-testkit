@@ -77,6 +77,71 @@ register_async_file_system_contract_tests! {
     required_checks: super::required_random_access,
 }
 
+#[cfg(feature = "async")]
+register_async_file_system_contract_tests! {
+    module: incomplete_async,
+    fixture: super::incomplete_async_fixture,
+    runner: super::async_registration_runner,
+    required_checks: super::required_async_evidence,
+}
+
+#[cfg(feature = "async")]
+fn incomplete_async_fixture() -> common::AsyncMemoryFixture {
+    if std::env::var_os("FS_TESTKIT_REGISTRATION_ASYNC_MODE").as_deref()
+        == Some(std::ffi::OsStr::new("catch-assertion"))
+    {
+        common::AsyncMemoryFixture::with_conditional_case_unavailable(
+            common::UnavailableScenario::ReadIfMatch,
+        )
+    } else {
+        common::AsyncMemoryFixture::new()
+    }
+}
+
+#[cfg(feature = "async")]
+fn required_async_evidence(
+    phase: qubit_fs_testkit::FileSystemContract,
+) -> Vec<qubit_fs_testkit::ContractCheckId> {
+    if phase == qubit_fs_testkit::FileSystemContract::Read
+        && std::env::var_os("FS_TESTKIT_REGISTRATION_ASYNC_MODE").as_deref()
+            == Some(std::ffi::OsStr::new("catch-assertion"))
+    {
+        vec![qubit_fs_testkit::ContractCheckId::ReadIfMatchCurrent]
+    } else {
+        Vec::new()
+    }
+}
+
+#[cfg(feature = "async")]
+fn async_registration_runner(future: impl std::future::Future<Output = ()>) {
+    match std::env::var_os("FS_TESTKIT_REGISTRATION_ASYNC_MODE").as_deref() {
+        Some(mode) if mode == "drop-before-poll" => drop(future),
+        Some(mode) if mode == "pending-drop" => {
+            use std::future::Future;
+            use std::task::{Context, Poll, Wake, Waker};
+            struct NoopWake;
+            impl Wake for NoopWake {
+                fn wake(self: std::sync::Arc<Self>) {}
+            }
+
+            let mut future = Box::pin(async {
+                std::future::poll_fn(|_| Poll::<()>::Pending).await;
+                future.await;
+            });
+            let waker = Waker::from(std::sync::Arc::new(NoopWake));
+            let mut context = Context::from_waker(&waker);
+            assert!(future.as_mut().poll(&mut context).is_pending());
+            drop(future);
+        }
+        Some(mode) if mode == "catch-assertion" => {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                common::async_memory_file_system::run_controlled(future)
+            }));
+        }
+        _ => common::async_memory_file_system::run_controlled(future),
+    }
+}
+
 fn required_random_access(phase: qubit_fs_testkit::FileSystemContract) -> Vec<qubit_fs_testkit::ContractCheckId> {
     match phase {
         qubit_fs_testkit::FileSystemContract::Read if std::env::var_os("FS_TESTKIT_REGISTRATION_STRICT").is_some() => {
@@ -87,10 +152,14 @@ fn required_random_access(phase: qubit_fs_testkit::FileSystemContract) -> Vec<qu
 }
 
 fn run_child(test_name: &str, mode: Option<&str>) -> (bool, String, String) {
+    run_child_with_env(test_name, mode, "1")
+}
+
+fn run_child_with_env(test_name: &str, key: Option<&str>, value: &str) -> (bool, String, String) {
     let mut command = std::process::Command::new(std::env::current_exe().expect("test executable"));
     command.args(["--exact", test_name, "--nocapture"]);
-    if let Some(mode) = mode {
-        command.env(mode, "1");
+    if let Some(key) = key {
+        command.env(key, value);
     }
     let output = command.output().expect("run isolated registration test");
     (
@@ -155,4 +224,33 @@ fn test_async_default_and_strict_registration_apply_the_same_policy() {
     assert!(stdout.contains("running 1 test"), "{stdout}");
     assert!(!strict_success, "async strict policy accepted missing evidence");
     assert!(stderr.contains("read/random-access-identity"), "{stderr}");
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_runner_must_complete_before_returning() {
+    for mode in ["drop-before-poll", "pending-drop"] {
+        let (success, stdout, stderr) = run_child_with_env(
+            "incomplete_async::test_properties",
+            Some("FS_TESTKIT_REGISTRATION_ASYNC_MODE"),
+            mode,
+        );
+        assert!(stdout.contains("running 1 test"), "{mode}: {stdout}");
+        assert!(!success, "{mode} unexpectedly passed");
+        assert!(stderr.contains("[fs-testkit:runner/incomplete]"), "{mode}: {stderr}");
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_runner_cannot_swallow_contract_assertion() {
+    let (success, stdout, stderr) = run_child_with_env(
+        "incomplete_async::test_read",
+        Some("FS_TESTKIT_REGISTRATION_ASYNC_MODE"),
+        "catch-assertion",
+    );
+    assert!(stdout.contains("running 1 test"), "{stdout}");
+    assert!(!success, "runner swallowed a contract assertion");
+    assert!(stderr.contains("[fs-testkit:runner/incomplete]"), "{stderr}");
+    assert!(stderr.contains("read/if-match-current"), "{stderr}");
 }

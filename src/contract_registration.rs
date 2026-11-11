@@ -89,11 +89,15 @@ macro_rules! register_file_system_contract_tests {
 /// outside the selected phase fail the normal contract assertion.
 ///
 /// The runner receives the whole future that owns the fixture and suite. A
-/// timeout around that future can end a test, but it drops the wrapper and
+/// runner must poll that future until all contract assertions finish; returning
+/// early, including after catching an assertion panic, fails the generated
+/// test with a `[fs-testkit:runner/incomplete]` diagnostic. This completion
+/// check does not impose a deadline or recover cleanup after the future is
+/// dropped. A timeout around that future can end a test, but it drops the wrapper and
 /// gives the caller no retained suite with which to inspect an interrupted
-/// run or retry `finish()`. For bounded remote-provider checks that need those
-/// diagnostics, use a manually managed suite and separate run/cleanup budgets
-/// as shown in the [user
+/// run or retry `finish()`. For bounded remote-provider checks that need
+/// retained diagnostics and cleanup control, use a manually managed suite
+/// with separate run and cleanup budgets as shown in the [user
 /// guide](https://github.com/qubit-ltd/rs-fs-testkit/blob/main/doc/user_guide.md#bounded-asynchronous-runs-and-cleanup).
 #[macro_export]
 macro_rules! register_async_file_system_contract_tests {
@@ -121,10 +125,22 @@ macro_rules! register_async_file_system_contract_tests {
                         let phase = $crate::FileSystemContract::$contract;
                         let required: Vec<$crate::ContractCheckId> = ($required_checks)(phase);
                         let fixture = ($fixture)();
+                        let completed = ::std::sync::Arc::new(
+                            ::std::sync::atomic::AtomicBool::new(false),
+                        );
+                        let completion = ::std::sync::Arc::clone(&completed);
                         ($runner)(async move {
-                            let mut suite = $crate::AsyncFileSystemContractSuite::new(&fixture);
-                            suite.run_contract(phase).await.assert_satisfied_with(&required);
+                            {
+                                let mut suite = $crate::AsyncFileSystemContractSuite::new(&fixture);
+                                suite.run_contract(phase).await.assert_satisfied_with(&required);
+                            }
+                            completion.store(true, ::std::sync::atomic::Ordering::Release);
                         });
+                        assert!(
+                            completed.load(::std::sync::atomic::Ordering::Acquire),
+                            "[fs-testkit:runner/incomplete] phase {:?}: runner returned before contract assertions completed",
+                            phase
+                        );
                     }
                 };
             }
