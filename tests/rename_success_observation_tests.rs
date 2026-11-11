@@ -2,6 +2,8 @@
 //    Copyright (c) 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Independent observations for successful and conflicting rename checks.
 
@@ -88,7 +90,7 @@ impl FileSystemFixture for SyncFixture {
     }
 }
 
-fn assert_unverified(fixture: &SyncFixture, id: ContractCheckId, calls: usize) {
+fn assert_unverified(fixture: &SyncFixture, id: ContractCheckId, calls: usize, phase: &str) {
     let mut suite = FileSystemContractSuite::new(fixture);
     let run = suite.run_check(id);
     assert!(!run.requirements_satisfied(), "{id}");
@@ -97,14 +99,11 @@ fn assert_unverified(fixture: &SyncFixture, id: ContractCheckId, calls: usize) {
     };
     assert!(
         reason.contains("rename")
-            && (reason.contains("read_file") || reason.contains("exists_out_of_band")),
+            && (reason.contains("read_file") || reason.contains("exists_out_of_band"))
+            && reason.contains(phase),
         "{reason}"
     );
-    assert!(
-        !run.failures()
-            .iter()
-            .any(|failure| failure.check() == Some(id))
-    );
+    assert!(!run.failures().iter().any(|failure| failure.check() == Some(id)));
     assert!(run.cleanup().completed());
     assert!(fixture.inner.is_empty());
     assert_eq!(
@@ -121,19 +120,24 @@ fn test_sync_rename_missing_observation_evidence_is_unverified_and_stops() {
         ContractCheckId::RenameAtomic,
         ContractCheckId::RenameDurable,
     ] {
-        for (read, exists, expected_calls) in [
-            (Some(1), None, 0),
-            (None, Some(1), 0),
-            (Some(2), None, 1),
-            (None, Some(2), 1),
+        for (read, exists, expected_calls, phase) in [
+            (Some(1), None, 0, "initial source contents"),
+            (None, Some(1), 0, "initial target absence"),
+            (Some(2), None, 1, "target contents after rename"),
+            (None, Some(2), 1, "source removal after rename"),
         ] {
             let fixture = SyncFixture::new(read, exists);
-            assert_unverified(&fixture, id, expected_calls);
+            assert_unverified(&fixture, id, expected_calls, phase);
         }
     }
-    for (read, expected_calls) in [(Some(1), 0), (Some(2), 0), (Some(3), 1), (Some(4), 1)] {
+    for (read, expected_calls, phase) in [
+        (Some(1), 0, "initial source contents"),
+        (Some(2), 0, "initial conflict target contents"),
+        (Some(3), 1, "source contents after conflict rejection"),
+        (Some(4), 1, "target contents after conflict rejection"),
+    ] {
         let fixture = SyncFixture::new(read, None);
-        assert_unverified(&fixture, ContractCheckId::RenameConflict, expected_calls);
+        assert_unverified(&fixture, ContractCheckId::RenameConflict, expected_calls, phase);
     }
 }
 
@@ -156,10 +160,7 @@ fn test_sync_rename_supported_observation_defects_remain_failures() {
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::RenameBasic);
         assert!(!run.requirements_satisfied());
-        assert_eq!(
-            run.failures()[0].check(),
-            Some(ContractCheckId::RenameBasic)
-        );
+        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::RenameBasic));
         assert!(run.cleanup().completed());
         assert!(fixture.inner.is_empty());
         if fixture.failed_read.is_some() {
@@ -187,13 +188,21 @@ fn test_sync_rename_normal_fixture_still_passes() {
 
 #[cfg(feature = "async")]
 mod asynchronous {
-    use super::*;
-    use common::AsyncMemoryFixture;
-    use common::async_memory_file_system::run_controlled;
     use qubit_fs::AsyncFileSystem;
     use qubit_fs_testkit::AsyncFileSystemContractSuite;
     use qubit_fs_testkit::AsyncFileSystemFixture;
     use qubit_fs_testkit::FixtureFuture;
+
+    use super::AtomicUsize;
+    use super::ContractCheckId;
+    use super::ContractCheckOutcome;
+    use super::FixtureError;
+    use super::FixtureResult;
+    use super::FixtureSupport;
+    use super::Ordering;
+    use super::Path;
+    use crate::common::AsyncMemoryFixture;
+    use crate::common::async_memory_file_system::run_controlled;
 
     struct AsyncFixture {
         inner: AsyncMemoryFixture,
@@ -228,24 +237,16 @@ mod asynchronous {
         fn path(&self, relative: &str) -> FixtureResult<Path> {
             self.inner.path(relative)
         }
-        fn seed_file<'a>(
-            &'a self,
-            relative: &'a str,
-            bytes: &'a [u8],
-        ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+        fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
             self.inner.seed_file(relative, bytes)
         }
         fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
             let call = self.reads.fetch_add(1, Ordering::SeqCst) + 1;
             if self.failed_read == Some(call) {
-                return Box::pin(async {
-                    Err(FixtureError::new("injected read observation failure"))
-                });
+                return Box::pin(async { Err(FixtureError::new("injected read observation failure")) });
             }
             if self.wrong_read == Some(call) {
-                return Box::pin(async {
-                    Ok(FixtureSupport::Supported(b"wrong snapshot".to_vec()))
-                });
+                return Box::pin(async { Ok(FixtureSupport::Supported(b"wrong snapshot".to_vec())) });
             }
             if self.unsupported_read == Some(call) {
                 Box::pin(async { Ok(FixtureSupport::Unsupported) })
@@ -253,10 +254,7 @@ mod asynchronous {
                 self.inner.read_file(path)
             }
         }
-        fn exists_out_of_band<'a>(
-            &'a self,
-            path: &'a Path,
-        ) -> FixtureFuture<'a, FixtureSupport<bool>> {
+        fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
             let call = self.exists.fetch_add(1, Ordering::SeqCst) + 1;
             if self.wrong_exists == Some(call) {
                 return Box::pin(async { Ok(FixtureSupport::Supported(true)) });
@@ -280,37 +278,37 @@ mod asynchronous {
                 ContractCheckId::RenameAtomic,
                 ContractCheckId::RenameDurable,
             ] {
-                for (read, exists, expected_calls) in [
-                    (Some(1), None, 0),
-                    (None, Some(1), 0),
-                    (Some(2), None, 1),
-                    (None, Some(2), 1),
+                for (read, exists, expected_calls, phase) in [
+                    (Some(1), None, 0, "initial source contents"),
+                    (None, Some(1), 0, "initial target absence"),
+                    (Some(2), None, 1, "target contents after rename"),
+                    (None, Some(2), 1, "source removal after rename"),
                 ] {
                     let fixture = AsyncFixture::new(read, exists);
                     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
                     let run = suite.run_check(id).await;
                     assert!(!run.requirements_satisfied());
-                    let ContractCheckOutcome::Unverified { reason } =
-                        run.report().checks()[0].outcome()
-                    else {
+                    let ContractCheckOutcome::Unverified { reason } = run.report().checks()[0].outcome() else {
                         panic!("{id}: {:?}", run.report().checks());
                     };
                     assert!(
                         reason.contains("rename")
-                            && (reason.contains("read_file") || reason.contains("exists_out_of_band")),
+                            && (reason.contains("read_file") || reason.contains("exists_out_of_band"))
+                            && reason.contains(phase),
                         "{reason}"
                     );
-                    assert!(
-                        !run.failures()
-                            .iter()
-                            .any(|failure| failure.check() == Some(id))
-                    );
+                    assert!(!run.failures().iter().any(|failure| failure.check() == Some(id)));
                     assert!(run.cleanup().completed());
                     assert!(fixture.inner.is_empty());
                     assert_eq!(fixture.inner.rename_spi_call_count(), expected_calls);
                 }
             }
-            for (read, expected_calls) in [(Some(1), 0), (Some(2), 0), (Some(3), 1), (Some(4), 1)] {
+            for (read, expected_calls, phase) in [
+                (Some(1), 0, "initial source contents"),
+                (Some(2), 0, "initial conflict target contents"),
+                (Some(3), 1, "source contents after conflict rejection"),
+                (Some(4), 1, "target contents after conflict rejection"),
+            ] {
                 let fixture = AsyncFixture::new(read, None);
                 let mut suite = AsyncFileSystemContractSuite::new(&fixture);
                 let run = suite.run_check(ContractCheckId::RenameConflict).await;
@@ -319,6 +317,10 @@ mod asynchronous {
                     run.report().checks()[0].outcome(),
                     ContractCheckOutcome::Unverified { .. }
                 ));
+                let ContractCheckOutcome::Unverified { reason } = run.report().checks()[0].outcome() else {
+                    unreachable!();
+                };
+                assert!(reason.contains(phase), "{reason}");
                 assert!(run.cleanup().completed());
                 assert!(fixture.inner.is_empty());
                 assert_eq!(fixture.inner.rename_spi_call_count(), expected_calls);
@@ -346,10 +348,7 @@ mod asynchronous {
                 let mut suite = AsyncFileSystemContractSuite::new(&fixture);
                 let run = suite.run_check(ContractCheckId::RenameBasic).await;
                 assert!(!run.requirements_satisfied());
-                assert_eq!(
-                    run.failures()[0].check(),
-                    Some(ContractCheckId::RenameBasic)
-                );
+                assert_eq!(run.failures()[0].check(), Some(ContractCheckId::RenameBasic));
                 if fixture.failed_read.is_some() {
                     assert!(std::error::Error::source(&run.failures()[0]).is_some());
                 }
