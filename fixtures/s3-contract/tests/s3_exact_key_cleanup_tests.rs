@@ -106,7 +106,7 @@ async fn test_verification_error_and_not_found_still_clean_all_exact_keys() {
     .expect_err("verification error must remain a failure");
     let message = panic.downcast_ref::<String>().unwrap();
     assert!(message.contains("verification marker"));
-    assert!(message.contains("cleanup failed for 1 owned keys"));
+    assert!(message.contains("cleanup error count: 1"));
 }
 
 #[tokio::test]

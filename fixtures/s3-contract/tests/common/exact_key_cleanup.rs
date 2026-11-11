@@ -61,12 +61,12 @@ where
 pub fn finalize_verification(outcome: VerificationOutcome, cleanup_errors: Vec<ObjectStoreError>) {
     match outcome {
         Err(payload) => {
-            eprintln!("cleanup failed for {} owned keys", cleanup_errors.len());
+            eprintln!("cleanup error count: {}", cleanup_errors.len());
             panic::resume_unwind(payload);
         }
         Ok(Err(error)) => {
             panic!(
-                "real service PUT/GET/HEAD/LIST verification failed: {error}; cleanup failed for {} owned keys",
+                "real service PUT/GET/HEAD/LIST verification failed: {error}; cleanup error count: {}",
                 cleanup_errors.len()
             );
         }
