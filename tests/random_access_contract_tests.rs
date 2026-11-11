@@ -248,6 +248,7 @@ struct AsyncState {
     pending_read_hook_panic: bool,
     disarm_error: bool,
     open_pending: bool,
+    random_access_open_error: bool,
 }
 
 #[cfg(feature = "async")]
@@ -353,6 +354,13 @@ impl AsyncFileSystemSpi for AsyncRandomProvider {
     ) -> SpiFuture<'a, FsResult<OpenedAsyncRandomAccessReader>> {
         let state = self.state.clone();
         Box::pin(async move {
+            if lock_async_state(&state).random_access_open_error {
+                return Err(FsError::new(
+                    FsErrorKind::Io,
+                    FsOperation::OpenReader,
+                    "injected random-access open failure",
+                ));
+            }
             if lock_async_state(&state).open_pending {
                 std::future::poll_fn(|_| Poll::<()>::Pending).await;
             }
@@ -403,6 +411,16 @@ impl AsyncRandomFixture {
         })
         .expect("async provider facade initializes");
         Self { file_system, state }
+    }
+
+    fn with_open_error(range_limit: FileSystemLimit) -> Self {
+        let fixture = Self::with_limit(false, false, range_limit);
+        fixture
+            .state
+            .lock()
+            .expect("async fixture state")
+            .random_access_open_error = true;
+        fixture
     }
 }
 
@@ -470,7 +488,9 @@ impl AsyncFileSystemFixture for AsyncRandomFixture {
             panic!("injected pending-read observation panic");
         }
         if state.pending_read_hook_error {
-            return Err(qubit_fs_testkit::FixtureError::new("injected pending-read observation failure"));
+            return Err(qubit_fs_testkit::FixtureError::new(
+                "injected pending-read observation failure",
+            ));
         }
         if state.pending_read_hook_unsupported {
             return Ok(FixtureSupport::Unsupported);
@@ -602,7 +622,10 @@ fn test_random_access_checks_have_distinct_ids_and_default_to_skipped() {
     for (id, name) in [
         (ContractCheckId::RandomAccessBasic, "read/random-access-basic"),
         (ContractCheckId::RandomAccessBounds, "read/random-access-bounds"),
-        (ContractCheckId::RandomAccessRangeLimit, "read/random-access-range-limit"),
+        (
+            ContractCheckId::RandomAccessRangeLimit,
+            "read/random-access-range-limit",
+        ),
         (ContractCheckId::RandomAccessIdentity, "read/random-access-identity"),
     ] {
         assert_eq!(id.as_str(), name);
@@ -833,6 +856,23 @@ fn test_random_access_limit_seed_unavailability_is_unverified_and_cleanup_comple
 }
 
 #[test]
+fn test_random_access_range_limit_seed_open_failure_is_attributed_and_cleaned_up() {
+    let fixture =
+        RandomFixture::with_open_options(true, false, FileSystemLimit::Maximum(10), Some(FsErrorKind::Io), None);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::RandomAccessRangeLimit);
+
+    assert_eq!(run.failures().len(), 1);
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::RandomAccessRangeLimit));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("random-access limit seed open failed")
+    );
+    assert!(run.cleanup().completed());
+}
+
+#[test]
 fn test_random_access_reads_bounds_and_object_identity() {
     let conforming = RandomFixture::new(true, false, FileSystemLimit::Unknown);
     for id in [
@@ -875,7 +915,10 @@ fn test_random_access_reads_bounds_and_object_identity() {
             "Maximum({maximum})"
         );
         assert!(run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
-        assert_eq!(outcome(&fixture, ContractCheckId::RandomAccessRangeLimit), ContractCheckOutcome::Passed);
+        assert_eq!(
+            outcome(&fixture, ContractCheckId::RandomAccessRangeLimit),
+            ContractCheckOutcome::Passed
+        );
     }
 
     for maximum in [64, u64::MAX] {
@@ -889,7 +932,10 @@ fn test_random_access_reads_bounds_and_object_identity() {
         let range = range_suite.run_check(ContractCheckId::RandomAccessRangeLimit);
         assert_eq!(range.report().checks().len(), 1);
         assert_eq!(range.report().checks()[0].id(), ContractCheckId::RandomAccessRangeLimit);
-        assert!(matches!(range.report().checks()[0].outcome(), ContractCheckOutcome::SkippedOptional { .. }));
+        assert!(matches!(
+            range.report().checks()[0].outcome(),
+            ContractCheckOutcome::SkippedOptional { .. }
+        ));
     }
 
     let zero_limit = RandomFixture::new(true, false, FileSystemLimit::Maximum(0));
@@ -904,16 +950,26 @@ fn test_random_access_reads_bounds_and_object_identity() {
 
     for maximum in [1, 2, 5, 6, 10, 63] {
         let fixture = RandomFixture::new(true, false, FileSystemLimit::Maximum(maximum));
-        assert_eq!(outcome(&fixture, ContractCheckId::RandomAccessBounds), ContractCheckOutcome::Passed);
+        assert_eq!(
+            outcome(&fixture, ContractCheckId::RandomAccessBounds),
+            ContractCheckOutcome::Passed
+        );
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::RandomAccessRangeLimit);
         assert_eq!(run.report().checks().len(), 1);
         assert_eq!(run.report().checks()[0].id(), ContractCheckId::RandomAccessRangeLimit);
         assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
     }
-    for limit in [FileSystemLimit::Unknown, FileSystemLimit::Unbounded, FileSystemLimit::NotApplicable] {
+    for limit in [
+        FileSystemLimit::Unknown,
+        FileSystemLimit::Unbounded,
+        FileSystemLimit::NotApplicable,
+    ] {
         let fixture = RandomFixture::new(true, false, limit);
-        assert!(matches!(outcome(&fixture, ContractCheckId::RandomAccessRangeLimit), ContractCheckOutcome::NotApplicable { .. }));
+        assert!(matches!(
+            outcome(&fixture, ContractCheckId::RandomAccessRangeLimit),
+            ContractCheckOutcome::NotApplicable { .. }
+        ));
     }
 
     let reopens_path = RandomFixture::new(true, true, FileSystemLimit::Unknown);
@@ -958,7 +1014,10 @@ fn test_async_random_access_bounds_accept_finite_ranges() {
         let mut range_suite = AsyncFileSystemContractSuite::new(&fixture);
         let range_run = ready(range_suite.run_check(ContractCheckId::RandomAccessRangeLimit));
         assert_eq!(range_run.report().checks().len(), 1);
-        assert_eq!(range_run.report().checks()[0].id(), ContractCheckId::RandomAccessRangeLimit);
+        assert_eq!(
+            range_run.report().checks()[0].id(),
+            ContractCheckId::RandomAccessRangeLimit
+        );
         assert_eq!(range_run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
     }
 
@@ -976,15 +1035,42 @@ fn test_async_random_access_bounds_accept_finite_ranges() {
         let range = ready(range_suite.run_check(ContractCheckId::RandomAccessRangeLimit));
         assert_eq!(range.report().checks().len(), 1);
         assert_eq!(range.report().checks()[0].id(), ContractCheckId::RandomAccessRangeLimit);
-        assert!(matches!(range.report().checks()[0].outcome(), ContractCheckOutcome::SkippedOptional { .. }));
+        assert!(matches!(
+            range.report().checks()[0].outcome(),
+            ContractCheckOutcome::SkippedOptional { .. }
+        ));
     }
 
-    for limit in [FileSystemLimit::Unknown, FileSystemLimit::Unbounded, FileSystemLimit::NotApplicable] {
+    for limit in [
+        FileSystemLimit::Unknown,
+        FileSystemLimit::Unbounded,
+        FileSystemLimit::NotApplicable,
+    ] {
         let fixture = AsyncRandomFixture::with_limit(true, false, limit);
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = ready(suite.run_check(ContractCheckId::RandomAccessRangeLimit));
-        assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::NotApplicable { .. }));
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::NotApplicable { .. }
+        ));
     }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_range_limit_seed_open_failure_is_attributed_and_cleaned_up() {
+    let fixture = AsyncRandomFixture::with_open_error(FileSystemLimit::Maximum(10));
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessRangeLimit));
+
+    assert_eq!(run.failures().len(), 1);
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::RandomAccessRangeLimit));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("random-access limit seed open failed")
+    );
+    assert!(run.cleanup().completed());
 }
 
 #[cfg(feature = "async")]
@@ -1036,12 +1122,31 @@ fn test_random_access_cancel_releases_futures_and_reuses_reader() {
     assert_eq!(state.disarm_calls, 1);
     assert_eq!(state.teardown_calls, 1);
     assert!(state.gate_entered);
-    let gate = state.events.iter().position(|event| *event == "gate_entered").expect("gate was observed");
-    let disarm = state.events.iter().position(|event| *event == "disarm").expect("gate was disarmed");
-    let future_drop = state.events.iter().position(|event| *event == "future_drop").expect("read future was dropped");
-    let hook = state.events.iter().position(|event| *event == "hook_query").expect("gate observation was queried");
+    let gate = state
+        .events
+        .iter()
+        .position(|event| *event == "gate_entered")
+        .expect("gate was observed");
+    let disarm = state
+        .events
+        .iter()
+        .position(|event| *event == "disarm")
+        .expect("gate was disarmed");
+    let future_drop = state
+        .events
+        .iter()
+        .position(|event| *event == "future_drop")
+        .expect("read future was dropped");
+    let hook = state
+        .events
+        .iter()
+        .position(|event| *event == "hook_query")
+        .expect("gate observation was queried");
     assert!(gate < future_drop && future_drop < hook && hook < disarm);
-    assert!(state.events[disarm + 1..].contains(&"read_started"), "reader recovery follows disarm");
+    assert!(
+        state.events[disarm + 1..].contains(&"read_started"),
+        "reader recovery follows disarm"
+    );
     assert!(!state.probe_armed, "teardown leaves no pending-read probe armed");
 }
 
@@ -1061,48 +1166,80 @@ fn test_async_random_access_cancel_does_not_pass_before_injected_gate() {
     assert!(!state.gate_entered);
     assert_eq!(state.disarm_calls, 1);
     assert_eq!(state.teardown_calls, 1);
-    assert_eq!(state.events[0..4], ["read_started", "future_drop", "hook_query", "disarm"]);
-    assert!(state.events[3..].contains(&"read_started"), "reader recovery follows disarm");
+    assert_eq!(
+        state.events[0..4],
+        ["read_started", "future_drop", "hook_query", "disarm"]
+    );
+    assert!(
+        state.events[3..].contains(&"read_started"),
+        "reader recovery follows disarm"
+    );
 }
 
 #[cfg(feature = "async")]
 #[test]
 fn test_async_random_access_cancel_observation_support_and_errors() {
     let unsupported = AsyncRandomFixture::new(true, false);
-    unsupported.state.lock().expect("async fixture state").pending_read_hook_unsupported = true;
+    unsupported
+        .state
+        .lock()
+        .expect("async fixture state")
+        .pending_read_hook_unsupported = true;
     let mut suite = AsyncFileSystemContractSuite::new(&unsupported);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
-    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Unverified { .. }));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Unverified { .. }
+    ));
     assert_eq!(unsupported.state.lock().expect("async fixture state").disarm_calls, 1);
 
     let failed = AsyncRandomFixture::new(true, false);
-    failed.state.lock().expect("async fixture state").pending_read_hook_error = true;
+    failed
+        .state
+        .lock()
+        .expect("async fixture state")
+        .pending_read_hook_error = true;
     let mut suite = AsyncFileSystemContractSuite::new(&failed);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
-    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
-    assert!(run.failures().iter().any(|failure| {
-        failure.check() == Some(ContractCheckId::RandomAccessCancel)
-    }));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert!(
+        run.failures()
+            .iter()
+            .any(|failure| { failure.check() == Some(ContractCheckId::RandomAccessCancel) })
+    );
     assert_eq!(failed.state.lock().expect("async fixture state").disarm_calls, 1);
 
     let panics = AsyncRandomFixture::new(true, false);
     lock_async_state(&panics.state).pending_read_hook_panic = true;
     let mut suite = AsyncFileSystemContractSuite::new(&panics);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
-    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
-    assert!(run.failures().iter().any(|failure| {
-        failure.check() == Some(ContractCheckId::RandomAccessCancel)
-    }));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert!(
+        run.failures()
+            .iter()
+            .any(|failure| { failure.check() == Some(ContractCheckId::RandomAccessCancel) })
+    );
     assert_eq!(lock_async_state(&panics.state).disarm_calls, 1);
 
     let disarm_fails = AsyncRandomFixture::new(true, false);
     lock_async_state(&disarm_fails.state).disarm_error = true;
     let mut suite = AsyncFileSystemContractSuite::new(&disarm_fails);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
-    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
-    assert!(run.failures().iter().any(|failure| {
-        failure.check() == Some(ContractCheckId::RandomAccessCancel)
-    }));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert!(
+        run.failures()
+            .iter()
+            .any(|failure| { failure.check() == Some(ContractCheckId::RandomAccessCancel) })
+    );
     assert_eq!(lock_async_state(&disarm_fails.state).disarm_calls, 1);
 }
 
@@ -1119,7 +1256,11 @@ fn test_async_random_access_cancel_outer_future_drop_disarms_probe() {
     let state = lock_async_state(&fixture.state);
     assert_eq!(state.disarm_calls, 1);
     assert!(!state.probe_armed);
-    let disarmed = state.events.iter().position(|event| *event == "disarm").expect("probe was disarmed");
+    let disarmed = state
+        .events
+        .iter()
+        .position(|event| *event == "disarm")
+        .expect("probe was disarmed");
     assert_eq!(disarmed, 0, "probe is disarmed while cancelling the pending open");
 }
 

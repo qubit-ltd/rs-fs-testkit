@@ -131,6 +131,11 @@ impl ContractContext {
     }
 
     /// Marks the check whose provider operations are currently executing.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - The stable identity attributed to operations until the check
+    ///   records its outcome.
     #[inline]
     pub(crate) fn begin_check(&mut self, id: ContractCheckId) {
         self.begin(id.as_str());
@@ -138,6 +143,10 @@ impl ContractContext {
     }
 
     /// Returns the check currently responsible for an interrupted operation.
+    ///
+    /// # Returns
+    ///
+    /// The active check identity, or `None` when no check is executing.
     #[must_use]
     #[inline]
     pub(crate) const fn active_check(&self) -> Option<ContractCheckId> {

@@ -128,24 +128,26 @@ pub trait AsyncFileSystemFixture: Sync {
         Ok(())
     }
 
-    /// Independently reports whether a random-access read reached the injected pending gate.
-    /// This must inspect fixture instrumentation only and must not perform I/O.
-    /// The cancellation check passes only for `Supported(true)` after observing
-    /// the read future return `Pending`; `Supported(false)` and `Unsupported`
-    /// leave the check unverified. The runner drops the future before querying
-    /// this hook, then disarms the gate. The fixture must allow the reader to be
-    /// used again after disarming.
+    /// Independently reports whether a random-access read reached the injected
+    /// pending gate. This must inspect fixture instrumentation only and
+    /// must not perform I/O. The cancellation check passes only for
+    /// `Supported(true)` after observing the read future return `Pending`;
+    /// `Supported(false)` and `Unsupported` leave the check unverified. The
+    /// runner drops the future before querying this hook, then disarms the
+    /// gate. The fixture must allow the reader to be used again after
+    /// disarming.
     ///
     /// # Parameters
     /// * `path` - Seed path associated with the pending-read probe.
     ///
     /// # Returns
-    /// `Supported(true)` when the read reached the gate, `Supported(false)` when it did not,
-    /// or `Unsupported` when this fixture cannot observe gate entry.
+    /// `Supported(true)` when the read reached the gate, `Supported(false)`
+    /// when it did not, or `Unsupported` when this fixture cannot observe
+    /// gate entry.
     ///
     /// # Errors
-    /// Returns [`FixtureError`](crate::FixtureError) when reading the independent
-    /// instrumentation fails.
+    /// Returns [`FixtureError`](crate::FixtureError) when reading the
+    /// independent instrumentation fails.
     #[inline]
     fn random_access_pending_read_reached(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
         let _ = path;
@@ -909,6 +911,7 @@ mod tests {
         let memory = AsyncMemoryFixture::new();
         let fixture = fixture(&memory, 0, false);
         let path = DefaultFixture::path_for("random-access").expect("build fixture path");
+        assert!(DefaultFixture::path_for("\0").is_err());
 
         assert!(matches!(
             block_on(fixture.replace_random_access_path(&path, b"replacement")),

@@ -68,20 +68,10 @@ fn test_read_panic_is_attributed_to_active_check_across_sync_entry_points() {
             Some("injected reader panic")
         );
         let checks = run.report().checks();
-        assert!(
-            checks
-                .iter()
-                .any(|check| check.id() == ContractCheckId::ReadBasic
-                    && matches!(check.outcome(), ContractCheckOutcome::Failed { .. }))
-        );
-        if let Some(check) = checks
-            .iter()
-            .find(|check| check.id() == ContractCheckId::ReadChecksum)
-        {
-            assert!(matches!(
-                check.outcome(),
-                ContractCheckOutcome::NotRun { .. }
-            ));
+        assert!(checks.iter().any(|check| check.id() == ContractCheckId::ReadBasic
+            && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })));
+        if let Some(check) = checks.iter().find(|check| check.id() == ContractCheckId::ReadChecksum) {
+            assert!(matches!(check.outcome(), ContractCheckOutcome::NotRun { .. }));
         }
         if entry_point == 2 {
             assert!(checks.iter().any(|check| {
@@ -98,20 +88,23 @@ fn test_cleanup_panic_has_no_stale_check_attribution() {
     let fixture = MemoryFixture::with_fault(MemoryFault::CleanupStatPanic);
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(testkit::ContractCheckId::ReadBasic);
-    assert!(run.failures().iter().any(|failure| {
-        failure.message().starts_with("cleanup failed:") && failure.check().is_none()
-    }));
+    assert!(
+        run.failures()
+            .iter()
+            .any(|failure| { failure.message().starts_with("cleanup failed:") && failure.check().is_none() })
+    );
 }
 
 #[cfg(feature = "async")]
 #[test]
 fn test_read_panic_is_attributed_to_active_check_across_async_entry_points() {
-    use self::common::async_memory_file_system::AsyncMemoryFault;
-    use self::common::async_memory_file_system::AsyncMemoryFixture;
-    use self::common::async_memory_file_system::run_controlled;
     use testkit::AsyncFileSystemContractSuite;
     use testkit::ContractCheckId;
     use testkit::ContractCheckOutcome;
+
+    use self::common::async_memory_file_system::AsyncMemoryFault;
+    use self::common::async_memory_file_system::AsyncMemoryFixture;
+    use self::common::async_memory_file_system::run_controlled;
 
     for entry_point in 0..3 {
         let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::ReadPanics);
@@ -132,20 +125,10 @@ fn test_read_panic_is_attributed_to_active_check_across_async_entry_points() {
                 Some("injected async reader panic")
             );
             let checks = run.report().checks();
-            assert!(
-                checks
-                    .iter()
-                    .any(|check| check.id() == ContractCheckId::ReadBasic
-                        && matches!(check.outcome(), ContractCheckOutcome::Failed { .. }))
-            );
-            if let Some(check) = checks
-                .iter()
-                .find(|check| check.id() == ContractCheckId::ReadChecksum)
-            {
-                assert!(matches!(
-                    check.outcome(),
-                    ContractCheckOutcome::NotRun { .. }
-                ));
+            assert!(checks.iter().any(|check| check.id() == ContractCheckId::ReadBasic
+                && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })));
+            if let Some(check) = checks.iter().find(|check| check.id() == ContractCheckId::ReadChecksum) {
+                assert!(matches!(check.outcome(), ContractCheckOutcome::NotRun { .. }));
             }
             if entry_point == 2 {
                 assert!(checks.iter().any(|check| {
@@ -161,19 +144,22 @@ fn test_read_panic_is_attributed_to_active_check_across_async_entry_points() {
 #[cfg(feature = "async")]
 #[test]
 fn test_async_cleanup_panic_has_no_stale_check_attribution() {
-    use self::common::async_memory_file_system::AsyncMemoryFixture;
-    use self::common::async_memory_file_system::run_controlled;
     use testkit::AsyncFileSystemContractSuite;
     use testkit::ContractCheckId;
+
+    use self::common::async_memory_file_system::AsyncMemoryFixture;
+    use self::common::async_memory_file_system::run_controlled;
 
     let fixture = AsyncMemoryFixture::new();
     fixture.set_cleanup_stat_panics(true);
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::ReadBasic).await;
-        assert!(run.failures().iter().any(|failure| {
-            failure.message().starts_with("cleanup failed:") && failure.check().is_none()
-        }));
+        assert!(
+            run.failures()
+                .iter()
+                .any(|failure| { failure.message().starts_with("cleanup failed:") && failure.check().is_none() })
+        );
     });
 }
 

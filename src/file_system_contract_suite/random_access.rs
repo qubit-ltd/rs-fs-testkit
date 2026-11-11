@@ -86,10 +86,9 @@ impl FileSystemContractSuite<'_> {
                     reason: format!("random-access range limit is not finite: {limit:?}"),
                 });
             };
-            let Some((accepted, rejected)) = crate::internal::limit_probe_plan::finite_probe(
-                FileSystemLimit::Maximum(maximum),
-                64,
-            ) else {
+            let Some((accepted, rejected)) =
+                crate::internal::limit_probe_plan::finite_probe(FileSystemLimit::Maximum(maximum), 64)
+            else {
                 return Ok(ContractCheckOutcome::SkippedOptional {
                     reason: "finite random-access range limit exceeds the 64-byte probe budget".to_owned(),
                 });
@@ -98,12 +97,9 @@ impl FileSystemContractSuite<'_> {
                 .map(|index| SEED[index % SEED.len()])
                 .collect::<Vec<_>>();
             let relative = self.context.relative_name("random-access-limit");
-            let path = match self
-                .fixture
-                .seed_file(&relative, &expected)
-                .map_err(|error| {
-                    ContractFailure::with_source("random-access limit seed preparation failed", error).at(id)
-                })? {
+            let path = match self.fixture.seed_file(&relative, &expected).map_err(|error| {
+                ContractFailure::with_source("random-access limit seed preparation failed", error).at(id)
+            })? {
                 FixtureSupport::Supported(path) => path,
                 FixtureSupport::Unsupported => {
                     return Ok(ContractCheckOutcome::Unverified {
@@ -116,9 +112,7 @@ impl FileSystemContractSuite<'_> {
                 .fixture
                 .file_system()
                 .open_random_access_reader(&path, ReadOptions::default())
-                .map_err(|error| {
-                    ContractFailure::with_source("random-access limit seed open failed", error).at(id)
-                })?;
+                .map_err(|error| ContractFailure::with_source("random-access limit seed open failed", error).at(id))?;
             if reader.len() != rejected {
                 return Err(ContractFailure::message_only(
                     "random-access limit seed open-time length did not match the seed",
@@ -145,11 +139,14 @@ impl FileSystemContractSuite<'_> {
                 )
                 .at(id));
             }
-            let empty_after = reader
-                .read_at(0, &mut empty)
-                .map_err(|error| ContractFailure::with_source("empty random-access read after range rejection failed", error).at(id))?;
+            let empty_after = reader.read_at(0, &mut empty).map_err(|error| {
+                ContractFailure::with_source("empty random-access read after range rejection failed", error).at(id)
+            })?;
             if empty_after != 0 {
-                return Err(ContractFailure::message_only("empty random-access read after range rejection returned bytes").at(id));
+                return Err(ContractFailure::message_only(
+                    "empty random-access read after range rejection returned bytes",
+                )
+                .at(id));
             }
             return Ok(ContractCheckOutcome::Passed);
         }
