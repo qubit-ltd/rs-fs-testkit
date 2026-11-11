@@ -139,6 +139,13 @@ and async fixtures must both provide an independent, idempotent explicit
 teardown that handles partial setup and staging resources. `Drop` may supplement
 cleanup but cannot replace teardown; async `Drop` performs no I/O.
 
+The first `finish` attempt closes the preparation and run entry points. If
+cleanup fails or an asynchronous cleanup future is cancelled, callers may retry
+cleanup with `finish`, but must create a new fixture and suite before another
+run. `ContractReport` validates check evidence only; it does not include run
+completion, execution failures, or cleanup. Use `ContractRun` assertions to
+validate the complete run.
+
 Writer and copy cancellation checks retain the operation and publication
 state across cancellation. Recovery is explicit: taking a retained writer or
 operation transfers responsibility to the caller, while the original failure

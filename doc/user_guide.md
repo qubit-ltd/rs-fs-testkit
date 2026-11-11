@@ -226,12 +226,19 @@ remains owned by the suite. Call `run.assert_satisfied()` to check execution,
 required evidence, and cleanup together; a report alone does not prove cleanup
 succeeded. Registration macros enforce this same policy.
 
-Each suite is a single execution session. A completed or interrupted session
-cannot run again; create a fresh fixture and suite. For an asynchronous suite,
-await the same entry points using your own runtime. If its future is dropped,
-inspect `suite.run()` and retry `suite.finish().await` for cleanup. Dropping the
-entire suite performs no asynchronous I/O, so the fixture owner must arrange
-independent teardown.
+Each suite is a single execution session. The first `finish` attempt closes
+the preparation and run entry points. If cleanup fails or its future is
+cancelled, retry cleanup with `finish`; do not seed resources or start another
+run. Create a fresh fixture and suite for a new run. For an asynchronous suite,
+await the same entry points using your own runtime. If its run future is
+dropped, inspect `suite.run()` and retry `suite.finish().await` for cleanup.
+Dropping the entire suite performs no asynchronous I/O, so the fixture owner
+must arrange independent teardown.
+
+`ContractReport` assertions and queries describe check evidence only. A
+successful report does not establish that execution completed or cleanup
+succeeded. Use the corresponding `ContractRun` methods, such as
+`run.assert_satisfied()`, to validate the complete run.
 
 The independent `write/abort` check prepares a fresh `Abort` scenario and uses
 `exists_out_of_band` before and after abort. `NotPublished` requires the target

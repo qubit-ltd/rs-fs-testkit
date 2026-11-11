@@ -15,6 +15,13 @@ use crate::ContractCheckOutcome;
 
 /// A report containing stable check identities and their outcomes.
 ///
+/// This report describes check evidence only. It does not establish that the
+/// contract run completed, that its execution succeeded, or that cleanup
+/// succeeded. Use
+/// [`ContractRun::assert_satisfied`](crate::ContractRun::assert_satisfied)
+/// or [`ContractRun::assert_satisfied_with`](crate::ContractRun::assert_satisfied_with)
+/// to validate the complete run.
+///
 /// # Examples
 ///
 /// ```
@@ -60,6 +67,10 @@ impl ContractReport {
     ///
     /// An unavailable optional probe is acceptable. A probe that ran and failed
     /// is always a failure, even when it was optional.
+    /// This checks report evidence only; it does not include execution or
+    /// cleanup status. Use
+    /// [`ContractRun::requirements_satisfied`](crate::ContractRun::requirements_satisfied)
+    /// to check the complete run.
     #[must_use]
     pub fn requirements_satisfied(&self) -> bool {
         self.requirements_satisfied_with(&[])
@@ -68,6 +79,10 @@ impl ContractReport {
     /// Also requires evidence for the caller-selected optional checks.
     ///
     /// A requested identity absent from this run cannot satisfy the request.
+    /// This checks report evidence only; it does not include execution or
+    /// cleanup status. Use
+    /// [`ContractRun::requirements_satisfied_with`](crate::ContractRun::requirements_satisfied_with)
+    /// to check the complete run.
     ///
     /// # Parameters
     /// - `required`: Optional check identities that must have evidence.
@@ -99,6 +114,10 @@ impl ContractReport {
 
     /// Returns whether every applicable check, including optional probes, was
     /// verified.
+    /// This checks report evidence only; it does not include execution or
+    /// cleanup status. Use
+    /// [`ContractRun::all_applicable_checks_verified`](crate::ContractRun::all_applicable_checks_verified)
+    /// to check the complete run.
     ///
     /// # Returns
     /// Whether all applicable checks have evidence, including optional probes.
@@ -108,6 +127,10 @@ impl ContractReport {
     }
 
     /// Panics if registered requirements lack successful evidence.
+    /// This checks report evidence only; it does not include execution or
+    /// cleanup status. Use
+    /// [`ContractRun::assert_satisfied`](crate::ContractRun::assert_satisfied)
+    /// to validate the complete run.
     ///
     /// # Panics
     /// Panics with a summary when any registered requirement lacks successful
@@ -118,6 +141,10 @@ impl ContractReport {
     }
 
     /// Also requires the selected optional probes to have evidence.
+    /// This checks report evidence only; it does not include execution or
+    /// cleanup status. Use
+    /// [`ContractRun::assert_satisfied_with`](crate::ContractRun::assert_satisfied_with)
+    /// to validate the complete run.
     ///
     /// # Panics
     /// Panics when any required check or selected optional probe is unverified.

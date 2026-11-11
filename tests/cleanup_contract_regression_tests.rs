@@ -68,6 +68,28 @@ fn test_cleanup_retains_teardown_error_and_panic() {
     assert!(!panic_run.requirements_satisfied());
 }
 
+/// A report validates check evidence, while the run also accounts for teardown.
+#[test]
+fn test_report_assertion_does_not_hide_failed_teardown() {
+    let fixture = TeardownProbe::new(
+        MemoryFixture::new(),
+        Err(FixtureError::new("injected fixture teardown failure")),
+    );
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_contract(FileSystemContract::ErrorContext);
+
+    run.report().assert_satisfied();
+    assert!(!run.requirements_satisfied());
+    assert!(!run.cleanup().failures().is_empty());
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run.assert_satisfied();
+        }))
+        .is_err()
+    );
+    assert!(std::error::Error::source(&run.cleanup().failures()[0]).is_some());
+}
+
 impl TeardownProbe {
     fn new(inner: MemoryFixture, result: Result<FixtureSupport<()>, FixtureError>) -> Self {
         Self {

@@ -188,10 +188,14 @@ future 中，并在阶段完成后检查。
 使用 `run.assert_satisfied()` 同时检查执行、必需证据和清理；仅报告通过不能证明清理成功。
 注册宏执行相同的严格策略。
 
-每个套件只对应一次运行。已完成或被中断的会话不能再次执行，需创建新的 fixture 和套件。
-异步套件由调用方选择 runtime 并 await 相同入口。运行 future 被丢弃后，可通过 `suite.run()`
-检查保留结果，并用 `suite.finish().await` 重试清理。丢弃整个套件不会执行异步 I/O，
+每个套件只对应一次运行。第一次尝试 `finish` 后，准备和运行入口都会关闭。若清理失败或其
+future 被取消，只能通过 `finish` 重试清理；不要再 seed 资源或启动运行。新运行须创建新的
+fixture 和套件。异步套件由调用方选择 runtime 并 await 相同入口。运行 future 被丢弃后，可通过
+`suite.run()` 检查保留结果，并用 `suite.finish().await` 重试清理。丢弃整个套件不会执行异步 I/O，
 fixture 所有者必须安排独立 teardown。
+
+`ContractReport` 的断言和查询只描述检查证据。报告成功不能证明运行已完成或清理成功。要验收整次
+运行，应使用对应的 `ContractRun` 方法，例如 `run.assert_satisfied()`。
 
 独立的 `write/abort` 检查准备新的 `Abort` 场景，并在 abort 前后调用 `exists_out_of_band`。
 `NotPublished` 要求目标仍不存在；`Published` 要求能独立观察到目标，但不要求目标字节与先前内容不同；

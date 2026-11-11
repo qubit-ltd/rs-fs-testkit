@@ -104,6 +104,10 @@ pub trait FileSystemFixture {
 以上为接口节选。Fixture 必须提供独立、幂等的显式 `teardown`，能够处理部分准备完成及
 staging 资源；`Drop` 可以补充清理，但不能替代此职责。
 
+第一次尝试 `finish` 后，准备和运行入口会关闭。若清理失败或异步清理 future 被取消，调用方只能
+通过 `finish` 重试清理；再次运行前必须创建新的 fixture 和 suite。`ContractReport` 只验证检查证据，
+不包含运行是否完成、执行失败或清理结果。完整验收应使用 `ContractRun` 的断言方法。
+
 关键变化是 `file_system()` 返回 `&FileSystem`，不再返回 `&dyn FileSystem`。
 
 Fixture 负责：

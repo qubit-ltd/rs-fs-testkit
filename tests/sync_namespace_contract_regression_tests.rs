@@ -18,11 +18,10 @@ mod common;
 #[test]
 fn test_sync_accepts_fallback_only_copy() {
     let fixture = MemoryFixture::fallback_only();
-    let report = FileSystemContractSuite::new(&fixture)
-        .run_contract(FileSystemContract::Copy)
-        .report()
-        .clone();
-    report.assert_satisfied();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_contract(FileSystemContract::Copy);
+    run.assert_satisfied();
+    let report = run.report();
     assert!(report.checks().iter().any(|check| {
         check.id().as_str() == "copy/fallback-overwrite-rejected"
             && matches!(check.outcome(), ContractCheckOutcome::RejectedAsExpected)
