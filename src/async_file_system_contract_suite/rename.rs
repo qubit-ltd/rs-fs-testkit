@@ -262,20 +262,22 @@ impl AsyncFileSystemContractSuite<'_> {
             self.fixture.read_file(&source).await.map_err(|error| {
                 ContractFailure::with_source("rename initial source observation failed", error).at(id)
             })?;
-        verify_condition(
-            matches!(initial, FixtureSupport::Supported(actual) if actual == bytes),
-            id,
-            "rename source fixture contents differ",
-        )?;
+        match initial {
+            FixtureSupport::Supported(actual) => {
+                verify_condition(actual == bytes, id, "rename source fixture contents differ")?;
+            }
+            FixtureSupport::Unsupported => return self.record_rename_unverified(id, capability, "read_file", "initial source contents"),
+        }
         if id == ContractCheckId::RenameConflict {
             let initial_target = self.fixture.read_file(&target).await.map_err(|error| {
                 ContractFailure::with_source("rename initial target observation failed", error).at(id)
             })?;
-            verify_condition(
-                matches!(initial_target, FixtureSupport::Supported(actual) if actual == b"old target"),
-                id,
-                "rename conflict target fixture contents differ",
-            )?;
+            match initial_target {
+                FixtureSupport::Supported(actual) => {
+                    verify_condition(actual == b"old target", id, "rename conflict target fixture contents differ")?;
+                }
+                FixtureSupport::Unsupported => return self.record_rename_unverified(id, capability, "read_file", "initial conflict target contents"),
+            }
             let failure = match self
                 .fixture
                 .file_system()
@@ -303,25 +305,29 @@ impl AsyncFileSystemContractSuite<'_> {
                 let observed = self.fixture.read_file(path).await.map_err(|error| {
                     ContractFailure::with_source("rename conflict observation failed", error).at(id)
                 })?;
-                verify_condition(
-                    matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
-                    id,
-                    "rename conflict changed source or target",
-                )?;
+                match observed {
+                    FixtureSupport::Supported(actual) => {
+                        verify_condition(actual == expected, id, "rename conflict changed source or target")?;
+                    }
+                    FixtureSupport::Unsupported => return self.record_rename_unverified(id, capability, "read_file", "conflict preservation"),
+                }
             }
             options = options.with_overwrite(true);
         } else {
             let before = self.fixture.exists_out_of_band(&target).await.map_err(|error| {
                 ContractFailure::with_source("rename initial target observation failed", error).at(id)
             })?;
-            verify_condition(
-                matches!(before, FixtureSupport::Supported(false)),
-                id,
-                "rename target must initially be absent",
-            )?;
+            match before {
+                FixtureSupport::Supported(actual) => {
+                    verify_condition(!actual, id, "rename target must initially be absent")?;
+                }
+                FixtureSupport::Unsupported => return self.record_rename_unverified(id, capability, "exists_out_of_band", "initial target absence"),
+            }
         }
-        self.verify_rename_publication(id, capability, &source, &target, bytes, options)
-            .await
+        if let Some(hook) = self.verify_rename_publication(id, capability, &source, &target, bytes, options).await? {
+            return self.record_rename_unverified(id, capability, hook, "rename publication");
+        }
+        Ok(())
     }
 
     /// Executes a prepared rename and verifies its publication evidence.
@@ -351,7 +357,7 @@ impl AsyncFileSystemContractSuite<'_> {
         target: &super::Path,
         bytes: &[u8],
         options: RenameOptions,
-    ) -> Result<(), ContractFailure> {
+    ) -> Result<Option<&'static str>, ContractFailure> {
         let outcome = self
             .fixture
             .file_system()
@@ -381,22 +387,41 @@ impl AsyncFileSystemContractSuite<'_> {
             self.fixture.exists_out_of_band(source).await.map_err(|error| {
                 ContractFailure::with_source("rename source removal observation failed", error).at(id)
             })?;
-        verify_condition(
-            matches!(exists, FixtureSupport::Supported(false)),
-            id,
-            "rename/basic: source remained after success",
-        )?;
+        match exists {
+            FixtureSupport::Supported(actual) => {
+                verify_condition(!actual, id, "rename/basic: source remained after success")?;
+            }
+            FixtureSupport::Unsupported => return Ok(Some("exists_out_of_band")),
+        }
         let observed =
             self.fixture.read_file(target).await.map_err(|error| {
                 ContractFailure::with_source("rename target content observation failed", error).at(id)
             })?;
-        verify_condition(
-            matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
-            id,
-            "rename/basic: target bytes mismatch",
-        )?;
+        match observed {
+            FixtureSupport::Supported(actual) => {
+                verify_condition(actual == bytes, id, "rename/basic: target bytes mismatch")?;
+            }
+            FixtureSupport::Unsupported => return Ok(Some("read_file")),
+        }
         self.context
             .record_check(id, Some(capability), ContractCheckOutcome::Passed);
+        Ok(None)
+    }
+
+    fn record_rename_unverified(
+        &mut self,
+        id: ContractCheckId,
+        capability: FileSystemCapability,
+        hook: &str,
+        phase: &str,
+    ) -> Result<(), ContractFailure> {
+        self.context.record_check(
+            id,
+            Some(capability),
+            ContractCheckOutcome::Unverified {
+                reason: format!("rename {phase} lacks {hook} observation support"),
+            },
+        );
         Ok(())
     }
 }

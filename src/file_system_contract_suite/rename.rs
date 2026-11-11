@@ -263,30 +263,36 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .read_file(&source)
             .map_err(|error| ContractFailure::with_source("rename initial source observation failed", error).at(id))?;
-        verify_condition(
-            matches!(initial, FixtureSupport::Supported(actual) if actual == bytes),
-            id,
-            "rename source fixture contents differ",
-        )?;
+        match initial {
+            FixtureSupport::Supported(actual) => {
+                verify_condition(actual == bytes, id, "rename source fixture contents differ")?;
+            }
+            FixtureSupport::Unsupported => return self.record_rename_unverified(id, capability, "read_file", "initial source contents"),
+        }
         if id == ContractCheckId::RenameConflict {
-            self.check_rename_conflict(id, &source, &target, bytes, &options)?;
+            if let Some(hook) = self.check_rename_conflict(id, &source, &target, bytes, &options)? {
+                return self.record_rename_unverified(id, capability, hook, "conflict preservation");
+            }
             options = options.with_overwrite(true);
         } else {
             let before = self.fixture.exists_out_of_band(&target).map_err(|error| {
                 ContractFailure::with_source("rename initial target observation failed", error).at(id)
             })?;
-            verify_condition(
-                matches!(before, FixtureSupport::Supported(false)),
-                id,
-                "rename target must initially be absent",
-            )?;
+            match before {
+                FixtureSupport::Supported(actual) => {
+                    verify_condition(!actual, id, "rename target must initially be absent")?;
+                }
+                FixtureSupport::Unsupported => return self.record_rename_unverified(id, capability, "exists_out_of_band", "initial target absence"),
+            }
         }
         let outcome = self
             .fixture
             .file_system()
             .rename(&source, &target, options)
             .map_err(|error| ContractFailure::with_source("rename/basic: rename failed", error).at(id))?;
-        self.verify_rename_publication(id, &source, &target, bytes, &outcome)?;
+        if let Some(hook) = self.verify_rename_publication(id, &source, &target, bytes, &outcome)? {
+            return self.record_rename_unverified(id, capability, hook, "rename publication");
+        }
         self.context
             .record_check(id, Some(capability), ContractCheckOutcome::Passed);
         Ok(())
@@ -305,8 +311,8 @@ impl FileSystemContractSuite<'_> {
     ///
     /// # Returns
     ///
-    /// `Ok(())` when the conflict is rejected and both files retain their
-    /// original contents.
+    /// `Ok(None)` when the conflict is rejected and both files retain their
+    /// original contents, or `Ok(Some(hook))` when an observation is unsupported.
     ///
     /// # Errors
     ///
@@ -319,16 +325,17 @@ impl FileSystemContractSuite<'_> {
         target: &Path,
         bytes: &[u8],
         options: &RenameOptions,
-    ) -> Result<(), ContractFailure> {
+    ) -> Result<Option<&'static str>, ContractFailure> {
         let initial_target = self
             .fixture
             .read_file(target)
             .map_err(|error| ContractFailure::with_source("rename initial target observation failed", error).at(id))?;
-        verify_condition(
-            matches!(initial_target, FixtureSupport::Supported(actual) if actual == b"old target"),
-            id,
-            "rename conflict target fixture contents differ",
-        )?;
+        match initial_target {
+            FixtureSupport::Supported(actual) => {
+                verify_condition(actual == b"old target", id, "rename conflict target fixture contents differ")?;
+            }
+            FixtureSupport::Unsupported => return Ok(Some("read_file")),
+        }
         let failure = match self.fixture.file_system().rename(source, target, options.clone()) {
             Err(failure) => failure,
             Ok(_) => {
@@ -350,13 +357,14 @@ impl FileSystemContractSuite<'_> {
                 .fixture
                 .read_file(path)
                 .map_err(|error| ContractFailure::with_source("rename conflict observation failed", error).at(id))?;
-            verify_condition(
-                matches!(observed, FixtureSupport::Supported(actual) if actual == expected),
-                id,
-                "rename conflict changed source or target",
-            )?;
+            match observed {
+                FixtureSupport::Supported(actual) => {
+                    verify_condition(actual == expected, id, "rename conflict changed source or target")?;
+                }
+                FixtureSupport::Unsupported => return Ok(Some("read_file")),
+            }
         }
-        Ok(())
+        Ok(None)
     }
 
     /// Checks the reported publication guarantees and observes the final paths.
@@ -371,8 +379,9 @@ impl FileSystemContractSuite<'_> {
     ///
     /// # Returns
     ///
-    /// `Ok(())` when the reported paths, guarantees, and observed resource
-    /// states satisfy the selected check.
+    /// `Ok(None)` when the reported paths, guarantees, and observed resource
+    /// states satisfy the selected check, or `Ok(Some(hook))` when an
+    /// observation is unsupported.
     ///
     /// # Errors
     ///
@@ -385,7 +394,7 @@ impl FileSystemContractSuite<'_> {
         target: &Path,
         bytes: &[u8],
         outcome: &RenameOutcome,
-    ) -> Result<(), ContractFailure> {
+    ) -> Result<Option<&'static str>, ContractFailure> {
         verify_condition(
             outcome.source() == source && outcome.target() == target,
             id,
@@ -409,20 +418,39 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .exists_out_of_band(source)
             .map_err(|error| ContractFailure::with_source("rename source removal observation failed", error).at(id))?;
-        verify_condition(
-            matches!(exists, FixtureSupport::Supported(false)),
-            id,
-            "rename/basic: source remained after success",
-        )?;
+        match exists {
+            FixtureSupport::Supported(actual) => {
+                verify_condition(!actual, id, "rename/basic: source remained after success")?;
+            }
+            FixtureSupport::Unsupported => return Ok(Some("exists_out_of_band")),
+        }
         let observed = self
             .fixture
             .read_file(target)
             .map_err(|error| ContractFailure::with_source("rename target content observation failed", error).at(id))?;
-        verify_condition(
-            matches!(observed, FixtureSupport::Supported(actual) if actual == bytes),
+        match observed {
+            FixtureSupport::Supported(actual) => {
+                verify_condition(actual == bytes, id, "rename/basic: target bytes mismatch")?;
+            }
+            FixtureSupport::Unsupported => return Ok(Some("read_file")),
+        }
+        Ok(None)
+    }
+
+    fn record_rename_unverified(
+        &mut self,
+        id: ContractCheckId,
+        capability: FileSystemCapability,
+        hook: &str,
+        phase: &str,
+    ) -> Result<(), ContractFailure> {
+        self.context.record_check(
             id,
-            "rename/basic: target bytes mismatch",
-        )?;
+            Some(capability),
+            ContractCheckOutcome::Unverified {
+                reason: format!("rename {phase} lacks {hook} observation support"),
+            },
+        );
         Ok(())
     }
 }
