@@ -282,3 +282,12 @@ behavior for overwriting a non-empty directory.
 Synchronous expected-write cleanup catches an abort panic at the provider
 boundary and retains both the original `WriteAllFailure` and panic payload for
 explicit caller recovery. This does not change the recorded failed run.
+
+The optional `CopyNativeNonEmpty` check supplies distinct evidence for native
+copy contents. It prepares an independently observable source of 1..=64 KiB,
+uses the returned `CopyOptions`, confirms the target is absent, and checks the
+native method, statistics, source preservation, and target bytes. It does not
+clip the source by `max_write_bytes`, which limits a facade write session
+rather than a native copy request. Missing hook support is `SkippedOptional`;
+callers can require the ID explicitly. A fixture that returns a case owns setup
+and cleanup for both paths, and an empty source cannot satisfy this evidence.

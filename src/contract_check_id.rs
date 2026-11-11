@@ -55,6 +55,8 @@ pub enum ContractCheckId {
     CopyDurableTree,
     /// Evidence for the `copy/fallback-overwrite-rejected` contract.
     CopyFallbackOverwriteRejected,
+    /// Evidence that a non-empty file is copied by the native method.
+    CopyNativeNonEmpty,
     /// Evidence for the `copy/repeated-execute` contract.
     CopyRepeatedExecute,
     /// Evidence for the `copy/server-side` contract.
@@ -199,6 +201,7 @@ impl ContractCheckId {
         Self::CopyDurableFile,
         Self::CopyDurableTree,
         Self::CopyFallbackOverwriteRejected,
+        Self::CopyNativeNonEmpty,
         Self::CopyRepeatedExecute,
         Self::CopyServerSide,
         Self::DeleteBasic,
@@ -318,6 +321,7 @@ impl ContractCheckId {
             Self::CopyDurableFile => "copy/durable-file",
             Self::CopyDurableTree => "copy/durable-tree",
             Self::CopyFallbackOverwriteRejected => "copy/fallback-overwrite-rejected",
+            Self::CopyNativeNonEmpty => "copy/native-nonempty",
             Self::CopyRepeatedExecute => "copy/repeated-execute",
             Self::CopyServerSide => "copy/server-side",
             Self::DeleteBasic => "delete/basic",

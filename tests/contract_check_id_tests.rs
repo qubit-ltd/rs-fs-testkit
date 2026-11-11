@@ -32,6 +32,10 @@ fn test_check_names_are_unique() {
     );
     assert!(names.contains("write/cancel-open"));
     assert!(names.contains("write/repeated-execute"));
+    assert!(names.contains("copy/native-nonempty"));
+    assert!(ContractCheckId::CopyNativeNonEmpty.is_optional());
+    assert!(ContractCheckId::CopyNativeNonEmpty.supports_synchronous());
+    assert_eq!(ContractCheckId::CopyNativeNonEmpty.contract(), FileSystemContract::Copy);
     assert!(names.contains("read/random-access-basic"));
     assert!(names.contains("read/random-access-bounds"));
     assert!(names.contains("read/random-access-identity"));

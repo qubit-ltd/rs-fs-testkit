@@ -113,6 +113,8 @@ stays in development dependencies and out of production graphs.
   suites cover every `FileSystemCapability`, including ranges, conditions,
   checksums, representations, copy policies, required guarantees, and temporary
   resource persistence.
+- `CopyNativeNonEmpty` independently verifies non-empty native copy results;
+  see the [user guide](doc/user_guide.md) for optional and required modes.
 - `prepare_copy_cancellation` and `prepare_write_cancellation` provide optional
   stage-acknowledged probes. The suite verifies cancellation state, explicit
   recovery, and independent publication evidence. Missing probes can be

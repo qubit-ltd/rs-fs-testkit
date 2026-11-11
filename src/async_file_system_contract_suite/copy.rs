@@ -52,6 +52,7 @@ impl AsyncFileSystemContractSuite<'_> {
         match id {
             ContractCheckId::CopyBasic => self.check_basic_copy(id).await,
             ContractCheckId::CopyFallbackOverwriteRejected => self.check_copy_conflict().await,
+            ContractCheckId::CopyNativeNonEmpty => self.check_native_copy_nonempty().await,
             ContractCheckId::CopyServerSide => self.check_server_side_copy().await,
             ContractCheckId::CopyAtomicFile | ContractCheckId::CopyDurableFile => self.check_strong_file_copy(id).await,
             ContractCheckId::CopyAtomicTree | ContractCheckId::CopyDurableTree => self.check_strong_tree_copy(id).await,

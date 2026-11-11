@@ -94,6 +94,8 @@ qubit-fs-testkit = { version = "0.9", features = ["async"] }
 - 覆盖门面属性、核心操作、capability 预检、结构化错误上下文、清理和已支持的可选操作的契约。
   同步与异步套件对全部 `FileSystemCapability` 保持对称覆盖，包括范围/条件读取、checksum、
   representation、copy policy、强化保证和临时资源持久化。
+- `CopyNativeNonEmpty` 独立验证非空 native 复制结果；可选和强制要求方式见
+  [用户手册](doc/user_guide.zh_CN.md)。
 - `prepare_copy_cancellation` 和 `prepare_write_cancellation` 提供可选的阶段确认探针。
   套件检查取消状态、显式恢复和独立发布证据。可用 `run.assert_satisfied_with(&[check_id])`
   强制要求缺失的探针；已经执行的探针失败始终使运行失败。

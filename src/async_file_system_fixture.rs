@@ -734,7 +734,12 @@ pub trait AsyncFileSystemFixture: Sync {
     /// # Returns
     ///
     /// A future resolving to a case for that method, or `Unsupported` when
-    /// the fixture cannot provide the native path.
+    /// the fixture cannot provide the native path. For `Native`, the case
+    /// must be a single file with a distinct, independently confirmed absent
+    /// target and an independently seeded source containing 1..=64 KiB.
+    /// Return `Unsupported` when those premises cannot be guaranteed; a
+    /// streamed result does not satisfy this request. Returned source and
+    /// target paths are registered for cleanup immediately.
     ///
     /// # Errors
     ///

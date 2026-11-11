@@ -47,6 +47,7 @@ impl FileSystemContractSuite<'_> {
         match id {
             ContractCheckId::CopyBasic => self.check_basic_copy(id),
             ContractCheckId::CopyFallbackOverwriteRejected => self.check_copy_conflict(),
+            ContractCheckId::CopyNativeNonEmpty => self.check_native_copy_nonempty(),
             ContractCheckId::CopyServerSide => self.check_server_side_copy(),
             ContractCheckId::CopyAtomicFile | ContractCheckId::CopyDurableFile => self.check_strong_file_copy(id),
             ContractCheckId::CopyAtomicTree | ContractCheckId::CopyDurableTree => self.check_strong_tree_copy(id),

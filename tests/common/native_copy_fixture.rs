@@ -75,12 +75,28 @@ struct State {
     policies: Vec<CopyConflictPolicy>,
     fail_copy: bool,
     wrong_content: bool,
+    discard_nonempty: bool,
+    native_source: Option<Vec<u8>>,
+    native_same_path: bool,
+    native_target_exists: bool,
+    native_prepare_unsupported: bool,
+    native_prepare_error: bool,
+    read_unsupported: bool,
+    read_error: bool,
+    read_error_after_first: bool,
+    read_calls: usize,
+    exists_unsupported: bool,
+    exists_error: bool,
+    wrong_method: bool,
+    wrong_stats: bool,
+    mutate_source: bool,
 }
 
 struct NativeSpi {
     state: Arc<Mutex<State>>,
     read: bool,
     write: bool,
+    limits: FileSystemLimits,
 }
 
 impl FileSystemSpi for NativeSpi {
@@ -99,7 +115,7 @@ impl FileSystemSpi for NativeSpi {
                 PathSemantics::Hierarchical,
             ),
             caps,
-            FileSystemLimits::unknown(),
+            self.limits,
             PathConstraints::absolute(),
             SymlinkPolicy::Reject,
         )
@@ -193,20 +209,32 @@ impl FileSystemSpi for NativeSpi {
                 AchievedAtomicity::NonAtomic,
             )));
         }
-        let out = if s.wrong_content {
+        let out = if s.discard_nonempty && !bytes.is_empty() {
+            Vec::new()
+        } else if s.wrong_content {
             b"wrong native payload".to_vec()
         } else {
             bytes.clone()
         };
         s.files.insert(request.target().as_str().to_owned(), out);
+        if s.mutate_source {
+            s.files
+                .insert(request.source().as_str().to_owned(), b"mutated source".to_vec());
+        }
+        let method = if s.wrong_method {
+            CopyMethod::Streamed
+        } else {
+            CopyMethod::Native
+        };
+        let bytes_count = if s.wrong_stats { 0 } else { bytes.len() as u64 };
         Ok(CopyAttempt::Completed(CopyOutcome::new(
             CopyStats {
                 files: 1,
-                bytes: bytes.len() as u64,
+                bytes: bytes_count,
                 overwritten: u64::from(exists),
                 ..CopyStats::default()
             },
-            CopyMethod::Native,
+            method,
             AchievedAtomicity::NonAtomic,
         )))
     }
@@ -271,6 +299,21 @@ impl NativeCopyFixture {
         seed_supported: bool,
         observation_supported: bool,
     ) -> Self {
+        Self::with_limits(
+            read,
+            write,
+            seed_supported,
+            observation_supported,
+            FileSystemLimits::unknown(),
+        )
+    }
+    pub(crate) fn with_limits(
+        read: bool,
+        write: bool,
+        seed_supported: bool,
+        observation_supported: bool,
+        limits: FileSystemLimits,
+    ) -> Self {
         let state = Arc::new(Mutex::new(State {
             seed_supported,
             observation_supported,
@@ -280,6 +323,7 @@ impl NativeCopyFixture {
             state: Arc::clone(&state),
             read,
             write,
+            limits,
         })
         .expect("native copy SPI properties");
         Self { fs, state }
@@ -299,6 +343,31 @@ impl NativeCopyFixture {
     }
     pub(crate) fn inject_wrong_content(&self) {
         self.state.lock().expect("state lock").wrong_content = true;
+    }
+    pub(crate) fn inject_discard_nonempty(&self) {
+        self.state.lock().expect("state lock").discard_nonempty = true;
+    }
+    pub(crate) fn inject_native_fault(&self, name: &str) {
+        let mut state = self.state.lock().expect("state lock");
+        match name {
+            "wrong_method" => state.wrong_method = true,
+            "wrong_stats" => state.wrong_stats = true,
+            "mutate_source" => state.mutate_source = true,
+            "target_exists" => state.native_target_exists = true,
+            "same_path" => state.native_same_path = true,
+            "prepare_unsupported" => state.native_prepare_unsupported = true,
+            "prepare_error" => state.native_prepare_error = true,
+            "read_unsupported" => state.read_unsupported = true,
+            "read_error" => state.read_error = true,
+            "read_error_after_first" => state.read_error_after_first = true,
+            "exists_unsupported" => state.exists_unsupported = true,
+            "exists_error" => state.exists_error = true,
+            "empty_source" => state.native_source = Some(Vec::new()),
+            "large_source" => state.native_source = Some(vec![b'x'; 64 * 1024 + 1]),
+            "copy_error" => state.fail_copy = true,
+            "wrong_content" => state.wrong_content = true,
+            _ => panic!("unknown native fault"),
+        }
     }
     pub(crate) fn is_empty(&self) -> bool {
         self.state.lock().expect("state lock").files.is_empty()
@@ -334,7 +403,14 @@ impl FileSystemFixture for NativeCopyFixture {
         Ok(FixtureSupport::Supported(p))
     }
     fn read_file(&self, path: &Path) -> FixtureResult<FixtureSupport<Vec<u8>>> {
-        let state = self.state.lock().expect("state lock");
+        let mut state = self.state.lock().expect("state lock");
+        state.read_calls += 1;
+        if state.read_error || (state.read_error_after_first && state.read_calls > 1) {
+            return Err(FixtureError::new("injected read observation error"));
+        }
+        if state.read_unsupported {
+            return Ok(FixtureSupport::Unsupported);
+        }
         if !state.observation_supported {
             return Ok(FixtureSupport::Unsupported);
         }
@@ -343,6 +419,60 @@ impl FileSystemFixture for NativeCopyFixture {
             .get(path.as_str())
             .cloned()
             .map_or(FixtureSupport::Unsupported, FixtureSupport::Supported))
+    }
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
+        let state = self.state.lock().expect("state lock");
+        if state.exists_error {
+            return Err(FixtureError::new("injected existence observation error"));
+        }
+        if state.exists_unsupported {
+            return Ok(FixtureSupport::Unsupported);
+        }
+        Ok(FixtureSupport::Supported(state.files.contains_key(path.as_str())))
+    }
+    fn copy_fast_path_case(&self, method: CopyMethod) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
+        if method != CopyMethod::Native {
+            return Ok(FixtureSupport::Unsupported);
+        }
+        let state = self.state.lock().expect("state lock");
+        if state.native_prepare_error {
+            return Err(FixtureError::new("injected native preparation error"));
+        }
+        if state.native_prepare_unsupported {
+            return Ok(FixtureSupport::Unsupported);
+        }
+        let source = self.path("native-source")?;
+        let target = if state.native_same_path {
+            source.clone()
+        } else {
+            self.path("native-target")?
+        };
+        if state.native_target_exists {
+            drop(state);
+            let _ = self.seed_file("native-target", b"existing")?;
+        } else {
+            drop(state);
+        }
+        let source_bytes = self
+            .state
+            .lock()
+            .expect("state lock")
+            .native_source
+            .clone()
+            .unwrap_or_else(|| b"native copy bytes".to_vec());
+        {
+            let mut state = self.state.lock().expect("state lock");
+            state.last_source = Some(source.as_str().to_owned());
+            state.last_target = Some(target.as_str().to_owned());
+        }
+        match self.seed_file("native-source", &source_bytes)? {
+            FixtureSupport::Supported(source) => Ok(FixtureSupport::Supported(CopyFixtureCase::new(
+                source,
+                target,
+                qubit_fs::copy::CopyOptions::file(),
+            ))),
+            FixtureSupport::Unsupported => Ok(FixtureSupport::Unsupported),
+        }
     }
     fn prepare_copy(
         &self,
@@ -408,6 +538,21 @@ impl AsyncNativeCopyFixture {
         seed_supported: bool,
         observation_supported: bool,
     ) -> Self {
+        Self::with_limits(
+            read,
+            write,
+            seed_supported,
+            observation_supported,
+            FileSystemLimits::unknown(),
+        )
+    }
+    pub(crate) fn with_limits(
+        read: bool,
+        write: bool,
+        seed_supported: bool,
+        observation_supported: bool,
+        limits: FileSystemLimits,
+    ) -> Self {
         let state = Arc::new(Mutex::new(State {
             seed_supported,
             observation_supported,
@@ -417,6 +562,7 @@ impl AsyncNativeCopyFixture {
             state: Arc::clone(&state),
             read,
             write,
+            limits,
         }))
         .expect("native async copy SPI properties");
         Self { fs, state }
@@ -436,6 +582,28 @@ impl AsyncNativeCopyFixture {
     }
     pub(crate) fn inject_wrong_content(&self) {
         self.state.lock().expect("state lock").wrong_content = true;
+    }
+    pub(crate) fn inject_native_fault(&self, name: &str) {
+        let mut state = self.state.lock().expect("state lock");
+        match name {
+            "wrong_method" => state.wrong_method = true,
+            "wrong_stats" => state.wrong_stats = true,
+            "mutate_source" => state.mutate_source = true,
+            "target_exists" => state.native_target_exists = true,
+            "same_path" => state.native_same_path = true,
+            "prepare_unsupported" => state.native_prepare_unsupported = true,
+            "prepare_error" => state.native_prepare_error = true,
+            "read_unsupported" => state.read_unsupported = true,
+            "read_error" => state.read_error = true,
+            "read_error_after_first" => state.read_error_after_first = true,
+            "exists_unsupported" => state.exists_unsupported = true,
+            "exists_error" => state.exists_error = true,
+            "empty_source" => state.native_source = Some(Vec::new()),
+            "large_source" => state.native_source = Some(vec![b'x'; 64 * 1024 + 1]),
+            "copy_error" => state.fail_copy = true,
+            "wrong_content" => state.wrong_content = true,
+            _ => panic!("unknown native fault"),
+        }
     }
     pub(crate) fn is_empty(&self) -> bool {
         self.state.lock().expect("state lock").files.is_empty()
@@ -472,7 +640,14 @@ impl AsyncFileSystemFixture for AsyncNativeCopyFixture {
     }
     fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
         Box::pin(async move {
-            let state = self.state.lock().expect("state lock");
+            let mut state = self.state.lock().expect("state lock");
+            state.read_calls += 1;
+            if state.read_error || (state.read_error_after_first && state.read_calls > 1) {
+                return Err(FixtureError::new("injected read observation error"));
+            }
+            if state.read_unsupported {
+                return Ok(FixtureSupport::Unsupported);
+            }
             if !state.observation_supported {
                 return Ok(FixtureSupport::Unsupported);
             }
@@ -481,6 +656,66 @@ impl AsyncFileSystemFixture for AsyncNativeCopyFixture {
                 .get(path.as_str())
                 .cloned()
                 .map_or(FixtureSupport::Unsupported, FixtureSupport::Supported))
+        })
+    }
+    fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
+        Box::pin(async move {
+            let state = self.state.lock().expect("state lock");
+            if state.exists_error {
+                return Err(FixtureError::new("injected existence observation error"));
+            }
+            if state.exists_unsupported {
+                return Ok(FixtureSupport::Unsupported);
+            }
+            Ok(FixtureSupport::Supported(state.files.contains_key(path.as_str())))
+        })
+    }
+    fn copy_fast_path_case<'a>(&'a self, method: CopyMethod) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
+        Box::pin(async move {
+            if method != CopyMethod::Native {
+                return Ok(FixtureSupport::Unsupported);
+            }
+            let (prepare_error, prepare_unsupported, same_path, target_exists, source_bytes) = {
+                let state = self.state.lock().expect("state lock");
+                (
+                    state.native_prepare_error,
+                    state.native_prepare_unsupported,
+                    state.native_same_path,
+                    state.native_target_exists,
+                    state
+                        .native_source
+                        .clone()
+                        .unwrap_or_else(|| b"native copy bytes".to_vec()),
+                )
+            };
+            if prepare_error {
+                return Err(FixtureError::new("injected native preparation error"));
+            }
+            if prepare_unsupported {
+                return Ok(FixtureSupport::Unsupported);
+            }
+            let source = self.path("native-source")?;
+            let target = if same_path {
+                source.clone()
+            } else {
+                self.path("native-target")?
+            };
+            if target_exists {
+                let _ = self.seed_file("native-target", b"existing").await?;
+            }
+            {
+                let mut state = self.state.lock().expect("state lock");
+                state.last_source = Some(source.as_str().to_owned());
+                state.last_target = Some(target.as_str().to_owned());
+            }
+            match self.seed_file("native-source", &source_bytes).await? {
+                FixtureSupport::Supported(source) => Ok(FixtureSupport::Supported(CopyFixtureCase::new(
+                    source,
+                    target,
+                    qubit_fs::copy::CopyOptions::file(),
+                ))),
+                FixtureSupport::Unsupported => Ok(FixtureSupport::Unsupported),
+            }
         })
     }
     fn prepare_copy<'a>(

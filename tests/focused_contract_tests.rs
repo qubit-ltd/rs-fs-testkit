@@ -23,6 +23,7 @@ use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
 
 use self::common::MemoryFixture;
+use self::common::native_copy_fixture::NativeCopyFixture;
 
 /// Every synchronous catalog entry can provide evidence in isolation.
 #[test]
@@ -40,6 +41,19 @@ fn test_focused_sync_all_checks() {
         run.assert_satisfied();
         assert!(fixture.is_empty(), "{id}: cleanup must still run");
     }
+}
+
+#[test]
+fn test_focused_native_nonempty_copy_runs_only_the_selected_check() {
+    let fixture = NativeCopyFixture::new(false, false);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::CopyNativeNonEmpty);
+    assert_eq!(run.report().checks().len(), 1);
+    assert_eq!(run.report().checks()[0].id(), ContractCheckId::CopyNativeNonEmpty);
+    assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
+    assert_eq!(fixture.native_calls(), 1);
+    assert!(run.cleanup().completed());
+    assert!(fixture.is_empty());
 }
 
 /// Owning operation, repeat and each cancellation stage are independent

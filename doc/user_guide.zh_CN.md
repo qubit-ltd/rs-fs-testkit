@@ -102,6 +102,25 @@ decline 后，只有请求属于 allowlist，且 `Stat`、`OpenReader`、`OpenWr
 unsupported-capability 错误。未声明的强化保证会被检查是否返回结构化的 `RequirementNotMet`
 预检错误。
 
+`CopyNativeNonEmpty` 是单独报告的可选检查，用于验证非空文件确实通过 native 方法复制成功。
+它不会按 `max_write_bytes` 缩短源文件：该限制描述单个写入会话，而 native 请求不经过门面 writer。
+fixture 若无法准备不同且确认不存在的目标，以及可独立观察的 1..=64 KiB 源文件，可返回
+`Unsupported`。默认将缺少场景记为 `SkippedOptional`；要求这项证据的调用方可在 Copy phase
+或 `run_all()` 后调用
+`run.assert_satisfied_with(&[ContractCheckId::CopyNativeNonEmpty])`。注册宏只在 Copy phase
+要求该项时可写：
+
+```rust,ignore
+required_checks: |phase| match phase {
+    FileSystemContract::Copy => vec![ContractCheckId::CopyNativeNonEmpty],
+    _ => Vec::new(),
+}
+```
+
+可选跳过会使 `all_applicable_checks_verified()` 返回 false；fixture 已提供场景后若执行不符，
+运行会失败。`CopyNativeNonEmpty` 是新增的公开枚举变体，下游对 `ContractCheckId` 的穷尽 match
+需要新增该分支，或提供默认分支。
+
 套件直接检查公开门面结果、必需副作用和 fixture 独立 hook 能提供的观察。必要事实无法独立观察时，
 结果记为 `Unverified`，不算通过。testkit 自己的 recording provider 与故障 fixture 用来验证套件
 是否正确记账、保留恢复责任并拒绝指定违规；它们不替 provider 提供行为保证。properties getter

@@ -9,6 +9,8 @@
 
 use std::collections::HashSet;
 
+use qubit_fs::metadata::FileSystemCapability;
+
 use crate::ContractCheckId;
 use crate::FileSystemContract;
 use crate::internal::check_catalog::for_contract;
@@ -90,4 +92,16 @@ fn test_random_access_range_limit_is_an_optional_read_capability_check() {
     assert_eq!(spec.read_scenario, None);
     assert!(spec.optional);
     assert!(!spec.asynchronous_only);
+}
+
+#[test]
+fn test_native_nonempty_copy_is_optional_and_uses_its_dedicated_driver() {
+    let spec = specification(ContractCheckId::CopyNativeNonEmpty);
+    assert_eq!(spec.contract, FileSystemContract::Copy);
+    assert_eq!(spec.capability, Some(FileSystemCapability::Copy));
+    assert!(spec.optional);
+    assert!(!spec.asynchronous_only);
+    assert_eq!(spec.copy_scenario, None);
+    assert_eq!(spec.read_scenario, None);
+    assert_eq!(spec.write_scenario, None);
 }

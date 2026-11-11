@@ -123,6 +123,28 @@ usable for the request.
 Unadvertised stronger guarantees are checked for structured `RequirementNotMet`
 preflight.
 
+`CopyNativeNonEmpty` is an optional, separately reported check for a successful
+native copy of a non-empty file. It does not use `max_write_bytes` to shrink its
+source: that limit describes one write session, while the native request does
+not use the facade writer. A fixture may return `Unsupported` when it cannot
+prepare a distinct target known to be absent and an independently observable
+1..=64 KiB source. Such a missing case is `SkippedOptional` by default; callers
+that require this evidence can use `run.assert_satisfied_with(&[ContractCheckId::CopyNativeNonEmpty])`
+for a Copy phase or `run_all()`. Registration can require it only for the Copy
+phase:
+
+```rust,ignore
+required_checks: |phase| match phase {
+    FileSystemContract::Copy => vec![ContractCheckId::CopyNativeNonEmpty],
+    _ => Vec::new(),
+}
+```
+
+An optional skip makes `all_applicable_checks_verified()` false. A supported
+case that executes incorrectly fails the run. `CopyNativeNonEmpty` is a new
+public enum variant, so downstream exhaustive `ContractCheckId` matches must
+add a branch for it or provide a default arm.
+
 The read budget applies to bytes consumed from the selected window, rather than
 to the complete resource or its metadata length. For example, reading
 `offset = 2`, `length = 3` from `0123456789` with `max_bytes = 3` must return

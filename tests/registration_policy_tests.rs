@@ -21,6 +21,35 @@ register_file_system_contract_tests! {
 }
 
 register_file_system_contract_tests! {
+    module: native_copy_missing_sync,
+    fixture: super::missing_native_copy_sync_fixture,
+    required_checks: |phase| match phase {
+        qubit_fs_testkit::FileSystemContract::Copy
+            if std::env::var_os("FS_TESTKIT_REGISTRATION_NATIVE_COPY_REQUIRED").is_some() => vec![
+            qubit_fs_testkit::ContractCheckId::CopyNativeNonEmpty,
+        ],
+        _ => Vec::new(),
+    },
+}
+
+fn missing_native_copy_sync_fixture() -> common::native_copy_fixture::NativeCopyFixture {
+    let fixture = common::native_copy_fixture::NativeCopyFixture::new(false, false);
+    fixture.inject_native_fault("prepare_unsupported");
+    fixture
+}
+
+register_file_system_contract_tests! {
+    module: native_copy_supported_sync,
+    fixture: || super::common::native_copy_fixture::NativeCopyFixture::new(false, false),
+    required_checks: |phase| match phase {
+        qubit_fs_testkit::FileSystemContract::Copy => vec![
+            qubit_fs_testkit::ContractCheckId::CopyNativeNonEmpty,
+        ],
+        _ => Vec::new(),
+    },
+}
+
+register_file_system_contract_tests! {
     module: strict_sync_function,
     fixture: super::MemoryFixture::new,
     required_checks: super::required_random_access,
@@ -67,6 +96,40 @@ register_async_file_system_contract_tests! {
     module: default_async,
     fixture: super::common::AsyncMemoryFixture::new,
     runner: super::common::async_memory_file_system::run_controlled,
+}
+
+#[cfg(feature = "async")]
+register_async_file_system_contract_tests! {
+    module: native_copy_missing_async,
+    fixture: super::missing_native_copy_async_fixture,
+    runner: super::common::async_memory_file_system::run_controlled,
+    required_checks: |phase| match phase {
+        qubit_fs_testkit::FileSystemContract::Copy
+            if std::env::var_os("FS_TESTKIT_REGISTRATION_NATIVE_COPY_REQUIRED").is_some() => vec![
+            qubit_fs_testkit::ContractCheckId::CopyNativeNonEmpty,
+        ],
+        _ => Vec::new(),
+    },
+}
+
+#[cfg(feature = "async")]
+fn missing_native_copy_async_fixture() -> common::native_copy_fixture::AsyncNativeCopyFixture {
+    let fixture = common::native_copy_fixture::AsyncNativeCopyFixture::new(false, false);
+    fixture.inject_native_fault("prepare_unsupported");
+    fixture
+}
+
+#[cfg(feature = "async")]
+register_async_file_system_contract_tests! {
+    module: native_copy_supported_async,
+    fixture: || super::common::native_copy_fixture::AsyncNativeCopyFixture::new(false, false),
+    runner: super::common::async_memory_file_system::run_controlled,
+    required_checks: |phase| match phase {
+        qubit_fs_testkit::FileSystemContract::Copy => vec![
+            qubit_fs_testkit::ContractCheckId::CopyNativeNonEmpty,
+        ],
+        _ => Vec::new(),
+    },
 }
 
 #[cfg(feature = "async")]
@@ -193,6 +256,21 @@ fn test_function_and_closure_policies_reject_missing_identity_evidence() {
 }
 
 #[test]
+fn test_registration_can_require_native_copy_only_for_copy_phase() {
+    let (missing_success, _, missing_stderr) = run_child(
+        "native_copy_missing_sync::test_copy",
+        Some("FS_TESTKIT_REGISTRATION_NATIVE_COPY_REQUIRED"),
+    );
+    assert!(!missing_success, "required native-copy evidence was missing");
+    assert!(missing_stderr.contains("copy/native-nonempty"), "{missing_stderr}");
+    let (supported_success, _, supported_stderr) = run_child("native_copy_supported_sync::test_copy", None);
+    assert!(
+        supported_success,
+        "supported native-copy evidence was rejected: {supported_stderr}"
+    );
+}
+
+#[test]
 fn test_check_from_another_phase_fails_instead_of_being_filtered() {
     let (success, stdout, stderr) = run_child(
         "wrong_phase_sync::test_properties",
@@ -227,6 +305,22 @@ fn test_async_default_and_strict_registration_apply_the_same_policy() {
     assert!(stdout.contains("running 1 test"), "{stdout}");
     assert!(!strict_success, "async strict policy accepted missing evidence");
     assert!(stderr.contains("read/random-access-identity"), "{stderr}");
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_registration_can_require_native_copy_only_for_copy_phase() {
+    let (missing_success, _, missing_stderr) = run_child(
+        "native_copy_missing_async::test_copy",
+        Some("FS_TESTKIT_REGISTRATION_NATIVE_COPY_REQUIRED"),
+    );
+    assert!(!missing_success, "required async native-copy evidence was missing");
+    assert!(missing_stderr.contains("copy/native-nonempty"), "{missing_stderr}");
+    let (supported_success, _, supported_stderr) = run_child("native_copy_supported_async::test_copy", None);
+    assert!(
+        supported_success,
+        "supported async native-copy evidence was rejected: {supported_stderr}"
+    );
 }
 
 #[cfg(feature = "async")]

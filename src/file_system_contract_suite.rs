@@ -64,6 +64,7 @@ mod namespace;
 mod basic_copy;
 mod copy;
 mod copy_conflict;
+mod native_copy;
 mod server_side_copy;
 // Implements independently observed file-copy guarantees.
 mod strong_file_copy;

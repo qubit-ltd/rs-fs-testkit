@@ -69,6 +69,7 @@ mod copy;
 mod copy_cancellation;
 // Checks conflict policies and verifies source and target contents.
 mod copy_conflict;
+mod native_copy;
 // Implements independently observed server-side copy requirements.
 mod server_side_copy;
 // Implements independently observed strong file-copy guarantees.

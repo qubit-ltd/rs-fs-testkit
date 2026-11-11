@@ -655,3 +655,9 @@ typed recovery source。同步的 expected-write cleanup 会在 provider abort �
 原 `WriteAllFailure`、writer recovery 和 panic payload。testkit 0.7 曾对应 qubit-fs 0.2；这只是
 历史版本，不是当前 0.9 的兼容目标。目录覆盖以独立预置的空目标目录为基线，不据此承诺覆盖非空
 目录的行为。
+
+可选检查 `CopyNativeNonEmpty` 独立验证 native 复制内容：准备 1..=64 KiB 的可独立观察源文件，
+使用 hook 返回的 `CopyOptions`，确认目标初始不存在，并核对 Native 方法、统计、源保持不变及目标
+字节。它不会按 `max_write_bytes` 裁剪源；该上限约束门面写入会话，不约束 native copy 请求。
+缺少 hook 支持记为 `SkippedOptional`，调用方可显式要求该 ID。fixture 一旦返回 case，就须负责
+源与目标的准备及清理；空源不能作为这项证据。

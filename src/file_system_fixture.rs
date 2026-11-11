@@ -634,7 +634,13 @@ pub trait FileSystemFixture {
     /// # Returns
     ///
     /// `Supported(case)` when the fixture can prepare an applicable request,
-    /// or `Unsupported` when no such provider-specific case is available.
+    /// or `Unsupported` when no such provider-specific case is available. For
+    /// `Native`, the case must be a single file with a distinct, independently
+    /// confirmed absent target and an independently seeded source containing
+    /// 1..=64 KiB. Return `Unsupported` when those native-specific premises
+    /// cannot be guaranteed; a streamed result does not satisfy this request.
+    /// The source and target are registered for fixture cleanup as soon as the
+    /// case is returned.
     ///
     /// # Errors
     ///
