@@ -21,6 +21,11 @@ use crate::FixtureSupport;
 impl<'a> AsyncFileSystemContractSuite<'a> {
     /// Cleans resources created by individually executed asynchronous phases.
     ///
+    /// The first cleanup attempt closes resource preparation and all run
+    /// entry points, even when cleanup fails or this future is cancelled. Call
+    /// `finish` again to retry cleanup; create a fresh fixture and suite for
+    /// another run.
+    ///
     /// # Panics
     ///
     /// Panics when a recorded resource cannot be inspected or deleted.
@@ -82,10 +87,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// # Panics
     ///
-    /// Panics when fixture setup fails or the required seed hook is
-    /// unsupported.
+    /// Panics when cleanup has started, fixture setup fails, or the required
+    /// seed hook is unsupported. A failed or cancelled cleanup attempt does
+    /// not reopen resource preparation.
     #[must_use]
     pub async fn required_seed(&mut self, relative: &str, bytes: &[u8], contract: &str) -> Path {
+        assert!(
+            self.context.run.cleanup.attempts == 0,
+            "session cleanup already started; create a fresh fixture for resource preparation"
+        );
         let relative = self.context.relative_name(relative);
         match self
             .fixture

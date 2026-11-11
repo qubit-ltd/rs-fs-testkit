@@ -140,6 +140,9 @@ impl<'a> FileSystemContractSuite<'a> {
     /// Executes all phases once and retains both execution and cleanup
     /// failures.
     ///
+    /// Returns a lifecycle failure without running checks if cleanup has
+    /// already started. Use a fresh fixture and suite for another run.
+    ///
     /// # Returns
     /// The retained execution result after the suite finishes.
     #[must_use = "inspect the retained contract run"]
@@ -148,6 +151,9 @@ impl<'a> FileSystemContractSuite<'a> {
     }
 
     /// Executes one phase once and retains its result in the suite.
+    ///
+    /// Returns a lifecycle failure without running checks if cleanup has
+    /// already started. Use a fresh fixture and suite for another run.
     ///
     /// # Parameters
     /// * `contract` - Contract phase to execute.
@@ -161,6 +167,9 @@ impl<'a> FileSystemContractSuite<'a> {
 
     /// Executes one selected check in a fresh session and retains its cleanup
     /// result.
+    ///
+    /// Returns a lifecycle failure without running checks if cleanup has
+    /// already started. Use a fresh fixture and suite for another run.
     ///
     /// # Parameters
     /// * `id` - Check identity to execute.
@@ -194,6 +203,12 @@ impl<'a> FileSystemContractSuite<'a> {
         if self.context.run.started {
             self.context.run.failures.push(crate::ContractFailure::message_only(
                 "session already started; create a fresh fixture for another run",
+            ));
+            return &self.context.run;
+        }
+        if self.context.run.cleanup.attempts > 0 {
+            self.context.run.failures.push(crate::ContractFailure::message_only(
+                "session cleanup already started; create a fresh fixture for another run",
             ));
             return &self.context.run;
         }

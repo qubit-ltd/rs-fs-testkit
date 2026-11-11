@@ -158,6 +158,8 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// Dropping this future stops I/O and preserves the suite's cleanup ledger.
     /// Call `finish` to retry cleanup before dropping the fixture owner.
+    /// A run requested after cleanup has started returns a lifecycle failure;
+    /// create a fresh fixture and suite for another run.
     ///
     /// # Returns
     ///
@@ -167,6 +169,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     }
 
     /// Executes one phase once and retains its result in the borrowing suite.
+    ///
+    /// Returns a lifecycle failure without running checks if cleanup has
+    /// already started. Use a fresh fixture and suite for another run.
     ///
     /// # Parameters
     ///
@@ -181,6 +186,9 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
     /// Executes one selected check in a fresh session and retains its cleanup
     /// result.
+    ///
+    /// Returns a lifecycle failure without running checks if cleanup has
+    /// already started. Use a fresh fixture and suite for another run.
     ///
     /// # Parameters
     ///
@@ -217,6 +225,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         if self.context.run.started {
             self.context.run.failures.push(crate::ContractFailure::message_only(
                 "session already started; create a fresh fixture for another run",
+            ));
+            return &self.context.run;
+        }
+        if self.context.run.cleanup.attempts > 0 {
+            self.context.run.failures.push(crate::ContractFailure::message_only(
+                "session cleanup already started; create a fresh fixture for another run",
             ));
             return &self.context.run;
         }
