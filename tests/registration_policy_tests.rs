@@ -87,14 +87,18 @@ register_async_file_system_contract_tests! {
 
 #[cfg(feature = "async")]
 fn incomplete_async_fixture() -> common::AsyncMemoryFixture {
-    if std::env::var_os("FS_TESTKIT_REGISTRATION_ASYNC_MODE").as_deref()
-        == Some(std::ffi::OsStr::new("catch-assertion"))
-    {
-        common::AsyncMemoryFixture::with_conditional_case_unavailable(
-            common::UnavailableScenario::ReadIfMatch,
-        )
-    } else {
-        common::AsyncMemoryFixture::new()
+    match std::env::var_os("FS_TESTKIT_REGISTRATION_ASYNC_MODE").as_deref() {
+        Some(mode) if mode == "catch-assertion" => {
+            common::AsyncMemoryFixture::with_conditional_case_unavailable(
+                common::UnavailableScenario::ReadIfMatch,
+            )
+        }
+        Some(mode) if mode == "pending-drop" => {
+            common::AsyncMemoryFixture::with_cancellation_limits(
+                qubit_fs::metadata::FileSystemLimits::unknown(),
+            )
+        }
+        _ => common::AsyncMemoryFixture::new(),
     }
 }
 
@@ -124,10 +128,18 @@ fn async_registration_runner(future: impl std::future::Future<Output = ()>) {
                 fn wake(self: std::sync::Arc<Self>) {}
             }
 
-            let mut future = Box::pin(async {
-                std::future::poll_fn(|_| Poll::<()>::Pending).await;
-                future.await;
-            });
+            let mut contract = Box::pin(future);
+            let mut first_poll = true;
+            let mut future = Box::pin(std::future::poll_fn(|context| {
+                if first_poll {
+                    first_poll = false;
+                    assert!(
+                        contract.as_mut().poll(context).is_pending(),
+                        "contract future must reach Pending before the runner drops it"
+                    );
+                }
+                Poll::<()>::Pending
+            }));
             let waker = Waker::from(std::sync::Arc::new(NoopWake));
             let mut context = Context::from_waker(&waker);
             assert!(future.as_mut().poll(&mut context).is_pending());
@@ -231,7 +243,7 @@ fn test_async_default_and_strict_registration_apply_the_same_policy() {
 fn test_async_runner_must_complete_before_returning() {
     for mode in ["drop-before-poll", "pending-drop"] {
         let (success, stdout, stderr) = run_child_with_env(
-            "incomplete_async::test_properties",
+            "incomplete_async::test_write",
             Some("FS_TESTKIT_REGISTRATION_ASYNC_MODE"),
             mode,
         );
