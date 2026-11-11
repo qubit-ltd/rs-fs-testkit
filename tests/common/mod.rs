@@ -12,6 +12,8 @@ use self::internal::memory_file_system;
 pub(crate) mod async_memory_file_system;
 pub(crate) mod check_matrix;
 mod internal;
+#[allow(dead_code)]
+pub(crate) mod native_copy_fixture;
 pub(crate) mod shared_model;
 
 #[cfg(feature = "async")]

@@ -45,14 +45,7 @@ impl AsyncFileSystemContractSuite<'_> {
     pub(super) async fn check_copy_conflict(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::CopyFallbackOverwriteRejected;
         self.context.begin_check(id);
-        if [
-            FileSystemCapability::Copy,
-            FileSystemCapability::Read,
-            FileSystemCapability::Write,
-        ]
-        .into_iter()
-        .any(|capability| !self.capable(capability))
-        {
+        if !self.capable(FileSystemCapability::Copy) {
             self.context.record_check(
                 id,
                 Some(FileSystemCapability::Copy),

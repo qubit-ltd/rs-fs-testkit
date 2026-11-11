@@ -535,7 +535,7 @@ impl MemoryFixture {
 
     /// Creates a fixture with no write primitive in its advertised profile.
     pub fn read_only() -> Self {
-        Self::with_configuration(
+        let fixture = Self::with_configuration(
             MemoryFault::None,
             true,
             true,
@@ -543,7 +543,13 @@ impl MemoryFixture {
             true,
             false,
             "memory-read-only-provider",
-        )
+        );
+        fixture
+            .state
+            .lock()
+            .expect("memory state lock must succeed")
+            .native_copy = true;
+        fixture
     }
 
     /// Creates a fixture exposing a concrete provider limit snapshot.

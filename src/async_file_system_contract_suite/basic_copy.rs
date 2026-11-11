@@ -24,7 +24,8 @@ use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
     /// Executes one basic copy requirement using independently prepared
-    /// contents.
+    /// contents. Native copy requires the Copy capability; Read and Write are
+    /// needed only when the facade uses streaming fallback.
     ///
     /// The check may create source and target paths, execute asynchronous
     /// filesystem I/O, and read files to observe the copied contents. It
@@ -109,14 +110,15 @@ impl AsyncFileSystemContractSuite<'_> {
         source_relative: &str,
         target: &qfs::path::Path,
     ) -> Result<bool, ContractFailure> {
-        let missing = [
-            FileSystemCapability::Read,
-            FileSystemCapability::Write,
-            FileSystemCapability::Copy,
-        ]
-        .into_iter()
-        .find(|capability| !self.capable(*capability));
-        if let Some(required) = missing {
+        if !self.capable(FileSystemCapability::Copy) {
+            let required = [
+                FileSystemCapability::Read,
+                FileSystemCapability::Write,
+                FileSystemCapability::Copy,
+            ]
+            .into_iter()
+            .find(|capability| !self.capable(*capability))
+            .expect("Copy capability is missing");
             if id != ContractCheckId::CopyBasic {
                 self.context.record_check(
                     id,

@@ -23,9 +23,11 @@ use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
     /// Executes one basic copy requirement with independently prepared
-    /// contents. The check records whether the fixture can copy distinct file
-    /// contents with the required options and reports capability rejection
-    /// when the basic copy contract requires it.
+    /// contents. Native copy requires the Copy capability; Read and Write are
+    /// needed only when the facade uses streaming fallback. The check records
+    /// whether the fixture can copy distinct file contents with the required
+    /// options and reports capability rejection when the provider does not
+    /// support copying.
     ///
     /// # Parameters
     ///
@@ -52,14 +54,15 @@ impl FileSystemContractSuite<'_> {
             .path(&target_relative)
             .map_err(|error| ContractFailure::with_source("copy target preparation failed", error).at(id))?;
         self.context.record_created(target.clone());
-        let missing = [
-            FileSystemCapability::Read,
-            FileSystemCapability::Write,
-            FileSystemCapability::Copy,
-        ]
-        .into_iter()
-        .find(|capability| !self.capable(*capability));
-        if let Some(required) = missing {
+        if !self.capable(FileSystemCapability::Copy) {
+            let required = [
+                FileSystemCapability::Read,
+                FileSystemCapability::Write,
+                FileSystemCapability::Copy,
+            ]
+            .into_iter()
+            .find(|capability| !self.capable(*capability))
+            .expect("Copy capability is missing");
             if id != ContractCheckId::CopyBasic {
                 self.context.record_check(
                     id,
