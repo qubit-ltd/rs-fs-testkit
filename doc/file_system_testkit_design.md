@@ -187,6 +187,18 @@ cover basic copy, conflict policy, server-side copy, atomic/durable file copy,
 and atomic/durable tree copy. Tree fixtures must seed the root, descendants,
 and target independently.
 
+`Copy` does not require facade `Read` or `Write` when the provider implements
+the `TryCopy` operation. That operation determines whether the facade attempts
+native copy. Streamed fallback is a separate route: it requires an allowlisted
+request, `Stat`, `OpenReader`, and `OpenWriter` operations, and the corresponding
+`Read` and `Write` capabilities. `CopyAssessment` describes this static route
+assessment only; it is not evidence that a particular copy succeeded. A
+provider contract check must observe the actual result and independently verify
+the source and target. A focused fixture may prepare and inspect those files
+through its own storage model even when the tested facade lacks `Read` and
+`Write`; if required preparation or observation evidence is unavailable, the
+check remains `Unverified`.
+
 The repository contains an in-memory provider model for deterministic faults
 and an unpublished S3-compatible fixture under `fixtures/s3-contract/`.
 The latter requires an explicit endpoint, an existing bucket, credentials,

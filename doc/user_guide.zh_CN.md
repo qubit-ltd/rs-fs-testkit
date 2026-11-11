@@ -93,10 +93,14 @@ assert!(run.cleanup().completed());
 同步与异步套件都会依次检查 properties、`stat`、read、write、list、创建目录、delete、copy、
 rename、追加写、递归删除、必需原子 rename/replace、必需持久 copy、包括原子持久化在内的临时
 资源和错误上下文，随后执行清理。门面未声明的核心操作会被检查是否返回结构化的
-`UnsupportedCapability` 预检错误。`Copy` 是例外：未声明 `Copy` 时，门面会跳过 native
-fast path；当 `Read` 与 `Write` 可用且请求属于 allowlist 时，仍可使用流式 fallback，只有
-fallback 前提缺失时才返回结构化的 unsupported-capability 错误。未声明的强化保证会被检查
-是否返回结构化的 `RequirementNotMet` 预检错误。
+`UnsupportedCapability` 预检错误。复制有两条执行路径：声明了 `Copy` 的 provider，即使门面不提供
+`Read` 或 `Write`，也可以由 `TryCopy` operation 处理请求。是否尝试原生复制由 provider 是否提供
+`TryCopy` operation 决定；`Copy` capability 表示应用可使用复制能力，并不决定分派路径。原生复制
+decline 后，只有请求属于 allowlist，且 `Stat`、`OpenReader`、`OpenWriter` operation 与对应的
+`Read`、`Write` capability 均可用，才可流式 fallback。`CopyAssessment` 只报告静态路由评估，不能
+证明某次复制已成功。原生路径无法处理请求且 fallback 前提不齐时，门面会返回结构化的
+unsupported-capability 错误。未声明的强化保证会被检查是否返回结构化的 `RequirementNotMet`
+预检错误。
 
 套件直接检查公开门面结果、必需副作用和 fixture 独立 hook 能提供的观察。必要事实无法独立观察时，
 结果记为 `Unverified`，不算通过。testkit 自己的 recording provider 与故障 fixture 用来验证套件

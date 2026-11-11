@@ -259,11 +259,17 @@ Capability 处理遵循两个方向。
 声明能力但对 capability 明确保证范围内的 fixture case 只能返回
 `UnsupportedCapability`，视为 contract failure。
 
-Capability 不是某一次 native fast path 的强制分派开关。`Copy` 可以由门面流式
-fallback 提供；`ServerSideCopy`、native clone 等 fast path 还可能受 bucket、device、
-region 或具体路径对影响。正向 fast-path contract 必须使用 fixture 明确提供的
-applicable case；普通路径对得到无副作用 `CopyAttempt::Declined` 本身不是 contract
-failure，最终门面结果仍需满足 resolved requirements。
+Capability 不是某一次 native fast path 的强制分派开关。provider 实现 `TryCopy`
+operation 后，即使门面没有 `Read` 或 `Write`，仍可声明并提供 `Copy`；是否尝试原生复制由
+`TryCopy` operation 决定。门面流式 fallback 则需要请求属于 allowlist，并且具备 `Stat`、
+`OpenReader`、`OpenWriter` operation 及对应的 `Read`、`Write` capability。
+`CopyAssessment` 只描述静态路由评估，不能作为某次复制成功的证据。契约检查仍须执行实际复制，
+并独立核对源和目标。聚焦 fixture 可以通过自己的存储模型准备并观察文件，不要求被测门面提供
+`Read` 或 `Write`；若准备或观察所需证据缺失，结果仍为 `Unverified`。
+
+`ServerSideCopy`、native clone 等 fast path 还可能受 bucket、device、region 或具体路径对影响。
+正向 fast-path contract 必须使用 fixture 明确提供的 applicable case；普通路径对得到无副作用
+`CopyAttempt::Declined` 本身不是 contract failure，最终门面结果仍需满足 resolved requirements。
 
 如果 provider 声明 `ServerSideCopy`、clone 等需要动态适用 case 的 capability，完整
 suite 要求 fixture 至少提供一个对应 `copy_fast_path_case`。此时返回

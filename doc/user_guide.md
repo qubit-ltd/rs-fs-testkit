@@ -109,10 +109,17 @@ delete, copy, rename, append, recursive deletion, required-atomic
 rename/replacement, required-durable copy, temporary resources including
 atomic persistence, and error context, then perform cleanup. Unadvertised core
 operations are checked for structured `UnsupportedCapability` preflight. Copy
-is the exception: when `Copy` is not advertised, the facade skips the native
-fast path and may use the allowlisted stream fallback when `Read` and `Write`
-are available; missing fallback prerequisites still produce a structured
-unsupported-capability failure.
+has two execution paths: a provider that declares `Copy` need not expose facade
+`Read` or `Write` when its `TryCopy` operation handles the request. The
+provider's `TryCopy` operation determines whether the facade attempts native
+copy; the `Copy` capability describes application-visible copy support, not
+that dispatch decision. If native copy declines, streamed fallback is
+available only for allowlisted requests and when `Stat`, `OpenReader`,
+`OpenWriter`, and the corresponding `Read` and `Write` capabilities are
+available. `CopyAssessment` reports this static routing assessment; it does not
+show that a copy request succeeded. Missing fallback prerequisites still
+produce a structured unsupported-capability failure when no native route is
+usable for the request.
 Unadvertised stronger guarantees are checked for structured `RequirementNotMet`
 preflight.
 
