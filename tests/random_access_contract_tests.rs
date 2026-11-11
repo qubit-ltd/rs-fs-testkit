@@ -240,6 +240,14 @@ struct AsyncState {
     reopen_path: bool,
     teardown_calls: usize,
     disarm_calls: usize,
+    gate_entered: bool,
+    events: Vec<&'static str>,
+    delay_before_gate: bool,
+    pending_read_hook_unsupported: bool,
+    pending_read_hook_error: bool,
+    pending_read_hook_panic: bool,
+    disarm_error: bool,
+    open_pending: bool,
 }
 
 #[cfg(feature = "async")]
@@ -249,9 +257,24 @@ struct AsyncRandomProvider {
 }
 
 #[cfg(feature = "async")]
+fn lock_async_state(state: &Arc<Mutex<AsyncState>>) -> std::sync::MutexGuard<'_, AsyncState> {
+    state.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+#[cfg(feature = "async")]
 struct AsyncRandomSession {
     bytes: Arc<[u8]>,
     state: Arc<Mutex<AsyncState>>,
+}
+
+#[cfg(feature = "async")]
+struct AsyncReadFutureDrop(Arc<Mutex<AsyncState>>);
+
+#[cfg(feature = "async")]
+impl Drop for AsyncReadFutureDrop {
+    fn drop(&mut self) {
+        self.0.lock().expect("async fixture state").events.push("future_drop");
+    }
 }
 
 #[cfg(feature = "async")]
@@ -261,8 +284,11 @@ impl AsyncRandomAccessReadSession for AsyncRandomSession {
         let bytes = session.bytes.clone();
         let state = session.state.clone();
         Box::pin(async move {
+            let _drop = AsyncReadFutureDrop(state.clone());
+            let mut gate_polls = 0;
             let (pending, reopen, current) = {
                 let mut state = state.lock().expect("async fixture state");
+                state.events.push("read_started");
                 let pending = state.probe_armed && !state.probe_consumed && state.inject_pending;
                 if pending {
                     state.probe_consumed = true;
@@ -270,7 +296,19 @@ impl AsyncRandomAccessReadSession for AsyncRandomSession {
                 (pending, state.reopen_path, state.bytes.clone())
             };
             if pending {
-                std::future::poll_fn(|_| Poll::<()>::Pending).await;
+                std::future::poll_fn(|context| {
+                    gate_polls += 1;
+                    if gate_polls == 1 && state.lock().expect("async fixture state").delay_before_gate {
+                        context.waker().wake_by_ref();
+                        Poll::<()>::Pending
+                    } else {
+                        let mut state = state.lock().expect("async fixture state");
+                        state.gate_entered = true;
+                        state.events.push("gate_entered");
+                        Poll::<()>::Pending
+                    }
+                })
+                .await;
             }
             let bytes = if reopen { current } else { bytes };
             let start = usize::try_from(offset).unwrap_or(usize::MAX);
@@ -315,6 +353,9 @@ impl AsyncFileSystemSpi for AsyncRandomProvider {
     ) -> SpiFuture<'a, FsResult<OpenedAsyncRandomAccessReader>> {
         let state = self.state.clone();
         Box::pin(async move {
+            if lock_async_state(&state).open_pending {
+                std::future::poll_fn(|_| Poll::<()>::Pending).await;
+            }
             let bytes = state.lock().expect("async fixture state").bytes.clone();
             let info = OpenedFileInfo::new(
                 FileSystemId::new(PROVIDER_ID).expect("valid ID"),
@@ -342,6 +383,12 @@ struct AsyncRandomFixture {
 impl AsyncRandomFixture {
     fn new(inject_pending: bool, reopen_path: bool) -> Self {
         Self::with_limit(inject_pending, reopen_path, FileSystemLimit::Maximum(2))
+    }
+
+    fn new_with_pre_gate_pending() -> Self {
+        let fixture = Self::new(true, false);
+        fixture.state.lock().expect("async fixture state").delay_before_gate = true;
+        fixture
     }
 
     fn with_limit(inject_pending: bool, reopen_path: bool, range_limit: FileSystemLimit) -> Self {
@@ -404,13 +451,31 @@ impl AsyncFileSystemFixture for AsyncRandomFixture {
         Ok(FixtureSupport::Supported(()))
     }
     fn disarm_random_access_pending_read(&self, _path: &Path) -> FixtureResult<()> {
-        let mut state = self.state.lock().expect("async fixture state");
+        let mut state = lock_async_state(&self.state);
         state.probe_armed = false;
         state.disarm_calls += 1;
+        state.events.push("disarm");
+        if state.disarm_error {
+            return Err(qubit_fs_testkit::FixtureError::new("injected probe disarm failure"));
+        }
         if state.reopen_path {
             state.bytes = Arc::from(&b"UVWXYZ"[..]);
         }
         Ok(())
+    }
+    fn random_access_pending_read_reached(&self, _path: &Path) -> FixtureResult<FixtureSupport<bool>> {
+        let mut state = lock_async_state(&self.state);
+        state.events.push("hook_query");
+        if state.pending_read_hook_panic {
+            panic!("injected pending-read observation panic");
+        }
+        if state.pending_read_hook_error {
+            return Err(qubit_fs_testkit::FixtureError::new("injected pending-read observation failure"));
+        }
+        if state.pending_read_hook_unsupported {
+            return Ok(FixtureSupport::Unsupported);
+        }
+        Ok(FixtureSupport::Supported(state.gate_entered))
     }
 }
 
@@ -947,7 +1012,83 @@ fn test_random_access_cancel_releases_futures_and_reuses_reader() {
     let state = fixture.state.lock().expect("async fixture state");
     assert_eq!(state.disarm_calls, 1);
     assert_eq!(state.teardown_calls, 1);
+    assert!(state.gate_entered);
+    let gate = state.events.iter().position(|event| *event == "gate_entered").expect("gate was observed");
+    let disarm = state.events.iter().position(|event| *event == "disarm").expect("gate was disarmed");
+    let future_drop = state.events.iter().position(|event| *event == "future_drop").expect("read future was dropped");
+    let hook = state.events.iter().position(|event| *event == "hook_query").expect("gate observation was queried");
+    assert!(gate < future_drop && future_drop < hook && hook < disarm);
+    assert!(state.events[disarm + 1..].contains(&"read_started"), "reader recovery follows disarm");
     assert!(!state.probe_armed, "teardown leaves no pending-read probe armed");
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_cancel_does_not_pass_before_injected_gate() {
+    let fixture = AsyncRandomFixture::new_with_pre_gate_pending();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+    assert_eq!(
+        run.report().checks()[0].outcome(),
+        &ContractCheckOutcome::Unverified {
+            reason: "fixture did not confirm that the pending read reached the injected gate".to_owned(),
+        }
+    );
+    let state = fixture.state.lock().expect("async fixture state");
+    assert!(!state.gate_entered);
+    assert_eq!(state.disarm_calls, 1);
+    assert_eq!(state.teardown_calls, 1);
+    assert_eq!(state.events[0..4], ["read_started", "future_drop", "hook_query", "disarm"]);
+    assert!(state.events[3..].contains(&"read_started"), "reader recovery follows disarm");
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_cancel_observation_support_and_errors() {
+    let unsupported = AsyncRandomFixture::new(true, false);
+    unsupported.state.lock().expect("async fixture state").pending_read_hook_unsupported = true;
+    let mut suite = AsyncFileSystemContractSuite::new(&unsupported);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Unverified { .. }));
+    assert_eq!(unsupported.state.lock().expect("async fixture state").disarm_calls, 1);
+
+    let failed = AsyncRandomFixture::new(true, false);
+    failed.state.lock().expect("async fixture state").pending_read_hook_error = true;
+    let mut suite = AsyncFileSystemContractSuite::new(&failed);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
+    assert_eq!(failed.state.lock().expect("async fixture state").disarm_calls, 1);
+
+    let panics = AsyncRandomFixture::new(true, false);
+    lock_async_state(&panics.state).pending_read_hook_panic = true;
+    let mut suite = AsyncFileSystemContractSuite::new(&panics);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
+    assert_eq!(lock_async_state(&panics.state).disarm_calls, 1);
+
+    let disarm_fails = AsyncRandomFixture::new(true, false);
+    lock_async_state(&disarm_fails.state).disarm_error = true;
+    let mut suite = AsyncFileSystemContractSuite::new(&disarm_fails);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
+    assert_eq!(lock_async_state(&disarm_fails.state).disarm_calls, 1);
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_cancel_outer_future_drop_disarms_probe() {
+    let fixture = AsyncRandomFixture::new(true, false);
+    lock_async_state(&fixture.state).open_pending = true;
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let mut run = Box::pin(suite.run_check(ContractCheckId::RandomAccessCancel));
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
+    drop(run);
+    let state = lock_async_state(&fixture.state);
+    assert_eq!(state.disarm_calls, 1);
+    assert!(!state.probe_armed);
+    let disarmed = state.events.iter().position(|event| *event == "disarm").expect("probe was disarmed");
+    assert_eq!(disarmed, 0, "probe is disarmed while cancelling the pending open");
 }
 
 #[cfg(feature = "async")]

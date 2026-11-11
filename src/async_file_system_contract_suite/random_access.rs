@@ -318,18 +318,32 @@ impl AsyncFileSystemContractSuite<'_> {
             let mut read = pin!(reader.read_at(0, &mut output));
             matches!(read.as_mut().poll(&mut context), Poll::Pending)
         };
+        let reached_gate = if observed_pending {
+            self.fixture
+                .random_access_pending_read_reached(path)
+                .map_err(|error| {
+                    ContractFailure::with_source("pending random-access gate observation failed", error).at(id)
+                })?
+        } else {
+            FixtureSupport::Unsupported
+        };
         let disarmed = probe_guard.disarm();
         drop(probe_guard);
         if !disarmed {
             return Err(ContractFailure::message_only("pending random-access probe could not be disarmed").at(id));
         }
+        let range_limit = self.context.properties().limits().max_read_range_bytes();
+        verify_sample(&mut reader, 2, b"cd", range_limit, id).await?;
         if !observed_pending {
             return Ok(ContractCheckOutcome::Unverified {
                 reason: "injected read did not return Pending when first polled".to_owned(),
             });
         }
-        let range_limit = self.context.properties().limits().max_read_range_bytes();
-        verify_sample(&mut reader, 2, b"cd", range_limit, id).await?;
+        if !matches!(reached_gate, FixtureSupport::Supported(true)) {
+            return Ok(ContractCheckOutcome::Unverified {
+                reason: "fixture did not confirm that the pending read reached the injected gate".to_owned(),
+            });
+        }
         Ok(ContractCheckOutcome::Passed)
     }
 }

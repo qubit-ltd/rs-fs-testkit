@@ -128,6 +128,25 @@ pub trait AsyncFileSystemFixture: Sync {
         Ok(())
     }
 
+    /// Independently reports whether a random-access read reached the injected pending gate.
+    /// This must inspect fixture instrumentation only and must not perform I/O.
+    ///
+    /// # Parameters
+    /// * `path` - Seed path associated with the pending-read probe.
+    ///
+    /// # Returns
+    /// `Supported(true)` when the read reached the gate, `Supported(false)` when it did not,
+    /// or `Unsupported` when this fixture cannot observe gate entry.
+    ///
+    /// # Errors
+    /// Returns [`FixtureError`](crate::FixtureError) when reading the independent
+    /// instrumentation fails.
+    #[inline]
+    fn random_access_pending_read_reached(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
+        let _ = path;
+        Ok(FixtureSupport::Unsupported)
+    }
+
     /// Snapshots every logical path in the isolated configured namespace.
     ///
     /// Use the underlying SDK or fixture model, never the facade list method.
@@ -895,6 +914,10 @@ mod tests {
             Ok(FixtureSupport::Unsupported)
         ));
         assert!(matches!(fixture.disarm_random_access_pending_read(&path), Ok(())));
+        assert!(matches!(
+            fixture.random_access_pending_read_reached(&path),
+            Ok(FixtureSupport::Unsupported)
+        ));
     }
 
     #[test]
