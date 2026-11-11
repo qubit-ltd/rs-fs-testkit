@@ -1057,6 +1057,9 @@ fn test_async_random_access_cancel_observation_support_and_errors() {
     let mut suite = AsyncFileSystemContractSuite::new(&failed);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
     assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
+    assert!(run.failures().iter().any(|failure| {
+        failure.check() == Some(ContractCheckId::RandomAccessCancel)
+    }));
     assert_eq!(failed.state.lock().expect("async fixture state").disarm_calls, 1);
 
     let panics = AsyncRandomFixture::new(true, false);
@@ -1064,6 +1067,9 @@ fn test_async_random_access_cancel_observation_support_and_errors() {
     let mut suite = AsyncFileSystemContractSuite::new(&panics);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
     assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
+    assert!(run.failures().iter().any(|failure| {
+        failure.check() == Some(ContractCheckId::RandomAccessCancel)
+    }));
     assert_eq!(lock_async_state(&panics.state).disarm_calls, 1);
 
     let disarm_fails = AsyncRandomFixture::new(true, false);
@@ -1071,6 +1077,9 @@ fn test_async_random_access_cancel_observation_support_and_errors() {
     let mut suite = AsyncFileSystemContractSuite::new(&disarm_fails);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
     assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
+    assert!(run.failures().iter().any(|failure| {
+        failure.check() == Some(ContractCheckId::RandomAccessCancel)
+    }));
     assert_eq!(lock_async_state(&disarm_fails.state).disarm_calls, 1);
 }
 
