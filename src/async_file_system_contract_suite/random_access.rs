@@ -168,23 +168,70 @@ impl AsyncFileSystemContractSuite<'_> {
                         });
                     };
                     if rejected > SEED.len() as u64 {
-                        return Ok(ContractCheckOutcome::SkippedOptional {
-                            reason: "seed is too short to probe the declared random-access range limit".to_owned(),
-                        });
-                    }
-                    if accepted > 0 {
-                        verify_sample(&mut reader, 0, &SEED[..accepted as usize], range_limit, id).await?;
-                    }
-                    let mut rejected_buffer = vec![0; rejected as usize];
-                    let error = reader
-                        .read_at(0, &mut rejected_buffer)
-                        .await
-                        .expect_err("range above finite random-access limit must fail");
-                    if error.kind() != FsErrorKind::ResourceLimitExceeded || error.operation() != FsOperation::Read {
-                        return Err(ContractFailure::message_only(
-                            "range above finite random-access limit returned the wrong error",
-                        )
-                        .at(id));
+                        let expected = (0..rejected as usize)
+                            .map(|index| SEED[index % SEED.len()])
+                            .collect::<Vec<_>>();
+                        let relative = self.context.relative_name("random-access-limit");
+                        let path = match self.fixture.seed_file(&relative, &expected).await.map_err(|error| {
+                            ContractFailure::with_source("random-access limit seed preparation failed", error).at(id)
+                        })? {
+                            FixtureSupport::Supported(path) => path,
+                            FixtureSupport::Unsupported => {
+                                return Ok(ContractCheckOutcome::Unverified {
+                                    reason: "fixture could not prepare a seed for the finite random-access limit"
+                                        .to_owned(),
+                                });
+                            }
+                        };
+                        self.context.record_created(path.clone());
+                        let mut range_reader = self
+                            .fixture
+                            .file_system()
+                            .open_random_access_reader(&path, ReadOptions::default())
+                            .await
+                            .map_err(|error| {
+                                ContractFailure::with_source("random-access limit seed open failed", error).at(id)
+                            })?;
+                        if range_reader.len() != rejected {
+                            return Err(ContractFailure::message_only(
+                                "random-access limit seed open-time length did not match the seed",
+                            )
+                            .at(id));
+                        }
+                        if accepted > 0 {
+                            verify_sample(&mut range_reader, 0, &expected[..accepted as usize], range_limit, id)
+                                .await?;
+                        }
+                        let mut rejected_buffer = vec![0; rejected as usize];
+                        let error = range_reader
+                            .read_at(0, &mut rejected_buffer)
+                            .await
+                            .expect_err("range above finite random-access limit must fail");
+                        if error.kind() != FsErrorKind::ResourceLimitExceeded || error.operation() != FsOperation::Read
+                        {
+                            return Err(ContractFailure::message_only(
+                                "range above finite random-access limit returned the wrong error",
+                            )
+                            .at(id));
+                        }
+                        verify_sample(&mut range_reader, 0, &expected[..2], range_limit, id).await?;
+                    } else {
+                        if accepted > 0 {
+                            verify_sample(&mut reader, 0, &SEED[..accepted as usize], range_limit, id).await?;
+                        }
+                        let mut rejected_buffer = vec![0; rejected as usize];
+                        let error = reader
+                            .read_at(0, &mut rejected_buffer)
+                            .await
+                            .expect_err("range above finite random-access limit must fail");
+                        if error.kind() != FsErrorKind::ResourceLimitExceeded || error.operation() != FsOperation::Read
+                        {
+                            return Err(ContractFailure::message_only(
+                                "range above finite random-access limit returned the wrong error",
+                            )
+                            .at(id));
+                        }
+                        verify_sample(&mut reader, 0, b"ab", range_limit, id).await?;
                     }
                 }
                 verify_sample(&mut reader, 0, b"ab", range_limit, id).await?;
@@ -801,31 +848,33 @@ mod tests {
 
     #[test]
     fn test_random_access_finite_range_limits_are_probed_or_skipped_safely() {
-        let fixture = RandomAccessFixture::with_configuration(true, None, false, false, FileSystemLimit::Maximum(3));
-        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
-        assert!(run.failures().is_empty(), "{:?}", run.failures());
-        assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
+        for maximum in [5, 6, 10, 63] {
+            let fixture =
+                RandomAccessFixture::with_configuration(true, None, false, false, FileSystemLimit::Maximum(maximum));
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
+            assert!(run.failures().is_empty(), "Maximum({maximum}): {:?}", run.failures());
+            assert_eq!(
+                run.report().checks()[0].outcome(),
+                &ContractCheckOutcome::Passed,
+                "Maximum({maximum})"
+            );
+            assert!(run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+        }
 
-        let fixture = RandomAccessFixture::with_configuration(true, None, false, false, FileSystemLimit::Maximum(64));
-        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
-        assert_eq!(
-            run.report().checks()[0].outcome(),
-            &ContractCheckOutcome::SkippedOptional {
-                reason: "finite random-access range limit exceeds the 64-byte probe budget".to_owned(),
-            }
-        );
-
-        let fixture = RandomAccessFixture::with_configuration(true, None, false, false, FileSystemLimit::Maximum(6));
-        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
-        assert_eq!(
-            run.report().checks()[0].outcome(),
-            &ContractCheckOutcome::SkippedOptional {
-                reason: "seed is too short to probe the declared random-access range limit".to_owned(),
-            }
-        );
+        for maximum in [64, u64::MAX] {
+            let fixture =
+                RandomAccessFixture::with_configuration(true, None, false, false, FileSystemLimit::Maximum(maximum));
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
+            assert_eq!(
+                run.report().checks()[0].outcome(),
+                &ContractCheckOutcome::SkippedOptional {
+                    reason: "finite random-access range limit exceeds the 64-byte probe budget".to_owned(),
+                }
+            );
+            assert!(!run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+        }
     }
 
     #[test]

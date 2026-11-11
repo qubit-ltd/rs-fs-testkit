@@ -220,11 +220,9 @@ impl FileSystemFixture for RandomFixture {
     fn random_access_operation(&self) -> FixtureSupport<bool> {
         FixtureSupport::Supported(self.supported)
     }
-    fn seed_file(&self, _relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
         *self.current.lock().expect("fixture state") = Arc::from(bytes);
-        Ok(FixtureSupport::Supported(
-            Path::parse("/random-access").expect("valid path"),
-        ))
+        Ok(FixtureSupport::Supported(self.path(relative)?))
     }
     fn replace_random_access_path(&self, _path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
         *self.current.lock().expect("fixture state") = Arc::from(bytes);
@@ -383,13 +381,12 @@ impl AsyncFileSystemFixture for AsyncRandomFixture {
     fn random_access_operation(&self) -> FixtureSupport<bool> {
         FixtureSupport::Supported(true)
     }
-    fn seed_file<'a>(&'a self, _relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
         let state = self.state.clone();
+        let path = self.path(relative);
         Box::pin(async move {
             state.lock().expect("async fixture state").bytes = Arc::from(bytes);
-            Ok(FixtureSupport::Supported(
-                Path::parse("/random-access").expect("valid path"),
-            ))
+            Ok(FixtureSupport::Supported(path?))
         })
     }
     fn replace_random_access_path<'a>(
@@ -712,6 +709,62 @@ fn test_random_access_seed_setup_failure_is_reported() {
     );
 }
 
+struct LimitSeedUnavailableFixture {
+    inner: RandomFixture,
+    fail: bool,
+}
+
+impl FileSystemFixture for LimitSeedUnavailableFixture {
+    fn file_system(&self) -> &FileSystem {
+        &self.inner.file_system
+    }
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+    fn random_access_operation(&self) -> FixtureSupport<bool> {
+        FixtureSupport::Supported(true)
+    }
+    fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
+        if relative.contains("random-access-limit") {
+            if self.fail {
+                return Err(qubit_fs_testkit::FixtureError::new("limit seed unavailable"));
+            }
+            return Ok(FixtureSupport::Unsupported);
+        }
+        self.inner.seed_file(relative, bytes)
+    }
+}
+
+#[test]
+fn test_random_access_limit_seed_unavailability_is_unverified_and_cleanup_completes() {
+    let fixture = LimitSeedUnavailableFixture {
+        inner: RandomFixture::new(true, false, FileSystemLimit::Maximum(10)),
+        fail: false,
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::RandomAccessBounds);
+    assert!(run.failures().is_empty(), "{:?}", run.failures());
+    assert!(run.cleanup().completed());
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Unverified { .. }
+    ));
+    assert!(!run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+
+    let fixture = LimitSeedUnavailableFixture {
+        inner: RandomFixture::new(true, false, FileSystemLimit::Maximum(10)),
+        fail: true,
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::RandomAccessBounds);
+    assert_eq!(run.failures().len(), 1);
+    assert!(run.failures()[0].message().contains("limit seed preparation failed"));
+    assert!(run.cleanup().completed());
+}
+
 #[test]
 fn test_random_access_reads_bounds_and_object_identity() {
     let conforming = RandomFixture::new(true, false, FileSystemLimit::Unknown);
@@ -744,17 +797,30 @@ fn test_random_access_reads_bounds_and_object_identity() {
         ContractCheckOutcome::Failed { .. }
     ));
 
-    let limit_exceeds_seed = RandomFixture::new(true, false, FileSystemLimit::Maximum(10));
-    assert!(matches!(
-        outcome(&limit_exceeds_seed, ContractCheckId::RandomAccessBounds),
-        ContractCheckOutcome::SkippedOptional { .. }
-    ));
+    for maximum in [5, 6, 10, 63] {
+        let fixture = RandomFixture::new(true, false, FileSystemLimit::Maximum(maximum));
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::RandomAccessBounds);
+        assert_eq!(run.failures().len(), 0, "Maximum({maximum}): {:?}", run.failures());
+        assert_eq!(
+            run.report().checks()[0].outcome(),
+            &ContractCheckOutcome::Passed,
+            "Maximum({maximum})"
+        );
+        assert!(run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+    }
 
-    let huge_limit = RandomFixture::new(true, false, FileSystemLimit::Maximum(u64::MAX));
-    assert!(matches!(
-        outcome(&huge_limit, ContractCheckId::RandomAccessBounds),
-        ContractCheckOutcome::SkippedOptional { .. }
-    ));
+    for maximum in [64, u64::MAX] {
+        let fixture = RandomFixture::new(true, false, FileSystemLimit::Maximum(maximum));
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::RandomAccessBounds);
+        assert_eq!(run.failures().len(), 0, "Maximum({maximum}): {:?}", run.failures());
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::SkippedOptional { .. }
+        ));
+        assert!(!run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+    }
 
     let reopens_path = RandomFixture::new(true, true, FileSystemLimit::Unknown);
     assert!(matches!(
@@ -766,15 +832,39 @@ fn test_random_access_reads_bounds_and_object_identity() {
 #[cfg(feature = "async")]
 #[test]
 fn test_async_random_access_bounds_accept_finite_ranges() {
-    let fixture = AsyncRandomFixture::new(true, false);
-    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-    let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
-    assert!(
-        run.failures().is_empty(),
-        "async finite-bound contract should complete without failures"
-    );
-    assert_eq!(run.report().checks()[0].id(), ContractCheckId::RandomAccessBounds);
-    assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
+    for maximum in [5, 6, 10, 63] {
+        let fixture = AsyncRandomFixture::with_limit(true, false, FileSystemLimit::Maximum(maximum));
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
+        assert!(
+            run.failures().is_empty(),
+            "async Maximum({maximum}): {:?}",
+            run.failures()
+        );
+        assert_eq!(run.report().checks()[0].id(), ContractCheckId::RandomAccessBounds);
+        assert_eq!(
+            run.report().checks()[0].outcome(),
+            &ContractCheckOutcome::Passed,
+            "Maximum({maximum})"
+        );
+        assert!(run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+    }
+
+    for maximum in [64, u64::MAX] {
+        let fixture = AsyncRandomFixture::with_limit(true, false, FileSystemLimit::Maximum(maximum));
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = ready(suite.run_check(ContractCheckId::RandomAccessBounds));
+        assert!(
+            run.failures().is_empty(),
+            "async Maximum({maximum}): {:?}",
+            run.failures()
+        );
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::SkippedOptional { .. }
+        ));
+        assert!(!run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
+    }
 }
 
 #[cfg(feature = "async")]

@@ -153,22 +153,64 @@ impl FileSystemContractSuite<'_> {
                     });
                 };
                 if rejected > SEED.len() as u64 {
-                    return Ok(ContractCheckOutcome::SkippedOptional {
-                        reason: "seed is too short to probe the declared random-access range limit".to_owned(),
-                    });
-                }
-                if accepted > 0 {
-                    verify_sample(&mut reader, 0, &SEED[..accepted as usize], range_limit, id)?;
-                }
-                let mut rejected_buffer = vec![0; rejected as usize];
-                let error = reader
-                    .read_at(0, &mut rejected_buffer)
-                    .expect_err("range above finite random-access limit must fail");
-                if error.kind() != FsErrorKind::ResourceLimitExceeded || error.operation() != FsOperation::Read {
-                    return Err(ContractFailure::message_only(
-                        "range above finite random-access limit returned the wrong error",
-                    )
-                    .at(id));
+                    let expected = (0..rejected as usize)
+                        .map(|index| SEED[index % SEED.len()])
+                        .collect::<Vec<_>>();
+                    let relative = self.context.relative_name("random-access-limit");
+                    let path = match self.fixture.seed_file(&relative, &expected).map_err(|error| {
+                        ContractFailure::with_source("random-access limit seed preparation failed", error).at(id)
+                    })? {
+                        FixtureSupport::Supported(path) => path,
+                        FixtureSupport::Unsupported => {
+                            return Ok(ContractCheckOutcome::Unverified {
+                                reason: "fixture could not prepare a seed for the finite random-access limit"
+                                    .to_owned(),
+                            });
+                        }
+                    };
+                    self.context.record_created(path.clone());
+                    let mut range_reader = self
+                        .fixture
+                        .file_system()
+                        .open_random_access_reader(&path, ReadOptions::default())
+                        .map_err(|error| {
+                            ContractFailure::with_source("random-access limit seed open failed", error).at(id)
+                        })?;
+                    if range_reader.len() != rejected {
+                        return Err(ContractFailure::message_only(
+                            "random-access limit seed open-time length did not match the seed",
+                        )
+                        .at(id));
+                    }
+                    if accepted > 0 {
+                        verify_sample(&mut range_reader, 0, &expected[..accepted as usize], range_limit, id)?;
+                    }
+                    let mut rejected_buffer = vec![0; rejected as usize];
+                    let error = range_reader
+                        .read_at(0, &mut rejected_buffer)
+                        .expect_err("range above finite random-access limit must fail");
+                    if error.kind() != FsErrorKind::ResourceLimitExceeded || error.operation() != FsOperation::Read {
+                        return Err(ContractFailure::message_only(
+                            "range above finite random-access limit returned the wrong error",
+                        )
+                        .at(id));
+                    }
+                    verify_sample(&mut range_reader, 0, &expected[..2], range_limit, id)?;
+                } else {
+                    if accepted > 0 {
+                        verify_sample(&mut reader, 0, &SEED[..accepted as usize], range_limit, id)?;
+                    }
+                    let mut rejected_buffer = vec![0; rejected as usize];
+                    let error = reader
+                        .read_at(0, &mut rejected_buffer)
+                        .expect_err("range above finite random-access limit must fail");
+                    if error.kind() != FsErrorKind::ResourceLimitExceeded || error.operation() != FsOperation::Read {
+                        return Err(ContractFailure::message_only(
+                            "range above finite random-access limit returned the wrong error",
+                        )
+                        .at(id));
+                    }
+                    verify_sample(&mut reader, 0, b"ab", range_limit, id)?;
                 }
             }
             verify_sample(&mut reader, 0, b"ab", range_limit, id)?;

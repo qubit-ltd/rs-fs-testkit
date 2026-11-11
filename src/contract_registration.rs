@@ -94,7 +94,7 @@ macro_rules! register_file_system_contract_tests {
 /// run or retry `finish()`. For bounded remote-provider checks that need those
 /// diagnostics, use a manually managed suite and separate run/cleanup budgets
 /// as shown in the [user
-/// guide](../doc/user_guide.md#bounded-asynchronous-runs-and-cleanup).
+/// guide](https://github.com/qubit-ltd/rs-fs-testkit/blob/main/doc/user_guide.md#bounded-asynchronous-runs-and-cleanup).
 #[macro_export]
 macro_rules! register_async_file_system_contract_tests {
     (
