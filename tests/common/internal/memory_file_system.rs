@@ -235,6 +235,7 @@ pub struct MemoryFixture {
     file_system: FileSystem,
     state: Arc<Mutex<State>>,
     path_calls: Arc<AtomicUsize>,
+    teardown_calls: AtomicUsize,
     path_error_call: Option<usize>,
 }
 
@@ -960,6 +961,7 @@ impl MemoryFixture {
             file_system,
             state,
             path_calls,
+            teardown_calls: AtomicUsize::new(0),
             path_error_call: None,
         }
     }
@@ -991,6 +993,13 @@ impl MemoryFixture {
             .lock()
             .expect("memory state lock must succeed")
             .delete_attempts
+    }
+
+    /// Returns how many times the fixture teardown hook has been invoked.
+    #[must_use]
+    #[inline]
+    pub fn teardown_call_count(&self) -> usize {
+        self.teardown_calls.load(Ordering::Relaxed)
     }
 
     /// Returns how many calls reached the provider's rename SPI primitive.
@@ -1482,6 +1491,7 @@ impl FileSystemFixture for MemoryFixture {
     }
 
     fn teardown(&self) -> FixtureResult<()> {
+        self.teardown_calls.fetch_add(1, Ordering::Relaxed);
         let mut state = self.state.lock().expect("memory state lock must succeed");
         // These self-test faults also inject an out-of-band teardown failure
         // so retry tests retain real resources. Never claim successful

@@ -206,6 +206,7 @@ pub struct AsyncMemoryFixture {
     unavailable_copy_stage: Option<AsyncCopyCancellationStage>,
     unavailable_write_stage: Option<AsyncWriteCancellationStage>,
     path_calls: Arc<AtomicUsize>,
+    teardown_calls: AtomicUsize,
     limits: FileSystemLimits,
     unavailable_case: Option<UnavailableScenario>,
     invalid_probe_path: Option<&'static str>,
@@ -1192,6 +1193,7 @@ impl AsyncMemoryFixture {
             unavailable_copy_stage: None,
             unavailable_write_stage: None,
             path_calls,
+            teardown_calls: AtomicUsize::new(0),
             limits,
             unavailable_case,
             invalid_probe_path: None,
@@ -1266,6 +1268,13 @@ impl AsyncMemoryFixture {
             .lock()
             .expect("async memory state lock must succeed")
             .is_empty()
+    }
+
+    /// Returns how many times the fixture teardown hook has been invoked.
+    #[must_use]
+    #[inline]
+    pub fn teardown_call_count(&self) -> usize {
+        self.teardown_calls.load(Ordering::Relaxed)
     }
 
     /// Returns provider reader requests as offset/length pairs for contract
@@ -1829,6 +1838,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
 
     fn teardown(&self) -> FixtureFuture<'_, ()> {
         Box::pin(async move {
+            self.teardown_calls.fetch_add(1, Ordering::Relaxed);
             self.entries
                 .lock()
                 .expect("async memory state lock must succeed")

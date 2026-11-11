@@ -83,6 +83,13 @@ fn test_read_panic_is_attributed_to_active_check_across_sync_entry_points() {
                 ContractCheckOutcome::NotRun { .. }
             ));
         }
+        if entry_point == 2 {
+            assert!(checks.iter().any(|check| {
+                check.id() == ContractCheckId::PropertiesSnapshot
+                    && matches!(check.outcome(), ContractCheckOutcome::Passed)
+            }));
+            assert_eq!(fixture.teardown_call_count(), 1);
+        }
     }
 }
 
@@ -139,6 +146,13 @@ fn test_read_panic_is_attributed_to_active_check_across_async_entry_points() {
                     check.outcome(),
                     ContractCheckOutcome::NotRun { .. }
                 ));
+            }
+            if entry_point == 2 {
+                assert!(checks.iter().any(|check| {
+                    check.id() == ContractCheckId::PropertiesSnapshot
+                        && matches!(check.outcome(), ContractCheckOutcome::Passed)
+                }));
+                assert_eq!(fixture.teardown_call_count(), 1);
             }
         });
     }
