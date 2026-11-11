@@ -134,6 +134,14 @@ impl AsyncFileSystemContractSuite<'_> {
                 )
                 .at(id));
             }
+            let mut empty = [];
+            let empty_before = reader
+                .read_at(0, &mut empty)
+                .await
+                .map_err(|error| ContractFailure::with_source("empty random-access range read failed", error).at(id))?;
+            if empty_before != 0 {
+                return Err(ContractFailure::message_only("empty random-access range read returned bytes").at(id));
+            }
             if accepted > 0 {
                 verify_sample(&mut reader, 0, &expected[..accepted as usize], limit, id).await?;
             }
@@ -148,7 +156,19 @@ impl AsyncFileSystemContractSuite<'_> {
                 )
                 .at(id));
             }
-            verify_sample(&mut reader, 0, &expected[..1], limit, id).await?;
+            let empty_after = reader
+                .read_at(0, &mut empty)
+                .await
+                .map_err(|error| {
+                    ContractFailure::with_source("empty random-access read after range rejection failed", error)
+                        .at(id)
+                })?;
+            if empty_after != 0 {
+                return Err(ContractFailure::message_only(
+                    "empty random-access read after range rejection returned bytes",
+                )
+                .at(id));
+            }
             return Ok(ContractCheckOutcome::Passed);
         }
         let range_limit = self.context.properties().limits().max_read_range_bytes();
@@ -186,6 +206,11 @@ impl AsyncFileSystemContractSuite<'_> {
                 verify_sample(&mut reader, 4, b"ef", range_limit, id).await?;
             }
             ContractCheckId::RandomAccessBounds => {
+                if matches!(range_limit, FileSystemLimit::Maximum(0)) {
+                    return Ok(ContractCheckOutcome::SkippedOptional {
+                        reason: "zero random-access range limit prevents non-empty boundary probes".to_owned(),
+                    });
+                }
                 let mut empty = [];
                 if reader
                     .read_at(u64::MAX, &mut empty)

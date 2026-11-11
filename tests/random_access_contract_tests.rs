@@ -892,6 +892,16 @@ fn test_random_access_reads_bounds_and_object_identity() {
         assert!(matches!(range.report().checks()[0].outcome(), ContractCheckOutcome::SkippedOptional { .. }));
     }
 
+    let zero_limit = RandomFixture::new(true, false, FileSystemLimit::Maximum(0));
+    assert!(matches!(
+        outcome(&zero_limit, ContractCheckId::RandomAccessBounds),
+        ContractCheckOutcome::SkippedOptional { .. }
+    ));
+    let mut zero_suite = FileSystemContractSuite::new(&zero_limit);
+    let zero_range = zero_suite.run_check(ContractCheckId::RandomAccessRangeLimit);
+    assert!(zero_range.failures().is_empty(), "{:?}", zero_range.failures());
+    assert_eq!(zero_range.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
+
     for maximum in [1, 2, 5, 6, 10, 63] {
         let fixture = RandomFixture::new(true, false, FileSystemLimit::Maximum(maximum));
         assert_eq!(outcome(&fixture, ContractCheckId::RandomAccessBounds), ContractCheckOutcome::Passed);
@@ -916,6 +926,19 @@ fn test_random_access_reads_bounds_and_object_identity() {
 #[cfg(feature = "async")]
 #[test]
 fn test_async_random_access_bounds_accept_finite_ranges() {
+    let zero_limit = AsyncRandomFixture::with_limit(true, false, FileSystemLimit::Maximum(0));
+    let mut zero_bounds_suite = AsyncFileSystemContractSuite::new(&zero_limit);
+    let zero_bounds = ready(zero_bounds_suite.run_check(ContractCheckId::RandomAccessBounds));
+    assert!(zero_bounds.failures().is_empty(), "{:?}", zero_bounds.failures());
+    assert!(matches!(
+        zero_bounds.report().checks()[0].outcome(),
+        ContractCheckOutcome::SkippedOptional { .. }
+    ));
+    let mut zero_range_suite = AsyncFileSystemContractSuite::new(&zero_limit);
+    let zero_range = ready(zero_range_suite.run_check(ContractCheckId::RandomAccessRangeLimit));
+    assert!(zero_range.failures().is_empty(), "{:?}", zero_range.failures());
+    assert_eq!(zero_range.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
+
     for maximum in [1, 2, 5, 6, 10, 63] {
         let fixture = AsyncRandomFixture::with_limit(true, false, FileSystemLimit::Maximum(maximum));
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
