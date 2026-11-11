@@ -193,7 +193,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 match self.fixture.exists_out_of_band(path).await.map_err(|error| {
                     ContractFailure::with_source("rename rejection final observation failed", error).at(id)
                 })? {
-                    FixtureSupport::Supported(actual) if actual == !expected_absent => {}
+                    FixtureSupport::Supported(actual) if actual != expected_absent => {}
                     FixtureSupport::Supported(_) => {
                         return Err(
                             ContractFailure::message_only("rename rejection changed resource existence").at(id),

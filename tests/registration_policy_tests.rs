@@ -89,23 +89,17 @@ register_async_file_system_contract_tests! {
 fn incomplete_async_fixture() -> common::AsyncMemoryFixture {
     match std::env::var_os("FS_TESTKIT_REGISTRATION_ASYNC_MODE").as_deref() {
         Some(mode) if mode == "catch-assertion" => {
-            common::AsyncMemoryFixture::with_conditional_case_unavailable(
-                common::UnavailableScenario::ReadIfMatch,
-            )
+            common::AsyncMemoryFixture::with_conditional_case_unavailable(common::UnavailableScenario::ReadIfMatch)
         }
         Some(mode) if mode == "pending-drop" => {
-            common::AsyncMemoryFixture::with_cancellation_limits(
-                qubit_fs::metadata::FileSystemLimits::unknown(),
-            )
+            common::AsyncMemoryFixture::with_cancellation_limits(qubit_fs::metadata::FileSystemLimits::unknown())
         }
         _ => common::AsyncMemoryFixture::new(),
     }
 }
 
 #[cfg(feature = "async")]
-fn required_async_evidence(
-    phase: qubit_fs_testkit::FileSystemContract,
-) -> Vec<qubit_fs_testkit::ContractCheckId> {
+fn required_async_evidence(phase: qubit_fs_testkit::FileSystemContract) -> Vec<qubit_fs_testkit::ContractCheckId> {
     if phase == qubit_fs_testkit::FileSystemContract::Read
         && std::env::var_os("FS_TESTKIT_REGISTRATION_ASYNC_MODE").as_deref()
             == Some(std::ffi::OsStr::new("catch-assertion"))
@@ -122,11 +116,9 @@ fn async_registration_runner(future: impl std::future::Future<Output = ()>) {
         Some(mode) if mode == "drop-before-poll" => drop(future),
         Some(mode) if mode == "pending-drop" => {
             use std::future::Future;
-            use std::task::{Context, Poll, Wake, Waker};
-            struct NoopWake;
-            impl Wake for NoopWake {
-                fn wake(self: std::sync::Arc<Self>) {}
-            }
+            use std::task::Context;
+            use std::task::Poll;
+            use std::task::Waker;
 
             let mut contract = Box::pin(future);
             let mut first_poll = true;
@@ -140,8 +132,7 @@ fn async_registration_runner(future: impl std::future::Future<Output = ()>) {
                 }
                 Poll::<()>::Pending
             }));
-            let waker = Waker::from(std::sync::Arc::new(NoopWake));
-            let mut context = Context::from_waker(&waker);
+            let mut context = Context::from_waker(Waker::noop());
             assert!(future.as_mut().poll(&mut context).is_pending());
             drop(future);
         }

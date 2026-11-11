@@ -93,10 +93,10 @@ macro_rules! register_file_system_contract_tests {
 /// early, including after catching an assertion panic, fails the generated
 /// test with a `[fs-testkit:runner/incomplete]` diagnostic. This completion
 /// check does not impose a deadline or recover cleanup after the future is
-/// dropped. A timeout around that future can end a test, but it drops the wrapper and
-/// gives the caller no retained suite with which to inspect an interrupted
-/// run or retry `finish()`. For bounded remote-provider checks that need
-/// retained diagnostics and cleanup control, use a manually managed suite
+/// dropped. A timeout around that future can end a test, but it drops the
+/// wrapper and gives the caller no retained suite with which to inspect an
+/// interrupted run or retry `finish()`. For bounded remote-provider checks that
+/// need retained diagnostics and cleanup control, use a manually managed suite
 /// with separate run and cleanup budgets as shown in the [user
 /// guide](https://github.com/qubit-ltd/rs-fs-testkit/blob/main/doc/user_guide.md#bounded-asynchronous-runs-and-cleanup).
 #[macro_export]
