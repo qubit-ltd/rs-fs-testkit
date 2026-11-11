@@ -2250,19 +2250,13 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         };
         for entry in &mut entries {
             let wrong_kind = match self.fault {
-                AsyncMemoryFault::ListFileAsDirectory
-                    if entry.path.as_str().ends_with("/first") =>
-                {
+                AsyncMemoryFault::ListFileAsDirectory if entry.path.as_str().ends_with("/first") => {
                     Some(FileKind::Directory)
                 }
-                AsyncMemoryFault::ListDirectoryAsFile
-                    if entry.path.as_str().ends_with("/nested") =>
-                {
+                AsyncMemoryFault::ListDirectoryAsFile if entry.path.as_str().ends_with("/nested") => {
                     Some(FileKind::File)
                 }
-                AsyncMemoryFault::ListFileAsObject if entry.path.as_str().ends_with("/first") => {
-                    Some(FileKind::Object)
-                }
+                AsyncMemoryFault::ListFileAsObject if entry.path.as_str().ends_with("/first") => Some(FileKind::Object),
                 _ => None,
             };
             if let Some(kind) = wrong_kind {

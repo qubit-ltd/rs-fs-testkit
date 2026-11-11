@@ -1805,19 +1805,11 @@ impl FileSystemSpi for MemorySpi {
         };
         for entry in &mut entries {
             let wrong_kind = match state.fault {
-                MemoryFault::ListFileAsDirectory
-                    if entry.path.as_str().ends_with("/first") =>
-                {
+                MemoryFault::ListFileAsDirectory if entry.path.as_str().ends_with("/first") => {
                     Some(FileKind::Directory)
                 }
-                MemoryFault::ListDirectoryAsFile
-                    if entry.path.as_str().ends_with("/nested") =>
-                {
-                    Some(FileKind::File)
-                }
-                MemoryFault::ListFileAsObject if entry.path.as_str().ends_with("/first") => {
-                    Some(FileKind::Object)
-                }
+                MemoryFault::ListDirectoryAsFile if entry.path.as_str().ends_with("/nested") => Some(FileKind::File),
+                MemoryFault::ListFileAsObject if entry.path.as_str().ends_with("/first") => Some(FileKind::Object),
                 _ => None,
             };
             if let Some(kind) = wrong_kind {

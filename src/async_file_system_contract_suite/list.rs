@@ -237,10 +237,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 .find(|(path, _)| *path == entry.path)
                 .map(|(_, expected_directory)| *expected_directory);
             let Some(expected_directory) = expected_directory else {
-                return Err(ContractFailure::message_only(
-                    "listing returned duplicate or unexpected entries",
-                )
-                .at(id));
+                return Err(ContractFailure::message_only("listing returned duplicate or unexpected entries").at(id));
             };
             let correct_kind = if expected_directory {
                 matches!(entry.kind, FileKind::Directory)

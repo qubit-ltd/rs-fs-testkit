@@ -20,24 +20,20 @@ fn assert_list_kind_fault(fault: MemoryFault, id: ContractCheckId) {
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(id);
     assert!(!run.requirements_satisfied(), "{id} must detect {fault:?}");
+    assert!(run.failures().iter().any(|failure| failure.check() == Some(id)));
     assert!(
-        run.failures()
+        run.report()
+            .checks()
             .iter()
-            .any(|failure| failure.check() == Some(id))
+            .any(|check| { check.id() == id && matches!(check.outcome(), ContractCheckOutcome::Failed { .. }) })
     );
-    assert!(run.report().checks().iter().any(|check| {
-        check.id() == id && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })
-    }));
     assert!(fixture.is_empty(), "failed {id} must clean seeded entries");
 }
 
 #[test]
 fn test_list_basic_and_prefix_reject_wrong_independently_seeded_kinds() {
     assert_list_kind_fault(MemoryFault::ListFileAsDirectory, ContractCheckId::ListBasic);
-    assert_list_kind_fault(
-        MemoryFault::ListDirectoryAsFile,
-        ContractCheckId::ListPrefix,
-    );
+    assert_list_kind_fault(MemoryFault::ListDirectoryAsFile, ContractCheckId::ListPrefix);
 }
 
 #[test]
@@ -54,9 +50,7 @@ fn test_list_basic_and_prefix_accept_correct_hierarchical_kinds() {
 fn test_list_accepts_flat_object_kind_for_seeded_file() {
     let fixture = MemoryFixture::with_fault(MemoryFault::ListFileAsObject);
     let mut suite = FileSystemContractSuite::new(&fixture);
-    suite
-        .run_check(ContractCheckId::ListBasic)
-        .assert_satisfied();
+    suite.run_check(ContractCheckId::ListBasic).assert_satisfied();
     assert!(fixture.is_empty());
 }
 
@@ -70,27 +64,19 @@ fn test_async_list_basic_and_prefix_reject_wrong_independently_seeded_kinds() {
 
     run_controlled(async {
         for (fault, id) in [
-            (
-                AsyncMemoryFault::ListFileAsDirectory,
-                ContractCheckId::ListBasic,
-            ),
-            (
-                AsyncMemoryFault::ListDirectoryAsFile,
-                ContractCheckId::ListPrefix,
-            ),
+            (AsyncMemoryFault::ListFileAsDirectory, ContractCheckId::ListBasic),
+            (AsyncMemoryFault::ListDirectoryAsFile, ContractCheckId::ListPrefix),
         ] {
             let fixture = AsyncMemoryFixture::with_fault(fault);
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id).await;
             assert!(!run.requirements_satisfied(), "{id} must detect {fault:?}");
+            assert!(run.failures().iter().any(|failure| failure.check() == Some(id)));
             assert!(
-                run.failures()
-                    .iter()
-                    .any(|failure| failure.check() == Some(id))
+                run.report().checks().iter().any(|check| {
+                    check.id() == id && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })
+                })
             );
-            assert!(run.report().checks().iter().any(|check| {
-                check.id() == id && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })
-            }));
             assert!(fixture.is_empty(), "failed {id} must clean seeded entries");
         }
     });
@@ -124,10 +110,7 @@ fn test_async_list_accepts_flat_object_kind_for_seeded_file() {
     run_controlled(async {
         let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::ListFileAsObject);
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        suite
-            .run_check(ContractCheckId::ListBasic)
-            .await
-            .assert_satisfied();
+        suite.run_check(ContractCheckId::ListBasic).await.assert_satisfied();
         assert!(fixture.is_empty());
     });
 }
