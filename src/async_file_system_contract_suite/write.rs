@@ -53,7 +53,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// `Ok(())` when the check passes or is not applicable.
     pub(super) async fn check_write_item(&mut self, id: ContractCheckId) -> Result<(), crate::ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let spec = crate::internal::check_catalog::specification(id);
         if spec.contract != FileSystemContract::Write {
             return Err(crate::ContractFailure::message_only("selected entry is not a write check").at(id));

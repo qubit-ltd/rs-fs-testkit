@@ -60,7 +60,7 @@ impl FileSystemContractSuite<'_> {
     /// Returns a failure when `id` is not a rename check, fixture operations
     /// fail, or the provider violates the selected rename requirement.
     pub(super) fn check_rename_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let (capability, mut options) = match id {
             ContractCheckId::RenameBasic | ContractCheckId::RenameConflict => {
                 (FileSystemCapability::Rename, RenameOptions::default())

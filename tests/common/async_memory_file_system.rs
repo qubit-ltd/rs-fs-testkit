@@ -452,6 +452,8 @@ pub enum AsyncMemoryFault {
     ReadWrongBytes,
     /// Fails when opening a provider-owned reader.
     ReadFails,
+    /// Panics when opening a provider-owned reader.
+    ReadPanics,
     /// Accepts writes but does not publish their bytes.
     WriteDropsBytes,
     /// Fails when opening a provider-owned writer.
@@ -2268,6 +2270,9 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
             .get(path.as_str())
             .cloned();
         let fault = self.fault;
+        if fault == AsyncMemoryFault::ReadPanics {
+            return Box::pin(async { panic!("injected async reader panic") });
+        }
         let versions = Arc::clone(&self.versions);
         let options = request.options().options().clone();
         Box::pin(async move {

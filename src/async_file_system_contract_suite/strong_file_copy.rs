@@ -45,7 +45,7 @@ impl AsyncFileSystemContractSuite<'_> {
     /// required capability is accepted despite being unavailable, or the
     /// provider violates the selected guarantee or its observable contract.
     pub(super) async fn check_strong_file_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let scenario =
             crate::internal::check_catalog::required_copy_scenario(id, "strong copy scenario absent from catalog")?;
         let (capability, options) = match scenario {

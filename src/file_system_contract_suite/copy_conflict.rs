@@ -37,7 +37,7 @@ impl FileSystemContractSuite<'_> {
     /// evidence verification fails.
     pub(super) fn check_copy_conflict(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::CopyFallbackOverwriteRejected;
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         if [
             FileSystemCapability::Copy,
             FileSystemCapability::Read,

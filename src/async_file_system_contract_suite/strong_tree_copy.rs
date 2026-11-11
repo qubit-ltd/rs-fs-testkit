@@ -48,7 +48,7 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Returns a contract failure when preparation, copy execution, or an
     /// observed guarantee does not match the selected contract.
     pub(super) async fn check_strong_tree_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let spec = crate::internal::check_catalog::specification(id);
         let scenario = spec.copy_scenario.expect("tree-copy check has no catalog scenario");
         let (capability, options) = match scenario {

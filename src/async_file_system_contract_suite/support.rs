@@ -161,7 +161,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// filesystem does not report the generated path as missing.
     pub(super) async fn check_error_context(&mut self) -> Result<(), crate::ContractFailure> {
         let id = ContractCheckId::ErrorContext;
-        self.context.begin("error_context");
+        self.context.begin_check(crate::ContractCheckId::ErrorContext);
         let relative = self.context.relative_name("missing");
         let path = self.fixture.path(&relative).map_err(|error| {
             crate::ContractFailure::with_source("error/context: path preparation failed", error).at(id)

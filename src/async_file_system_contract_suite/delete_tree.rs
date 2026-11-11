@@ -37,7 +37,7 @@ impl AsyncFileSystemContractSuite<'_> {
     /// capability is incorrect.
     pub(super) async fn check_delete_tree(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::DeleteTree;
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let capability = FileSystemCapability::RecursiveDelete;
         let relative = self.context.relative_name("recursive-delete-root");
         let options = DeleteOptions::default().with_recursive(true);

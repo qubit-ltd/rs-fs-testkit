@@ -43,7 +43,7 @@ impl FileSystemContractSuite<'_> {
     /// Returns a failure when setup, copy execution, recovery, or independent
     /// tree-content verification fails.
     pub(super) fn check_strong_tree_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let spec = crate::internal::check_catalog::specification(id);
         let scenario = spec.copy_scenario.expect("tree-copy check has no catalog scenario");
         let (capability, options) = match scenario {

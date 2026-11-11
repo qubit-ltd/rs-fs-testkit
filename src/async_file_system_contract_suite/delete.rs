@@ -68,7 +68,7 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Returns a preparation, filesystem, or verification failure with `id`
     /// attached to its diagnostic context.
     pub(super) async fn check_delete_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         if id == ContractCheckId::DeleteTree {
             return self.check_delete_tree().await;
         }

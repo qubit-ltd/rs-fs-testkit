@@ -50,7 +50,7 @@ impl<'a> FileSystemContractSuite<'a> {
     /// Returns a failure if `id` is not a temporary-resource entry or its
     /// scenario fails.
     pub(super) fn check_temp_item(&mut self, id: ContractCheckId) -> Result<(), crate::ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let file = self.capable(FileSystemCapability::TempFile);
         let directory = self.capable(FileSystemCapability::TempDirectory);
         let outcome = match id {

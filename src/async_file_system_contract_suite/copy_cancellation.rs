@@ -53,7 +53,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 return Err(ContractFailure::message_only("selected check is not copy cancellation").at(id));
             }
         };
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         if !self.capable(FileSystemCapability::Copy) {
             self.context.record_check(
                 id,

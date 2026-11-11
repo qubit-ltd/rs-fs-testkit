@@ -41,7 +41,7 @@ impl FileSystemContractSuite<'_> {
     pub(super) fn check_server_side_copy(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::CopyServerSide;
         let capability = FileSystemCapability::ServerSideCopy;
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         if !self.capable(FileSystemCapability::Copy) {
             self.context.record_check(
                 id,

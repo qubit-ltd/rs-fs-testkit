@@ -52,7 +52,7 @@ impl FileSystemContractSuite<'_> {
     /// Returns a [`ContractFailure`] if fixture preparation or evidence
     /// verification fails, or if `id` does not identify a metadata check.
     pub(super) fn check_stat_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let spec = specification(id);
         let outcome = match id {
             ContractCheckId::StatBasic => {

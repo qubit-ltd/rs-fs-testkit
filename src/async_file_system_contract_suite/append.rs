@@ -31,7 +31,7 @@ impl AsyncFileSystemContractSuite<'_> {
     /// verifying its result fails.
     pub(super) async fn check_append(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::AppendBasic;
-        self.context.begin("append");
+        self.context.begin_check(id);
         let outcome = self.execute_append().await.map_err(|failure| failure.at(id))?;
         self.context
             .record_check(id, Some(FileSystemCapability::Append), outcome);

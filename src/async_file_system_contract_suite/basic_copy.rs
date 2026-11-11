@@ -41,7 +41,7 @@ impl AsyncFileSystemContractSuite<'_> {
     /// capability rejection, operation state, statistics, or observed contents
     /// do not satisfy the selected contract.
     pub(super) async fn check_basic_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let source_relative = self.context.relative_name("copy-source");
         let target_relative = self.context.relative_name("copy-target");
         let target = self

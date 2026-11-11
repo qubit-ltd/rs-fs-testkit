@@ -46,6 +46,124 @@ fn test_failed_run_returns_evidence_without_unwinding() {
 }
 
 #[test]
+fn test_read_panic_is_attributed_to_active_check_across_sync_entry_points() {
+    use testkit::ContractCheckId;
+    use testkit::ContractCheckOutcome;
+
+    for entry_point in 0..3 {
+        let fixture = MemoryFixture::with_fault(MemoryFault::ReadPanics);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = match entry_point {
+            0 => suite.run_check(ContractCheckId::ReadBasic),
+            1 => suite.run_contract(FileSystemContract::Read),
+            _ => suite.run_all(),
+        };
+        let failure = run.failures().first().expect("reader panic is retained");
+        assert_eq!(failure.check(), Some(ContractCheckId::ReadBasic));
+        assert_eq!(
+            failure
+                .take_panic_payload()
+                .and_then(|payload| payload.downcast::<&str>().ok())
+                .map(|value| *value),
+            Some("injected reader panic")
+        );
+        let checks = run.report().checks();
+        assert!(
+            checks
+                .iter()
+                .any(|check| check.id() == ContractCheckId::ReadBasic
+                    && matches!(check.outcome(), ContractCheckOutcome::Failed { .. }))
+        );
+        if let Some(check) = checks
+            .iter()
+            .find(|check| check.id() == ContractCheckId::ReadChecksum)
+        {
+            assert!(matches!(
+                check.outcome(),
+                ContractCheckOutcome::NotRun { .. }
+            ));
+        }
+    }
+}
+
+#[test]
+fn test_cleanup_panic_has_no_stale_check_attribution() {
+    let fixture = MemoryFixture::with_fault(MemoryFault::CleanupStatPanic);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(testkit::ContractCheckId::ReadBasic);
+    assert!(run.failures().iter().any(|failure| {
+        failure.message().starts_with("cleanup failed:") && failure.check().is_none()
+    }));
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_read_panic_is_attributed_to_active_check_across_async_entry_points() {
+    use self::common::async_memory_file_system::AsyncMemoryFault;
+    use self::common::async_memory_file_system::AsyncMemoryFixture;
+    use self::common::async_memory_file_system::run_controlled;
+    use testkit::AsyncFileSystemContractSuite;
+    use testkit::ContractCheckId;
+    use testkit::ContractCheckOutcome;
+
+    for entry_point in 0..3 {
+        let fixture = AsyncMemoryFixture::with_fault(AsyncMemoryFault::ReadPanics);
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = match entry_point {
+                0 => suite.run_check(ContractCheckId::ReadBasic).await,
+                1 => suite.run_contract(FileSystemContract::Read).await,
+                _ => suite.run_all().await,
+            };
+            let failure = run.failures().first().expect("reader panic is retained");
+            assert_eq!(failure.check(), Some(ContractCheckId::ReadBasic));
+            assert_eq!(
+                failure
+                    .take_panic_payload()
+                    .and_then(|payload| payload.downcast::<&str>().ok())
+                    .map(|value| *value),
+                Some("injected async reader panic")
+            );
+            let checks = run.report().checks();
+            assert!(
+                checks
+                    .iter()
+                    .any(|check| check.id() == ContractCheckId::ReadBasic
+                        && matches!(check.outcome(), ContractCheckOutcome::Failed { .. }))
+            );
+            if let Some(check) = checks
+                .iter()
+                .find(|check| check.id() == ContractCheckId::ReadChecksum)
+            {
+                assert!(matches!(
+                    check.outcome(),
+                    ContractCheckOutcome::NotRun { .. }
+                ));
+            }
+        });
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_cleanup_panic_has_no_stale_check_attribution() {
+    use self::common::async_memory_file_system::AsyncMemoryFixture;
+    use self::common::async_memory_file_system::run_controlled;
+    use testkit::AsyncFileSystemContractSuite;
+    use testkit::ContractCheckId;
+
+    let fixture = AsyncMemoryFixture::new();
+    fixture.set_cleanup_stat_panics(true);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::ReadBasic).await;
+        assert!(run.failures().iter().any(|failure| {
+            failure.message().starts_with("cleanup failed:") && failure.check().is_none()
+        }));
+    });
+}
+
+#[test]
 fn test_completed_session_cannot_be_reused() {
     let fixture = MemoryFixture::new();
     let mut suite = FileSystemContractSuite::new(&fixture);

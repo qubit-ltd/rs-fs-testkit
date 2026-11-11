@@ -43,6 +43,8 @@ pub(crate) struct ContractContext {
     pub(crate) run: crate::ContractRun,
     /// Monotonic creation order assigned to tracked resources.
     resource_index: u64,
+    /// Check whose provider operation is currently executing, if any.
+    active_check: Option<ContractCheckId>,
 }
 
 impl ContractContext {
@@ -66,6 +68,7 @@ impl ContractContext {
             current_contract: "initialization",
             run: crate::ContractRun::new(),
             resource_index: 0,
+            active_check: None,
         }
     }
 
@@ -124,6 +127,21 @@ impl ContractContext {
     pub(crate) fn begin(&mut self, contract: &'static str) {
         self.current_contract = contract;
         self.name_counter = self.name_counter.saturating_add(1);
+        self.active_check = None;
+    }
+
+    /// Marks the check whose provider operations are currently executing.
+    #[inline]
+    pub(crate) fn begin_check(&mut self, id: ContractCheckId) {
+        self.begin(id.as_str());
+        self.active_check = Some(id);
+    }
+
+    /// Returns the check currently responsible for an interrupted operation.
+    #[must_use]
+    #[inline]
+    pub(crate) const fn active_check(&self) -> Option<ContractCheckId> {
+        self.active_check
     }
 
     /// Records a path with its owning check, retaining only the first owner.
@@ -169,6 +187,9 @@ impl ContractContext {
         outcome: ContractCheckOutcome,
     ) {
         self.run.report.record(id, capability, outcome);
+        if self.active_check == Some(id) {
+            self.active_check = None;
+        }
     }
 
     /// Registers every check expected for a phase before it executes.

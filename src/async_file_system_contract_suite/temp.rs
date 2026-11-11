@@ -56,7 +56,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     ///
     /// - `id`: Temporary-resource check identity selecting the lifecycle case.
     pub(super) async fn check_temp_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let file = self.capable(FileSystemCapability::TempFile);
         let directory = self.capable(FileSystemCapability::TempDirectory);
         let mut unverified_reason = None;

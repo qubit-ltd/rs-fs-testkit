@@ -202,7 +202,7 @@ impl<'a> FileSystemContractSuite<'a> {
         if let Some(id) = selected {
             let spec = crate::internal::check_catalog::specification(id);
             self.context.run.report.register(id, spec.capability);
-            self.context.begin(id.as_str());
+            self.context.begin_check(id);
         } else {
             for contract in contracts {
                 self.context.prepare_phase(*contract, false);
@@ -221,7 +221,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 }
                 Err(payload) => {
                     let mut failure = crate::ContractFailure::panicked("contract execution panicked", payload);
-                    if let Some(id) = selected {
+                    if let Some(id) = selected.or(self.context.active_check()) {
                         failure = failure.at(id);
                     }
                     self.context.fail(failure);
@@ -229,6 +229,7 @@ impl<'a> FileSystemContractSuite<'a> {
                 }
             }
         }
+        self.context.begin("cleanup");
         if let Err(payload) = catch_unwind(AssertUnwindSafe(|| self.finish())) {
             self.context
                 .run

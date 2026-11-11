@@ -53,7 +53,7 @@ impl FileSystemContractSuite<'_> {
                 return Err(ContractFailure::message_only("selected check is not directory creation").at(id));
             }
         };
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let relative = self.context.relative_name("created-directory");
         let parent = self
             .fixture

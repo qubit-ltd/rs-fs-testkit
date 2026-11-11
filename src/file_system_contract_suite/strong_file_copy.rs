@@ -53,7 +53,7 @@ impl FileSystemContractSuite<'_> {
     /// Returns a failure when setup, copy execution, recovery, or independent
     /// byte verification fails.
     pub(super) fn check_strong_file_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let scenario =
             crate::internal::check_catalog::required_copy_scenario(id, "strong copy scenario absent from catalog")?;
         let (capability, options) = match scenario {

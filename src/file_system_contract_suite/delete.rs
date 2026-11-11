@@ -57,7 +57,7 @@ impl FileSystemContractSuite<'_> {
     /// Returns a [`ContractFailure`] if scenario execution or fixture
     /// observation fails.
     pub(super) fn check_delete_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         if id == ContractCheckId::DeleteTree {
             return self.check_delete_tree();
         }

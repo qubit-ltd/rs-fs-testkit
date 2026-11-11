@@ -71,7 +71,7 @@ impl FileSystemContractSuite<'_> {
         ) {
             return Err(ContractFailure::message_only("selected entry is not listing").at(id));
         }
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let hierarchical = self.context.properties().info().path_semantics() == PathSemantics::Hierarchical;
         let relative = self.context.relative_name("list-root");
         let root = self

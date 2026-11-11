@@ -44,7 +44,7 @@ impl AsyncFileSystemContractSuite<'_> {
     /// contradict the earlier rejection check.
     pub(super) async fn check_copy_conflict(&mut self) -> Result<(), ContractFailure> {
         let id = ContractCheckId::CopyFallbackOverwriteRejected;
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         if [
             FileSystemCapability::Copy,
             FileSystemCapability::Read,

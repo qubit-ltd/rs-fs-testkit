@@ -39,7 +39,7 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Returns a failure when fixture evidence or the listing violates the
     /// check.
     pub(super) async fn check_flat_scope_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let capability = FileSystemCapability::List;
         let hierarchical = self.context.properties().info().path_semantics() == PathSemantics::Hierarchical;
         let relative = self.context.relative_name("flat-scope");

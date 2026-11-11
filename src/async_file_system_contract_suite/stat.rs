@@ -51,7 +51,7 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Returns a failure raised while preparing or verifying the check, with
     /// its identity attached to the failure.
     pub(super) async fn check_stat_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let spec = crate::internal::check_catalog::specification(id);
         let outcome =
             match id {

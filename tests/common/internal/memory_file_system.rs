@@ -275,6 +275,8 @@ pub enum MemoryFault {
     ReadWrongBytes,
     /// Fails when opening a provider-owned reader.
     ReadFails,
+    /// Panics when opening a provider-owned reader.
+    ReadPanics,
     /// Fails only when a zero-length range is read.
     ReadFailsOnEmptyRange,
     /// Accepts writes without publishing their content.
@@ -1812,6 +1814,9 @@ impl FileSystemSpi for MemorySpi {
                 FsOperation::OpenReader,
                 "injected reader failure",
             ));
+        }
+        if state.fault == MemoryFault::ReadPanics {
+            panic!("injected reader panic");
         }
         let Some(Entry::File(bytes)) = state.entries.get(request.path().as_str()) else {
             return Err(FsError::new(

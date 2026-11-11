@@ -224,7 +224,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         if let Some(id) = selected {
             let spec = crate::internal::check_catalog::specification(id);
             self.context.run.report.register(id, spec.capability);
-            self.context.begin(id.as_str());
+            self.context.begin_check(id);
         } else {
             for contract in contracts {
                 self.context.prepare_phase(*contract, true);
@@ -246,7 +246,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 }
                 Err(payload) => {
                     let mut failure = crate::ContractFailure::panicked("contract execution panicked", payload);
-                    if let Some(id) = selected {
+                    if let Some(id) = selected.or(self.context.active_check()) {
                         failure = failure.at(id);
                     }
                     self.context.fail(failure);
@@ -254,6 +254,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
                 }
             }
         }
+        self.context.begin("cleanup");
         if let Err(payload) = catch_unwind_future(self.finish()).await {
             self.context
                 .run

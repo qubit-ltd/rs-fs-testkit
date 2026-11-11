@@ -63,7 +63,7 @@ impl AsyncFileSystemContractSuite<'_> {
     ///
     /// - `id`: Rename check identity selecting the required behavior.
     pub(super) async fn check_rename_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let (capability, mut options) = match id {
             ContractCheckId::RenameBasic | ContractCheckId::RenameConflict => {
                 (FileSystemCapability::Rename, RenameOptions::default())

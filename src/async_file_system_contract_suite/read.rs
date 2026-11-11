@@ -63,7 +63,7 @@ impl AsyncFileSystemContractSuite<'_> {
     /// Returns a failure raised while preparing or verifying the selected
     /// check.
     pub(super) async fn check_read_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         if matches!(
             id,
             ContractCheckId::RandomAccessBasic

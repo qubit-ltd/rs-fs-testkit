@@ -51,7 +51,7 @@ impl FileSystemContractSuite<'_> {
                 return Err(ContractFailure::message_only("selected entry is not a representation check").at(id));
             }
         };
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         if !self.capable(capability) {
             self.context.record_check(
                 id,

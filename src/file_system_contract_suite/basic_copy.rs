@@ -44,7 +44,7 @@ impl FileSystemContractSuite<'_> {
     /// available, or describes the contract mismatch that prevented reliable
     /// evidence from being recorded. The failure is attributed to `id`.
     pub(super) fn check_basic_copy(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let source_relative = self.context.relative_name("copy-source");
         let target_relative = self.context.relative_name("copy-target");
         let target = self

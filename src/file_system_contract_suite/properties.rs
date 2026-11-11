@@ -45,7 +45,7 @@ impl FileSystemContractSuite<'_> {
     ///
     /// - `id`: Registered property check to evaluate against the snapshot.
     pub(super) fn check_properties_item(&mut self, id: ContractCheckId) -> Result<(), ContractFailure> {
-        self.context.begin(id.as_str());
+        self.context.begin_check(id);
         let expected = self.context.properties();
         let actual = self.fixture.file_system().properties();
         let outcome = match id {
