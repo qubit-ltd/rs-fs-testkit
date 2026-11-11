@@ -270,10 +270,14 @@ setup 返回错误仍然是失败。
 
 随机读取证据按验证目标拆分。`RandomAccessBounds`
 （`read/random-access-bounds`）检查空缓冲、EOF 读取、按 reader 打开时长度裁剪、溢出拒绝，
-以及同一 reader 在该错误后能否继续读取。它不检查 provider 声明的最大范围长度。
+以及同一 reader 在该错误后能否继续读取，前提是声明上限允许执行非空边界探针。
+合法的 `Maximum(0)` 无法执行这些非空边界探针，因此 `RandomAccessBounds` 会带原因记为
+`SkippedOptional`。它不检查 provider 声明的最大范围长度。
 `RandomAccessRangeLimit`（`read/random-access-range-limit`）会独立准备种子和 reader；
 对有限上限 `Maximum(n)`，它要求长度为 `n` 的读取成功、`n + 1` 的读取以 `Read` 操作返回
-`ResourceLimitExceeded`，并确认错误后 reader 仍可用。该探针最多准备或请求 64 字节。
+`ResourceLimitExceeded`，并确认错误后 reader 仍可用。当 `n` 为零时，允许的请求和拒绝后的复查都是
+空读取；单字节请求仍必须被拒绝。因此零是合法上限，但该检查不声称零上限下可以成功读取非空内容。
+该探针最多准备或请求 64 字节。
 上限达到 64 字节时，套件会因不执行更大的探针而记录带原因的 `SkippedOptional`；
 上限为 `Unknown`、`Unbounded` 或 `NotApplicable` 时，则因没有有限值可测而记为
 `NotApplicable`。fixture 无法预置独立样本时是 `Unverified`；准备或打开出错、内容或错误不符则失败。

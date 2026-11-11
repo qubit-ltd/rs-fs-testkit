@@ -305,10 +305,13 @@ Limit contract 至少覆盖：
 | SPI 分派／预检、编译期借用性质、drop/runtime 行为，以及 provider 专属平台或服务保证 | 由拥有该行为的 core 或 provider 测试负责 |
 
 随机读取的正向样本请求遵守声明的 `max_read_range_bytes`，并累积短读直到取得完整期望样本。
-`RandomAccessBounds` 检查空缓冲、EOF、尾部裁剪、溢出拒绝，以及错误后复用同一个 reader；
+`RandomAccessBounds` 在非空边界探针可执行时检查空缓冲、EOF、尾部裁剪、溢出拒绝，以及错误后复用同一个 reader。
+合法的 `Maximum(0)` 不允许非空读取，因此 Bounds 会带原因记为 `SkippedOptional`。
 这项检查不证明 provider 的最大范围长度。`RandomAccessRangeLimit` 是独立检查：针对 `Maximum(n)`，
 它单独准备 reader，验证 `n` 字节可读、`n + 1` 字节以 `Read` 操作返回
-`ResourceLimitExceeded`，再确认 reader 仍可用。种子与请求均受 64 字节探针预算约束。
+`ResourceLimitExceeded`，再确认 reader 仍可用。`Maximum(0)` 时，允许的请求和拒绝后的复查都是空读取，
+单字节请求仍须被拒绝。零是合法上限，但这项检查不声称它允许成功读取非空内容。
+种子与请求均受 64 字节探针预算约束。
 有限上限达到该预算时，因不执行更大的探针而记录带原因的 `SkippedOptional`；
 `Unknown`、`Unbounded` 和 `NotApplicable` 则因不存在有限上限而记录 `NotApplicable`。
 缺少 seed hook 是 `Unverified`；执行错误或字节、错误结果不符均为失败。缺少 `Read` 时，所有随机读取

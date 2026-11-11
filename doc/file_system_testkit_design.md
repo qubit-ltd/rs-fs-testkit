@@ -54,13 +54,18 @@ semantics, and service-specific guarantees beyond the suite's observations.
 Positive random-access samples respect the declared `max_read_range_bytes`
 limit and accumulate short reads until the expected sample is complete.
 `RandomAccessBounds` checks an empty buffer, EOF, clipping, overflow rejection,
-and reuse of the same reader after the error. It does not establish the
-provider's maximum range length. `RandomAccessRangeLimit` is a separate check:
-for `Maximum(n)` it independently prepares a reader, verifies that `n` bytes
-are accepted and `n + 1` are rejected with `ResourceLimitExceeded` for `Read`,
-then verifies reader reuse. Its seed and requests stay within a 64-byte probe
-budget. A finite maximum at or above that budget is `SkippedOptional` with a
-reason; `Unknown`, `Unbounded`, and `NotApplicable` declarations produce
+and reuse of the same reader after the error when non-empty boundary probes are
+possible. A valid `Maximum(0)` makes those probes impossible, so Bounds is
+`SkippedOptional` with a reason. It does not establish the provider's maximum
+range length. `RandomAccessRangeLimit` is a separate check: for `Maximum(n)` it
+independently prepares a reader, verifies that `n` bytes are accepted and
+`n + 1` are rejected with `ResourceLimitExceeded` for `Read`, then verifies
+reader reuse. For `Maximum(0)`, the accepted and post-rejection reads are empty
+requests; the one-byte request must still be rejected. Zero is a valid limit,
+but this check does not claim a non-empty read can succeed under it. Its seed
+and requests stay within a 64-byte probe budget. A finite maximum at or above
+that budget is `SkippedOptional` with a reason; `Unknown`, `Unbounded`, and
+`NotApplicable` declarations produce
 `NotApplicable`. Missing seed support is `Unverified`; execution errors and
 incorrect bytes or errors fail. Without `Read`, all random-access checks are
 `NotApplicable` before declaration or preparation hooks run; `ReadBasic` still

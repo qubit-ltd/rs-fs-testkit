@@ -339,17 +339,23 @@ properties include `Read`. Without it, the checks are recorded as
 The random-access evidence is split by claim. `RandomAccessBounds`
 (`read/random-access-bounds`) checks an empty buffer, a read at EOF, clipping to
 the reader's open-time length, overflow rejection, and successful reuse of the
-same reader after that error. It does not test the provider's declared maximum
-range length. `RandomAccessRangeLimit`
+same reader after that error when a non-empty boundary probe is possible. A
+valid `Maximum(0)` makes those non-empty probes impossible, so Bounds is
+`SkippedOptional` with a reason. It does not test the provider's declared
+maximum range length. `RandomAccessRangeLimit`
 (`read/random-access-range-limit`) independently seeds a reader and, for a
 finite `Maximum(n)`, verifies that a request of `n` bytes is accepted, `n + 1`
 bytes is rejected with `ResourceLimitExceeded` for `Read`, and the reader still
-works afterward. The range-limit fixture seed and request are bounded to 64
-bytes. A maximum of 64 bytes or more is reported as `SkippedOptional` with a
-reason because the suite will not make the larger probe; `Unknown`, `Unbounded`,
-and `NotApplicable` limits yield `NotApplicable` because there is no finite
-maximum to test. If the fixture cannot seed the independent sample, the result
-is `Unverified`; setup/open errors or incorrect bytes and errors fail the check.
+works afterward. When `n` is zero, both the accepted request and the
+post-rejection reader check are empty reads; the one-byte request must still be
+rejected. Zero is a valid declaration, and this check does not claim that a
+non-empty read succeeds under a zero-byte maximum. The range-limit fixture
+seed and request are bounded to 64 bytes. A maximum of 64 bytes or more is
+reported as `SkippedOptional` with a reason because the suite will not make the
+larger probe; `Unknown`, `Unbounded`, and `NotApplicable` limits yield
+`NotApplicable` because there is no finite maximum to test. If the fixture
+cannot seed the independent sample, the result is `Unverified`; setup/open
+errors or incorrect bytes and errors fail the check.
 If the filesystem lacks `Read`, both random-access checks are `NotApplicable`.
 An undeclared random-access operation is `SkippedOptional`; an explicit
 declaration that it is unsupported is checked for structured rejection.
