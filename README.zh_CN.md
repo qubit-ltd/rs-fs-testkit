@@ -97,9 +97,10 @@ qubit-fs-testkit = { version = "0.9", features = ["async"] }
 - `prepare_copy_cancellation` 和 `prepare_write_cancellation` 提供可选的阶段确认探针。
   套件检查取消状态、显式恢复和独立发布证据。可用 `run.assert_satisfied_with(&[check_id])`
   强制要求缺失的探针；已经执行的探针失败始终使运行失败。
-- 随机读取检查归入 `Read` 阶段。fixture 可声明 provider 实际支持的随机读取 operation，
-  并独立替换路径名以验证已打开对象的身份；异步 fixture 还可注入并清除 Pending 读取。
-  缺少证据会报告为 `SkippedOptional` 或 `Unverified`，不会记录为通过。
+- 随机读取检查归入 `Read` 阶段。`RandomAccessBounds` 检查空缓冲、EOF、尾部裁剪、溢出，
+  以及出错后 reader 是否仍可使用；`RandomAccessRangeLimit` 则单独核对有限的声明上限。
+  异步取消只有在确认读取已到达注入 gate 并处于 `Pending` 时才算通过。预算、结果含义，
+  以及何时需要同时要求两项边界证据，见[用户手册](doc/user_guide.zh_CN.md)。
 
 provider crate 仍需自行负责平台行为、路径编码、安全边界、服务注册，以及当前套件覆盖范围外的
 capability。

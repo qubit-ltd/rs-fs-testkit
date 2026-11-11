@@ -118,11 +118,13 @@ stays in development dependencies and out of production graphs.
   recovery, and independent publication evidence. Missing probes can be
   required with `run.assert_satisfied_with(&[check_id])`; executed failures
   always fail the run.
-- Random-access checks run in the `Read` phase. Fixtures can declare the
-  provider's actual random-access operation and independently replace a path
-  while retaining an opened object; async fixtures can also inject and clear a
-  pending read. Missing evidence is reported as `SkippedOptional` or
-  `Unverified`, never as a pass.
+- Random-access checks run in the `Read` phase. `RandomAccessBounds` covers
+  empty reads, EOF, clipping, overflow, and reader reuse after an error;
+  `RandomAccessRangeLimit` independently checks a finite declared maximum.
+  Async cancellation passes only when the suite observes `Pending` at the
+  injected gate. See the [user guide](doc/user_guide.md) for probe limits,
+  evidence outcomes, and requiring both checks when complete boundary evidence
+  is needed.
 
 Provider crates remain responsible for their own platform behavior, path
 encoding, security boundaries, service registration, and capabilities outside

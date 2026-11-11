@@ -52,12 +52,31 @@ semantics, and service-specific guarantees beyond the suite's observations.
 | SPI dispatch/preflight, compile-time borrowing properties, drop/runtime behavior, and provider-specific platform or service guarantees | Core or provider tests at the layer that owns the behavior |
 
 Positive random-access samples respect the declared `max_read_range_bytes`
-limit and accumulate short reads until the expected sample is complete. A
-separate bounds probe still submits an over-limit request to verify rejection.
-Random-access checks apply only when the captured filesystem properties include
-`Read`. Without `Read`, each random-access check is `NotApplicable` before any
-random-access declaration or preparation hook runs; `ReadBasic` still verifies
-the facade's structured capability rejection independently.
+limit and accumulate short reads until the expected sample is complete.
+`RandomAccessBounds` checks an empty buffer, EOF, clipping, overflow rejection,
+and reuse of the same reader after the error. It does not establish the
+provider's maximum range length. `RandomAccessRangeLimit` is a separate check:
+for `Maximum(n)` it independently prepares a reader, verifies that `n` bytes
+are accepted and `n + 1` are rejected with `ResourceLimitExceeded` for `Read`,
+then verifies reader reuse. Its seed and requests stay within a 64-byte probe
+budget. A finite maximum at or above that budget is `SkippedOptional` with a
+reason; `Unknown`, `Unbounded`, and `NotApplicable` declarations produce
+`NotApplicable`. Missing seed support is `Unverified`; execution errors and
+incorrect bytes or errors fail. Without `Read`, all random-access checks are
+`NotApplicable` before declaration or preparation hooks run; `ReadBasic` still
+checks the facade's structured capability rejection. Callers requiring both
+boundary and finite-limit evidence must select both IDs in
+`assert_satisfied_with`.
+
+The async `RandomAccessCancel` check passes only if polling the injected read
+returns `Pending` and `random_access_pending_read_reached` reports
+`FixtureSupport::Supported(true)`. The hook is independent fixture
+instrumentation and must not perform I/O; its default is `Unsupported`.
+After polling, the suite drops the future, queries the hook, disarms the gate,
+and confirms the reader remains usable. No injected gate is an optional skip;
+missing or negative gate confirmation is `Unverified`; hook errors, panics,
+or failed post-disarm reader use are failures. This distinguishes cancellation
+evidence from merely constructing a request that might block.
 An expected rename rejection is `RejectedAsExpected` only when its structured
 error is correct and independent before/after observations prove the relevant
 paths unchanged. A provider-reported `RenameFailureState::Unchanged` is not

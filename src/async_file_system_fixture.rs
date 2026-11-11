@@ -130,6 +130,11 @@ pub trait AsyncFileSystemFixture: Sync {
 
     /// Independently reports whether a random-access read reached the injected pending gate.
     /// This must inspect fixture instrumentation only and must not perform I/O.
+    /// The cancellation check passes only for `Supported(true)` after observing
+    /// the read future return `Pending`; `Supported(false)` and `Unsupported`
+    /// leave the check unverified. The runner drops the future before querying
+    /// this hook, then disarms the gate. The fixture must allow the reader to be
+    /// used again after disarming.
     ///
     /// # Parameters
     /// * `path` - Seed path associated with the pending-read probe.

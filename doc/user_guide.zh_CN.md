@@ -268,6 +268,31 @@ setup 返回错误仍然是失败。
 随机读取检查仅在捕获的文件系统属性包含 `Read` 时适用。缺少该能力时，检查会在调用随机读取声明或
 准备 hook 前记为 `NotApplicable`。`ReadBasic` 仍会验证门面针对缺少 `Read` 返回结构化拒绝。
 
+随机读取证据按验证目标拆分。`RandomAccessBounds`
+（`read/random-access-bounds`）检查空缓冲、EOF 读取、按 reader 打开时长度裁剪、溢出拒绝，
+以及同一 reader 在该错误后能否继续读取。它不检查 provider 声明的最大范围长度。
+`RandomAccessRangeLimit`（`read/random-access-range-limit`）会独立准备种子和 reader；
+对有限上限 `Maximum(n)`，它要求长度为 `n` 的读取成功、`n + 1` 的读取以 `Read` 操作返回
+`ResourceLimitExceeded`，并确认错误后 reader 仍可用。该探针最多准备或请求 64 字节。
+上限达到 64 字节时，套件会因不执行更大的探针而记录带原因的 `SkippedOptional`；
+上限为 `Unknown`、`Unbounded` 或 `NotApplicable` 时，则因没有有限值可测而记为
+`NotApplicable`。fixture 无法预置独立样本时是 `Unverified`；准备或打开出错、内容或错误不符则失败。
+缺少 `Read` 时，两项随机读取检查均为 `NotApplicable`。如果 fixture 未声明随机读取能力，检查会被可选跳过；
+若 fixture 明确声明不支持，套件会验证门面是否结构化拒绝该操作。
+
+需要同时证明普通边界行为和 provider 的有限范围上限时，必须在
+`run.assert_satisfied_with` 中同时要求 `ContractCheckId::RandomAccessBounds` 与
+`ContractCheckId::RandomAccessRangeLimit`。只要求 Bounds 不涵盖范围上限；只要求
+RangeLimit 也不涵盖 EOF、裁剪或溢出行为。
+
+异步 `RandomAccessCancel` 通过 fixture 注入一次 Pending 读取。实现
+`random_access_pending_read_reached(&self, path)`，独立报告读取是否到达 gate；默认实现返回
+`FixtureSupport::Unsupported`。套件先 poll 读取，再丢弃该 future，随后查询独立 hook 并解除 gate。
+只有 poll 确实返回 `Pending` 且 hook 返回 `FixtureSupport::Supported(true)` 才会通过；没有 Pending、
+返回 `Supported(false)` 或 `Unsupported` 都是 `Unverified`。无法注入 gate 时是可选跳过。
+hook 错误或 panic，以及解除 gate 后 reader 无法继续使用，都会使检查失败。观测 hook 只能读取
+fixture 自身的 instrumentation，不得执行 I/O；该探针不依赖任何特定 runtime。
+
 属性中的路径限制探针通过门面提交超限 `stat` 请求，要求结构化的资源限制拒绝。
 请求遵守套件的分配预算及声明的绝对／相对路径形式。若另一项路径限制会掩盖所选边界，
 则记录带原因的可选探针跳过结果。

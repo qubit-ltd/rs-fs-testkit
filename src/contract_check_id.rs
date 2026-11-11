@@ -6,6 +6,10 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Exhaustive typed identities for provider contract evidence.
+//!
+//! Adding a variant is a source-level change for downstream exhaustive matches.
+//! Stable string names are intended for selection and diagnostics, but callers
+//! that match this enum exhaustively must account for newly added checks.
 
 use std::fmt::Display;
 use std::fmt::Formatter;
@@ -15,7 +19,8 @@ use std::fmt::Result as FmtResult;
 ///
 /// Stable names are intended for test selection and diagnostics. A report
 /// cannot invent a name outside this set; execution and evidence use the same
-/// identity even when synchronous and asynchronous drivers differ.
+/// identity even when synchronous and asynchronous drivers differ. Adding a
+/// variant can require downstream exhaustive matches to be updated.
 ///
 /// # Examples
 ///

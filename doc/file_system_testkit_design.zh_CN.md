@@ -304,12 +304,27 @@ Limit contract 至少覆盖：
 | 套件记账、恢复所有权，以及对注入违规的拒绝能力 | 使用 recording provider 和故障 fixture 的 testkit 自验证 |
 | SPI 分派／预检、编译期借用性质、drop/runtime 行为，以及 provider 专属平台或服务保证 | 由拥有该行为的 core 或 provider 测试负责 |
 
-随机读取的正向样本请求遵守声明的 `max_read_range_bytes`，并累积短读直到取得完整期望样本；
-独立的 bounds 探针仍会提交超限请求以验证拒绝。rename 只有在结构化错误正确，且独立的前后
-观测证明相关路径保持不变时，才能记为 `RejectedAsExpected`。provider 返回的
+随机读取的正向样本请求遵守声明的 `max_read_range_bytes`，并累积短读直到取得完整期望样本。
+`RandomAccessBounds` 检查空缓冲、EOF、尾部裁剪、溢出拒绝，以及错误后复用同一个 reader；
+这项检查不证明 provider 的最大范围长度。`RandomAccessRangeLimit` 是独立检查：针对 `Maximum(n)`，
+它单独准备 reader，验证 `n` 字节可读、`n + 1` 字节以 `Read` 操作返回
+`ResourceLimitExceeded`，再确认 reader 仍可用。种子与请求均受 64 字节探针预算约束。
+有限上限达到该预算时，因不执行更大的探针而记录带原因的 `SkippedOptional`；
+`Unknown`、`Unbounded` 和 `NotApplicable` 则因不存在有限上限而记录 `NotApplicable`。
+缺少 seed hook 是 `Unverified`；执行错误或字节、错误结果不符均为失败。缺少 `Read` 时，所有随机读取
+检查会在调用能力声明或准备 hook 前记为 `NotApplicable`；`ReadBasic` 仍独立核实门面对缺少能力的结构化拒绝。
+需要完整边界证据的调用方必须在 `assert_satisfied_with` 中同时选择 Bounds 和 RangeLimit 两个 ID。
+
+异步 `RandomAccessCancel` 只有在对注入读取进行 poll 后得到 `Pending`，且
+`random_access_pending_read_reached` 返回 `FixtureSupport::Supported(true)` 时才通过。
+该 hook 默认返回 `Unsupported`，必须仅检查 fixture 独立 instrumentation，不得执行 I/O。
+poll 后套件丢弃 future、查询 hook、解除 gate，并确认 reader 可以继续使用。无法注入 gate 是可选跳过；
+缺少 gate 确认或 hook 返回 false 是 `Unverified`；hook 错误、panic 或解除 gate 后 reader 不能继续读取则失败。
+这样记录的是实际到达 Pending gate 的取消证据，而非仅构造了可能阻塞的请求。
+
+rename 只有在结构化错误正确，且独立的前后观测证明相关路径保持不变时，才能记为
+`RejectedAsExpected`。provider 返回的
 `RenameFailureState::Unchanged` 不能替代独立证据；缺少必需观测时结果为 `Unverified`。
-随机读取检查仅在捕获的文件系统属性包含 `Read` 时适用。缺少 `Read` 时，每项随机读取检查
-会在调用随机读取声明或准备 hook 前记为 `NotApplicable`；`ReadBasic` 仍独立验证门面返回结构化的能力拒绝。
 
 testkit 自身的 recording provider 和故障 fixture 用于验证套件记账、恢复所有权及已覆盖检查能否拒绝
 指定违规；这些自测不构成 provider 的行为保证。Provider suite 的黑盒观察不能证明 properties getter

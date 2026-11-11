@@ -336,6 +336,43 @@ properties include `Read`. Without it, the checks are recorded as
 `NotApplicable` before random-access declaration or preparation hooks run.
 `ReadBasic` still checks the facade's structured rejection for missing `Read`.
 
+The random-access evidence is split by claim. `RandomAccessBounds`
+(`read/random-access-bounds`) checks an empty buffer, a read at EOF, clipping to
+the reader's open-time length, overflow rejection, and successful reuse of the
+same reader after that error. It does not test the provider's declared maximum
+range length. `RandomAccessRangeLimit`
+(`read/random-access-range-limit`) independently seeds a reader and, for a
+finite `Maximum(n)`, verifies that a request of `n` bytes is accepted, `n + 1`
+bytes is rejected with `ResourceLimitExceeded` for `Read`, and the reader still
+works afterward. The range-limit fixture seed and request are bounded to 64
+bytes. A maximum of 64 bytes or more is reported as `SkippedOptional` with a
+reason because the suite will not make the larger probe; `Unknown`, `Unbounded`,
+and `NotApplicable` limits yield `NotApplicable` because there is no finite
+maximum to test. If the fixture cannot seed the independent sample, the result
+is `Unverified`; setup/open errors or incorrect bytes and errors fail the check.
+If the filesystem lacks `Read`, both random-access checks are `NotApplicable`.
+An undeclared random-access operation is `SkippedOptional`; an explicit
+declaration that it is unsupported is checked for structured rejection.
+
+Callers that need both ordinary boundary behavior and the provider's finite
+range-limit evidence must require both IDs, for example with
+`run.assert_satisfied_with(&[ContractCheckId::RandomAccessBounds,
+ContractCheckId::RandomAccessRangeLimit])`. Requiring only `Bounds` makes no
+claim about the range limit; requiring only `RangeLimit` makes no claim about
+EOF, clipping, or overflow behavior.
+
+The async `RandomAccessCancel` check injects a pending read through fixture
+instrumentation. Override `random_access_pending_read_reached(&self, path)` to
+report whether that read entered the gate; the default hook returns
+`FixtureSupport::Unsupported`. The suite polls the read once, drops its future,
+then queries the independent hook and disarms the gate. Only an observed
+`Pending` together with `FixtureSupport::Supported(true)` can pass; no pending
+poll, `Supported(false)`, or `Unsupported` evidence is `Unverified`. No gate
+injection remains an optional skip. Hook errors, panics, or a reader that cannot
+be used again after disarming fail the check. The observation hook must inspect
+fixture instrumentation only and perform no I/O. The suite has no runtime
+dependency for this probe.
+
 Property path-limit probes submit oversized `stat` requests through the facade
 and require structured resource-limit rejection. Requests remain within the
 testkit allocation budget and respect the declared absolute/relative path form.
