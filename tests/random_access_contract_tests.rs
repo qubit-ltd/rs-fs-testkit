@@ -827,7 +827,11 @@ fn test_random_access_reads_bounds_and_object_identity() {
     for maximum in [1, 2, 5, 6, 10, 63] {
         let fixture = RandomFixture::new(true, false, FileSystemLimit::Maximum(maximum));
         assert_eq!(outcome(&fixture, ContractCheckId::RandomAccessBounds), ContractCheckOutcome::Passed);
-        assert_eq!(outcome(&fixture, ContractCheckId::RandomAccessRangeLimit), ContractCheckOutcome::Passed);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::RandomAccessRangeLimit);
+        assert_eq!(run.report().checks().len(), 1);
+        assert_eq!(run.report().checks()[0].id(), ContractCheckId::RandomAccessRangeLimit);
+        assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
     }
     for limit in [FileSystemLimit::Unknown, FileSystemLimit::Unbounded, FileSystemLimit::NotApplicable] {
         let fixture = RandomFixture::new(true, false, limit);
@@ -862,6 +866,8 @@ fn test_async_random_access_bounds_accept_finite_ranges() {
         assert!(run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
         let mut range_suite = AsyncFileSystemContractSuite::new(&fixture);
         let range_run = ready(range_suite.run_check(ContractCheckId::RandomAccessRangeLimit));
+        assert_eq!(range_run.report().checks().len(), 1);
+        assert_eq!(range_run.report().checks()[0].id(), ContractCheckId::RandomAccessRangeLimit);
         assert_eq!(range_run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
     }
 
@@ -877,6 +883,8 @@ fn test_async_random_access_bounds_accept_finite_ranges() {
         assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
         let mut range_suite = AsyncFileSystemContractSuite::new(&fixture);
         let range = ready(range_suite.run_check(ContractCheckId::RandomAccessRangeLimit));
+        assert_eq!(range.report().checks().len(), 1);
+        assert_eq!(range.report().checks()[0].id(), ContractCheckId::RandomAccessRangeLimit);
         assert!(matches!(range.report().checks()[0].outcome(), ContractCheckOutcome::SkippedOptional { .. }));
     }
 
