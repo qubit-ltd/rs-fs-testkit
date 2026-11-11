@@ -820,8 +820,11 @@ fn test_random_access_reads_bounds_and_object_identity() {
         assert_eq!(run.failures().len(), 0, "Maximum({maximum}): {:?}", run.failures());
         assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::Passed);
         assert!(run.requirements_satisfied_with(&[ContractCheckId::RandomAccessBounds]));
-        let range = outcome(&fixture, ContractCheckId::RandomAccessRangeLimit);
-        assert!(matches!(range, ContractCheckOutcome::SkippedOptional { .. }));
+        let mut range_suite = FileSystemContractSuite::new(&fixture);
+        let range = range_suite.run_check(ContractCheckId::RandomAccessRangeLimit);
+        assert_eq!(range.report().checks().len(), 1);
+        assert_eq!(range.report().checks()[0].id(), ContractCheckId::RandomAccessRangeLimit);
+        assert!(matches!(range.report().checks()[0].outcome(), ContractCheckOutcome::SkippedOptional { .. }));
     }
 
     for maximum in [1, 2, 5, 6, 10, 63] {
