@@ -70,10 +70,10 @@ where
         Some(Err(join_error)) => Err(format!("{phase}: scenario task failed: {join_error}")),
         None => {
             scenario.abort();
-            if let Err(join_error) = scenario.await {
-                if join_error.is_panic() {
-                    std::panic::resume_unwind(join_error.into_panic());
-                }
+            if let Err(join_error) = scenario.await
+                && join_error.is_panic()
+            {
+                std::panic::resume_unwind(join_error.into_panic());
             }
             Err(format!("{phase}: {deadline_diagnostic}"))
         }

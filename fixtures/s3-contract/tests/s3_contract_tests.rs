@@ -8,7 +8,6 @@
 
 //! Opt-in real-service I/O evidence with cleanup limited to this run's keys.
 
-use std::error::Error as StdError;
 use std::io;
 use std::panic;
 use std::process;
@@ -18,7 +17,6 @@ use std::time::UNIX_EPOCH;
 
 use bytes::Bytes;
 use futures_util::FutureExt;
-use object_store::Error as ObjectStoreError;
 use object_store::ObjectStore;
 use object_store::ObjectStoreExt;
 use object_store::PutMode;
@@ -64,69 +62,55 @@ async fn test_s3_contract_requires_explicit_environment() {
         .iter()
         .map(|name| ObjectStorePath::parse(format!("{}/{name}", config.prefix)).unwrap())
         .collect::<Vec<_>>();
-    let result: Result<(), Box<dyn StdError>> = async {
-        for key in &owned[..2] {
-            store
-                .put_opts(
-                    key,
-                    Bytes::from_static(b"real-s3").into(),
-                    PutOptions {
-                        mode: PutMode::Create,
-                        ..Default::default()
-                    },
-                )
-                .await?;
-        }
-        let target = Path::parse_literal(names[2])?;
-        let mut write = filesystem.begin_write_all(
-            target.clone(),
-            b"real-s3".to_vec(),
-            WriteOptions::default().with_disposition(WriteDisposition::CreateNew),
-        )?;
-        write.execute().await?;
-        let stored = store.get(&owned[2]).await?.bytes().await?;
-        if stored.as_ref() != b"real-s3" {
-            return Err(io::Error::other("SDK GET did not observe facade PUT bytes").into());
-        }
-        for name in names {
-            let path = Path::parse_literal(name)?;
-            if filesystem.stat(&path).await?.len() != Some(7) {
-                return Err(io::Error::other("HEAD length mismatch").into());
+    let (result, cleanup_errors) =
+        common::exact_key_cleanup::run_with_exact_key_cleanup(store.as_ref(), &owned, async {
+            for key in &owned[..2] {
+                store
+                    .put_opts(
+                        key,
+                        Bytes::from_static(b"real-s3").into(),
+                        PutOptions {
+                            mode: PutMode::Create,
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
             }
-            if filesystem.read_all(&path, Default::default(), 64).await? != b"real-s3" {
-                return Err(io::Error::other("GET content mismatch").into());
+            let target = Path::parse_literal(names[2])?;
+            let mut write = filesystem.begin_write_all(
+                target.clone(),
+                b"real-s3".to_vec(),
+                WriteOptions::default().with_disposition(WriteDisposition::CreateNew),
+            )?;
+            write.execute().await?;
+            let stored = store.get(&owned[2]).await?.bytes().await?;
+            if stored.as_ref() != b"real-s3" {
+                return Err(io::Error::other("SDK GET did not observe facade PUT bytes").into());
             }
-        }
-        for scope in [ListScope::Namespace, ListScope::Path(Path::parse_literal("folder")?)] {
-            let mut stream = filesystem.list(&scope, ListOptions::object_keys()).await?;
-            let mut actual = Vec::new();
-            while let Some(entry) = stream.next_entry_async().await? {
-                actual.push(entry.path.as_str().to_owned());
+            for name in names {
+                let path = Path::parse_literal(name)?;
+                if filesystem.stat(&path).await?.len() != Some(7) {
+                    return Err(io::Error::other("HEAD length mismatch").into());
+                }
+                if filesystem.read_all(&path, Default::default(), 64).await? != b"real-s3" {
+                    return Err(io::Error::other("GET content mismatch").into());
+                }
             }
-            actual.sort();
-            if actual != names {
-                return Err(io::Error::other("LIST exact-key set mismatch").into());
+            for scope in [ListScope::Namespace, ListScope::Path(Path::parse_literal("folder")?)] {
+                let mut stream = filesystem.list(&scope, ListOptions::object_keys()).await?;
+                let mut actual = Vec::new();
+                while let Some(entry) = stream.next_entry_async().await? {
+                    actual.push(entry.path.as_str().to_owned());
+                }
+                actual.sort();
+                if actual != names {
+                    return Err(io::Error::other("LIST exact-key set mismatch").into());
+                }
             }
-        }
-        Ok(())
-    }
-    .await;
-    // Always attempt cleanup before reporting I/O verification failures. These
-    // exact keys are confined to this run's unique child of the configured prefix.
-    let mut cleanup_errors = Vec::new();
-    for key in &owned {
-        if let Err(error) = store.delete(key).await
-            && !matches!(error, ObjectStoreError::NotFound { .. })
-        {
-            cleanup_errors.push(error);
-        }
-    }
-    assert!(
-        cleanup_errors.is_empty(),
-        "cleanup failed for {} owned keys",
-        cleanup_errors.len()
-    );
-    result.expect("real service PUT/GET/HEAD/LIST verification failed");
+            Ok(())
+        })
+        .await;
+    common::exact_key_cleanup::finalize_verification(result, cleanup_errors);
 }
 
 mod common;

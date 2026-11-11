@@ -11,6 +11,12 @@ Set `RS_FS_S3_ENDPOINT`, `RS_FS_S3_BUCKET`, `RS_FS_S3_REGION`,
 Credentials are omitted from debug output. Explicitly running the ignored test
 fails when configuration is missing; ignoring it is not real-service evidence.
 It performs actual PUT, GET, HEAD and exact-result LIST operations before cleanup.
+The real-service verification attempts deletion of every exact key owned by
+that run after either a returned error or a panic. A panic is resumed after
+cleanup, preserving its original payload; cleanup errors are summarized without
+replacing that panic. Returned verification errors remain the reported failure,
+with a cleanup error count when cleanup also fails. This does not guarantee
+cleanup after task cancellation, process abort, or a panic inside deletion.
 
 The adapter declares Conditional List, Read, RangeRead, Write, and ConditionalWrite
 capabilities. Buffered single-PUT writes are bounded to 1 MiB per session. Supported
