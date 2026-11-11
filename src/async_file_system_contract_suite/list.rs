@@ -12,6 +12,7 @@ use qubit_fs::directory::ListOptions;
 use qubit_fs::directory::ListScope;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
+use qubit_fs::metadata::FileKind;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::path::PathSemantics;
 
@@ -144,7 +145,7 @@ impl AsyncFileSystemContractSuite<'_> {
                     return Ok(());
                 };
                 self.context.record_created(path.clone());
-                expected.push(path);
+                expected.push((path, true));
             }
         } else if id == ContractCheckId::ListBasic && hierarchical {
             let prepared = self
@@ -165,7 +166,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 return Ok(());
             };
             self.context.record_created(path.clone());
-            expected.push(path);
+            expected.push((path, true));
         }
         let names: &[&str] = match id {
             ContractCheckId::ListPrefix if hierarchical => {
@@ -202,7 +203,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 _ => true,
             };
             if selected {
-                expected.push(path);
+                expected.push((path, false));
             }
         }
         let metadata = matches!(id, ContractCheckId::ListPrefix | ContractCheckId::ListPagination);
@@ -231,6 +232,26 @@ impl AsyncFileSystemContractSuite<'_> {
                     "list contract: requested entry metadata is missing",
                 )?;
             }
+            let expected_directory = expected
+                .iter()
+                .find(|(path, _)| *path == entry.path)
+                .map(|(_, expected_directory)| *expected_directory);
+            let Some(expected_directory) = expected_directory else {
+                return Err(ContractFailure::message_only(
+                    "listing returned duplicate or unexpected entries",
+                )
+                .at(id));
+            };
+            let correct_kind = if expected_directory {
+                matches!(entry.kind, FileKind::Directory)
+            } else {
+                matches!(entry.kind, FileKind::File | FileKind::Object)
+            };
+            verify_condition(
+                correct_kind,
+                id,
+                "list entry kind differs from independently seeded resource",
+            )?;
             actual.push(entry.path);
             verify_condition(
                 actual.len() <= expected.len(),
@@ -239,7 +260,8 @@ impl AsyncFileSystemContractSuite<'_> {
             )?;
         }
         actual.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-        expected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        expected.sort_by(|(left, _), (right, _)| left.as_str().cmp(right.as_str()));
+        let expected = expected.into_iter().map(|(path, _)| path).collect::<Vec<_>>();
         verify_condition(
             actual == expected,
             id,

@@ -463,6 +463,12 @@ pub enum AsyncMemoryFault {
     ListEscapesNamespace,
     /// Returns no entries for a non-empty requested directory.
     EmptyList,
+    /// Reports an independently seeded file as a directory in list results.
+    ListFileAsDirectory,
+    /// Reports an independently seeded directory as a file in list results.
+    ListDirectoryAsFile,
+    /// Reports an independently seeded file using the flat-object list kind.
+    ListFileAsObject,
     /// Ignores non-recursive depth limits while preserving path filters.
     ListAlwaysRecursive,
     /// Returns direct children only, even for recursive filtered requests.
@@ -2225,7 +2231,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
     }
 
     fn list<'a>(&'a self, request: ListRequest<'a>) -> SpiFuture<'a, FsResult<OpenedAsyncDirectoryStream>> {
-        let entries = if self.fault == AsyncMemoryFault::ListEscapesNamespace {
+        let mut entries = if self.fault == AsyncMemoryFault::ListEscapesNamespace {
             vec![DirEntry::new(
                 Path::parse("/outside-list-root").expect("fixed list entry path must be valid"),
                 FileKind::Directory,
@@ -2242,6 +2248,30 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 self.fault == AsyncMemoryFault::ListAlwaysDirectChildren,
             )
         };
+        for entry in &mut entries {
+            let wrong_kind = match self.fault {
+                AsyncMemoryFault::ListFileAsDirectory
+                    if entry.path.as_str().ends_with("/first") =>
+                {
+                    Some(FileKind::Directory)
+                }
+                AsyncMemoryFault::ListDirectoryAsFile
+                    if entry.path.as_str().ends_with("/nested") =>
+                {
+                    Some(FileKind::File)
+                }
+                AsyncMemoryFault::ListFileAsObject if entry.path.as_str().ends_with("/first") => {
+                    Some(FileKind::Object)
+                }
+                _ => None,
+            };
+            if let Some(kind) = wrong_kind {
+                entry.kind = kind.clone();
+                if let Some(metadata) = &mut entry.metadata {
+                    *metadata = FileMetadata::new(kind);
+                }
+            }
+        }
         Box::pin(async move {
             Ok(OpenedAsyncDirectoryStream::new(Box::new(AsyncMemoryDirectoryStream {
                 entries: entries.into_iter(),

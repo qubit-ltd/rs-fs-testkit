@@ -268,6 +268,12 @@ pub enum MemoryFault {
     WrongPersistTarget,
     /// Returns no entries for a non-empty requested directory.
     EmptyList,
+    /// Reports an independently seeded file as a directory in list results.
+    ListFileAsDirectory,
+    /// Reports an independently seeded directory as a file in list results.
+    ListDirectoryAsFile,
+    /// Reports an independently seeded file using the flat-object list kind.
+    ListFileAsObject,
     /// Ignores non-recursive depth limits while preserving path filters.
     ListAlwaysRecursive,
     /// Returns direct children only, even for recursive filtered requests.
@@ -1785,7 +1791,7 @@ impl FileSystemSpi for MemorySpi {
 
     fn list(&self, request: ListRequest<'_>) -> FsResult<OpenedDirectoryStream> {
         let state = self.state.lock().expect("memory state lock must succeed");
-        let entries = if state.fault == MemoryFault::EmptyList {
+        let mut entries = if state.fault == MemoryFault::EmptyList {
             Vec::new()
         } else {
             listed_entries(
@@ -1797,6 +1803,30 @@ impl FileSystemSpi for MemorySpi {
                 state.fault == MemoryFault::ListAlwaysDirectChildren,
             )
         };
+        for entry in &mut entries {
+            let wrong_kind = match state.fault {
+                MemoryFault::ListFileAsDirectory
+                    if entry.path.as_str().ends_with("/first") =>
+                {
+                    Some(FileKind::Directory)
+                }
+                MemoryFault::ListDirectoryAsFile
+                    if entry.path.as_str().ends_with("/nested") =>
+                {
+                    Some(FileKind::File)
+                }
+                MemoryFault::ListFileAsObject if entry.path.as_str().ends_with("/first") => {
+                    Some(FileKind::Object)
+                }
+                _ => None,
+            };
+            if let Some(kind) = wrong_kind {
+                entry.kind = kind.clone();
+                if let Some(metadata) = &mut entry.metadata {
+                    *metadata = FileMetadata::new(kind);
+                }
+            }
+        }
         Ok(OpenedDirectoryStream::new(Box::new(MemoryDirectoryStream {
             entries: entries.into_iter(),
         })))
