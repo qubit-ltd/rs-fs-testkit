@@ -82,6 +82,7 @@ fn unsupported_observation_is_unverified_but_observation_error_fails() {
         ));
     }
     let _ = check_sync_fault("read_error", false, 0);
+    let _ = check_sync_fault("read_error_after_first", false, 1);
 }
 
 #[cfg(feature = "async")]
@@ -160,5 +161,6 @@ mod asynchronous {
             ));
         }
         let _ = check_fault("read_error", false, 0);
+        let _ = check_fault("read_error_after_first", false, 1);
     }
 }
