@@ -77,9 +77,15 @@ pub trait FileSystemFixture {
     ///
     /// File scenarios contain the supplied bytes and use file options, with
     /// required atomicity or durability for the respective strong scenario.
-    /// `ServerSide` cases use provider-selected observable bytes and require
-    /// server-side copy. Ready cases have distinct paths,
-    /// and Conflict targets contain `b"existing"`.
+    /// `Native` cases provide an independently seeded source containing
+    /// 1..=64 KiB; missing independent source evidence is reported as
+    /// unverified. `ServerSide` cases use provider-selected bytes that are
+    /// independently seeded and readable, contain 1..=64 KiB, and require
+    /// server-side copy. The suite independently checks source contents and
+    /// target absence before execution, then source and target contents after
+    /// execution; unavailable preparation or observation evidence is
+    /// reported as unverified. Ready cases have distinct paths, and Conflict
+    /// targets contain `b"existing"`.
     /// Teardown must clean partial setup even when preparation fails.
     ///
     /// # Parameters

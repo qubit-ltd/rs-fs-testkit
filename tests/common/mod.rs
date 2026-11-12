@@ -34,3 +34,5 @@ pub use memory_file_system::MemoryFault;
 #[allow(unused)]
 pub use memory_file_system::MemoryFixture;
 pub use unavailable_scenario::UnavailableScenario;
+#[allow(dead_code)]
+pub(crate) mod server_side_copy_fixture;

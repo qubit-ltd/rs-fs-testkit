@@ -129,9 +129,10 @@ impl FileSystemContractSuite<'_> {
             }
         };
         verify_condition(
-            snapshot.len() <= 64 * 1024,
+            !snapshot.is_empty()
+                && snapshot.len() <= crate::internal::limit_probe_plan::MAX_PROBE_BYTES as usize,
             id,
-            "server-side fixture source exceeds 64 KiB probe budget",
+            "server-side fixture source must contain 1..=64 KiB",
         )?;
         let before = self.fixture.exists_out_of_band(&target).map_err(|error| {
             ContractFailure::with_source("server-side destination absence observation failed", error).at(id)
@@ -166,11 +167,23 @@ impl FileSystemContractSuite<'_> {
             let observed = self.fixture.read_file(path).map_err(|error| {
                 ContractFailure::with_source("server-side final contents observation failed", error).at(id)
             })?;
-            verify_condition(
-                matches!(observed, FixtureSupport::Supported(actual) if actual == snapshot),
-                id,
-                "server-side copy changed source or published incorrect target bytes",
-            )?;
+            match observed {
+                FixtureSupport::Supported(actual) => verify_condition(
+                    actual == snapshot,
+                    id,
+                    "server-side copy changed source or published incorrect target bytes",
+                )?,
+                FixtureSupport::Unsupported => {
+                    self.context.record_check(
+                        id,
+                        Some(capability),
+                        ContractCheckOutcome::Unverified {
+                            reason: "independent server-side final contents observation unavailable".to_owned(),
+                        },
+                    );
+                    return Ok(());
+                }
+            }
         }
         self.context
             .record_check(id, Some(capability), ContractCheckOutcome::Passed);
