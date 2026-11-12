@@ -251,7 +251,9 @@ impl AsyncFileSystemContractSuite<'_> {
 
                 verify_sample(&mut reader, 0, b"ab", range_limit, id).await?;
             }
-            ContractCheckId::RandomAccessRangeLimit => unreachable!("range limit returned before seed setup"),
+            ContractCheckId::RandomAccessRangeLimit => {
+                unreachable!("range limit returned before seed setup")
+            }
             ContractCheckId::RandomAccessIdentity => {
                 let FixtureSupport::Supported(()) = self
                     .fixture

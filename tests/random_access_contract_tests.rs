@@ -723,7 +723,9 @@ fn test_random_access_checks_are_not_applicable_without_read() {
         ] {
             let check = checks.iter().find(|check| check.id() == id).unwrap();
             match check.outcome() {
-                ContractCheckOutcome::NotApplicable { reason } => assert!(!reason.trim().is_empty()),
+                ContractCheckOutcome::NotApplicable { reason } => {
+                    assert!(!reason.trim().is_empty())
+                }
                 other => panic!("{id} should be not applicable, got {other:?}"),
             }
         }
@@ -1431,7 +1433,9 @@ fn test_async_random_access_checks_are_not_applicable_without_read() {
         ] {
             let check = checks.iter().find(|check| check.id() == id).unwrap();
             match check.outcome() {
-                ContractCheckOutcome::NotApplicable { reason } => assert!(!reason.trim().is_empty()),
+                ContractCheckOutcome::NotApplicable { reason } => {
+                    assert!(!reason.trim().is_empty())
+                }
                 other => panic!("{id} should be not applicable, got {other:?}"),
             }
         }

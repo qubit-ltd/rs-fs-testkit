@@ -473,8 +473,12 @@ mod async_write_limit_target_observation {
                 }
                 if call == 2 {
                     match self.mode {
-                        ProbeMode::ReportsCreatedAfterRejection => return Ok(FixtureSupport::Supported(true)),
-                        ProbeMode::ReportsUnsupportedAfterRejection => return Ok(FixtureSupport::Unsupported),
+                        ProbeMode::ReportsCreatedAfterRejection => {
+                            return Ok(FixtureSupport::Supported(true));
+                        }
+                        ProbeMode::ReportsUnsupportedAfterRejection => {
+                            return Ok(FixtureSupport::Unsupported);
+                        }
                         _ => {}
                     }
                 }

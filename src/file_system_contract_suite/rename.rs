@@ -348,7 +348,9 @@ impl FileSystemContractSuite<'_> {
                     "rename conflict target fixture contents differ",
                 )?;
             }
-            FixtureSupport::Unsupported => return Ok(Some(("read_file", "initial conflict target contents"))),
+            FixtureSupport::Unsupported => {
+                return Ok(Some(("read_file", "initial conflict target contents")));
+            }
         }
         let failure = match self.fixture.file_system().rename(source, target, options.clone()) {
             Err(failure) => failure,
@@ -443,7 +445,9 @@ impl FileSystemContractSuite<'_> {
             FixtureSupport::Supported(actual) => {
                 verify_condition(!actual, id, "rename/basic: source remained after success")?;
             }
-            FixtureSupport::Unsupported => return Ok(Some(("exists_out_of_band", "source removal after rename"))),
+            FixtureSupport::Unsupported => {
+                return Ok(Some(("exists_out_of_band", "source removal after rename")));
+            }
         }
         let observed = self
             .fixture
@@ -453,7 +457,9 @@ impl FileSystemContractSuite<'_> {
             FixtureSupport::Supported(actual) => {
                 verify_condition(actual == bytes, id, "rename/basic: target bytes mismatch")?;
             }
-            FixtureSupport::Unsupported => return Ok(Some(("read_file", "target contents after rename"))),
+            FixtureSupport::Unsupported => {
+                return Ok(Some(("read_file", "target contents after rename")));
+            }
         }
         Ok(None)
     }

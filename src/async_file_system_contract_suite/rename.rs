@@ -423,7 +423,9 @@ impl AsyncFileSystemContractSuite<'_> {
             FixtureSupport::Supported(actual) => {
                 verify_condition(!actual, id, "rename/basic: source remained after success")?;
             }
-            FixtureSupport::Unsupported => return Ok(Some(("exists_out_of_band", "source removal after rename"))),
+            FixtureSupport::Unsupported => {
+                return Ok(Some(("exists_out_of_band", "source removal after rename")));
+            }
         }
         let observed =
             self.fixture.read_file(target).await.map_err(|error| {
@@ -433,7 +435,9 @@ impl AsyncFileSystemContractSuite<'_> {
             FixtureSupport::Supported(actual) => {
                 verify_condition(actual == bytes, id, "rename/basic: target bytes mismatch")?;
             }
-            FixtureSupport::Unsupported => return Ok(Some(("read_file", "target contents after rename"))),
+            FixtureSupport::Unsupported => {
+                return Ok(Some(("read_file", "target contents after rename")));
+            }
         }
         self.context
             .record_check(id, Some(capability), ContractCheckOutcome::Passed);

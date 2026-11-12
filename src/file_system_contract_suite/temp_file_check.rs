@@ -497,18 +497,20 @@ impl FileSystemContractSuite<'_> {
                 self.record_temp_file_content_unverified(id, "fixture write_file_out_of_band hook is unsupported");
                 Ok(false)
             }
-            FixtureSupport::Supported(()) => match self.fixture.read_file(path).map_err(|error| {
-                ContractFailure::with_source("temporary file content setup observation failed", error).at(id)
-            })? {
-                FixtureSupport::Supported(actual) => {
-                    verify_condition(actual == CONTENT, id, "temporary file setup bytes differ")?;
-                    Ok(true)
+            FixtureSupport::Supported(()) => {
+                match self.fixture.read_file(path).map_err(|error| {
+                    ContractFailure::with_source("temporary file content setup observation failed", error).at(id)
+                })? {
+                    FixtureSupport::Supported(actual) => {
+                        verify_condition(actual == CONTENT, id, "temporary file setup bytes differ")?;
+                        Ok(true)
+                    }
+                    FixtureSupport::Unsupported => {
+                        self.record_temp_file_content_unverified(id, "fixture read_file hook is unsupported");
+                        Ok(false)
+                    }
                 }
-                FixtureSupport::Unsupported => {
-                    self.record_temp_file_content_unverified(id, "fixture read_file hook is unsupported");
-                    Ok(false)
-                }
-            },
+            }
         }
     }
 

@@ -549,7 +549,8 @@ fn test_shared_fixture_faults_are_rejected_by_their_asynchronous_check() {
                     case.check_id,
                     run.failures()
                 );
-                // Teardown failures are run-level and intentionally have no check ID.
+                // Teardown failures are run-level and intentionally have no
+                // check ID.
                 assert!(
                     run.failures().iter().all(|failure| match failure.check() {
                         Some(check_id) => check_id == id,
