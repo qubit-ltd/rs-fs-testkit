@@ -199,6 +199,12 @@ through its own storage model even when the tested facade lacks `Read` and
 `Write`; if required preparation or observation evidence is unavailable, the
 check remains `Unverified`.
 
+The `ServerSideCopy` positive check requires an independently seeded and readable
+non-empty source of 1..=64 KiB and an initially absent target. If preparation or
+observation is unavailable, the result is `Unverified`; the Native check's
+optional-skip policy does not apply. Empty-object copies remain valid API
+requests, but cannot establish this positive capability evidence.
+
 The repository contains an in-memory provider model for deterministic faults
 and an unpublished S3-compatible fixture under `fixtures/s3-contract/`.
 The latter requires an explicit endpoint, an existing bucket, credentials,
@@ -252,13 +258,13 @@ one payload at the boundary and another one byte over it, checks the structured
 rejection, and observes that the target was not changed. It does not establish
 the cumulative budget across multiple calls on one open stream. That core
 behavior is covered synchronously by
-[`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/writer/write_all_failure_tests.rs),
+[`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](https://github.com/qubit-ltd/rs-fs/blob/ed022d4f20ad6299d3a28346966244a5866ec248/tests/writer/write_all_failure_tests.rs),
 which accepts `two` then rejects `xx` at limit 3. The current asynchronous test
-[`test_async_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/async_handle_review_tests.rs)
+[`test_async_writer_rejects_cumulative_bytes_over_finite_write_limit`](https://github.com/qubit-ltd/rs-fs/blob/ed022d4f20ad6299d3a28346966244a5866ec248/tests/async_handle_review_tests.rs)
 accepts `abc` then rejects `d` at limit 3, checks the typed error and accepted
 bytes, and confirms that the writer remains open for explicit abort. The
 synchronous regression also checks typed error and abort recovery. The separate
-[`test_async_writer_enforces_limit_and_closed_state`](../../rs-fs/tests/async_handle_review_tests.rs)
+[`test_async_writer_enforces_limit_and_closed_state`](https://github.com/qubit-ltd/rs-fs/blob/ed022d4f20ad6299d3a28346966244a5866ec248/tests/async_handle_review_tests.rs)
 continues to cover a single oversized request and writes after commit.
 
 For random access, `Maximum(0)` allows empty-range and upper-bound evidence.

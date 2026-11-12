@@ -276,6 +276,10 @@ suite 要求 fixture 至少提供一个对应 `copy_fast_path_case`。此时返�
 `FixtureSupport::Unsupported` 是 fixture contract failure，不能借此跳过已声明能力。
 对于未声明 capability，`Unsupported` 才表示合法跳过。
 
+`ServerSideCopy` 正向检查要求 fixture 提供可独立 seed、独立读取的 1..=64 KiB 非空源文件，
+并确认目标初始不存在。准备或观察能力缺失时为 `Unverified`，不采用 Native 检查的可选跳过策略。
+空对象复制仍是合法 API 行为，但不能证明这项正向能力。
+
 ### 6.2 未声明 capability
 
 Suite 构造要求该能力的公开 options，并验证：
@@ -641,12 +645,12 @@ fixture 准备 `CreateOrReplace` 时还会记录既有内容。清理保留的 r
 
 这是整文件门面证据：对于有限写入上限，套件分别提交恰好位于边界及超出一个字节的单个 payload，
 检查结构化拒绝，并独立观察目标未改变。它不能证明同一个打开流上的多次写入累计限制。同步核心回归
-[`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/writer/write_all_failure_tests.rs)
+[`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](https://github.com/qubit-ltd/rs-fs/blob/ed022d4f20ad6299d3a28346966244a5866ec248/tests/writer/write_all_failure_tests.rs)
 在上限 3 下接受 `two` 后拒绝 `xx`。当前异步测试
-[`test_async_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/async_handle_review_tests.rs)
+[`test_async_writer_rejects_cumulative_bytes_over_finite_write_limit`](https://github.com/qubit-ltd/rs-fs/blob/ed022d4f20ad6299d3a28346966244a5866ec248/tests/async_handle_review_tests.rs)
 在上限 3 下接受 `abc` 后拒绝 `d`，检查 typed 错误及已接受字节，并确认 writer 仍打开且可显式 abort。
 同步回归也检查 typed 错误和 abort 恢复。另一个异步测试
-[`test_async_writer_enforces_limit_and_closed_state`](../../rs-fs/tests/async_handle_review_tests.rs)
+[`test_async_writer_enforces_limit_and_closed_state`](https://github.com/qubit-ltd/rs-fs/blob/ed022d4f20ad6299d3a28346966244a5866ec248/tests/async_handle_review_tests.rs)
 继续覆盖单次超限请求和 commit 后的写入拒绝。
 
 随机访问的 `Maximum(0)` 仍允许空范围和上界证据。`Bounds` 跳过需要非空读取的探针，

@@ -145,6 +145,13 @@ case that executes incorrectly fails the run. `CopyNativeNonEmpty` is a new
 public enum variant, so downstream exhaustive `ContractCheckId` matches must
 add a branch for it or provide a default arm.
 
+The `ServerSideCopy` contract check separately requires a fixture-prepared,
+independently seeded and observable non-empty source of 1..=64 KiB, plus an
+absent target. If the fixture cannot prepare or observe that case, the check is
+`Unverified`; it does not borrow the Native check's optional-skip policy. An
+empty source remains valid for API copy requests, but cannot establish this
+positive capability evidence.
+
 The read budget applies to bytes consumed from the selected window, rather than
 to the complete resource or its metadata length. For example, reading
 `offset = 2`, `length = 3` from `0123456789` with `max_bytes = 3` must return
@@ -579,13 +586,13 @@ declared boundary and one byte above it. It validates the structured
 request left the target absent or unchanged. This does not exercise repeated
 writes to one open writer: cumulative stream enforcement belongs to the
 `qubit-fs` core. The synchronous core regression
-[`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/writer/write_all_failure_tests.rs)
+[`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](https://github.com/qubit-ltd/rs-fs/blob/ed022d4f20ad6299d3a28346966244a5866ec248/tests/writer/write_all_failure_tests.rs)
 writes `two` and then `xx` under a limit of 3, checks the typed write-limit
 error, and confirms the still-open writer can be aborted. The asynchronous core
-regression [`test_async_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/async_handle_review_tests.rs)
+regression [`test_async_writer_rejects_cumulative_bytes_over_finite_write_limit`](https://github.com/qubit-ltd/rs-fs/blob/ed022d4f20ad6299d3a28346966244a5866ec248/tests/async_handle_review_tests.rs)
 accepts `abc` then rejects `d` under limit 3, checks the typed error and that
 only `abc` was accepted, and confirms the writer remains abortable. The separate
-[`test_async_writer_enforces_limit_and_closed_state`](../../rs-fs/tests/async_handle_review_tests.rs)
+[`test_async_writer_enforces_limit_and_closed_state`](https://github.com/qubit-ltd/rs-fs/blob/ed022d4f20ad6299d3a28346966244a5866ec248/tests/async_handle_review_tests.rs)
 also checks one oversized payload and post-commit rejection.
 
 For random access, a declared `Maximum(0)` still permits empty-range evidence.
