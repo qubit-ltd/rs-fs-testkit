@@ -6,7 +6,7 @@ rust-version = "1.94"
 publish = false
 
 [dependencies]
-qubit-fs = { path = "../../../rs-fs", version = "^0.3", default-features = false, features = ["async"] }
+qubit-fs = { version = "^0.3", default-features = false, features = ["async"] }
 
 qubit-io = "^0.19"
 
