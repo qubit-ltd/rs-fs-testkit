@@ -39,6 +39,16 @@ class CheckDocLinksTests(unittest.TestCase):
     def test_ignores_links_inside_fenced_code(self):
         self.assertEqual([], self.check_text("```md\n[bad](absent.md)\n```\n"))
 
+    def test_resolves_collapsed_and_shortcut_reference_links(self):
+        errors = self.check_text(
+            "[collapsed][] [shortcut]\n"
+            "[collapsed]: doc/missing.md\n"
+            "[shortcut]: doc/target%20file.md\n"
+        )
+        self.assertEqual(1, len(errors))
+        self.assertIn("README.md:1", errors[0])
+        self.assertIn("doc/missing.md", errors[0])
+
     def test_reports_missing_target_with_file_and_line(self):
         errors = self.check_text("heading\n![x](missing.png)\n")
         self.assertEqual(1, len(errors))

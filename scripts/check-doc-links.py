@@ -14,7 +14,7 @@ DOCS = [ROOT / "README.md", ROOT / "README.zh_CN.md", *sorted((ROOT / "doc").glo
 FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 REFERENCE = re.compile(r"^\s{0,3}\[([^\]]+)\]:\s*(?:<([^>]+)>|(\S+))")
 LINK = re.compile(r"!?(?:\[[^\]]*\])\((?:<([^>]+)>|([^\s)]+))(?:(?:\s+[^)]*))?\)")
-REFERENCE_USE = re.compile(r"!?(?:\[[^\]]*\])\[([^\]]*)\]")
+REFERENCE_USE = re.compile(r"!?\[([^\]]*)\](?:\[([^\]]*)\])?")
 
 
 def visible_lines(text: str) -> list[tuple[int, str]]:
@@ -59,7 +59,7 @@ def check(root: Path = ROOT, docs: list[Path] | None = None) -> list[str]:
             for match in REFERENCE_USE.finditer(line):
                 if any(start <= match.start() < end for start, end in spans):
                     continue
-                label = match.group(1) or line[line.rfind("[", 0, match.start()) + 1:match.start()]
+                label = match.group(2) or match.group(1)
                 target = refs.get(label.casefold())
                 if target:
                     targets.append((number, target))
