@@ -15,6 +15,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
 #[cfg(feature = "async")]
 use std::task::Context;
 #[cfg(feature = "async")]
@@ -173,6 +174,7 @@ struct RandomFixture {
     file_system: FileSystem,
     current: Arc<Mutex<Arc<[u8]>>>,
     supported: bool,
+    replacement_calls: Arc<AtomicUsize>,
 }
 
 impl RandomFixture {
@@ -201,6 +203,7 @@ impl RandomFixture {
             file_system,
             current,
             supported,
+            replacement_calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -225,6 +228,7 @@ impl FileSystemFixture for RandomFixture {
         Ok(FixtureSupport::Supported(self.path(relative)?))
     }
     fn replace_random_access_path(&self, _path: &Path, bytes: &[u8]) -> FixtureResult<FixtureSupport<()>> {
+        self.replacement_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         *self.current.lock().expect("fixture state") = Arc::from(bytes);
         Ok(FixtureSupport::Supported(()))
     }
@@ -249,6 +253,8 @@ struct AsyncState {
     disarm_error: bool,
     open_pending: bool,
     random_access_open_error: bool,
+    reported_random_access_length: Option<u64>,
+    replacement_calls: usize,
 }
 
 #[cfg(feature = "async")]
@@ -364,12 +370,17 @@ impl AsyncFileSystemSpi for AsyncRandomProvider {
             if lock_async_state(&state).open_pending {
                 std::future::poll_fn(|_| Poll::<()>::Pending).await;
             }
-            let bytes = state.lock().expect("async fixture state").bytes.clone();
+            let (bytes, reported_length) = {
+                let state = state.lock().expect("async fixture state");
+                (state.bytes.clone(), state.reported_random_access_length)
+            };
             let info = OpenedFileInfo::new(
                 FileSystemId::new(PROVIDER_ID).expect("valid ID"),
                 request.path().clone(),
             )
-            .with_metadata(FileMetadata::new(FileKind::File).with_len(Some(bytes.len() as u64)));
+            .with_metadata(
+                FileMetadata::new(FileKind::File).with_len(Some(reported_length.unwrap_or(bytes.len() as u64))),
+            );
             Ok(OpenedAsyncRandomAccessReader::new(
                 info,
                 Box::new(AsyncRandomSession {
@@ -422,6 +433,16 @@ impl AsyncRandomFixture {
             .random_access_open_error = true;
         fixture
     }
+
+    fn with_reported_length(range_limit: FileSystemLimit, length: u64) -> Self {
+        let fixture = Self::with_limit(false, false, range_limit);
+        fixture
+            .state
+            .lock()
+            .expect("async fixture state")
+            .reported_random_access_length = Some(length);
+        fixture
+    }
 }
 
 #[cfg(feature = "async")]
@@ -459,7 +480,9 @@ impl AsyncFileSystemFixture for AsyncRandomFixture {
         _path: &'a Path,
         bytes: &'a [u8],
     ) -> FixtureFuture<'a, FixtureSupport<()>> {
-        self.state.lock().expect("async fixture state").bytes = Arc::from(bytes);
+        let mut state = self.state.lock().expect("async fixture state");
+        state.replacement_calls += 1;
+        state.bytes = Arc::from(bytes);
         Box::pin(async { Ok(FixtureSupport::Supported(())) })
     }
     fn arm_random_access_pending_read(&self, _path: &Path) -> FixtureResult<FixtureSupport<()>> {
@@ -979,6 +1002,39 @@ fn test_random_access_reads_bounds_and_object_identity() {
     ));
 }
 
+#[test]
+fn test_random_access_zero_range_limit_skips_content_and_identity_evidence() {
+    let fixture = RandomFixture::new(true, false, FileSystemLimit::Maximum(0));
+    for id in [
+        ContractCheckId::RandomAccessBasic,
+        ContractCheckId::RandomAccessIdentity,
+    ] {
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        assert!(run.failures().is_empty(), "{id}: {:?}", run.failures());
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::SkippedOptional { reason } if !reason.trim().is_empty()
+        ));
+        assert!(run.requirements_satisfied());
+        assert!(!run.requirements_satisfied_with(&[id]));
+        assert!(!run.all_applicable_checks_verified());
+    }
+    assert_eq!(fixture.replacement_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+    let open_error =
+        RandomFixture::with_open_options(true, false, FileSystemLimit::Maximum(0), Some(FsErrorKind::Io), None);
+    assert!(matches!(
+        outcome(&open_error, ContractCheckId::RandomAccessBasic),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    let incorrect_length = RandomFixture::with_open_options(true, false, FileSystemLimit::Maximum(0), None, Some(7));
+    assert!(matches!(
+        outcome(&incorrect_length, ContractCheckId::RandomAccessBasic),
+        ContractCheckOutcome::Failed { .. }
+    ));
+}
+
 #[cfg(feature = "async")]
 #[test]
 fn test_async_random_access_bounds_accept_finite_ranges() {
@@ -1054,6 +1110,46 @@ fn test_async_random_access_bounds_accept_finite_ranges() {
             ContractCheckOutcome::NotApplicable { .. }
         ));
     }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_zero_range_limit_skips_content_and_identity_evidence() {
+    let fixture = AsyncRandomFixture::with_limit(true, false, FileSystemLimit::Maximum(0));
+    for id in [
+        ContractCheckId::RandomAccessBasic,
+        ContractCheckId::RandomAccessIdentity,
+    ] {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = ready(suite.run_check(id));
+        assert!(run.failures().is_empty(), "async {id}: {:?}", run.failures());
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::SkippedOptional { reason } if !reason.trim().is_empty()
+        ));
+        assert!(run.requirements_satisfied());
+        assert!(!run.requirements_satisfied_with(&[id]));
+        assert!(!run.all_applicable_checks_verified());
+    }
+    assert_eq!(fixture.state.lock().expect("async fixture state").replacement_calls, 0);
+
+    let open_error = AsyncRandomFixture::with_open_error(FileSystemLimit::Maximum(0));
+    let mut suite = AsyncFileSystemContractSuite::new(&open_error);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
+    assert_eq!(run.failures().len(), 1);
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+
+    let incorrect_length = AsyncRandomFixture::with_reported_length(FileSystemLimit::Maximum(0), 7);
+    let mut suite = AsyncFileSystemContractSuite::new(&incorrect_length);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
+    assert_eq!(run.failures().len(), 1);
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
 }
 
 #[cfg(feature = "async")]

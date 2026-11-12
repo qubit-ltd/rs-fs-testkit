@@ -175,6 +175,17 @@ impl FileSystemContractSuite<'_> {
             return Err(ContractFailure::message_only("random-access open-time length did not match the seed").at(id));
         }
 
+        if matches!(range_limit, FileSystemLimit::Maximum(0))
+            && matches!(
+                id,
+                ContractCheckId::RandomAccessBasic | ContractCheckId::RandomAccessIdentity
+            )
+        {
+            return Ok(ContractCheckOutcome::SkippedOptional {
+                reason: "zero random-access range limit prevents non-empty content or identity evidence".to_owned(),
+            });
+        }
+
         if id == ContractCheckId::RandomAccessBasic {
             verify_sample(&mut reader, 4, b"ef", range_limit, id)?;
             verify_sample(&mut reader, 0, b"ab", range_limit, id)?;
