@@ -121,6 +121,12 @@ required_checks: |phase| match phase {
 运行会失败。`CopyNativeNonEmpty` 是新增的公开枚举变体，下游对 `ContractCheckId` 的穷尽 match
 需要新增该分支，或提供默认分支。
 
+`ServerSideCopy` 的正向检查 `ContractCheckId::CopyServerSide` 要求 fixture 独立预置并能独立读取
+大小为 `1..=64 KiB` 的非空源文件，同时确认目标初始不存在。若缺少准备或独立观察能力，结果为
+`Unverified`，不能沿用 Native 检查的可选跳过策略。已经返回 `FixturePreparation::Ready` 的用例
+若源为空或超过预算，检查会失败。空对象复制仍是合法的 API 行为，只是不能作为这项正向能力检查的
+内容证据；原先使用空源的 fixture 应改为准备上述非空场景。
+
 套件直接检查公开门面结果、必需副作用和 fixture 独立 hook 能提供的观察。必要事实无法独立观察时，
 结果记为 `Unverified`，不算通过。testkit 自己的 recording provider 与故障 fixture 用来验证套件
 是否正确记账、保留恢复责任并拒绝指定违规；它们不替 provider 提供行为保证。properties getter
