@@ -129,8 +129,7 @@ impl FileSystemContractSuite<'_> {
             }
         };
         verify_condition(
-            !snapshot.is_empty()
-                && snapshot.len() <= crate::internal::limit_probe_plan::MAX_PROBE_BYTES as usize,
+            !snapshot.is_empty() && snapshot.len() <= crate::internal::limit_probe_plan::MAX_PROBE_BYTES as usize,
             id,
             "server-side fixture source must contain 1..=64 KiB",
         )?;

@@ -5,7 +5,8 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Minimal provider whose server-side copy does not depend on facade Read/Write.
+//! Minimal provider whose server-side copy does not depend on facade
+//! Read/Write.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -149,17 +150,10 @@ impl FileSystemSpi for NativeSpi {
                 request.path().clone(),
                 FileMetadata::new(FileKind::File).with_len(Some(bytes.len() as u64)),
             )),
-            None => Err(FsError::new(
-                FsErrorKind::NotFound,
-                FsOperation::Stat,
-                "missing",
-            )),
+            None => Err(FsError::new(FsErrorKind::NotFound, FsOperation::Stat, "missing")),
         }
     }
-    fn open_reader(
-        &self,
-        request: OpenReaderRequest<'_>,
-    ) -> qubit_fs::error::FsResult<qubit_fs::spi::OpenedReader> {
+    fn open_reader(&self, request: OpenReaderRequest<'_>) -> qubit_fs::error::FsResult<qubit_fs::spi::OpenedReader> {
         self.state.lock().expect("state lock").reader_calls += 1;
         Err(FsError::new(
             FsErrorKind::PermissionDenied,
@@ -168,10 +162,7 @@ impl FileSystemSpi for NativeSpi {
         )
         .with_path(request.path().clone()))
     }
-    fn open_writer(
-        &self,
-        request: OpenWriterRequest<'_>,
-    ) -> qubit_fs::error::FsResult<qubit_fs::spi::OpenedWriter> {
+    fn open_writer(&self, request: OpenWriterRequest<'_>) -> qubit_fs::error::FsResult<qubit_fs::spi::OpenedWriter> {
         self.state.lock().expect("state lock").writer_calls += 1;
         Err(FsError::new(
             FsErrorKind::PermissionDenied,
@@ -207,11 +198,7 @@ impl FileSystemSpi for NativeSpi {
         let exists = s.files.contains_key(request.target().as_str());
         if exists && policy == CopyConflictPolicy::Fail {
             return Err(SpiCopyFailure::new(
-                FsError::new(
-                    FsErrorKind::AlreadyExists,
-                    FsOperation::Copy,
-                    "target exists",
-                ),
+                FsError::new(FsErrorKind::AlreadyExists, FsOperation::Copy, "target exists"),
                 qubit_fs::copy::CopyFailureState::Unchanged,
                 CopyStats::default(),
             ));
@@ -235,10 +222,8 @@ impl FileSystemSpi for NativeSpi {
         };
         s.files.insert(request.target().as_str().to_owned(), out);
         if s.mutate_source {
-            s.files.insert(
-                request.source().as_str().to_owned(),
-                b"mutated source".to_vec(),
-            );
+            s.files
+                .insert(request.source().as_str().to_owned(), b"mutated source".to_vec());
         }
         let method = if s.wrong_method {
             CopyMethod::Streamed
@@ -266,10 +251,7 @@ impl AsyncFileSystemSpi for AsyncNativeSpi {
     fn properties(&self) -> ProviderProperties {
         self.0.properties()
     }
-    fn stat<'a>(
-        &'a self,
-        req: StatRequest<'a>,
-    ) -> SpiFuture<'a, qubit_fs::error::FsResult<StatResponse>> {
+    fn stat<'a>(&'a self, req: StatRequest<'a>) -> SpiFuture<'a, qubit_fs::error::FsResult<StatResponse>> {
         Box::pin(async move { self.0.stat(req) })
     }
     fn open_reader<'a>(
@@ -301,10 +283,7 @@ impl AsyncFileSystemSpi for AsyncNativeSpi {
             .with_effect_state(qubit_fs::error::FsEffectState::Unchanged))
         })
     }
-    fn try_copy<'a>(
-        &'a self,
-        req: CopyRequest<'a>,
-    ) -> SpiFuture<'a, Result<CopyAttempt, SpiCopyFailure>> {
+    fn try_copy<'a>(&'a self, req: CopyRequest<'a>) -> SpiFuture<'a, Result<CopyAttempt, SpiCopyFailure>> {
         Box::pin(async move { self.0.try_copy(req) })
     }
 }
@@ -405,11 +384,7 @@ impl ServerSideCopyFixture {
         &self.fs
     }
     pub(crate) fn cleanup_snapshot(&self) -> HashMap<String, Vec<u8>> {
-        self.state
-            .lock()
-            .expect("state lock")
-            .cleanup_snapshot
-            .clone()
+        self.state.lock().expect("state lock").cleanup_snapshot.clone()
     }
     pub(crate) fn last_paths(&self) -> (String, String) {
         let s = self.state.lock().expect("state lock");
@@ -424,8 +399,7 @@ impl FileSystemFixture for ServerSideCopyFixture {
         &self.fs
     }
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/server-side-copy/{relative}"))
-            .map_err(|e| FixtureError::new(e.to_string()))
+        Path::parse(&format!("/server-side-copy/{relative}")).map_err(|e| FixtureError::new(e.to_string()))
     }
     fn seed_file(&self, relative: &str, bytes: &[u8]) -> FixtureResult<FixtureSupport<Path>> {
         let p = self.path(relative)?;
@@ -462,14 +436,9 @@ impl FileSystemFixture for ServerSideCopyFixture {
         if state.exists_unsupported {
             return Ok(FixtureSupport::Unsupported);
         }
-        Ok(FixtureSupport::Supported(
-            state.files.contains_key(path.as_str()),
-        ))
+        Ok(FixtureSupport::Supported(state.files.contains_key(path.as_str())))
     }
-    fn copy_fast_path_case(
-        &self,
-        method: CopyMethod,
-    ) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
+    fn copy_fast_path_case(&self, method: CopyMethod) -> FixtureResult<FixtureSupport<CopyFixtureCase>> {
         if method != CopyMethod::ServerSide {
             return Ok(FixtureSupport::Unsupported);
         }
@@ -505,14 +474,11 @@ impl FileSystemFixture for ServerSideCopyFixture {
             state.last_target = Some(target.as_str().to_owned());
         }
         match self.seed_file("server-side-source", &source_bytes)? {
-            FixtureSupport::Supported(source) => {
-                Ok(FixtureSupport::Supported(CopyFixtureCase::new(
-                    source,
-                    target,
-                    qubit_fs::copy::CopyOptions::file()
-                        .with_server_side(qubit_fs::copy::ServerSidePreference::Require),
-                )))
-            }
+            FixtureSupport::Supported(source) => Ok(FixtureSupport::Supported(CopyFixtureCase::new(
+                source,
+                target,
+                qubit_fs::copy::CopyOptions::file().with_server_side(qubit_fs::copy::ServerSidePreference::Require),
+            ))),
             FixtureSupport::Unsupported => Ok(FixtureSupport::Unsupported),
         }
     }
@@ -663,11 +629,7 @@ impl AsyncServerSideCopyFixture {
         self.state.lock().expect("state lock").files.is_empty()
     }
     pub(crate) fn cleanup_snapshot(&self) -> HashMap<String, Vec<u8>> {
-        self.state
-            .lock()
-            .expect("state lock")
-            .cleanup_snapshot
-            .clone()
+        self.state.lock().expect("state lock").cleanup_snapshot.clone()
     }
     pub(crate) fn last_paths(&self) -> (String, String) {
         let s = self.state.lock().expect("state lock");
@@ -683,14 +645,9 @@ impl AsyncFileSystemFixture for AsyncServerSideCopyFixture {
         &self.fs
     }
     fn path(&self, relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/server-side-copy/{relative}"))
-            .map_err(|e| FixtureError::new(e.to_string()))
+        Path::parse(&format!("/server-side-copy/{relative}")).map_err(|e| FixtureError::new(e.to_string()))
     }
-    fn seed_file<'a>(
-        &'a self,
-        relative: &'a str,
-        bytes: &'a [u8],
-    ) -> FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
         Box::pin(async move {
             let p = self.path(relative)?;
             let mut state = self.state.lock().expect("state lock");
@@ -708,9 +665,7 @@ impl AsyncFileSystemFixture for AsyncServerSideCopyFixture {
             if state.read_error || (state.read_error_after_first && state.read_calls > 1) {
                 return Err(FixtureError::new("injected read observation error"));
             }
-            if state.read_unsupported
-                || (state.read_unsupported_after_first && state.read_calls > 1)
-            {
+            if state.read_unsupported || (state.read_unsupported_after_first && state.read_calls > 1) {
                 return Ok(FixtureSupport::Unsupported);
             }
             if !state.observation_supported {
@@ -732,15 +687,10 @@ impl AsyncFileSystemFixture for AsyncServerSideCopyFixture {
             if state.exists_unsupported {
                 return Ok(FixtureSupport::Unsupported);
             }
-            Ok(FixtureSupport::Supported(
-                state.files.contains_key(path.as_str()),
-            ))
+            Ok(FixtureSupport::Supported(state.files.contains_key(path.as_str())))
         })
     }
-    fn copy_fast_path_case<'a>(
-        &'a self,
-        method: CopyMethod,
-    ) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
+    fn copy_fast_path_case<'a>(&'a self, method: CopyMethod) -> FixtureFuture<'a, FixtureSupport<CopyFixtureCase>> {
         Box::pin(async move {
             if method != CopyMethod::ServerSide {
                 return Ok(FixtureSupport::Unsupported);
@@ -779,14 +729,11 @@ impl AsyncFileSystemFixture for AsyncServerSideCopyFixture {
                 state.last_target = Some(target.as_str().to_owned());
             }
             match self.seed_file("server-side-source", &source_bytes).await? {
-                FixtureSupport::Supported(source) => {
-                    Ok(FixtureSupport::Supported(CopyFixtureCase::new(
-                        source,
-                        target,
-                        qubit_fs::copy::CopyOptions::file()
-                            .with_server_side(qubit_fs::copy::ServerSidePreference::Require),
-                    )))
-                }
+                FixtureSupport::Supported(source) => Ok(FixtureSupport::Supported(CopyFixtureCase::new(
+                    source,
+                    target,
+                    qubit_fs::copy::CopyOptions::file().with_server_side(qubit_fs::copy::ServerSidePreference::Require),
+                ))),
                 FixtureSupport::Unsupported => Ok(FixtureSupport::Unsupported),
             }
         })
@@ -800,14 +747,12 @@ impl AsyncFileSystemFixture for AsyncServerSideCopyFixture {
     ) -> FixtureFuture<'a, FixturePreparation<CopyFixtureCase>> {
         Box::pin(async move {
             if scenario == CopyScenario::ServerSide {
-                return Ok(
-                    match self.copy_fast_path_case(CopyMethod::ServerSide).await? {
-                        FixtureSupport::Supported(case) => FixturePreparation::Ready(case),
-                        FixtureSupport::Unsupported => FixturePreparation::Unavailable {
-                            reason: "server-side case unavailable".into(),
-                        },
+                return Ok(match self.copy_fast_path_case(CopyMethod::ServerSide).await? {
+                    FixtureSupport::Supported(case) => FixturePreparation::Ready(case),
+                    FixtureSupport::Unsupported => FixturePreparation::Unavailable {
+                        reason: "server-side case unavailable".into(),
                     },
-                );
+                });
             }
             if scenario != CopyScenario::Basic && scenario != CopyScenario::Conflict {
                 return Ok(FixturePreparation::Unavailable {
@@ -827,8 +772,7 @@ impl AsyncFileSystemFixture for AsyncServerSideCopyFixture {
                 });
             };
             let dst = if scenario == CopyScenario::Conflict {
-                let FixtureSupport::Supported(dst) = self.seed_file(target, b"existing").await?
-                else {
+                let FixtureSupport::Supported(dst) = self.seed_file(target, b"existing").await? else {
                     return Ok(FixturePreparation::Unavailable {
                         reason: "server-side fixture cannot seed the copy target".into(),
                     });

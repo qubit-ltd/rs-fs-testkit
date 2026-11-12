@@ -1,7 +1,9 @@
 // =============================================================================
-//    Copyright (c) 2026 Haixing Hu.
+//    Copyright (c) 2025 - 2026 Haixing Hu.
 //
 //    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
 mod common;
@@ -23,13 +25,7 @@ fn check_sync_fault(name: &str, passed: bool, calls: usize) -> ContractCheckOutc
     assert!(fixture.is_empty(), "fault: {name}");
     if passed {
         assert!(run.failures().is_empty(), "fault: {name}");
-    } else if [
-        "read_unsupported",
-        "read_unsupported_after_first",
-        "exists_unsupported",
-    ]
-    .contains(&name)
-    {
+    } else if ["read_unsupported", "read_unsupported_after_first", "exists_unsupported"].contains(&name) {
         assert!(run.failures().is_empty(), "fault: {name}");
         assert!(matches!(
             run.report().checks()[0].outcome(),
@@ -46,31 +42,28 @@ fn check_sync_fault(name: &str, passed: bool, calls: usize) -> ContractCheckOutc
 }
 
 #[test]
-fn one_byte_and_budget_boundary_sources_pass() {
+fn test_one_byte_and_budget_boundary_sources_pass() {
     for name in ["one_byte_source", "max_source"] {
-        assert_eq!(
-            check_sync_fault(name, true, 1),
-            ContractCheckOutcome::Passed
-        );
+        assert_eq!(check_sync_fault(name, true, 1), ContractCheckOutcome::Passed);
     }
 }
 
 #[test]
-fn empty_and_over_budget_sources_fail_before_copy() {
+fn test_empty_and_over_budget_sources_fail_before_copy() {
     for name in ["empty_source", "large_source"] {
         let _ = check_sync_fault(name, false, 0);
     }
 }
 
 #[test]
-fn server_side_content_and_source_are_independently_verified() {
+fn test_server_side_content_and_source_are_independently_verified() {
     for name in ["discard_content", "mutate_source"] {
         let _ = check_sync_fault(name, false, 1);
     }
 }
 
 #[test]
-fn unsupported_observation_is_unverified_but_observation_error_fails() {
+fn test_unsupported_observation_is_unverified_but_observation_error_fails() {
     for (name, calls) in [
         ("read_unsupported", 0),
         ("read_unsupported_after_first", 1),
@@ -87,10 +80,12 @@ fn unsupported_observation_is_unverified_but_observation_error_fails() {
 
 #[cfg(feature = "async")]
 mod asynchronous {
-    use super::*;
-    use common::async_memory_file_system::run_controlled;
-    use common::server_side_copy_fixture::AsyncServerSideCopyFixture;
     use qubit_fs_testkit::AsyncFileSystemContractSuite;
+
+    use super::ContractCheckId;
+    use super::ContractCheckOutcome;
+    use super::common::async_memory_file_system::run_controlled;
+    use super::common::server_side_copy_fixture::AsyncServerSideCopyFixture;
 
     fn check_fault(name: &'static str, passed: bool, calls: usize) -> ContractCheckOutcome {
         let fixture = AsyncServerSideCopyFixture::new(true, true);
@@ -104,13 +99,7 @@ mod asynchronous {
             assert!(fixture.is_empty(), "fault: {name}");
             if passed {
                 assert!(run.failures().is_empty(), "fault: {name}");
-            } else if [
-                "read_unsupported",
-                "read_unsupported_after_first",
-                "exists_unsupported",
-            ]
-            .contains(&name)
-            {
+            } else if ["read_unsupported", "read_unsupported_after_first", "exists_unsupported"].contains(&name) {
                 assert!(run.failures().is_empty(), "fault: {name}");
                 assert!(matches!(
                     run.report().checks()[0].outcome(),
@@ -128,28 +117,28 @@ mod asynchronous {
     }
 
     #[test]
-    fn one_byte_and_budget_boundary_sources_pass() {
+    fn test_one_byte_and_budget_boundary_sources_pass() {
         for name in ["one_byte_source", "max_source"] {
             assert_eq!(check_fault(name, true, 1), ContractCheckOutcome::Passed);
         }
     }
 
     #[test]
-    fn empty_and_over_budget_sources_fail_before_copy() {
+    fn test_empty_and_over_budget_sources_fail_before_copy() {
         for name in ["empty_source", "large_source"] {
             let _ = check_fault(name, false, 0);
         }
     }
 
     #[test]
-    fn server_side_content_and_source_are_independently_verified() {
+    fn test_server_side_content_and_source_are_independently_verified() {
         for name in ["discard_content", "mutate_source"] {
             let _ = check_fault(name, false, 1);
         }
     }
 
     #[test]
-    fn unsupported_observation_is_unverified_but_observation_error_fails() {
+    fn test_unsupported_observation_is_unverified_but_observation_error_fails() {
         for (name, calls) in [
             ("read_unsupported", 0),
             ("read_unsupported_after_first", 1),
