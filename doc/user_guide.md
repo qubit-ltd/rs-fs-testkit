@@ -573,6 +573,28 @@ cancellation probes are explicit skips; executed probe failures remain failures.
 Existing check IDs remain unchanged; range checks include zero and EOF windows
 when capability permits.
 
+With a finite `max_write_bytes`, `WriteLimit` checks whole-file requests at the
+declared boundary and one byte above it. It validates the structured
+`ResourceLimitExceeded` rejection and independently confirms that the rejected
+request left the target absent or unchanged. This does not exercise repeated
+writes to one open writer: cumulative stream enforcement belongs to the
+`qubit-fs` core. The synchronous core regression
+[`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/writer/write_all_failure_tests.rs)
+writes `two` and then `xx` under a limit of 3, checks the typed write-limit
+error, and confirms the still-open writer can be aborted. The asynchronous core
+regression [`test_async_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/async_handle_review_tests.rs)
+accepts `abc` then rejects `d` under limit 3, checks the typed error and that
+only `abc` was accepted, and confirms the writer remains abortable. The separate
+[`test_async_writer_enforces_limit_and_closed_state`](../../rs-fs/tests/async_handle_review_tests.rs)
+also checks one oversized payload and post-commit rejection.
+
+For random access, a declared `Maximum(0)` still permits empty-range evidence.
+`Bounds` is an optional skip because its probes require non-empty reads;
+`Basic` and `Identity` likewise skip only their non-empty content/identity
+evidence after opening and checking the resource. A caller that requires either
+check must list its check ID explicitly; a skip does not satisfy that
+requirement.
+
 For temporary resources, testkit 0.9 follows the qubit-fs 0.3 contract that keeps
 publication facts independent from source qualification. This suite checks the
 existing repeated lifecycle, including the publication target after a successful

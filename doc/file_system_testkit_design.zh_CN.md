@@ -639,6 +639,20 @@ request；这只验证调用方侧的消费预算，不代表 provider 或服务
 fixture 准备 `CreateOrReplace` 时还会记录既有内容。清理保留的 recovery session 后，
 套件再次独立确认目标仍缺失或保持原状。观测能力缺失记为未验证；观测错误或目标变化会使检查失败。
 
+这是整文件门面证据：对于有限写入上限，套件分别提交恰好位于边界及超出一个字节的单个 payload，
+检查结构化拒绝，并独立观察目标未改变。它不能证明同一个打开流上的多次写入累计限制。同步核心回归
+[`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/writer/write_all_failure_tests.rs)
+在上限 3 下接受 `two` 后拒绝 `xx`。当前异步测试
+[`test_async_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/async_handle_review_tests.rs)
+在上限 3 下接受 `abc` 后拒绝 `d`，检查 typed 错误及已接受字节，并确认 writer 仍打开且可显式 abort。
+同步回归也检查 typed 错误和 abort 恢复。另一个异步测试
+[`test_async_writer_enforces_limit_and_closed_state`](../../rs-fs/tests/async_handle_review_tests.rs)
+继续覆盖单次超限请求和 commit 后的写入拒绝。
+
+随机访问的 `Maximum(0)` 仍允许空范围和上界证据。`Bounds` 跳过需要非空读取的探针，
+`Basic` 与 `Identity` 则只跳过非空内容或身份验证，并且此前仍需成功打开资源并检查长度。
+这些可选跳过不满足调用方显式列出的必需检查。
+
 取消诊断的所有权迁移如下：
 
 | 失败路径 | 保留的 source | 恢复方式 |

@@ -436,6 +436,22 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 缺少的可选写取消探针会明确记录为跳过；已执行探针失败仍然失败。既有检查 ID 不变，
 范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
 
+当 `max_write_bytes` 为有限值时，`WriteLimit` 检查整文件请求在声明边界上的写入，
+以及超出一个字节的请求。它验证结构化的 `ResourceLimitExceeded` 拒绝，并独立确认
+被拒请求后目标仍缺失或内容未变。这不会对同一个打开的 writer 执行多次写入；流式累计
+限制由 `qubit-fs` 核心负责。同步核心回归
+[`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/writer/write_all_failure_tests.rs)
+在上限 3 下依次写入 `two`（接受）和 `xx`（拒绝），检查 typed 写入上限错误，并确认
+仍打开的 writer 可以 abort。异步核心回归
+[`test_async_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/async_handle_review_tests.rs)
+在上限 3 下接受 `abc` 后拒绝 `d`，检查 typed 错误和仅接受了 `abc`，并确认 writer 仍可 abort。
+另一个测试 [`test_async_writer_enforces_limit_and_closed_state`](../../rs-fs/tests/async_handle_review_tests.rs)
+还覆盖单次超限 payload 以及 commit 后拒绝写入。
+
+随机访问声明 `Maximum(0)` 时仍可验证空范围。`Bounds` 因探针需要非空读取而记为可选跳过；
+`Basic` 和 `Identity` 也仅在打开并检查资源后跳过其非空内容／身份验证。若调用方要求其中
+任一检查，必须显式列出对应检查 ID；跳过不满足该要求。
+
 对于临时资源，testkit 0.9 遵循 qubit-fs 0.3 将 publication 事实与源资格分开的契约。本套件
 检查既有的重复生命周期，包括成功 `keep` 后的发布目标；新增源状态、非法重试、
 cleanup 失败与取消由核心及 adapter 回归覆盖。

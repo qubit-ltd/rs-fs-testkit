@@ -247,6 +247,25 @@ cleans any retained recovery session, then independently confirms the target
 remains absent or unchanged. Missing observation support is unverified; errors
 or changed target state fail the check.
 
+This is whole-file facade evidence: with a finite write limit the suite submits
+one payload at the boundary and another one byte over it, checks the structured
+rejection, and observes that the target was not changed. It does not establish
+the cumulative budget across multiple calls on one open stream. That core
+behavior is covered synchronously by
+[`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/writer/write_all_failure_tests.rs),
+which accepts `two` then rejects `xx` at limit 3. The current asynchronous test
+[`test_async_writer_rejects_cumulative_bytes_over_finite_write_limit`](../../rs-fs/tests/async_handle_review_tests.rs)
+accepts `abc` then rejects `d` at limit 3, checks the typed error and accepted
+bytes, and confirms that the writer remains open for explicit abort. The
+synchronous regression also checks typed error and abort recovery. The separate
+[`test_async_writer_enforces_limit_and_closed_state`](../../rs-fs/tests/async_handle_review_tests.rs)
+continues to cover a single oversized request and writes after commit.
+
+For random access, `Maximum(0)` allows empty-range and upper-bound evidence.
+`Bounds` skips its non-empty probe, while `Basic` and `Identity` skip only their
+non-empty content or identity evidence after successful open and length checks.
+Those optional skips do not satisfy a caller's explicit required-check list.
+
 Cancellation diagnostics use the following ownership mapping:
 
 | Failure path | Retained source | Recovery |
