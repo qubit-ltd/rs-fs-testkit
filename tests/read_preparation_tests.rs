@@ -10,13 +10,89 @@
 pub use ::qubit_fs_testkit;
 
 mod common;
+use qubit_fs::FileSystem;
+use qubit_fs::metadata::ResourceVersion;
+use qubit_fs::path::Path;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
+use qubit_fs_testkit::FileSystemFixture;
+use qubit_fs_testkit::FixturePreparation;
+use qubit_fs_testkit::FixtureResult;
+use qubit_fs_testkit::FixtureSupport;
+use qubit_fs_testkit::ReadScenario;
 
 use self::common::MemoryFault;
 use self::common::MemoryFixture;
+
+struct StaleVersionUnavailableFixture {
+    inner: MemoryFixture,
+}
+
+impl FileSystemFixture for StaleVersionUnavailableFixture {
+    fn file_system(&self) -> &FileSystem {
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+
+    fn prepare_read(
+        &self,
+        scenario: ReadScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<FixturePreparation<Path>> {
+        self.inner.prepare_read(scenario, relative, bytes)
+    }
+
+    fn resource_version(&self, path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+        self.inner.resource_version(path)
+    }
+
+    fn stale_resource_version(&self, _path: &Path) -> FixtureResult<FixtureSupport<ResourceVersion>> {
+        Ok(FixtureSupport::Unsupported)
+    }
+}
+
+struct ReadScenarioNotApplicableFixture {
+    inner: MemoryFixture,
+}
+
+impl FileSystemFixture for ReadScenarioNotApplicableFixture {
+    fn file_system(&self) -> &FileSystem {
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+
+    fn prepare_read(
+        &self,
+        scenario: ReadScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<FixturePreparation<Path>> {
+        if scenario == ReadScenario::Basic {
+            Ok(FixturePreparation::NotApplicable {
+                reason: "basic read setup cannot be independently created".to_owned(),
+            })
+        } else {
+            self.inner.prepare_read(scenario, relative, bytes)
+        }
+    }
+}
 /// Deliberately rejected read requests must be distinguishable from reads.
 #[test]
 fn test_read_rejection_evidence_is_explicit() {
@@ -141,4 +217,47 @@ fn test_async_stale_read_failure_retains_check_identity() {
         );
         assert!(fixture.is_empty());
     });
+}
+
+#[test]
+fn test_stale_read_version_without_independent_evidence_is_unverified() {
+    let fixture = StaleVersionUnavailableFixture {
+        inner: MemoryFixture::with_all_capabilities(),
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::ReadIfMatchStale);
+    assert!(
+        run.failures().is_empty(),
+        "missing version evidence is not a provider failure"
+    );
+    assert!(!run.requirements_satisfied());
+    assert!(matches!(
+        run.report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == ContractCheckId::ReadIfMatchStale)
+            .expect("stale read check must be reported")
+            .outcome(),
+        ContractCheckOutcome::Unverified { reason } if reason.contains("stale version unavailable")
+    ));
+    assert!(run.cleanup().completed());
+    assert!(fixture.inner.is_empty(), "version evidence setup must be cleaned");
+}
+
+#[test]
+fn test_read_scenario_not_applicable_is_reported_as_unverified() {
+    let fixture = ReadScenarioNotApplicableFixture {
+        inner: MemoryFixture::with_all_capabilities(),
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::ReadBasic);
+    assert!(run.failures().is_empty(), "scenario applicability is a report outcome");
+    assert!(!run.requirements_satisfied());
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Unverified { reason }
+            if reason.contains("declared read capability requires scenario evidence")
+    ));
+    assert!(run.cleanup().completed());
+    assert!(fixture.inner.is_empty(), "not-applicable setup must not leak resources");
 }

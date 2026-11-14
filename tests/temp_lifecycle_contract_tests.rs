@@ -8,6 +8,8 @@
 
 mod common;
 
+use std::cell::Cell;
+
 pub use ::qubit_fs_testkit;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::metadata::AtomicityRequirement;
@@ -31,6 +33,170 @@ fn assert_fixture_file(fixture: &MemoryFixture, path: &Path, expected: &[u8]) {
     match fixture.read_file(path).expect("fixture file observation must succeed") {
         FixtureSupport::Supported(actual) => assert_eq!(actual, expected),
         FixtureSupport::Unsupported => panic!("fixture must observe the published temporary file"),
+    }
+}
+
+struct TempFilePostPublicationReadUnsupportedFixture {
+    inner: MemoryFixture,
+    read_calls: Cell<usize>,
+}
+
+impl TempFilePostPublicationReadUnsupportedFixture {
+    fn new() -> Self {
+        Self {
+            inner: MemoryFixture::with_all_capabilities(),
+            read_calls: Cell::new(0),
+        }
+    }
+}
+
+impl FileSystemFixture for TempFilePostPublicationReadUnsupportedFixture {
+    fn file_system(&self) -> &qubit_fs::FileSystem {
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+
+    fn read_file(&self, path: &Path) -> qubit_fs_testkit::FixtureResult<FixtureSupport<Vec<u8>>> {
+        let call = self.read_calls.get() + 1;
+        self.read_calls.set(call);
+        if call == 4 {
+            Ok(FixtureSupport::Unsupported)
+        } else {
+            self.inner.read_file(path)
+        }
+    }
+
+    fn exists_out_of_band(&self, path: &Path) -> qubit_fs_testkit::FixtureResult<FixtureSupport<bool>> {
+        self.inner.exists_out_of_band(path)
+    }
+
+    fn write_file_out_of_band(&self, path: &Path, bytes: &[u8]) -> qubit_fs_testkit::FixtureResult<FixtureSupport<()>> {
+        self.inner.write_file_out_of_band(path, bytes)
+    }
+
+    fn seed_empty_directory(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<FixtureSupport<Path>> {
+        self.inner.seed_empty_directory(relative)
+    }
+
+    fn teardown(&self) -> qubit_fs_testkit::FixtureResult<()> {
+        self.inner.teardown()
+    }
+}
+
+struct TempExistenceMismatchFixture {
+    inner: MemoryFixture,
+    mismatch_at: usize,
+    error_at: Option<usize>,
+    exists_calls: Cell<usize>,
+}
+
+impl TempExistenceMismatchFixture {
+    fn new(inner: MemoryFixture, mismatch_at: usize) -> Self {
+        Self {
+            inner,
+            mismatch_at,
+            error_at: None,
+            exists_calls: Cell::new(0),
+        }
+    }
+
+    fn failing_observation(inner: MemoryFixture, error_at: usize) -> Self {
+        Self {
+            inner,
+            mismatch_at: 0,
+            error_at: Some(error_at),
+            exists_calls: Cell::new(0),
+        }
+    }
+}
+
+impl FileSystemFixture for TempExistenceMismatchFixture {
+    fn file_system(&self) -> &qubit_fs::FileSystem {
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+
+    fn read_file(&self, path: &Path) -> qubit_fs_testkit::FixtureResult<FixtureSupport<Vec<u8>>> {
+        self.inner.read_file(path)
+    }
+
+    fn exists_out_of_band(&self, path: &Path) -> qubit_fs_testkit::FixtureResult<FixtureSupport<bool>> {
+        let call = self.exists_calls.get() + 1;
+        self.exists_calls.set(call);
+        if self.error_at == Some(call) {
+            return Err(qubit_fs_testkit::FixtureError::new(
+                "injected independent existence observation failure",
+            ));
+        }
+        let observed = self.inner.exists_out_of_band(path)?;
+        if call == self.mismatch_at {
+            Ok(match observed {
+                FixtureSupport::Supported(exists) => FixtureSupport::Supported(!exists),
+                FixtureSupport::Unsupported => FixtureSupport::Supported(false),
+            })
+        } else {
+            Ok(observed)
+        }
+    }
+
+    fn write_file_out_of_band(&self, path: &Path, bytes: &[u8]) -> qubit_fs_testkit::FixtureResult<FixtureSupport<()>> {
+        self.inner.write_file_out_of_band(path, bytes)
+    }
+
+    fn seed_empty_directory(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<FixtureSupport<Path>> {
+        self.inner.seed_empty_directory(relative)
+    }
+
+    fn teardown(&self) -> qubit_fs_testkit::FixtureResult<()> {
+        self.inner.teardown()
+    }
+}
+
+#[test]
+fn test_sync_temp_contracts_attribute_each_existence_observation_error() {
+    for id in [
+        ContractCheckId::TempFile,
+        ContractCheckId::TempDirectory,
+        ContractCheckId::TempAtomic,
+        ContractCheckId::TempRepeatedLifecycle,
+    ] {
+        let baseline_fixture = if id == ContractCheckId::TempAtomic {
+            MemoryFixture::without_atomic_temp_persist()
+        } else {
+            MemoryFixture::with_all_capabilities()
+        };
+        let mut baseline_suite = FileSystemContractSuite::new(&baseline_fixture);
+        let baseline = baseline_suite.run_check(id);
+        let observation_calls = baseline_fixture.exists_call_count();
+        assert!(
+            baseline.requirements_satisfied(),
+            "baseline {id}: {:?}",
+            baseline.failures()
+        );
+        assert!(observation_calls > 0);
+        assert!(baseline.cleanup().completed());
+        assert!(baseline_fixture.is_empty());
+
+        for error_at in 1..=observation_calls {
+            let inner = if id == ContractCheckId::TempAtomic {
+                MemoryFixture::without_atomic_temp_persist()
+            } else {
+                MemoryFixture::with_all_capabilities()
+            };
+            let fixture = TempExistenceMismatchFixture::failing_observation(inner, error_at);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            assert!(!run.requirements_satisfied(), "{id}, observation {error_at}");
+            assert!(run.failures().iter().any(|failure| failure.check() == Some(id)));
+            assert!(run.cleanup().completed(), "{id}, observation {error_at}");
+            assert!(fixture.inner.is_empty(), "{id}, observation {error_at}");
+        }
     }
 }
 
@@ -265,6 +431,89 @@ fn test_sync_temp_content_evidence_is_unverified_when_hooks_are_unsupported() {
 }
 
 #[test]
+fn test_sync_temp_directory_content_evidence_is_unverified_when_hooks_are_unsupported() {
+    for fault in [
+        MemoryFault::TempWriteHookUnsupported,
+        MemoryFault::TempReadHookUnsupported,
+    ] {
+        let fixture = MemoryFixture::with_fault(fault);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempDirectory);
+
+        assert!(run.failures().is_empty(), "{fault:?}: {:?}", run.failures());
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Unverified { reason } if reason.contains("fixture")
+        ));
+        assert!(
+            !run.requirements_satisfied(),
+            "missing independent directory evidence must not count as verified: {fault:?}"
+        );
+        assert!(fixture.is_empty(), "{fault:?}: directory resources must be cleaned");
+    }
+}
+
+#[test]
+fn test_sync_temp_directory_independent_parent_seed_gaps_are_failures_and_cleaned() {
+    let cases = [
+        (
+            "unsupported parent seed",
+            MemoryFixture::with_unavailable_seed_calls(Some(1), None),
+        ),
+        (
+            "parent seed setup error",
+            MemoryFixture::with_seed_error_calls(None, Some(1)),
+        ),
+    ];
+
+    for (case, fixture) in cases {
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempDirectory);
+
+        assert!(!run.requirements_satisfied(), "{case} must not pass");
+        assert_eq!(run.failures().len(), 1, "{case}: {:?}", run.failures());
+        assert_eq!(
+            run.failures()[0].check(),
+            Some(ContractCheckId::TempDirectory),
+            "{case}"
+        );
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Failed { .. }
+        ));
+        assert!(fixture.is_empty(), "{case}: fixture resources must be cleaned");
+    }
+}
+
+#[test]
+fn test_sync_temp_directory_content_setup_error_remains_a_failure() {
+    for hook in [
+        self::common::shared_model::FixtureHook::WriteFile,
+        self::common::shared_model::FixtureHook::ReadFile,
+    ] {
+        let fixture = MemoryFixture::with_fixture_hook_error(hook, 1);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempDirectory);
+
+        assert!(!run.requirements_satisfied(), "{hook:?}");
+        assert_eq!(run.failures().len(), 1, "{hook:?}: {:?}", run.failures());
+        assert_eq!(
+            run.failures()[0].check(),
+            Some(ContractCheckId::TempDirectory),
+            "{hook:?}"
+        );
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Failed { .. }
+        ));
+        assert!(
+            fixture.is_empty(),
+            "{hook:?}: content setup failure must clean temporary resources"
+        );
+    }
+}
+
+#[test]
 fn test_sync_temp_content_setup_errors_remain_failures() {
     let fixture = MemoryFixture::with_fixture_hook_error_and_limits(
         self::common::shared_model::FixtureHook::WriteFile,
@@ -294,4 +543,124 @@ fn test_sync_temp_content_setup_does_not_require_facade_write_capability() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::TempFile);
     assert!(run.requirements_satisfied(), "{:?}", run.failures());
+}
+
+#[test]
+fn test_sync_temp_file_independent_parent_seed_gaps_are_failures_and_cleaned() {
+    let cases = [
+        (
+            "unsupported parent seed",
+            MemoryFixture::with_unavailable_seed_calls(Some(1), None),
+        ),
+        (
+            "parent seed setup error",
+            MemoryFixture::with_seed_error_calls(None, Some(1)),
+        ),
+    ];
+
+    for (case, fixture) in cases {
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempFile);
+
+        assert!(!run.requirements_satisfied(), "{case} must not pass");
+        assert_eq!(run.failures().len(), 1, "{case}: {:?}", run.failures());
+        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::TempFile), "{case}");
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Failed { .. }
+        ));
+        assert!(run.cleanup().completed(), "{case}: fixture teardown must complete");
+        assert!(fixture.is_empty(), "{case}: fixture resources must be cleaned");
+    }
+}
+
+#[test]
+fn test_sync_temp_file_publication_records_unsupported_read_evidence() {
+    let fixture = TempFilePostPublicationReadUnsupportedFixture::new();
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::TempFile);
+
+    assert_eq!(
+        fixture.read_calls.get(),
+        4,
+        "unsupported evidence must occur after publication"
+    );
+    assert!(
+        run.failures().is_empty(),
+        "unexpected fixture failures: {:?}",
+        run.failures()
+    );
+    assert!(run.report().checks().iter().any(|check| {
+        check.id() == ContractCheckId::TempFile
+            && matches!(
+                check.outcome(),
+                ContractCheckOutcome::Unverified { reason } if reason.contains("after publication")
+            )
+    }));
+    assert!(
+        !run.requirements_satisfied(),
+        "missing publication evidence must remain unverified"
+    );
+    assert!(run.cleanup().completed(), "temp-file cleanup must complete");
+    assert!(
+        fixture.inner.is_empty(),
+        "temp-file run must clean the underlying provider"
+    );
+}
+
+#[test]
+fn test_sync_temp_contracts_reject_each_contradictory_existence_observation() {
+    for id in [
+        ContractCheckId::TempFile,
+        ContractCheckId::TempDirectory,
+        ContractCheckId::TempAtomic,
+        ContractCheckId::TempRepeatedLifecycle,
+    ] {
+        let baseline_fixture = if id == ContractCheckId::TempAtomic {
+            MemoryFixture::without_atomic_temp_persist()
+        } else {
+            MemoryFixture::with_all_capabilities()
+        };
+        let mut baseline_suite = FileSystemContractSuite::new(&baseline_fixture);
+        let baseline = baseline_suite.run_check(id);
+        assert!(
+            baseline.requirements_satisfied(),
+            "baseline {id}: {:?}",
+            baseline.failures()
+        );
+        let observation_calls = baseline_fixture.exists_call_count();
+        assert!(observation_calls > 0, "{id} must use independent existence evidence");
+        assert!(baseline.cleanup().completed(), "baseline {id} cleanup must complete");
+        assert!(baseline_fixture.is_empty(), "baseline {id} leaked resources");
+
+        for mismatch_at in 1..=observation_calls {
+            let inner = if id == ContractCheckId::TempAtomic {
+                MemoryFixture::without_atomic_temp_persist()
+            } else {
+                MemoryFixture::with_all_capabilities()
+            };
+            let fixture = TempExistenceMismatchFixture::new(inner, mismatch_at);
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+
+            assert!(!run.requirements_satisfied(), "{id}, observation {mismatch_at}");
+            assert!(
+                run.failures().iter().any(|failure| failure.check() == Some(id)),
+                "{id}, observation {mismatch_at}: {:?}",
+                run.failures()
+            );
+            assert!(matches!(
+                run.report().checks()[0].outcome(),
+                ContractCheckOutcome::Failed { .. }
+            ));
+            assert!(
+                run.cleanup().completed(),
+                "{id}, observation {mismatch_at}: cleanup must complete"
+            );
+            assert!(
+                fixture.inner.is_empty(),
+                "{id}, observation {mismatch_at}: fixture resources must be cleaned"
+            );
+        }
+    }
 }

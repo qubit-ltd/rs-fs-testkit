@@ -22,6 +22,7 @@ use qubit_fs_testkit::FileSystemContract;
 use self::common::AsyncMemoryFault;
 use self::common::AsyncMemoryFixture;
 use self::common::async_memory_file_system::run_controlled;
+use self::common::shared_model::FixtureHook;
 use crate::common::UnavailableScenario;
 
 #[test]
@@ -64,6 +65,27 @@ fn test_async_limits_allow_single_byte_write() {
             .await
             .assert_satisfied()
     });
+}
+
+#[test]
+fn test_async_bounded_read_preserves_reader_failure_context() {
+    let limits = FileSystemLimits::unknown().with_max_read_range_bytes(FileSystemLimit::Maximum(4));
+    let fixture = AsyncMemoryFixture::with_fault_and_limits(AsyncMemoryFault::ReadFails, limits);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::ReadRangeLimit).await;
+        assert!(!run.requirements_satisfied());
+        assert!(run.failures().iter().any(|failure| {
+            failure.check() == Some(ContractCheckId::ReadRangeLimit)
+                && failure.message().contains("read at declared range boundary failed")
+        }));
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Failed { .. }
+        ));
+        assert!(run.cleanup().completed());
+    });
+    assert!(fixture.is_empty(), "failed range read must still clean its seed");
 }
 
 #[test]
@@ -111,6 +133,72 @@ fn test_async_write_limit_small_boundaries_are_reported() {
         });
         report.assert_satisfied();
     }
+}
+
+#[test]
+fn test_async_write_limit_preparation_failure_is_attributed_and_cleaned() {
+    let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4));
+    let fixture = AsyncMemoryFixture::with_path_error_call_and_limits(1, limits);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::WriteLimit).await;
+        assert!(!run.requirements_satisfied());
+        assert!(run.failures().iter().any(|failure| {
+            failure.check() == Some(ContractCheckId::WriteLimit)
+                && failure.message().contains("write limit preparation failed")
+        }));
+        assert!(run.report().checks().iter().any(|check| {
+            check.id() == ContractCheckId::WriteLimit && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })
+        }));
+        assert!(run.cleanup().completed());
+    });
+    assert!(
+        fixture.is_empty(),
+        "failed write-limit preparation must leave no resources"
+    );
+}
+
+#[test]
+fn test_async_write_limit_boundary_writer_failure_is_attributed_and_cleaned() {
+    let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4));
+    let fixture = AsyncMemoryFixture::with_fault_and_limits(AsyncMemoryFault::WriteFails, limits);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::WriteLimit).await;
+        assert!(!run.requirements_satisfied());
+        assert!(run.failures().iter().any(|failure| {
+            failure.check() == Some(ContractCheckId::WriteLimit)
+                && failure.message().contains("write boundary request failed")
+        }));
+        assert!(run.report().checks().iter().any(|check| {
+            check.id() == ContractCheckId::WriteLimit && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })
+        }));
+        assert!(run.cleanup().completed());
+    });
+    assert!(fixture.is_empty(), "failed boundary write must leave no resources");
+}
+
+#[test]
+fn test_async_write_limit_independent_observation_failure_is_attributed_and_cleaned() {
+    let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4));
+    let fixture = AsyncMemoryFixture::with_fixture_hook_error_and_limits(FixtureHook::ReadFile, 1, limits);
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::WriteLimit).await;
+        assert!(!run.requirements_satisfied());
+        assert!(run.failures().iter().any(|failure| {
+            failure.check() == Some(ContractCheckId::WriteLimit)
+                && failure.message().contains("write boundary observation failed")
+        }));
+        assert!(run.report().checks().iter().any(|check| {
+            check.id() == ContractCheckId::WriteLimit && matches!(check.outcome(), ContractCheckOutcome::Failed { .. })
+        }));
+        assert!(run.cleanup().completed());
+    });
+    assert!(
+        fixture.is_empty(),
+        "failed independent observation must clean the written boundary"
+    );
 }
 
 #[test]
