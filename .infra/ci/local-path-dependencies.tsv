@@ -1,4 +1,0 @@
-# relative git root	repository URL	default branch
-# Project-owned path-dependency closure; do not enable the empty default profile.
-../rs-fs	https://github.com/qubit-ltd/rs-fs	main
-../rs-redact	https://github.com/qubit-ltd/rs-redact	main
