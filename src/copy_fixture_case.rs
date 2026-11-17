@@ -86,7 +86,6 @@ impl CopyFixtureCase {
     ///
     /// The prepared copy options.
     #[inline]
-    #[must_use]
     pub const fn options(&self) -> &CopyOptions {
         &self.options
     }
@@ -97,7 +96,6 @@ impl CopyFixtureCase {
     ///
     /// The source path, destination path, and copy options in that order.
     #[inline]
-    #[must_use]
     pub fn into_parts(self) -> (Path, Path, CopyOptions) {
         (self.source, self.target, self.options)
     }

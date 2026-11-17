@@ -135,7 +135,8 @@ fn test_contract_capability_map_is_exhaustive() {
     assert_eq!(FileSystemCapability::ALL, COVERED_CAPABILITIES);
 }
 
-/// Managed capability declarations map to the SPI operations that can fulfill them.
+/// Managed capability declarations map to the SPI operations that can fulfill
+/// them.
 #[test]
 fn test_managed_capability_profiles_follow_provider_operations() {
     let operations = ProviderOperations::new()
@@ -168,10 +169,8 @@ fn test_managed_capability_profiles_follow_provider_operations() {
         );
     }
 
-    let unsupported = FileSystemCapabilityProfile::from_operations(
-        ProviderOperations::new(),
-        ProviderOperations::new(),
-    );
+    let unsupported =
+        FileSystemCapabilityProfile::from_operations(ProviderOperations::new(), ProviderOperations::new());
     for capability in [
         FileSystemCapability::ReadAll,
         FileSystemCapability::ObserveReadChanges,
@@ -192,7 +191,8 @@ fn test_managed_capability_profiles_follow_provider_operations() {
     }
 }
 
-/// Every capability declared by the synchronous suite executes its positive contract.
+/// Every capability declared by the synchronous suite executes its positive
+/// contract.
 #[test]
 fn test_all_sync_suite_capabilities_execute_contracts() {
     let fixture = MemoryFixture::with_all_capabilities();
