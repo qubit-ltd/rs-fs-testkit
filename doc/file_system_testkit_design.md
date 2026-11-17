@@ -1,7 +1,7 @@
 # qubit-fs-testkit design
 
 This document describes the public contract model implemented by
-`qubit-fs-testkit` 0.9 against `qubit-fs` 0.3. The crate is development-only test support: it exercises a
+`qubit-fs-testkit` 0.9 against `qubit-fs` 0.4. The crate is development-only test support: it exercises a
 provider through `qubit_fs::FileSystem` or `qubit_fs::AsyncFileSystem` and never
 depends on provider SPI types.
 

@@ -4,7 +4,7 @@
 
 ## Purpose and Audience
 
-This guide is for authors of synchronous or asynchronous `qubit-fs` 0.3
+This guide is for authors of synchronous or asynchronous `qubit-fs` 0.4
 providers using the current `qubit-fs-testkit` 0.9 contract suites. The testkit
 is test support and belongs in provider development dependencies. References
 to testkit 0.7 and `qubit-fs` 0.2 below describe historical interfaces.
@@ -44,7 +44,7 @@ Add the testkit as a development dependency in the provider crate:
 cargo add --dev qubit-fs-testkit@0.9
 ```
 
-The provider itself uses `qubit-fs` 0.3. The repository's complete local
+The provider itself uses `qubit-fs` 0.4. The repository's complete local
 provider fixture, including properties, independent seed/read/exists hooks,
 and teardown, is [`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs).
 With sibling repositories checked out, compile and run that exact example:
@@ -500,7 +500,7 @@ runtime timeouts cannot preempt a blocking `poll`.
 
 ## Whole-file asynchronous write recovery
 
-`qubit-fs` 0.3 requires owned payloads for `begin_write_all`. The async Write
+`qubit-fs` 0.4 requires owned payloads for `begin_write_all`. The async Write
 phase checks `write/owning-operation` and `write/repeated-execute`, and actually
 calls `prepare_write_cancellation` for Open, Write, Flush and Commit.
 Implement `WriteCancellationProbe::poll_reached` to acknowledge that the selected
@@ -602,7 +602,7 @@ evidence after opening and checking the resource. A caller that requires either
 check must list its check ID explicitly; a skip does not satisfy that
 requirement.
 
-For temporary resources, testkit 0.9 follows the qubit-fs 0.3 contract that keeps
+For temporary resources, testkit 0.9 follows the qubit-fs 0.4 contract that keeps
 publication facts independent from source qualification. This suite checks the
 existing repeated lifecycle, including the publication target after a successful
 `keep`. Core and adapter regressions cover the new source states, invalid retries,

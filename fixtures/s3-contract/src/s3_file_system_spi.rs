@@ -171,8 +171,8 @@ pub fn open_with_control(
         .with_conditional(FileSystemCapability::List)
         .with_conditional(FileSystemCapability::Read)
         .with_conditional(FileSystemCapability::RangeRead)
-        .with_conditional(FileSystemCapability::Write)
-        .with_conditional(FileSystemCapability::ConditionalWrite);
+        .with_guaranteed(FileSystemCapability::Write)
+        .with_guaranteed(FileSystemCapability::ConditionalWrite);
     let limits = FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(1_048_576));
     let properties = ProviderProperties::new(
         info,

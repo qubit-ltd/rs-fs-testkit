@@ -17,9 +17,13 @@ use qubit_fs::error::FsError;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
+use qubit_fs::metadata::FileSystemCapabilityProfile;
+use qubit_fs::metadata::FileSystemCapabilitySupport;
 use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
 use qubit_fs::path::Path;
+use qubit_fs::spi::ProviderOperation;
+use qubit_fs::spi::ProviderOperations;
 use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::FileSystemContract;
@@ -56,8 +60,8 @@ impl FileSystemFixture for DefaultHooksSyncFixture<'_> {
     }
 }
 
-/// Both suites intentionally cover every capability in this stable order.
-const COVERED_CAPABILITIES: [FileSystemCapability; 28] = [
+/// This is the capability set that the synchronous suite executes end to end.
+const SYNC_SUITE_CAPABILITIES: [FileSystemCapability; 28] = [
     FileSystemCapability::List,
     FileSystemCapability::Read,
     FileSystemCapability::RangeRead,
@@ -88,6 +92,42 @@ const COVERED_CAPABILITIES: [FileSystemCapability; 28] = [
     FileSystemCapability::DurableWrite,
 ];
 
+const COVERED_CAPABILITIES: [FileSystemCapability; 33] = [
+    FileSystemCapability::List,
+    FileSystemCapability::Read,
+    FileSystemCapability::RangeRead,
+    FileSystemCapability::ConditionalRead,
+    FileSystemCapability::ChecksumValidation,
+    FileSystemCapability::Write,
+    FileSystemCapability::Append,
+    FileSystemCapability::ConditionalWrite,
+    FileSystemCapability::CreateDirectory,
+    FileSystemCapability::EmptyDirectory,
+    FileSystemCapability::Delete,
+    FileSystemCapability::RecursiveDelete,
+    FileSystemCapability::ConditionalDelete,
+    FileSystemCapability::Rename,
+    FileSystemCapability::AtomicRename,
+    FileSystemCapability::AtomicReplace,
+    FileSystemCapability::Copy,
+    FileSystemCapability::ServerSideCopy,
+    FileSystemCapability::Symlink,
+    FileSystemCapability::TempFile,
+    FileSystemCapability::TempDirectory,
+    FileSystemCapability::AtomicTempPersist,
+    FileSystemCapability::AtomicFileCopy,
+    FileSystemCapability::AtomicTreeCopy,
+    FileSystemCapability::DurableFileCopy,
+    FileSystemCapability::DurableTreeCopy,
+    FileSystemCapability::DurableRename,
+    FileSystemCapability::DurableWrite,
+    FileSystemCapability::ReadAll,
+    FileSystemCapability::ObserveReadChanges,
+    FileSystemCapability::VersionConsistentRead,
+    FileSystemCapability::StagedTreePublish,
+    FileSystemCapability::StorageObservation,
+];
+
 /// Adding a capability to qubit-fs requires an explicit testkit coverage
 /// choice.
 #[test]
@@ -95,9 +135,66 @@ fn test_contract_capability_map_is_exhaustive() {
     assert_eq!(FileSystemCapability::ALL, COVERED_CAPABILITIES);
 }
 
-/// Every advertised capability executes its positive synchronous contract.
+/// Managed capability declarations map to the SPI operations that can fulfill them.
 #[test]
-fn test_all_capabilities_execute_sync_contracts() {
+fn test_managed_capability_profiles_follow_provider_operations() {
+    let operations = ProviderOperations::new()
+        .with(ProviderOperation::ReadAll)
+        .with(ProviderOperation::OpenRandomAccessReader)
+        .with(ProviderOperation::PublishTree)
+        .with(ProviderOperation::ObserveStorage);
+    let asynchronous_operations = ProviderOperations::new()
+        .with(ProviderOperation::ReadAll)
+        .with(ProviderOperation::OpenRandomAccessReader)
+        .with(ProviderOperation::PublishTree)
+        .with(ProviderOperation::ObserveStorage);
+    let profile = FileSystemCapabilityProfile::from_operations(operations, asynchronous_operations);
+    for capability in [
+        FileSystemCapability::ReadAll,
+        FileSystemCapability::ObserveReadChanges,
+        FileSystemCapability::VersionConsistentRead,
+        FileSystemCapability::StagedTreePublish,
+        FileSystemCapability::StorageObservation,
+    ] {
+        assert_eq!(
+            profile.synchronous.support(capability),
+            FileSystemCapabilitySupport::Conditional,
+            "{capability:?} must reflect its synchronous provider operation",
+        );
+        assert_eq!(
+            profile.asynchronous.support(capability),
+            FileSystemCapabilitySupport::Conditional,
+            "{capability:?} must reflect its asynchronous provider operation",
+        );
+    }
+
+    let unsupported = FileSystemCapabilityProfile::from_operations(
+        ProviderOperations::new(),
+        ProviderOperations::new(),
+    );
+    for capability in [
+        FileSystemCapability::ReadAll,
+        FileSystemCapability::ObserveReadChanges,
+        FileSystemCapability::VersionConsistentRead,
+        FileSystemCapability::StagedTreePublish,
+        FileSystemCapability::StorageObservation,
+    ] {
+        assert_eq!(
+            unsupported.synchronous.support(capability),
+            FileSystemCapabilitySupport::Unsupported,
+            "{capability:?} must not be claimed without its synchronous provider operation",
+        );
+        assert_eq!(
+            unsupported.asynchronous.support(capability),
+            FileSystemCapabilitySupport::Unsupported,
+            "{capability:?} must not be claimed without its asynchronous provider operation",
+        );
+    }
+}
+
+/// Every capability declared by the synchronous suite executes its positive contract.
+#[test]
+fn test_all_sync_suite_capabilities_execute_contracts() {
     let fixture = MemoryFixture::with_all_capabilities();
     assert_eq!(
         fixture
@@ -106,7 +203,7 @@ fn test_all_capabilities_execute_sync_contracts() {
             .capabilities()
             .iter()
             .collect::<Vec<_>>(),
-        FileSystemCapability::ALL.to_vec()
+        SYNC_SUITE_CAPABILITIES.to_vec()
     );
     FileSystemContractSuite::new(&fixture).run_all().assert_satisfied();
     assert!(fixture.is_empty(), "all-capability suite must clean up");

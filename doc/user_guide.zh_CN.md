@@ -4,7 +4,7 @@
 
 ## 手册目标与读者
 
-本手册面向使用当前 `qubit-fs-testkit` 0.9 契约套件的同步或异步 `qubit-fs` 0.3
+本手册面向使用当前 `qubit-fs-testkit` 0.9 契约套件的同步或异步 `qubit-fs` 0.4
 provider 作者。testkit 属于测试支持，应作为 provider 的开发依赖。下文提到的 testkit 0.7
 和 `qubit-fs` 0.2 均指历史接口。
 
@@ -39,7 +39,7 @@ native-copy 用例。异步 fixture 提供对应的 future 观察，以及可选
 cargo add --dev qubit-fs-testkit@0.9
 ```
 
-provider 本身依赖 `qubit-fs` 0.3。仓库中的完整本地 provider fixture 示例
+provider 本身依赖 `qubit-fs` 0.4。仓库中的完整本地 provider fixture 示例
 [`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs)
 包含 properties、独立 seed/read/exists hooks 和 teardown。检出同级仓库后可直接编译并运行：
 
@@ -384,7 +384,7 @@ async fn check_with_deadlines<F: AsyncFileSystemFixture>(fixture: &F, id: Contra
 
 ## 异步整文件写入恢复
 
-`qubit-fs` 0.3 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
+`qubit-fs` 0.4 的 `begin_write_all` 要求转移数据所有权。异步 Write 阶段验证
 `write/owning-operation`、`write/repeated-execute`，并真实调用 Open、Write、Flush、Commit
 四阶段的 `prepare_write_cancellation`。`WriteCancellationProbe::poll_reached` 应确认
 提供者已经在指定阶段 Pending，等待时按需唤醒调用方；`disarm` 只释放 gate，不启动文件系统
@@ -458,7 +458,7 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 `Basic` 和 `Identity` 也仅在打开并检查资源后跳过其非空内容／身份验证。若调用方要求其中
 任一检查，必须显式列出对应检查 ID；跳过不满足该要求。
 
-对于临时资源，testkit 0.9 遵循 qubit-fs 0.3 将 publication 事实与源资格分开的契约。本套件
+对于临时资源，testkit 0.9 遵循 qubit-fs 0.4 将 publication 事实与源资格分开的契约。本套件
 检查既有的重复生命周期，包括成功 `keep` 后的发布目标；新增源状态、非法重试、
 cleanup 失败与取消由核心及 adapter 回归覆盖。
 

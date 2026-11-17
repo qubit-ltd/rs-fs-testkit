@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![English Document](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 
-`qubit-fs-testkit` 0.9 为 `qubit-fs` 0.3 provider 实现提供可复用、由 capability 驱动的契约测试。将它
+`qubit-fs-testkit` 0.9 为 `qubit-fs` 0.4 provider 实现提供可复用、由 capability 驱动的契约测试。将它
 作为 provider 的开发依赖，提供隔离 fixture，并运行同步或运行时无关的异步套件，无需将测试支持
 放入生产依赖图。
 
@@ -23,7 +23,7 @@ cargo add --dev qubit-fs-testkit@0.9
 ## 快速开始
 
 你正在交付 provider，需要用隔离 fixture 检查已声明的 capability。provider 已依赖
-`qubit-fs` 0.3；只需将 testkit 加入开发依赖：
+`qubit-fs` 0.4；只需将 testkit 加入开发依赖：
 
 ```toml
 [dev-dependencies]
@@ -116,7 +116,7 @@ capability。
 - [API 文档](https://docs.rs/qubit-fs-testkit)
 - [English README](README.md)
 
-当前 0.9 版本对应 `qubit-fs` 0.3。历史 0.7 版本对应 `qubit-fs` 0.2；
+当前 0.9 版本对应 `qubit-fs` 0.4。历史 0.7 版本对应 `qubit-fs` 0.2；
 列举、取消与恢复的历史差异见[用户手册](doc/user_guide.zh_CN.md)。
 
 ## 测试

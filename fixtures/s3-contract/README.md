@@ -18,8 +18,8 @@ replacing that panic. Returned verification errors remain the reported failure,
 with a cleanup error count when cleanup also fails. This does not guarantee
 cleanup after task cancellation, process abort, or a panic inside deletion.
 
-The adapter declares Conditional List, Read, RangeRead, Write, and ConditionalWrite
-capabilities. Buffered single-PUT writes are bounded to 1 MiB per session. Supported
+The adapter declares Conditional List, Read, and RangeRead, plus guaranteed Write and
+ConditionalWrite capabilities. Buffered single-PUT writes are bounded to 1 MiB per session. Supported
 combinations are CreateNew with no precondition or IfAbsent, CreateOrReplace with
 IfAbsent, and CreateOrReplace with IfMatch using an ETag. The SDK applies Create or
 Update atomically at PUT; a HEAD followed by an unconditional PUT is never used.

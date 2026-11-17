@@ -1,6 +1,6 @@
 # Qubit FS Testkit 设计
 
-> 状态：当前实现说明。本文描述 `qubit-fs-testkit` 0.9 与 `qubit-fs` 0.3 的
+> 状态：当前实现说明。本文描述 `qubit-fs-testkit` 0.9 与 `qubit-fs` 0.4 的
 > provider contract 测试架构；0.7/0.2 仅作为历史版本记录。
 
 ## 1. 定位

@@ -8,7 +8,7 @@
 [![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
 `qubit-fs-testkit` 0.9 provides reusable, capability-driven contracts for
-`qubit-fs` 0.3 provider implementations. Add it to a provider's development
+`qubit-fs` 0.4 provider implementations. Add it to a provider's development
 dependencies, supply an isolated fixture, and run the synchronous or
 runtime-neutral asynchronous suite without putting test support in production
 dependency graphs.
@@ -26,7 +26,7 @@ asynchronous suite.
 ## Quick Start
 
 You are shipping a provider and need an isolated fixture to check its advertised
-capabilities. The provider already depends on `qubit-fs` 0.3; add the testkit
+capabilities. The provider already depends on `qubit-fs` 0.4; add the testkit
 only as a development dependency:
 
 ```toml
@@ -141,7 +141,7 @@ the suite's current coverage.
 - [API documentation](https://docs.rs/qubit-fs-testkit)
 - [中文 README](README.zh_CN.md)
 
-Version 0.9 targets `qubit-fs` 0.3. Version 0.7 targeted `qubit-fs` 0.2;
+Version 0.9 targets `qubit-fs` 0.4. Version 0.7 targeted `qubit-fs` 0.2;
 historical list, cancellation, and recovery details are distinguished in the
 [user guide](doc/user_guide.md).
 
