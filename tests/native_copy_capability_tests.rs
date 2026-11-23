@@ -159,6 +159,36 @@ fn test_native_copy_facade_reports_rejected_statistics_in_error_chain() {
 }
 
 #[test]
+fn test_native_basic_copy_facade_rejects_failed_and_overwritten_statistics() {
+    for (fault, cause) in [
+        (
+            "success_failed",
+            "provider reported structurally inconsistent copy statistics",
+        ),
+        (
+            "success_overwritten",
+            "provider reported overwritten copy entries without an overwrite conflict policy",
+        ),
+    ] {
+        let fixture = NativeCopyFixture::new(false, false);
+        fixture.inject_native_fault(fault);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::CopyBasic);
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Failed { .. }
+        ), "{fault}");
+        assert!(failure_chain_contains(&run.failures()[0], cause), "{fault}: {}", run.failures()[0].message());
+        assert_eq!(fixture.native_calls(), 1, "{fault}");
+        assert!(run.cleanup().completed(), "{fault}");
+        let (source, target) = fixture.last_paths();
+        let snapshot = fixture.cleanup_snapshot();
+        assert_eq!(snapshot.get(&source).map(Vec::as_slice), Some(b"copy bytes".as_slice()), "{fault}");
+        assert_eq!(snapshot.get(&target).map(Vec::as_slice), Some(b"copy bytes".as_slice()), "{fault}");
+    }
+}
+
+#[test]
 fn test_native_copy_conflict_policies_use_native_copy_without_read_or_write() {
     let fixture = NativeCopyFixture::new(false, false);
     let result = outcome(&fixture, ContractCheckId::CopyFallbackOverwriteRejected);
@@ -831,6 +861,37 @@ fn test_async_copy_facade_reports_rejected_statistics_in_error_chain() {
         assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }), "{fault}");
         assert!(failure_chain_contains(&run.failures()[0], cause), "{fault}: {}", run.failures()[0].message());
         assert!(run.cleanup().completed(), "{fault}");
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_basic_copy_facade_rejects_failed_and_overwritten_statistics() {
+    for (fault, cause) in [
+        (
+            "success_failed",
+            "provider reported structurally inconsistent copy statistics",
+        ),
+        (
+            "success_overwritten",
+            "provider reported overwritten copy entries without an overwrite conflict policy",
+        ),
+    ] {
+        let fixture = AsyncNativeCopyFixture::new(false, false);
+        fixture.inject_native_fault(fault);
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = run_controlled(suite.run_check(ContractCheckId::CopyBasic));
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Failed { .. }
+        ), "{fault}");
+        assert!(failure_chain_contains(&run.failures()[0], cause), "{fault}: {}", run.failures()[0].message());
+        assert_eq!(fixture.native_calls(), 1, "{fault}");
+        assert!(run.cleanup().completed(), "{fault}");
+        let (source, target) = fixture.last_paths();
+        let snapshot = fixture.cleanup_snapshot();
+        assert_eq!(snapshot.get(&source).map(Vec::as_slice), Some(b"copy bytes".as_slice()), "{fault}");
+        assert_eq!(snapshot.get(&target).map(Vec::as_slice), Some(b"copy bytes".as_slice()), "{fault}");
     }
 }
 
