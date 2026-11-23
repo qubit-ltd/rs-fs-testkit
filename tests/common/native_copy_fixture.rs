@@ -79,6 +79,9 @@ struct State {
     native_source: Option<Vec<u8>>,
     native_same_path: bool,
     native_target_exists: bool,
+    basic_target_exists: bool,
+    ghost_copy_success: bool,
+    stats_fault: Option<&'static str>,
     native_prepare_unsupported: bool,
     native_prepare_error: bool,
     read_unsupported: bool,
@@ -194,6 +197,17 @@ impl FileSystemSpi for NativeSpi {
             ));
         };
         let exists = s.files.contains_key(request.target().as_str());
+        if exists && s.ghost_copy_success {
+            return Ok(CopyAttempt::Completed(CopyOutcome::new(
+                CopyStats {
+                    files: 1,
+                    bytes: bytes.len() as u64,
+                    ..CopyStats::default()
+                },
+                CopyMethod::Native,
+                AchievedAtomicity::NonAtomic,
+            )));
+        }
         if exists && policy == CopyConflictPolicy::Fail {
             return Err(SpiCopyFailure::new(
                 FsError::new(FsErrorKind::AlreadyExists, FsOperation::Copy, "target exists"),
@@ -202,11 +216,15 @@ impl FileSystemSpi for NativeSpi {
             ));
         }
         if exists && policy == CopyConflictPolicy::Skip {
+            let mut stats = CopyStats {
+                skipped: 1,
+                ..CopyStats::default()
+            };
+            if s.stats_fault == Some("skip_copies") {
+                stats.files = 1;
+            }
             return Ok(CopyAttempt::Completed(CopyOutcome::new(
-                CopyStats {
-                    skipped: 1,
-                    ..CopyStats::default()
-                },
+                stats,
                 CopyMethod::Native,
                 AchievedAtomicity::NonAtomic,
             )));
@@ -234,7 +252,9 @@ impl FileSystemSpi for NativeSpi {
                 files: s.copy_files.unwrap_or(1),
                 objects: s.copy_objects.unwrap_or(0),
                 bytes: bytes_count,
-                overwritten: u64::from(exists),
+                overwritten: u64::from(exists || s.stats_fault == Some("success_overwritten")),
+                skipped: u64::from(s.stats_fault == Some("success_skipped")),
+                failed: u64::from(s.stats_fault == Some("success_failed") || (exists && s.stats_fault == Some("overwrite_failed"))),
                 ..CopyStats::default()
             },
             method,
@@ -362,6 +382,13 @@ impl NativeCopyFixture {
             "wrong_stats" => state.wrong_stats = true,
             "mutate_source" => state.mutate_source = true,
             "target_exists" => state.native_target_exists = true,
+            "basic_target_exists" => state.basic_target_exists = true,
+            "ghost_copy_success" => state.ghost_copy_success = true,
+            "skip_copies" => state.stats_fault = Some("skip_copies"),
+            "success_skipped" => state.stats_fault = Some("success_skipped"),
+            "success_failed" => state.stats_fault = Some("success_failed"),
+            "success_overwritten" => state.stats_fault = Some("success_overwritten"),
+            "overwrite_failed" => state.stats_fault = Some("overwrite_failed"),
             "same_path" => state.native_same_path = true,
             "prepare_unsupported" => state.native_prepare_unsupported = true,
             "prepare_error" => state.native_prepare_error = true,
@@ -506,8 +533,18 @@ impl FileSystemFixture for NativeCopyFixture {
                 reason: "native fixture cannot seed the copy source".into(),
             });
         };
-        let dst = if scenario == CopyScenario::Conflict {
-            let FixtureSupport::Supported(dst) = self.seed_file(target, b"existing")? else {
+        let target_bytes = {
+            let state = self.state.lock().expect("state lock");
+            if scenario == CopyScenario::Conflict {
+                Some(b"existing".as_slice())
+            } else if state.basic_target_exists {
+                Some(bytes)
+            } else {
+                None
+            }
+        };
+        let dst = if let Some(target_bytes) = target_bytes {
+            let FixtureSupport::Supported(dst) = self.seed_file(target, target_bytes)? else {
                 return Ok(FixturePreparation::Unavailable {
                     reason: "native fixture cannot seed the copy target".into(),
                 });
@@ -603,6 +640,13 @@ impl AsyncNativeCopyFixture {
             "wrong_stats" => state.wrong_stats = true,
             "mutate_source" => state.mutate_source = true,
             "target_exists" => state.native_target_exists = true,
+            "basic_target_exists" => state.basic_target_exists = true,
+            "ghost_copy_success" => state.ghost_copy_success = true,
+            "skip_copies" => state.stats_fault = Some("skip_copies"),
+            "success_skipped" => state.stats_fault = Some("success_skipped"),
+            "success_failed" => state.stats_fault = Some("success_failed"),
+            "success_overwritten" => state.stats_fault = Some("success_overwritten"),
+            "overwrite_failed" => state.stats_fault = Some("overwrite_failed"),
             "same_path" => state.native_same_path = true,
             "prepare_unsupported" => state.native_prepare_unsupported = true,
             "prepare_error" => state.native_prepare_error = true,
@@ -756,8 +800,18 @@ impl AsyncFileSystemFixture for AsyncNativeCopyFixture {
                     reason: "native fixture cannot seed the copy source".into(),
                 });
             };
-            let dst = if scenario == CopyScenario::Conflict {
-                let FixtureSupport::Supported(dst) = self.seed_file(target, b"existing").await? else {
+            let target_bytes = {
+                let state = self.state.lock().expect("state lock");
+                if scenario == CopyScenario::Conflict {
+                    Some(b"existing".as_slice())
+                } else if state.basic_target_exists {
+                    Some(bytes)
+                } else {
+                    None
+                }
+            };
+            let dst = if let Some(target_bytes) = target_bytes {
+                let FixtureSupport::Supported(dst) = self.seed_file(target, target_bytes).await? else {
                     return Ok(FixturePreparation::Unavailable {
                         reason: "native fixture cannot seed the copy target".into(),
                     });
