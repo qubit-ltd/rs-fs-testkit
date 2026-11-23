@@ -22,6 +22,11 @@ pub(crate) fn copy_count_matches(left: u64, right: u64, expected: u64) -> bool {
 }
 
 /// Checks the statistics for one successful single-file copy request.
+///
+/// # Parameters
+///
+/// * `stats` - The observed copy statistics.
+/// * `expected_bytes` - The expected number of copied bytes.
 pub(crate) fn single_file_copy_matches(stats: &CopyStats, expected_bytes: u64) -> bool {
     copy_count_matches(stats.files, stats.objects, 1)
         && stats.bytes == expected_bytes
@@ -31,6 +36,10 @@ pub(crate) fn single_file_copy_matches(stats: &CopyStats, expected_bytes: u64) -
 }
 
 /// Checks the statistics for one skipped single-file copy request.
+///
+/// # Parameters
+///
+/// * `stats` - The observed copy statistics.
 pub(crate) fn single_file_copy_skipped(stats: &CopyStats) -> bool {
     stats.files == 0
         && stats.objects == 0
@@ -41,6 +50,11 @@ pub(crate) fn single_file_copy_skipped(stats: &CopyStats) -> bool {
 }
 
 /// Checks the statistics for one overwritten single-file copy request.
+///
+/// # Parameters
+///
+/// * `stats` - The observed copy statistics.
+/// * `expected_bytes` - The expected number of copied bytes.
 pub(crate) fn single_file_copy_overwritten(stats: &CopyStats, expected_bytes: u64) -> bool {
     copy_count_matches(stats.files, stats.objects, 1)
         && stats.bytes == expected_bytes
@@ -55,32 +69,70 @@ mod tests {
 
     #[test]
     fn test_single_file_copy_scenarios_reject_contradictory_counters() {
+        use qubit_fs::copy::CopyStats;
+
         use super::single_file_copy_matches;
         use super::single_file_copy_overwritten;
         use super::single_file_copy_skipped;
-        use qubit_fs::copy::CopyStats;
 
         assert!(single_file_copy_matches(
-            &CopyStats { files: 1, bytes: 10, ..CopyStats::default() },
+            &CopyStats {
+                files: 1,
+                bytes: 10,
+                ..CopyStats::default()
+            },
             10,
         ));
         for invalid in [
-            CopyStats { files: 1, bytes: 10, skipped: 1, ..CopyStats::default() },
-            CopyStats { files: 1, bytes: 10, failed: 1, ..CopyStats::default() },
-            CopyStats { files: 1, bytes: 10, overwritten: 1, ..CopyStats::default() },
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                skipped: 1,
+                ..CopyStats::default()
+            },
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                failed: 1,
+                ..CopyStats::default()
+            },
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                overwritten: 1,
+                ..CopyStats::default()
+            },
         ] {
             assert!(!single_file_copy_matches(&invalid, 10));
         }
 
-        assert!(single_file_copy_skipped(&CopyStats { skipped: 1, ..CopyStats::default() }));
-        assert!(!single_file_copy_skipped(&CopyStats { files: 1, skipped: 1, ..CopyStats::default() }));
+        assert!(single_file_copy_skipped(&CopyStats {
+            skipped: 1,
+            ..CopyStats::default()
+        }));
+        assert!(!single_file_copy_skipped(&CopyStats {
+            files: 1,
+            skipped: 1,
+            ..CopyStats::default()
+        }));
 
         assert!(single_file_copy_overwritten(
-            &CopyStats { files: 1, bytes: 10, overwritten: 1, ..CopyStats::default() },
+            &CopyStats {
+                files: 1,
+                bytes: 10,
+                overwritten: 1,
+                ..CopyStats::default()
+            },
             10,
         ));
         assert!(!single_file_copy_overwritten(
-            &CopyStats { files: 1, bytes: 10, overwritten: 1, failed: 1, ..CopyStats::default() },
+            &CopyStats {
+                files: 1,
+                bytes: 10,
+                overwritten: 1,
+                failed: 1,
+                ..CopyStats::default()
+            },
             10,
         ));
     }

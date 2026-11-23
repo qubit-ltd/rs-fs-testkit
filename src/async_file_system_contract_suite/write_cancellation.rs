@@ -101,19 +101,15 @@ impl AsyncFileSystemContractSuite<'_> {
         id: ContractCheckId,
         probe: Box<dyn WriteCancellationProbe>,
     ) -> Result<(), ContractFailure> {
-        let (path, bytes, options) =
-            match catch_unwind(AssertUnwindSafe(|| probe.case().clone())) {
-                Ok(case) => case.into_parts(),
-                Err(payload) => {
-                    let mut guard = ProbeDisarmGuard::new(
-                        || probe.disarm(),
-                        &mut self.context.run.cleanup.failures,
-                    );
-                    let _ = guard.disarm();
-                    drop(guard);
-                    resume_unwind(payload);
-                }
-            };
+        let (path, bytes, options) = match catch_unwind(AssertUnwindSafe(|| probe.case().clone())) {
+            Ok(case) => case.into_parts(),
+            Err(payload) => {
+                let mut guard = ProbeDisarmGuard::new(|| probe.disarm(), &mut self.context.run.cleanup.failures);
+                let _ = guard.disarm();
+                drop(guard);
+                resume_unwind(payload);
+            }
+        };
         self.context.record_created(path.clone());
         // The observation can suspend too: own the disarm obligation before it.
         // Later locals drop first, so execution always stops before disarming.

@@ -145,11 +145,12 @@ impl FileSystemContractSuite<'_> {
         )?;
         self.context.record_created(source.clone());
         verify_condition(source != target, id, "copy source and target alias")?;
-        let target_before = self.fixture.exists_out_of_band(&target).map_err(|error| {
-            ContractFailure::with_source("copy target observation failed", error).at(id)
-        })?;
+        let target_before = self
+            .fixture
+            .exists_out_of_band(&target)
+            .map_err(|error| ContractFailure::with_source("copy target observation failed", error).at(id))?;
         match target_before {
-            FixtureSupport::Supported(false) => {},
+            FixtureSupport::Supported(false) => {}
             FixtureSupport::Supported(true) => {
                 return Err(ContractFailure::message_only("copy target already exists").at(id));
             }

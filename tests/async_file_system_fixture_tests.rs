@@ -151,8 +151,7 @@ struct SeedBoundAsyncFixture<'a> {
 
 impl SeedBoundAsyncFixture<'_> {
     fn path_for(relative: &str) -> FixtureResult<Path> {
-        Path::parse(&format!("/default-fixture/{relative}"))
-            .map_err(|error| FixtureError::new(error.to_string()))
+        Path::parse(&format!("/default-fixture/{relative}")).map_err(|error| FixtureError::new(error.to_string()))
     }
 }
 
@@ -170,10 +169,7 @@ impl AsyncFileSystemFixture for SeedBoundAsyncFixture<'_> {
         Self::path_for(relative)
     }
 
-    fn seed_empty_directory<'a>(
-        &'a self,
-        relative: &'a str,
-    ) -> testkit::FixtureFuture<'a, FixtureSupport<Path>> {
+    fn seed_empty_directory<'a>(&'a self, relative: &'a str) -> testkit::FixtureFuture<'a, FixtureSupport<Path>> {
         let call = self.directory_calls.fetch_add(1, Ordering::SeqCst) + 1;
         let result = if call <= self.supported_directory_calls {
             Self::path_for(relative).map(FixtureSupport::Supported)
@@ -320,13 +316,8 @@ fn test_tree_copy_preparation_reports_missing_subdirectory_support() {
     let memory = AsyncMemoryFixture::new();
     let fixture = seed_bound_fixture(&memory, 1, 0);
 
-    let prepared = poll_fixture_future(fixture.prepare_copy(
-        CopyScenario::AtomicTree,
-        "source",
-        "target",
-        b"child",
-    ))
-    .expect("prepare tree copy");
+    let prepared = poll_fixture_future(fixture.prepare_copy(CopyScenario::AtomicTree, "source", "target", b"child"))
+        .expect("prepare tree copy");
     assert!(matches!(
         prepared,
         FixturePreparation::Unavailable { ref reason } if reason == "tree subdirectory setup unavailable"
@@ -338,13 +329,8 @@ fn test_tree_copy_preparation_reports_missing_child_support() {
     let memory = AsyncMemoryFixture::new();
     let fixture = seed_bound_fixture(&memory, 2, 0);
 
-    let prepared = poll_fixture_future(fixture.prepare_copy(
-        CopyScenario::DurableTree,
-        "source",
-        "target",
-        b"child",
-    ))
-    .expect("prepare tree copy");
+    let prepared = poll_fixture_future(fixture.prepare_copy(CopyScenario::DurableTree, "source", "target", b"child"))
+        .expect("prepare tree copy");
     assert!(matches!(
         prepared,
         FixturePreparation::Unavailable { ref reason } if reason == "tree child setup unavailable"
@@ -356,13 +342,8 @@ fn test_file_copy_preparation_reports_missing_conflict_target_support() {
     let memory = AsyncMemoryFixture::new();
     let fixture = seed_bound_fixture(&memory, 0, 1);
 
-    let prepared = poll_fixture_future(fixture.prepare_copy(
-        CopyScenario::Conflict,
-        "source",
-        "target",
-        b"payload",
-    ))
-    .expect("prepare conflict copy");
+    let prepared = poll_fixture_future(fixture.prepare_copy(CopyScenario::Conflict, "source", "target", b"payload"))
+        .expect("prepare conflict copy");
     assert!(matches!(
         prepared,
         FixturePreparation::Unavailable { ref reason } if reason == "copy conflict target seed unavailable"
@@ -379,13 +360,8 @@ fn test_supported_copy_preparation_uses_fixture_path_and_cleanup_hooks() {
         fixture.path("explicit").expect("map fixture path").as_str(),
         "/default-fixture/explicit"
     );
-    let prepared = poll_fixture_future(fixture.prepare_copy(
-        CopyScenario::DurableTree,
-        "source",
-        "target",
-        b"child",
-    ))
-    .expect("prepare supported tree copy");
+    let prepared = poll_fixture_future(fixture.prepare_copy(CopyScenario::DurableTree, "source", "target", b"child"))
+        .expect("prepare supported tree copy");
     assert!(matches!(prepared, FixturePreparation::Ready(_)));
     poll_fixture_future(fixture.teardown()).expect("tear down fixture");
     assert_eq!(fixture.teardown_calls.load(Ordering::SeqCst), 1);

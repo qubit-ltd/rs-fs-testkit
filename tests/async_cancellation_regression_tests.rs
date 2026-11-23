@@ -355,8 +355,8 @@ fn test_cancellation_case_panics_disarm_once_and_retain_cleanup_failure() {
             let cleanup_failures = suite.run().cleanup().failures();
             assert_eq!(cleanup_failures.len(), usize::from(expected_disarm_error));
             if expected_disarm_error {
-                let original = std::error::Error::source(&cleanup_failures[0])
-                    .expect("cleanup retains the original disarm cause");
+                let original =
+                    std::error::Error::source(&cleanup_failures[0]).expect("cleanup retains the original disarm cause");
                 let expected_cause = match contract {
                     FileSystemContract::Copy => "injected copy probe disarm failure",
                     FileSystemContract::Write => "injected write probe disarm failure",

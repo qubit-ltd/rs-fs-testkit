@@ -254,7 +254,9 @@ impl FileSystemSpi for NativeSpi {
                 bytes: bytes_count,
                 overwritten: u64::from(exists || s.stats_fault == Some("success_overwritten")),
                 skipped: u64::from(s.stats_fault == Some("success_skipped")),
-                failed: u64::from(s.stats_fault == Some("success_failed") || (exists && s.stats_fault == Some("overwrite_failed"))),
+                failed: u64::from(
+                    s.stats_fault == Some("success_failed") || (exists && s.stats_fault == Some("overwrite_failed")),
+                ),
                 ..CopyStats::default()
             },
             method,

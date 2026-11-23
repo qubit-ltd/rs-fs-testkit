@@ -18,11 +18,11 @@ use qubit_fs::path::Path;
 use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 use crate::ContractFailure;
-use crate::internal::copy_statistics::single_file_copy_overwritten;
-use crate::internal::copy_statistics::single_file_copy_skipped;
 use crate::FileSystemContractSuite;
 use crate::FixturePreparation;
 use crate::FixtureSupport;
+use crate::internal::copy_statistics::single_file_copy_overwritten;
+use crate::internal::copy_statistics::single_file_copy_skipped;
 use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
@@ -181,9 +181,11 @@ impl FileSystemContractSuite<'_> {
             let outcome = result
                 .map_err(|error| ContractFailure::with_owned_source("copy conflict execution failed", error).at(id))?;
             match policy {
-                CopyConflictPolicy::Skip => {
-                    verify_condition(single_file_copy_skipped(outcome.stats()), id, "copy skip statistics differ")?
-                }
+                CopyConflictPolicy::Skip => verify_condition(
+                    single_file_copy_skipped(outcome.stats()),
+                    id,
+                    "copy skip statistics differ",
+                )?,
                 CopyConflictPolicy::Overwrite => verify_condition(
                     single_file_copy_overwritten(outcome.stats(), bytes.len() as u64),
                     id,

@@ -19,10 +19,10 @@ use crate::AsyncFileSystemContractSuite;
 use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 use crate::ContractFailure;
-use crate::internal::copy_statistics::single_file_copy_overwritten;
-use crate::internal::copy_statistics::single_file_copy_skipped;
 use crate::FixturePreparation;
 use crate::FixtureSupport;
+use crate::internal::copy_statistics::single_file_copy_overwritten;
+use crate::internal::copy_statistics::single_file_copy_skipped;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
@@ -205,9 +205,11 @@ impl AsyncFileSystemContractSuite<'_> {
             let outcome = result
                 .map_err(|error| ContractFailure::with_owned_source("copy conflict execution failed", error).at(id))?;
             match policy {
-                CopyConflictPolicy::Skip => {
-                    verify_condition(single_file_copy_skipped(outcome.stats()), id, "copy skip statistics differ")?
-                }
+                CopyConflictPolicy::Skip => verify_condition(
+                    single_file_copy_skipped(outcome.stats()),
+                    id,
+                    "copy skip statistics differ",
+                )?,
                 CopyConflictPolicy::Overwrite => verify_condition(
                     single_file_copy_overwritten(outcome.stats(), bytes.len() as u64),
                     id,
@@ -226,8 +228,8 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 
     /// Confirms the policy preserved the source and left the expected target
-    /// bytes. `Ok(true)` means both observations satisfy the evidence; `Ok(false)`
-    /// records `Unverified` and stops dependent operations.
+    /// bytes. `Ok(true)` means both observations satisfy the evidence;
+    /// `Ok(false)` records `Unverified` and stops dependent operations.
     ///
     /// # Errors
     ///
@@ -244,7 +246,8 @@ impl AsyncFileSystemContractSuite<'_> {
     /// # Returns
     ///
     /// Returns `Ok(true)` when both files match their expected contents, or
-    /// `Ok(false)` after recording `Unverified` when observation is unavailable.
+    /// `Ok(false)` after recording `Unverified` when observation is
+    /// unavailable.
     async fn verify_copy_conflict_result_contents(
         &mut self,
         id: ContractCheckId,

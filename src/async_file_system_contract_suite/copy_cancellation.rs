@@ -104,19 +104,15 @@ impl AsyncFileSystemContractSuite<'_> {
         probe: Box<dyn CopyCancellationProbe>,
     ) -> Result<(), ContractFailure> {
         let id = cancellation_check_id(stage);
-        let (source, target, options) =
-            match catch_unwind(AssertUnwindSafe(|| probe.case().clone())) {
-                Ok(case) => case.into_parts(),
-                Err(payload) => {
-                    let mut guard = ProbeDisarmGuard::new(
-                        || probe.disarm(),
-                        &mut self.context.run.cleanup.failures,
-                    );
-                    let _ = guard.disarm();
-                    drop(guard);
-                    resume_unwind(payload);
-                }
-            };
+        let (source, target, options) = match catch_unwind(AssertUnwindSafe(|| probe.case().clone())) {
+            Ok(case) => case.into_parts(),
+            Err(payload) => {
+                let mut guard = ProbeDisarmGuard::new(|| probe.disarm(), &mut self.context.run.cleanup.failures);
+                let _ = guard.disarm();
+                drop(guard);
+                resume_unwind(payload);
+            }
+        };
         self.context.record_created(source.clone());
         self.context.record_created(target.clone());
         let mut guard = ProbeDisarmGuard::new(|| probe.disarm(), &mut self.context.run.cleanup.failures);

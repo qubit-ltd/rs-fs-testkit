@@ -29,8 +29,7 @@ use qubit_fs_testkit::ContractSource;
 use qubit_fs_testkit::FileSystemContractSuite;
 
 fn failure_chain_contains(failure: &qubit_fs_testkit::ContractFailure, text: &str) -> bool {
-    let Some(source) = std::error::Error::source(failure)
-        .and_then(|source| source.downcast_ref::<ContractSource>())
+    let Some(source) = std::error::Error::source(failure).and_then(|source| source.downcast_ref::<ContractSource>())
     else {
         return false;
     };
@@ -89,7 +88,10 @@ fn test_native_basic_copy_rejects_preexisting_target_before_copy() {
     fixture.inject_native_fault("ghost_copy_success");
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::CopyBasic);
-    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
     assert_eq!(run.failures()[0].check(), Some(ContractCheckId::CopyBasic));
     assert_eq!(fixture.native_calls(), 0);
     assert!(run.cleanup().completed());
@@ -106,7 +108,14 @@ fn test_native_basic_copy_existence_observation_unavailable_or_failing_stops_cop
         fixture.inject_native_fault(fault);
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(ContractCheckId::CopyBasic);
-        assert_eq!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Unverified { .. }), unverified, "{fault}");
+        assert_eq!(
+            matches!(
+                run.report().checks()[0].outcome(),
+                ContractCheckOutcome::Unverified { .. }
+            ),
+            unverified,
+            "{fault}"
+        );
         if unverified {
             assert!(run.failures().is_empty());
         } else {
@@ -124,8 +133,15 @@ fn test_native_basic_copy_statistics_reject_inconsistent_success_counts() {
     fixture.inject_native_fault("wrong_stats");
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::CopyBasic);
-    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
-    assert!(run.failures()[0].message().contains("copy statistics differ"), "{}", run.failures()[0].message());
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert!(
+        run.failures()[0].message().contains("copy statistics differ"),
+        "{}",
+        run.failures()[0].message()
+    );
     assert_eq!(fixture.native_calls(), 1);
     assert!(run.cleanup().completed());
 }
@@ -152,8 +168,15 @@ fn test_native_copy_facade_reports_rejected_statistics_in_error_chain() {
         fixture.inject_native_fault(fault);
         let mut suite = FileSystemContractSuite::new(&fixture);
         let run = suite.run_check(id);
-        assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }), "{fault}");
-        assert!(failure_chain_contains(&run.failures()[0], cause), "{fault}: {}", run.failures()[0].message());
+        assert!(
+            matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }),
+            "{fault}"
+        );
+        assert!(
+            failure_chain_contains(&run.failures()[0], cause),
+            "{fault}: {}",
+            run.failures()[0].message()
+        );
         assert!(run.cleanup().completed(), "{fault}");
     }
 }
@@ -759,7 +782,10 @@ fn test_async_basic_copy_rejects_preexisting_target_before_copy() {
         fixture.inject_native_fault("ghost_copy_success");
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = run_controlled(suite.run_check(id));
-        assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }), "{id:?}");
+        assert!(
+            matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }),
+            "{id:?}"
+        );
         assert_eq!(run.failures()[0].check(), Some(id));
         assert_eq!(fixture.native_calls(), 0);
         assert!(run.cleanup().completed());
@@ -779,7 +805,14 @@ fn test_async_basic_copy_existence_observation_unavailable_or_failing_stops_copy
             fixture.inject_native_fault(fault);
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(ContractCheckId::CopyBasic).await;
-            assert_eq!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Unverified { .. }), unverified, "{fault}");
+            assert_eq!(
+                matches!(
+                    run.report().checks()[0].outcome(),
+                    ContractCheckOutcome::Unverified { .. }
+                ),
+                unverified,
+                "{fault}"
+            );
             if unverified {
                 assert!(run.failures().is_empty());
             } else {
@@ -799,8 +832,15 @@ fn test_async_basic_copy_statistics_reject_inconsistent_counts() {
     fixture.inject_native_fault("wrong_stats");
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
     let run = run_controlled(suite.run_check(ContractCheckId::CopyBasic));
-    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
-    assert!(run.failures()[0].message().contains("copy statistics differ"), "{}", run.failures()[0].message());
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert!(
+        run.failures()[0].message().contains("copy statistics differ"),
+        "{}",
+        run.failures()[0].message()
+    );
     assert_eq!(fixture.native_calls(), 1);
     assert!(run.cleanup().completed());
 }
@@ -828,8 +868,15 @@ fn test_async_copy_facade_reports_rejected_statistics_in_error_chain() {
         fixture.inject_native_fault(fault);
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
         let run = run_controlled(suite.run_check(id));
-        assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }), "{fault}");
-        assert!(failure_chain_contains(&run.failures()[0], cause), "{fault}: {}", run.failures()[0].message());
+        assert!(
+            matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }),
+            "{fault}"
+        );
+        assert!(
+            failure_chain_contains(&run.failures()[0], cause),
+            "{fault}: {}",
+            run.failures()[0].message()
+        );
         assert!(run.cleanup().completed(), "{fault}");
     }
 }

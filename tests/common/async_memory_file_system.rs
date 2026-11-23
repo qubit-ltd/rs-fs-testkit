@@ -1959,8 +1959,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 entries: Arc::clone(&self.entries),
                 case_panics: matches!(
                     self.fault,
-                    AsyncMemoryFault::CancellationCasePanics
-                        | AsyncMemoryFault::CancellationCasePanicsAndDisarmFails
+                    AsyncMemoryFault::CancellationCasePanics | AsyncMemoryFault::CancellationCasePanicsAndDisarmFails
                 ),
                 fault: match self.fault {
                     AsyncMemoryFault::WriteCancelObserveFails => {
@@ -2004,8 +2003,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             gate.never_acknowledges = self.fault == AsyncMemoryFault::CopyCancelNeverAcknowledges;
             gate.fail_disarm = matches!(
                 self.fault,
-                AsyncMemoryFault::CopyCancelDisarmFails
-                    | AsyncMemoryFault::CancellationCasePanicsAndDisarmFails
+                AsyncMemoryFault::CopyCancelDisarmFails | AsyncMemoryFault::CancellationCasePanicsAndDisarmFails
             );
             drop(gate);
             let source_relative = format!("{relative}-source");
@@ -2021,8 +2019,7 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 gate: Arc::clone(&self.copy_gate),
                 case_panics: matches!(
                     self.fault,
-                    AsyncMemoryFault::CancellationCasePanics
-                        | AsyncMemoryFault::CancellationCasePanicsAndDisarmFails
+                    AsyncMemoryFault::CancellationCasePanics | AsyncMemoryFault::CancellationCasePanicsAndDisarmFails
                 ),
             });
             Ok(FixtureSupport::Supported(probe))
