@@ -320,42 +320,66 @@ fn test_write_cancellation_disarms_during_initial_observation() {
 #[test]
 fn test_cancellation_case_panics_disarm_once_and_retain_cleanup_failure() {
     for contract in [FileSystemContract::Copy, FileSystemContract::Write] {
-        let fixture = AsyncMemoryFixture::with_fault(self::common::async_memory_file_system::AsyncMemoryFault::CancellationCasePanicsAndDisarmFails);
-        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        run_controlled(async {
-            suite.run_contract(contract).await;
-        });
-        let panic = suite
-            .run()
-            .failures()
-            .iter()
-            .find_map(|failure| failure.take_panic_payload())
-            .expect("case panic payload must be retained");
-        assert_eq!(
-            panic.downcast_ref::<&str>(),
-            Some(&match contract {
-                FileSystemContract::Copy => "injected copy cancellation case panic",
-                FileSystemContract::Write => "injected write cancellation case panic",
+        for (fault, expected_disarm_error) in [
+            (
+                self::common::async_memory_file_system::AsyncMemoryFault::CancellationCasePanics,
+                false,
+            ),
+            (
+                self::common::async_memory_file_system::AsyncMemoryFault::CancellationCasePanicsAndDisarmFails,
+                true,
+            ),
+        ] {
+            let fixture = AsyncMemoryFixture::with_fault(fault);
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let check_id = match contract {
+                FileSystemContract::Copy => ContractCheckId::AsyncCopyCancelNativeAttempt,
+                FileSystemContract::Write => ContractCheckId::WriteCancelOpen,
                 _ => unreachable!(),
-            })
-        );
-        assert_eq!(suite.run().cleanup().failures().len(), 1);
-        assert!(suite.run().cleanup().failures()[0]
-            .message()
-            .contains("probe disarm failed"));
+            };
+            run_controlled(suite.run_check(check_id));
+            let panic = suite
+                .run()
+                .failures()
+                .iter()
+                .find_map(|failure| failure.take_panic_payload())
+                .expect("case panic payload must be retained");
+            assert_eq!(
+                panic.downcast_ref::<&str>(),
+                Some(&match contract {
+                    FileSystemContract::Copy => "injected copy cancellation case panic",
+                    FileSystemContract::Write => "injected write cancellation case panic",
+                    _ => unreachable!(),
+                })
+            );
+            let cleanup_failures = suite.run().cleanup().failures();
+            assert_eq!(cleanup_failures.len(), usize::from(expected_disarm_error));
+            if expected_disarm_error {
+                let original = std::error::Error::source(&cleanup_failures[0])
+                    .expect("cleanup retains the original disarm cause");
+                let expected_cause = match contract {
+                    FileSystemContract::Copy => "injected copy probe disarm failure",
+                    FileSystemContract::Write => "injected write probe disarm failure",
+                    _ => unreachable!(),
+                };
+                assert!(original.to_string().contains(expected_cause));
+            }
 
-        match contract {
-            FileSystemContract::Copy => {
-                assert!(!fixture.copy_cancellation_is_armed());
-                assert_eq!(fixture.copy_cancellation_disarm_calls(), 1);
-                assert_eq!(fixture.copy_acknowledgement_polls(), 0);
+            match contract {
+                FileSystemContract::Copy => {
+                    assert!(!fixture.copy_cancellation_is_armed());
+                    assert_eq!(fixture.copy_cancellation_disarm_calls(), 1);
+                    assert_eq!(fixture.copy_acknowledgement_polls(), 0);
+                    assert!(!fixture.copy_cancellation_stage_reached());
+                }
+                FileSystemContract::Write => {
+                    assert!(!fixture.write_cancellation_is_armed());
+                    assert_eq!(fixture.write_cancellation_disarm_calls(), 1);
+                    assert_eq!(fixture.write_acknowledgement_polls(), 0);
+                    assert!(!fixture.write_cancellation_stage_reached());
+                }
+                _ => unreachable!(),
             }
-            FileSystemContract::Write => {
-                assert!(!fixture.write_cancellation_is_armed());
-                assert_eq!(fixture.write_cancellation_disarm_calls(), 1);
-                assert_eq!(fixture.write_acknowledgement_polls(), 0);
-            }
-            _ => unreachable!(),
         }
     }
 }

@@ -327,9 +327,6 @@ impl CopyGate {
 
     /// Releases the gate and wakes the operation owner, without doing I/O.
     fn disarm(&mut self) -> FixtureResult<()> {
-        if self.armed {
-            self.disarm_calls += 1;
-        }
         if self.execution_live {
             return Err(FixtureError::new("probe was disarmed before dropping execute future"));
         }
@@ -373,7 +370,9 @@ impl CopyCancellationProbe for AsyncMemoryCopyCancellationProbe {
 
     /// Releases the gate without starting an asynchronous operation.
     fn disarm(&self) -> FixtureResult<()> {
-        self.gate.lock().expect("async copy gate lock must succeed").disarm()
+        let mut gate = self.gate.lock().expect("async copy gate lock must succeed");
+        gate.disarm_calls += 1;
+        gate.disarm()
     }
 }
 
@@ -381,7 +380,7 @@ impl CopyCancellationProbe for AsyncMemoryCopyCancellationProbe {
 impl Drop for AsyncMemoryCopyCancellationProbe {
     /// Ensures a dropped probe cannot leave a provider gate armed.
     fn drop(&mut self) {
-        let _ = self.disarm();
+        let _ = self.gate.lock().expect("async copy gate lock must succeed").disarm();
     }
 }
 

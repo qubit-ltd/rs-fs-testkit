@@ -102,9 +102,6 @@ impl WriteGate {
 
     /// Disarms the gate so subsequent polls are immediately ready.
     pub(crate) fn disarm(&mut self) {
-        if self.stage.is_some() {
-            self.disarm_calls += 1;
-        }
         self.stage = None;
     }
 }

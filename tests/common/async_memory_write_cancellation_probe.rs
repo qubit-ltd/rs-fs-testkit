@@ -89,7 +89,9 @@ impl WriteCancellationProbe for AsyncMemoryWriteCancellationProbe {
         })
     }
     fn disarm(&self) -> FixtureResult<()> {
-        self.gate.lock().expect("write gate lock").disarm();
+        let mut gate = self.gate.lock().expect("write gate lock");
+        gate.disarm_calls += 1;
+        gate.disarm();
         if self.fault == Some(ProbeFault::Disarm) {
             return Err(FixtureError::new("injected write probe disarm failure"));
         }
