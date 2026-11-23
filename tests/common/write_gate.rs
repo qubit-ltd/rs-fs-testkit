@@ -24,6 +24,7 @@ pub(crate) struct WriteGate {
     pub(crate) never_acknowledges: bool,
     pub(crate) accepted: u64,
     pub(crate) observed: Vec<AsyncWriteCancellationStage>,
+    pub(crate) disarm_calls: usize,
 }
 
 impl WriteGate {
@@ -37,6 +38,7 @@ impl WriteGate {
             never_acknowledges: false,
             accepted: 0,
             observed: Vec::new(),
+            disarm_calls: 0,
         }
     }
 
@@ -100,6 +102,9 @@ impl WriteGate {
 
     /// Disarms the gate so subsequent polls are immediately ready.
     pub(crate) fn disarm(&mut self) {
+        if self.stage.is_some() {
+            self.disarm_calls += 1;
+        }
         self.stage = None;
     }
 }

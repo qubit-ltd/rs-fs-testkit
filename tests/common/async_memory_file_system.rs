@@ -244,6 +244,7 @@ struct CopyGate {
     never_acknowledges: bool,
     acknowledgement_polls: usize,
     fail_disarm: bool,
+    disarm_calls: usize,
     waker: Option<Waker>,
 }
 
@@ -263,6 +264,7 @@ impl CopyGate {
             never_acknowledges: false,
             acknowledgement_polls: 0,
             fail_disarm: false,
+            disarm_calls: 0,
             waker: None,
         }
     }
@@ -325,6 +327,9 @@ impl CopyGate {
 
     /// Releases the gate and wakes the operation owner, without doing I/O.
     fn disarm(&mut self) -> FixtureResult<()> {
+        if self.armed {
+            self.disarm_calls += 1;
+        }
         if self.execution_live {
             return Err(FixtureError::new("probe was disarmed before dropping execute future"));
         }
@@ -345,12 +350,16 @@ impl CopyGate {
 struct AsyncMemoryCopyCancellationProbe {
     case: AsyncCopyFixtureCase,
     gate: Arc<Mutex<CopyGate>>,
+    case_panics: bool,
 }
 
 #[cfg(feature = "async")]
 impl CopyCancellationProbe for AsyncMemoryCopyCancellationProbe {
     /// Returns the isolated request controlled by this probe.
     fn case(&self) -> &AsyncCopyFixtureCase {
+        if self.case_panics {
+            panic!("injected copy cancellation case panic");
+        }
         &self.case
     }
 
@@ -423,6 +432,10 @@ pub enum AsyncMemoryFault {
     WriteAbortPublishes,
     /// Publishes a non-empty write prefix before a confirmed gate suspension.
     WriteAbortPublishesPartial,
+    /// Panics while retrieving either cancellation probe case.
+    CancellationCasePanics,
+    /// Panics while retrieving a cancellation case and fails gate disarm.
+    CancellationCasePanicsAndDisarmFails,
     /// Behaves conformingly.
     None,
     /// Reports a missing path as an existing file.
@@ -1236,6 +1249,16 @@ impl AsyncMemoryFixture {
         self.write_gate.lock().expect("write gate lock").is_armed()
     }
 
+    /// Counts attempts to disarm the copy cancellation gate.
+    pub fn copy_cancellation_disarm_calls(&self) -> usize {
+        self.copy_gate.lock().expect("async copy gate lock").disarm_calls
+    }
+
+    /// Counts attempts to disarm the write cancellation gate.
+    pub fn write_cancellation_disarm_calls(&self) -> usize {
+        self.write_gate.lock().expect("write gate lock").disarm_calls
+    }
+
     /// Reports whether the armed write provider stage was reached.
     pub fn write_cancellation_stage_reached(&self) -> bool {
         self.write_gate.lock().expect("write gate lock").stage_reached()
@@ -1935,6 +1958,11 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                 case,
                 gate: Arc::clone(&self.write_gate),
                 entries: Arc::clone(&self.entries),
+                case_panics: matches!(
+                    self.fault,
+                    AsyncMemoryFault::CancellationCasePanics
+                        | AsyncMemoryFault::CancellationCasePanicsAndDisarmFails
+                ),
                 fault: match self.fault {
                     AsyncMemoryFault::WriteCancelObserveFails => {
                         Some(super::async_memory_write_cancellation_probe::ProbeFault::Observe)
@@ -1949,6 +1977,9 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
                         Some(super::async_memory_write_cancellation_probe::ProbeFault::NeverAcknowledges)
                     }
                     AsyncMemoryFault::WriteCancelDisarmFails => {
+                        Some(super::async_memory_write_cancellation_probe::ProbeFault::Disarm)
+                    }
+                    AsyncMemoryFault::CancellationCasePanicsAndDisarmFails => {
                         Some(super::async_memory_write_cancellation_probe::ProbeFault::Disarm)
                     }
                     _ => None,
@@ -1972,7 +2003,11 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             gate.arm(stage);
             gate.fail_acknowledgement = self.fault == AsyncMemoryFault::CopyCancelAcknowledgeFails;
             gate.never_acknowledges = self.fault == AsyncMemoryFault::CopyCancelNeverAcknowledges;
-            gate.fail_disarm = self.fault == AsyncMemoryFault::CopyCancelDisarmFails;
+            gate.fail_disarm = matches!(
+                self.fault,
+                AsyncMemoryFault::CopyCancelDisarmFails
+                    | AsyncMemoryFault::CancellationCasePanicsAndDisarmFails
+            );
             drop(gate);
             let source_relative = format!("{relative}-source");
             let target_relative = format!("{relative}-target");
@@ -1985,6 +2020,11 @@ impl AsyncFileSystemFixture for AsyncMemoryFixture {
             let probe: Box<dyn CopyCancellationProbe> = Box::new(AsyncMemoryCopyCancellationProbe {
                 case: AsyncCopyFixtureCase::new(source, target, CopyOptions::default()),
                 gate: Arc::clone(&self.copy_gate),
+                case_panics: matches!(
+                    self.fault,
+                    AsyncMemoryFault::CancellationCasePanics
+                        | AsyncMemoryFault::CancellationCasePanicsAndDisarmFails
+                ),
             });
             Ok(FixtureSupport::Supported(probe))
         })

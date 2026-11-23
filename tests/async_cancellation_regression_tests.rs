@@ -316,6 +316,50 @@ fn test_write_cancellation_disarms_during_initial_observation() {
     run_controlled(fixture.teardown()).expect("explicit observation cleanup");
 }
 
+/// A panic while reading a cancellation case retains the disarm obligation.
+#[test]
+fn test_cancellation_case_panics_disarm_once_and_retain_cleanup_failure() {
+    for contract in [FileSystemContract::Copy, FileSystemContract::Write] {
+        let fixture = AsyncMemoryFixture::with_fault(self::common::async_memory_file_system::AsyncMemoryFault::CancellationCasePanicsAndDisarmFails);
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        run_controlled(async {
+            suite.run_contract(contract).await;
+        });
+        let panic = suite
+            .run()
+            .failures()
+            .iter()
+            .find_map(|failure| failure.take_panic_payload())
+            .expect("case panic payload must be retained");
+        assert_eq!(
+            panic.downcast_ref::<&str>(),
+            Some(&match contract {
+                FileSystemContract::Copy => "injected copy cancellation case panic",
+                FileSystemContract::Write => "injected write cancellation case panic",
+                _ => unreachable!(),
+            })
+        );
+        assert_eq!(suite.run().cleanup().failures().len(), 1);
+        assert!(suite.run().cleanup().failures()[0]
+            .message()
+            .contains("probe disarm failed"));
+
+        match contract {
+            FileSystemContract::Copy => {
+                assert!(!fixture.copy_cancellation_is_armed());
+                assert_eq!(fixture.copy_cancellation_disarm_calls(), 1);
+                assert_eq!(fixture.copy_acknowledgement_polls(), 0);
+            }
+            FileSystemContract::Write => {
+                assert!(!fixture.write_cancellation_is_armed());
+                assert_eq!(fixture.write_cancellation_disarm_calls(), 1);
+                assert_eq!(fixture.write_acknowledgement_polls(), 0);
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
 /// Missing copy capability makes cancellation inapplicable, not unverified.
 #[test]
 fn test_unavailable_copy_does_not_require_cancellation_probes() {
