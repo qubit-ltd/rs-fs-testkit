@@ -313,7 +313,7 @@ impl AsyncFileSystemContractSuite<'_> {
         let probe_path = path;
         let mut probe_guard = crate::internal::probe_disarm_guard::ProbeDisarmGuard::new(
             move || fixture.disarm_random_access_pending_read(probe_path),
-            &mut self.context.run.failures,
+            &mut self.context.run.cleanup.failures,
         );
         let mut reader = fixture
             .file_system()

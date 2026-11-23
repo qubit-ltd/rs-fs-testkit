@@ -472,7 +472,7 @@ impl AsyncFileSystemFixture for AsyncRandomFixture {
     fn teardown(&self) -> FixtureFuture<'_, ()> {
         let state = self.state.clone();
         Box::pin(async move {
-            let mut state = state.lock().expect("async fixture state");
+            let mut state = lock_async_state(&state);
             state.teardown_calls += 1;
             state.probe_armed = false;
             state.bytes = Arc::from(&b""[..]);
@@ -1108,10 +1108,13 @@ fn test_async_random_access_bounds_accept_finite_ranges() {
         let range = ready(range_suite.run_check(ContractCheckId::RandomAccessRangeLimit));
         assert_eq!(range.report().checks().len(), 1);
         assert_eq!(range.report().checks()[0].id(), ContractCheckId::RandomAccessRangeLimit);
-        assert!(matches!(
+        assert_eq!(
             range.report().checks()[0].outcome(),
-            ContractCheckOutcome::SkippedOptional { .. }
-        ));
+            &ContractCheckOutcome::SkippedOptional {
+                reason: "finite random-access range limit exceeds the 64-byte probe budget".to_owned(),
+            }
+        );
+        assert!(!range.requirements_satisfied_with(&[ContractCheckId::RandomAccessRangeLimit]));
     }
 
     for limit in [
@@ -1353,6 +1356,10 @@ fn test_async_random_access_cancel_observation_support_and_errors() {
             .iter()
             .any(|failure| { failure.check() == Some(ContractCheckId::RandomAccessCancel) })
     );
+    assert!(run.cleanup().failures().iter().any(|failure| {
+        std::error::Error::source(failure)
+            .is_some_and(|source| source.to_string().contains("injected probe disarm failure"))
+    }));
     assert_eq!(lock_async_state(&disarm_fails.state).disarm_calls, 1);
 }
 

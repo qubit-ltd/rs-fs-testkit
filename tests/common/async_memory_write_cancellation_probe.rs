@@ -26,6 +26,7 @@ pub(crate) struct AsyncMemoryWriteCancellationProbe {
     pub(crate) entries: Arc<Mutex<HashMap<String, Entry>>>,
     pub(crate) gate: Arc<Mutex<WriteGate>>,
     pub(crate) fault: Option<ProbeFault>,
+    pub(crate) case_panics: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,6 +40,9 @@ pub(crate) enum ProbeFault {
 
 impl WriteCancellationProbe for AsyncMemoryWriteCancellationProbe {
     fn case(&self) -> &AsyncWriteFixtureCase {
+        if self.case_panics {
+            panic!("injected write cancellation case panic");
+        }
         &self.case
     }
     fn poll_reached(&self, _: &mut Context<'_>) -> Poll<FixtureResult<()>> {
