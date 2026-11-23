@@ -63,6 +63,61 @@ fn test_flat_checks_accept_complete_results_and_reject_defects() {
     }
 }
 
+/// Seeded object paths must retain file-like entry types in both flat scopes.
+#[test]
+fn test_flat_checks_reject_wrong_kind_for_seeded_paths() {
+    for id in [ContractCheckId::ListNamespace, ContractCheckId::ListRawRootPrefix] {
+        let verify = |run: &ContractRun| {
+            assert!(!run.requirements_satisfied(), "{id}");
+            assert_eq!(run.failures().len(), 1, "{id}");
+            let failure = &run.failures()[0];
+            assert_eq!(failure.check(), Some(id));
+            assert!(failure.message().contains("non-file-like kind"), "{}", failure.message());
+        };
+        let fixture = FlatFixture::new(Fault::SeededWrongKind, true);
+        verify(&FileSystemContractSuite::new(&fixture).run_check(id));
+        #[cfg(feature = "async")]
+        common::async_memory_file_system::run_controlled(async {
+            let fixture = FlatFixture::new(Fault::SeededWrongKind, true);
+            verify(AsyncFileSystemContractSuite::new(&fixture).run_check(id).await);
+        });
+    }
+}
+
+/// File-like object entries remain valid and snapshot-only kinds stay unjudged.
+#[test]
+fn test_flat_checks_keep_type_evidence_limited_to_seeded_paths() {
+    for id in [ContractCheckId::ListNamespace, ContractCheckId::ListRawRootPrefix] {
+        let fixture = FlatFixture::new(Fault::SeededObject, true);
+        assert!(FileSystemContractSuite::new(&fixture).run_check(id).requirements_satisfied(), "{id}");
+        #[cfg(feature = "async")]
+        common::async_memory_file_system::run_controlled(async {
+            let fixture = FlatFixture::new(Fault::SeededObject, true);
+            assert!(
+                AsyncFileSystemContractSuite::new(&fixture).run_check(id).await.requirements_satisfied(),
+                "async {id}"
+            );
+        });
+    }
+
+    let fixture = FlatFixture::new(Fault::SnapshotOnlyWrongKind, true);
+    assert!(
+        FileSystemContractSuite::new(&fixture)
+            .run_check(ContractCheckId::ListNamespace)
+            .requirements_satisfied()
+    );
+    #[cfg(feature = "async")]
+    common::async_memory_file_system::run_controlled(async {
+        let fixture = FlatFixture::new(Fault::SnapshotOnlyWrongKind, true);
+        assert!(
+            AsyncFileSystemContractSuite::new(&fixture)
+                .run_check(ContractCheckId::ListNamespace)
+                .await
+                .requirements_satisfied()
+        );
+    });
+}
+
 /// Missing independent evidence must remain unverified instead of passing.
 #[test]
 fn test_absent_snapshot_cannot_prove_namespace_completeness() {

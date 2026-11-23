@@ -12,6 +12,7 @@ use qubit_fs::directory::ListOptions;
 use qubit_fs::directory::ListScope;
 use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
+use qubit_fs::metadata::FileKind;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::path::PathSemantics;
 
@@ -88,7 +89,7 @@ impl FileSystemContractSuite<'_> {
                 format!("unrelated-{relative}"),
             ]
         };
-        let mut expected = Vec::new();
+        let mut seeded_expected = Vec::new();
         for (index, name) in names.iter().enumerate() {
             let prepared = self
                 .fixture
@@ -106,9 +107,10 @@ impl FileSystemContractSuite<'_> {
             };
             self.context.record_created(path.clone());
             if index < 3 {
-                expected.push(path);
+                seeded_expected.push(path);
             }
         }
+        let mut expected = seeded_expected.clone();
         if id == ContractCheckId::ListNamespace {
             let snapshot = self
                 .fixture
@@ -125,7 +127,7 @@ impl FileSystemContractSuite<'_> {
                 return Ok(());
             };
             verify_condition(
-                expected.iter().all(|path| paths.contains(path)),
+                seeded_expected.iter().all(|path| paths.contains(path)),
                 id,
                 "namespace snapshot omitted seeded paths",
             )?;
@@ -141,6 +143,13 @@ impl FileSystemContractSuite<'_> {
             .next_entry()
             .map_err(|error| ContractFailure::with_source("flat listing stream failed", error).at(id))?
         {
+            if seeded_expected.contains(&entry.path) {
+                verify_condition(
+                    matches!(entry.kind, FileKind::File | FileKind::Object),
+                    id,
+                    "flat listing returned a seeded path with a non-file-like kind",
+                )?;
+            }
             actual.push(entry.path);
             verify_condition(
                 actual.len() <= expected.len(),
