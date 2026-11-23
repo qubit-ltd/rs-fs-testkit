@@ -578,6 +578,10 @@ pub enum AsyncMemoryFault {
     DurableTreeCopyNonDurable,
     /// Copies the complete tree but omits descendant byte statistics.
     TreeCopyWrongStats,
+    /// Overflows the combined file and object counts for a tree copy.
+    TreeCopyFileObjectCountsOverflow,
+    /// Overflows the combined directory and prefix counts for a tree copy.
+    TreeCopyDirectoryPrefixCountsOverflow,
     /// Reports non-durable completion for a required durable rename.
     DurableRenameNonDurable,
     /// Publishes the requested destination but reports a different target.
@@ -2726,6 +2730,19 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                 }
                 if mode == CopyMode::Tree && fault == AsyncMemoryFault::TreeCopyWrongStats {
                     stats.bytes = 0;
+                }
+                if mode == CopyMode::Tree {
+                    match fault {
+                        AsyncMemoryFault::TreeCopyFileObjectCountsOverflow => {
+                            stats.files = u64::MAX;
+                            stats.objects = 2;
+                        }
+                        AsyncMemoryFault::TreeCopyDirectoryPrefixCountsOverflow => {
+                            stats.directories = u64::MAX;
+                            stats.prefixes = 3;
+                        }
+                        _ => {}
+                    }
                 }
                 Ok(CopyAttempt::Completed(
                     CopyOutcome::new(

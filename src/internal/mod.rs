@@ -8,6 +8,7 @@
 //! Private helpers shared by filesystem contract assertions.
 
 mod assertions;
+pub(crate) mod copy_statistics;
 #[cfg(feature = "async")]
 mod catch_unwind_future;
 pub(crate) mod check_catalog;

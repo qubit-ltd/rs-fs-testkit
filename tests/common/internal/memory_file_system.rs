@@ -371,6 +371,10 @@ pub enum MemoryFault {
     DurableTreeCopyNonDurable,
     /// Copies the complete tree but omits descendant byte statistics.
     TreeCopyWrongStats,
+    /// Overflows the combined file and object counts for a tree copy.
+    TreeCopyFileObjectCountsOverflow,
+    /// Overflows the combined directory and prefix counts for a tree copy.
+    TreeCopyDirectoryPrefixCountsOverflow,
     /// Fails a basic copy before publishing a target.
     CopyFails,
     /// Fails an overwrite-policy copy after other conflict policies succeed.
@@ -498,6 +502,8 @@ impl MemoryFixture {
                 | MemoryFault::AtomicTreeCopyNonAtomic
                 | MemoryFault::DurableTreeCopyNonDurable
                 | MemoryFault::TreeCopyWrongStats
+                | MemoryFault::TreeCopyFileObjectCountsOverflow
+                | MemoryFault::TreeCopyDirectoryPrefixCountsOverflow
                 | MemoryFault::DurableRenameNonDurable
                 | MemoryFault::AtomicTempPersistNonAtomic
                 | MemoryFault::ServerSideCopyFallsBack
@@ -523,6 +529,8 @@ impl MemoryFixture {
                 | MemoryFault::AtomicTreeCopyNonAtomic
                 | MemoryFault::DurableTreeCopyNonDurable
                 | MemoryFault::TreeCopyWrongStats
+                | MemoryFault::TreeCopyFileObjectCountsOverflow
+                | MemoryFault::TreeCopyDirectoryPrefixCountsOverflow
         ) {
             fixture
                 .state
@@ -2219,6 +2227,19 @@ impl FileSystemSpi for MemorySpi {
             }
             if options.mode() == CopyMode::Tree && state.fault == MemoryFault::TreeCopyWrongStats {
                 stats.bytes = 0;
+            }
+            if options.mode() == CopyMode::Tree {
+                match state.fault {
+                    MemoryFault::TreeCopyFileObjectCountsOverflow => {
+                        stats.files = u64::MAX;
+                        stats.objects = 2;
+                    }
+                    MemoryFault::TreeCopyDirectoryPrefixCountsOverflow => {
+                        stats.directories = u64::MAX;
+                        stats.prefixes = 3;
+                    }
+                    _ => {}
+                }
             }
             let method = if options.server_side() == ServerSidePreference::Require
                 && state.fault != MemoryFault::ServerSideCopyFallsBack
