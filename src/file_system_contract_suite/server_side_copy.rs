@@ -23,7 +23,7 @@ use crate::ContractFailure;
 use crate::FileSystemContractSuite;
 use crate::FixturePreparation;
 use crate::FixtureSupport;
-use crate::internal::copy_statistics::copy_count_matches;
+use crate::internal::copy_statistics::single_file_copy_matches;
 use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
@@ -159,8 +159,7 @@ impl FileSystemContractSuite<'_> {
             "copy did not provide the required server-side method",
         )?;
         verify_condition(
-            outcome.stats().bytes == snapshot.len() as u64
-                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
+            single_file_copy_matches(outcome.stats(), snapshot.len() as u64),
             id,
             "server-side copy statistics differ",
         )?;

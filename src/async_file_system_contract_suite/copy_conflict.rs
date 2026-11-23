@@ -19,6 +19,8 @@ use crate::AsyncFileSystemContractSuite;
 use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 use crate::ContractFailure;
+use crate::internal::copy_statistics::single_file_copy_overwritten;
+use crate::internal::copy_statistics::single_file_copy_skipped;
 use crate::FixturePreparation;
 use crate::FixtureSupport;
 use crate::internal::verify_condition;
@@ -152,8 +154,14 @@ impl AsyncFileSystemContractSuite<'_> {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` when the policy outcome and file contents match the
-    /// contract, or `ContractFailure` when execution or verification fails.
+    /// Returns `Ok(true)` when policy evidence satisfies the contract. Returns
+    /// `Ok(false)` after recording `Unverified` and stopping dependent work
+    /// when an observation is unavailable.
+    ///
+    /// # Errors
+    ///
+    /// Returns a contract failure when copy execution or evidence verification
+    /// fails.
     async fn check_copy_conflict_policy(
         &mut self,
         id: ContractCheckId,
@@ -198,10 +206,10 @@ impl AsyncFileSystemContractSuite<'_> {
                 .map_err(|error| ContractFailure::with_owned_source("copy conflict execution failed", error).at(id))?;
             match policy {
                 CopyConflictPolicy::Skip => {
-                    verify_condition(outcome.stats().skipped == 1, id, "copy skip statistics differ")?
+                    verify_condition(single_file_copy_skipped(outcome.stats()), id, "copy skip statistics differ")?
                 }
                 CopyConflictPolicy::Overwrite => verify_condition(
-                    outcome.stats().overwritten == 1 && outcome.stats().bytes == bytes.len() as u64,
+                    single_file_copy_overwritten(outcome.stats(), bytes.len() as u64),
                     id,
                     "copy overwrite statistics differ",
                 )?,
@@ -218,12 +226,13 @@ impl AsyncFileSystemContractSuite<'_> {
     }
 
     /// Confirms the policy preserved the source and left the expected target
-    /// bytes.
+    /// bytes. `Ok(true)` means both observations satisfy the evidence; `Ok(false)`
+    /// records `Unverified` and stops dependent operations.
     ///
     /// # Errors
     ///
-    /// Returns a contract failure when either file cannot be observed or its
-    /// contents differ from the expected bytes.
+    /// Returns a contract failure when either observation errors or contents
+    /// differ from the expected bytes.
     ///
     /// # Parameters
     ///
@@ -234,8 +243,8 @@ impl AsyncFileSystemContractSuite<'_> {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` when both files match their expected contents, or
-    /// `ContractFailure` when observation or verification fails.
+    /// Returns `Ok(true)` when both files match their expected contents, or
+    /// `Ok(false)` after recording `Unverified` when observation is unavailable.
     async fn verify_copy_conflict_result_contents(
         &mut self,
         id: ContractCheckId,
