@@ -38,13 +38,33 @@ including when deletion is unavailable.
 
 ## Installation and Minimal Configuration
 
-Add the testkit as a development dependency in the provider crate:
+The current 0.9.3 source checkout targets `qubit-fs` 0.4 but is not published.
+Published 0.9.1 and 0.9.2 target `qubit-fs` 0.3. With sibling checkouts at
+`../rs-fs-testkit`, add the source as a development dependency:
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.9
+cargo add --dev qubit-fs-testkit --path ../rs-fs-testkit
 ```
 
-The provider itself uses `qubit-fs` 0.4. The repository's complete local
+The provider manifest must resolve both crates from the matching sibling checkouts:
+
+```toml
+[dependencies]
+qubit-fs = { path = "../rs-fs" }
+
+[dev-dependencies]
+qubit-fs-testkit = { path = "../rs-fs-testkit" }
+```
+
+The sibling layout places `rs-fs`, `rs-fs-testkit`, and the provider crate
+side by side. While using these unpublished sources, declare `qubit-fs` with
+`path = "../rs-fs"` in the provider and `qubit-fs-testkit` with
+`path = "../rs-fs-testkit"` in dev-dependencies. Both must resolve `qubit-fs`
+from the same checkout: registry and path copies are different Rust types, even
+at the same version. After 0.9.3 and `qubit-fs` 0.4 are published, use the
+registry dependencies `qubit-fs = "0.4"` and
+`qubit-fs-testkit = "=0.9.3"`. Add `features = ["async"]` to the testkit
+dependency when using the asynchronous suite. The provider itself uses `qubit-fs` 0.4. The repository's complete local
 provider fixture, including properties, independent seed/read/exists hooks,
 and teardown, is [`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs).
 With sibling repositories checked out, compile and run that exact example:
@@ -468,31 +488,52 @@ the suite does not require it to equal the complete requested payload.
 
 ## Bounded asynchronous runs and cleanup
 
-The testkit does not choose a runtime or deadline. A caller can bound the run
-and cleanup independently. Keep the fixture and suite outside the timed async
+The example requires `futures-util` and `tokio` with its `time` feature and a
+runtime feature appropriate to the test. The testkit does not choose a runtime
+or deadline. A caller can bound the run and cleanup independently. Keep the fixture and suite outside the timed async
 block so the suite remains available after cancellation:
 
 ```rust,ignore
-use std::time::Duration;
+use std::{any::Any, time::Duration};
+use futures_util::FutureExt;
 use qubit_fs_testkit::{AsyncFileSystemFixture, AsyncFileSystemContractSuite, ContractCheckId};
+use std::panic::AssertUnwindSafe;
+
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else if let Some(message) = payload.downcast_ref::<&'static str>() {
+        (*message).to_owned()
+    } else {
+        "non-string panic payload".to_owned()
+    }
+}
 
 async fn check_with_deadlines<F: AsyncFileSystemFixture>(fixture: &F, id: ContractCheckId) {
     let mut suite = AsyncFileSystemContractSuite::new(fixture);
-    let run = tokio::time::timeout(Duration::from_secs(30), async {
-        suite.run_check(id).await;
-    }).await;
-    if run.is_err() {
+    let run = tokio::time::timeout(Duration::from_secs(30), suite.run_check(id)).await;
+    if let Err(run_elapsed) = run {
+        // `timeout` has dropped run_check here, so its mutable borrow of suite has ended.
         let interrupted = suite.run().was_interrupted();
-        let cleanup = tokio::time::timeout(Duration::from_secs(30), suite.finish()).await;
-        panic!("contract {id}: run deadline reached; interrupted={interrupted}; cleanup completed={}", cleanup.is_ok() && suite.run().cleanup().completed());
+        let cleanup = tokio::time::timeout(
+            Duration::from_secs(30),
+            AssertUnwindSafe(async { suite.finish().await }).catch_unwind(),
+        ).await;
+        let cleanup_detail = match cleanup {
+            Ok(Ok(())) => "completed".to_owned(),
+            Ok(Err(payload)) => format!("panicked ({})", panic_message(payload.as_ref())),
+            Err(cleanup_elapsed) => format!("deadline elapsed ({cleanup_elapsed})"),
+        };
+        let cleanup_complete = suite.run().cleanup().completed();
+        panic!("contract {id}: run deadline elapsed ({run_elapsed}); interrupted={interrupted}; cleanup={cleanup_detail}; cleanup_completed={cleanup_complete}");
     }
     suite.run().assert_satisfied_with(&[id]);
 }
 ```
 
 The run and cleanup budgets are separate and may be adjusted for the provider.
-The outer block returns `()`, so it does not keep a borrow of the suite alive.
-After a run deadline, inspect retained interruption evidence, attempt cleanup,
+When `timeout` returns, it has dropped the run future and ended its mutable
+borrow of the suite. After a run deadline, inspect retained interruption evidence, attempt cleanup,
 then fail the original contract test even if cleanup succeeds. If cleanup also
 times out, report cleanup as incomplete and let the fixture owner continue
 recovery; do not claim asynchronous resources were reclaimed. Cooperative
@@ -527,9 +568,12 @@ own check identifiers and applicability rules.
 ## Filesystem contract update
 
 The List contract includes independently selectable `list/namespace` and
-`list/raw-root-prefix` checks. Flat fixtures implement `snapshot_namespace_paths`
-using their SDK or fixture model, including keys created before the current
-check. Without that observation, namespace completeness is **Unverified**.
+`list/raw-root-prefix` checks. For independently seeded entries that should
+appear in either flat listing scope, the suite also checks file-like evidence:
+`File` or `Object` is accepted. The namespace path snapshot establishes the full
+expected path set, including pre-existing keys, but entries found only in that
+snapshot have no independent type expectation. Without the namespace observation,
+namespace completeness is **Unverified**.
 The raw-prefix check distinguishes `folder`, `folder/a`, and `folderish` from
 unrelated keys; literal filters are tested relative to a nonempty root.
 

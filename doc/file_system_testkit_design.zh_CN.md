@@ -400,9 +400,10 @@ abort，且目标内容仍可读取。只有 `RetryableNotPublished` 才允许�
 
 验证：
 
-列举契约比较独立准备的条目集合、路径和过滤结果；请求 metadata 时检查其存在性。独立 seed 的
-资源类别也会被核对：目录必须报告 `Directory`，文件可报告 `File` 或 `Object`。类别来自
-seed 操作，不会从路径文本推断目录，也不表示所有 metadata 字段都已验证。分页检查以
+列举契约比较独立准备的条目集合、路径和过滤结果；请求 metadata 时检查其存在性。两个 flat listing scope 中应出现的独立 seed 会核对 file-like 类型证据，接受 `File` 或
+`Object`。namespace 路径快照建立完整预期路径集合（包括此前已存在的 key），但仅出现在快照中的
+条目没有独立类型预期。层次路径中独立 seed 的目录必须报告 `Directory`，文件可报告
+`File` 或 `Object`。类别来自 seed 操作，不从路径文本推断，也不表示所有 metadata 字段都已验证。分页检查以
 `page_size = 1` 请求并验证结果完整，不证明真实服务分页大小或实际 SPI 参数。页大小属性检查验证公开
 clamp 计算。metadata 字段 absent/unknown 的完整语义、SPI 分派参数、流错误后的终止状态和全部
 provider 违规识别不由本段套件结果统一证明，应分别参考核心白盒回归或 provider 自有验证。
@@ -670,7 +671,7 @@ fixture 准备 `CreateOrReplace` 时还会记录既有内容。清理保留的 r
 临时资源检查通过独立 hook 写入并核对非空文件内容及目录子项，覆盖 keep、persist、覆盖发布和
 重复生命周期。缺少内容 hook 时结果标为 `Unverified`，setup 错误仍然失败；临时资源失败保留
 typed recovery source。同步的 expected-write cleanup 会在 provider abort 边界捕获 panic，同时保留
-原 `WriteAllFailure`、writer recovery 和 panic payload。testkit 0.7 曾对应 qubit-fs 0.2；这只是
+原 `WriteAllFailure`、writer recovery 和 panic payload。testkit 0.7.0 和 0.7.1 曾对应 qubit-fs 0.2；这只是
 历史版本，不是当前 0.9 的兼容目标。目录覆盖以独立预置的空目标目录为基线，不据此承诺覆盖非空
 目录的行为。
 
