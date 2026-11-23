@@ -252,6 +252,7 @@ struct AsyncState {
     pending_read_hook_panic: bool,
     disarm_error: bool,
     open_pending: bool,
+    supports_random_access: bool,
     random_access_open_error: bool,
     reported_random_access_length: Option<u64>,
     replacement_calls: usize,
@@ -329,15 +330,17 @@ impl AsyncRandomAccessReadSession for AsyncRandomSession {
 #[cfg(feature = "async")]
 impl AsyncFileSystemSpi for AsyncRandomProvider {
     fn properties(&self) -> ProviderProperties {
+        let mut operations = ProviderOperations::new().with(ProviderOperation::OpenReader);
+        if lock_async_state(&self.state).supports_random_access {
+            operations = operations.with(ProviderOperation::OpenRandomAccessReader);
+        }
         ProviderProperties::new(
             FileSystemInfo::new(
                 FileSystemId::new(PROVIDER_ID).expect("valid ID"),
                 "fixture",
                 PathSemantics::Hierarchical,
             ),
-            ProviderOperations::new()
-                .with(ProviderOperation::OpenReader)
-                .with(ProviderOperation::OpenRandomAccessReader),
+            operations,
             FileSystemCapabilities::new().with_guaranteed(FileSystemCapability::Read),
             FileSystemLimits::unknown().with_max_read_range_bytes(self.range_limit),
             PathConstraints::absolute(),
@@ -360,11 +363,22 @@ impl AsyncFileSystemSpi for AsyncRandomProvider {
     ) -> SpiFuture<'a, FsResult<OpenedAsyncRandomAccessReader>> {
         let state = self.state.clone();
         Box::pin(async move {
-            if lock_async_state(&state).random_access_open_error {
+            let (open_error, supported) = {
+                let state = lock_async_state(&state);
+                (state.random_access_open_error, state.supports_random_access)
+            };
+            if open_error {
                 return Err(FsError::new(
                     FsErrorKind::Io,
                     FsOperation::OpenReader,
                     "injected random-access open failure",
+                ));
+            }
+            if !supported {
+                return Err(FsError::new(
+                    FsErrorKind::UnsupportedOperation,
+                    FsOperation::OpenReader,
+                    "random access unsupported",
                 ));
             }
             if lock_async_state(&state).open_pending {
@@ -414,6 +428,7 @@ impl AsyncRandomFixture {
         let state = Arc::new(Mutex::new(AsyncState {
             inject_pending,
             reopen_path,
+            supports_random_access: true,
             ..AsyncState::default()
         }));
         let file_system = AsyncFileSystem::from_spi(AsyncRandomProvider {
@@ -1482,4 +1497,175 @@ fn test_random_access_cancel_reports_unverified_and_detects_rebinding() {
     assert_eq!(state.disarm_calls, 1);
     assert_eq!(state.teardown_calls, 1);
     assert!(!state.probe_armed);
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_declarations_and_optional_hooks_use_public_contract_checks() {
+    struct NoDeclaration(AsyncRandomFixture);
+    impl AsyncFileSystemFixture for NoDeclaration {
+        fn file_system(&self) -> &AsyncFileSystem {
+            self.0.file_system()
+        }
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            self.0.path(relative)
+        }
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            self.0.teardown()
+        }
+    }
+
+    struct DeclaresUnsupported(AsyncRandomFixture);
+    impl AsyncFileSystemFixture for DeclaresUnsupported {
+        fn file_system(&self) -> &AsyncFileSystem {
+            self.0.file_system()
+        }
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            self.0.path(relative)
+        }
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            self.0.teardown()
+        }
+        fn random_access_operation(&self) -> FixtureSupport<bool> {
+            FixtureSupport::Supported(false)
+        }
+    }
+
+    struct NoSeed(AsyncRandomFixture);
+    impl AsyncFileSystemFixture for NoSeed {
+        fn file_system(&self) -> &AsyncFileSystem {
+            self.0.file_system()
+        }
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            self.0.path(relative)
+        }
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            self.0.teardown()
+        }
+        fn random_access_operation(&self) -> FixtureSupport<bool> {
+            FixtureSupport::Supported(true)
+        }
+        fn seed_file<'a>(&'a self, _relative: &'a str, _bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
+            Box::pin(async { Ok(FixtureSupport::Unsupported) })
+        }
+    }
+
+    struct NoReplacement(AsyncRandomFixture);
+    impl AsyncFileSystemFixture for NoReplacement {
+        fn file_system(&self) -> &AsyncFileSystem {
+            self.0.file_system()
+        }
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            self.0.path(relative)
+        }
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            self.0.teardown()
+        }
+        fn random_access_operation(&self) -> FixtureSupport<bool> {
+            FixtureSupport::Supported(true)
+        }
+        fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
+            self.0.seed_file(relative, bytes)
+        }
+    }
+
+    struct NoPendingProbe(AsyncRandomFixture);
+    impl AsyncFileSystemFixture for NoPendingProbe {
+        fn file_system(&self) -> &AsyncFileSystem {
+            self.0.file_system()
+        }
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            self.0.path(relative)
+        }
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            self.0.teardown()
+        }
+        fn random_access_operation(&self) -> FixtureSupport<bool> {
+            FixtureSupport::Supported(true)
+        }
+        fn seed_file<'a>(&'a self, relative: &'a str, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<Path>> {
+            self.0.seed_file(relative, bytes)
+        }
+    }
+
+    let fixture = NoDeclaration(AsyncRandomFixture::new(false, false));
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
+    assert!(run.failures().is_empty(), "{:?}", run.failures());
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::SkippedOptional { .. }
+    ));
+
+    let supported_provider = DeclaresUnsupported(AsyncRandomFixture::new(false, false));
+    let mut suite = AsyncFileSystemContractSuite::new(&supported_provider);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("declaring the operation unsupported")
+    );
+    assert!(run.cleanup().completed());
+
+    let unsupported_provider = AsyncRandomFixture::new(false, false);
+    lock_async_state(&unsupported_provider.state).supports_random_access = false;
+    let unsupported_provider = DeclaresUnsupported(unsupported_provider);
+    let mut suite = AsyncFileSystemContractSuite::new(&unsupported_provider);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
+    assert!(run.failures().is_empty(), "{:?}", run.failures());
+    assert_eq!(
+        run.report().checks()[0].outcome(),
+        &ContractCheckOutcome::RejectedAsExpected
+    );
+
+    let fixture = AsyncRandomFixture::with_open_error(FileSystemLimit::Unknown);
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("declared random-access open failed")
+    );
+    assert!(run.cleanup().completed());
+
+    let fixture = DeclaresUnsupported(AsyncRandomFixture::with_open_error(FileSystemLimit::Unknown));
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("undeclared random-access operation returned an unexpected error")
+    );
+    assert!(run.cleanup().completed());
+
+    let fixture = NoSeed(AsyncRandomFixture::new(false, false));
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Unverified { .. }
+    ));
+
+    let fixture = NoPendingProbe(AsyncRandomFixture::new(false, false));
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+    assert!(run.failures().is_empty(), "{:?}", run.failures());
+    assert!(matches!(run.report().checks()[0].outcome(),
+        ContractCheckOutcome::SkippedOptional { reason }
+            if reason.contains("cannot inject a pending random-access read")
+    ));
+
+    let fixture = NoReplacement(AsyncRandomFixture::new(false, false));
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessIdentity));
+    assert!(run.failures().is_empty(), "{:?}", run.failures());
+    assert!(matches!(run.report().checks()[0].outcome(),
+        ContractCheckOutcome::SkippedOptional { reason }
+            if reason.contains("cannot replace the random-access path independently")
+    ));
+    assert!(run.cleanup().completed());
 }

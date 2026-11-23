@@ -64,6 +64,18 @@ class InputTests(unittest.TestCase):
                 execute.return_value.stdout = json.dumps({"packages": packages})
                 with self.assertRaises(ValueError): module.validate_core_graph(self.root, "rs-mime", "registry")
 
+    def test_metadata_failure_preserves_manifest_and_cargo_stderr(self):
+        failure = subprocess.CalledProcessError(
+            101, ["cargo", "metadata"], stderr="error: dependency resolution failed"
+        )
+        manifest = self.root / "rs-mime/Cargo.toml"
+        with patch.object(module.subprocess, "run", side_effect=failure):
+            with self.assertRaises(ValueError) as raised:
+                module.validate_core_graph(self.root, "rs-mime")
+        message = str(raised.exception)
+        self.assertIn(str(manifest), message)
+        self.assertIn("error: dependency resolution failed", message)
+
     def test_default_source_mode_is_local_and_registry_mode_is_explicit(self):
         local_core = {"name": "qubit-fs", "source": None, "manifest_path": str(self.root / "rs-fs/Cargo.toml"), "version": "0.5.0"}
         registry_core = {**local_core, "source": module.REGISTRY_SOURCE}

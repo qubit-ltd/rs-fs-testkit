@@ -4,8 +4,9 @@
 
 ## 手册目标与读者
 
-本手册面向使用当前 `qubit-fs-testkit` 0.9 契约套件的同步或异步 `qubit-fs` 0.4
-provider 作者。testkit 属于测试支持，应作为 provider 的开发依赖。下文提到的 testkit 0.7
+本手册面向使用当前 `qubit-fs-testkit` 0.9.3 源码契约套件的同步或异步
+`qubit-fs` 0.4 provider 作者。该版本尚未发布；registry 中的 0.9.1 和 0.9.2 依赖
+`qubit-fs` 0.3。testkit 属于测试支持，应作为 provider 的开发依赖。下文提到的 testkit 0.7
 和 `qubit-fs` 0.2 均指历史接口。
 
 ## 概念模型
@@ -33,13 +34,29 @@ native-copy 用例。异步 fixture 提供对应的 future 观察，以及可选
 
 ## 安装与最小配置
 
-在 provider crate 中将 testkit 添加为开发依赖：
+当前 0.9.3 源码面向 `qubit-fs` 0.4，但尚未发布；已发布的 0.9.1 和 0.9.2
+面向 `qubit-fs` 0.3。假设同级检出了 `../rs-fs-testkit`，将源码作为开发依赖：
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.9
+cargo add --dev qubit-fs-testkit --path ../rs-fs-testkit
 ```
 
-provider 本身依赖 `qubit-fs` 0.4。仓库中的完整本地 provider fixture 示例
+provider manifest 必须从对应同级 checkout 解析两个 crate：
+
+```toml
+[dependencies]
+qubit-fs = { path = "../rs-fs" }
+
+[dev-dependencies]
+qubit-fs-testkit = { path = "../rs-fs-testkit" }
+```
+
+同级布局中 `rs-fs`、`rs-fs-testkit` 与 provider crate 并列。使用未发布源码时，
+provider 的 `qubit-fs` 必须设置 `path = "../rs-fs"`，testkit 的 `qubit-fs` 也解析到
+同一 checkout；registry 与 path 即使版本相同也是不同 Rust 类型。testkit 开发依赖使用
+`path = "../rs-fs-testkit"`。待 0.9.3 与 `qubit-fs` 0.4 发布后，registry 依赖写作
+`qubit-fs = "0.4"` 与 `qubit-fs-testkit = "=0.9.3"`。使用异步套件时为
+testkit 添加 `features = ["async"]`。仓库中的完整本地 provider fixture 示例
 [`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs)
 包含 properties、独立 seed/read/exists hooks 和 teardown。检出同级仓库后可直接编译并运行：
 
@@ -295,8 +312,11 @@ setup 返回错误仍然是失败。
 还必须独立确认源已移除、目标内容完全正确。必需观察 hook 返回 `Unsupported` 时，检查记为
 `Unverified`，并在缺失证据被后续 rename 依赖前停止；已支持但不正确的观察和 fixture 错误仍为失败。
 
-列举检查分别准备命名空间，并按独立 seed 核对条目类别：目录必须报告 `Directory`，文件可报告
-`File` 或 `Object`。目录类别来自 seed 操作，不从路径文本推断；这不表示所有 metadata 字段均已验证。
+列举检查按独立 seed 核对条目类别：层次路径中的目录必须报告 `Directory`，文件可报告
+`File` 或 `Object`。两个 flat listing scope 中应出现的独立 seed 则核对 file-like 证据，
+接受 `File` 或 `Object`。namespace 路径快照建立完整预期路径集合（含既有 key），但仅出现在
+快照中的条目没有独立类型预期。类别来自 seed 操作，不从路径文本推断；这不表示所有 metadata
+字段均已验证。
 子树检查使用固定的目录及文件预期集合；分页检查独立准备
 三个条目，并请求大小为一的分页提示。层次路径使用子树过滤，原始对象键使用
 `ListOptions::object_keys()` 和字面前缀过滤；跨路径模型的过滤必须产生结构化拒绝。
@@ -356,29 +376,50 @@ S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create
 
 ## 异步运行与清理的独立超时
 
-testkit 不选择 runtime 或 deadline。调用方可以分别限制运行和清理时间；fixture 与 suite
+示例需要 `futures-util`、启用 `time` 与适用 runtime feature 的 `tokio`。testkit 不选择
+runtime 或 deadline。调用方可以分别限制运行和清理时间；fixture 与 suite
 必须留在计时 async block 外，以便取消后继续访问 suite：
 
 ```rust,ignore
-use std::time::Duration;
+use std::{any::Any, time::Duration};
+use futures_util::FutureExt;
 use qubit_fs_testkit::{AsyncFileSystemFixture, AsyncFileSystemContractSuite, ContractCheckId};
+use std::panic::AssertUnwindSafe;
+
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else if let Some(message) = payload.downcast_ref::<&'static str>() {
+        (*message).to_owned()
+    } else {
+        "non-string panic payload".to_owned()
+    }
+}
 
 async fn check_with_deadlines<F: AsyncFileSystemFixture>(fixture: &F, id: ContractCheckId) {
     let mut suite = AsyncFileSystemContractSuite::new(fixture);
-    let run = tokio::time::timeout(Duration::from_secs(30), async {
-        suite.run_check(id).await;
-    }).await;
-    if run.is_err() {
+    let run = tokio::time::timeout(Duration::from_secs(30), suite.run_check(id)).await;
+    if let Err(run_elapsed) = run {
+        // timeout 已 drop run_check，其对 suite 的可变借用已结束。
         let interrupted = suite.run().was_interrupted();
-        let cleanup = tokio::time::timeout(Duration::from_secs(30), suite.finish()).await;
-        panic!("contract {id}: run deadline reached; interrupted={interrupted}; cleanup completed={}", cleanup.is_ok() && suite.run().cleanup().completed());
+        let cleanup = tokio::time::timeout(
+            Duration::from_secs(30),
+            AssertUnwindSafe(async { suite.finish().await }).catch_unwind(),
+        ).await;
+        let cleanup_detail = match cleanup {
+            Ok(Ok(())) => "completed".to_owned(),
+            Ok(Err(payload)) => format!("panicked ({})", panic_message(payload.as_ref())),
+            Err(cleanup_elapsed) => format!("deadline elapsed ({cleanup_elapsed})"),
+        };
+        let cleanup_complete = suite.run().cleanup().completed();
+        panic!("contract {id}: run deadline elapsed ({run_elapsed}); interrupted={interrupted}; cleanup={cleanup_detail}; cleanup_completed={cleanup_complete}");
     }
     suite.run().assert_satisfied_with(&[id]);
 }
 ```
 
-运行和清理使用独立预算，可按 provider 调整。外层 block 返回 `()`，不会让 suite 借用逃逸。
-运行超时后先读取保留的中断证据，再尝试清理；即使清理成功，原 contract 测试仍必须失败。
+运行和清理使用独立预算，可按 provider 调整。`timeout` 返回后已 drop 运行 future，其对 suite 的
+可变借用已结束。运行超时后先读取保留的中断证据，再尝试清理；即使清理成功，原 contract 测试仍必须失败。
 清理也超时时，应报告清理尚未完成，并由 fixture 所有者继续恢复；不能声称异步资源已经回收。
 协作式 runtime timeout 不能抢占阻塞的 `poll`。
 
@@ -403,8 +444,10 @@ poll，不依赖 sleep。已有 copy 取消探针继续采用其独立的检查�
 ## 文件系统契约更新
 
 List 契约新增可独立执行的 `list/namespace` 和 `list/raw-root-prefix` 检查。
-平面命名空间夹具通过 SDK 或独立模型实现 `snapshot_namespace_paths`，快照必须包含
-本次检查之前已经存在的键。缺少该观察能力时，完整性标记为 **Unverified**。
+层次路径中的目录必须报告 `Directory`，文件可报告 `File` 或 `Object`。两个 flat listing
+scope 会核对独立 seed 的 file-like 类型证据（`File` 或 `Object`）。
+`snapshot_namespace_paths` 快照建立完整预期路径集合，必须包含本次检查之前已存在的键；
+仅在快照中出现的条目没有独立类型预期。缺少该观察能力时，完整性标记为 **Unverified**。
 原始前缀检查区分 `folder`、`folder/a`、`folderish` 与无关键；字面过滤器在非空根范围下验证。
 
 在包含这些项目的同级检出目录中，可运行下面的生态验证命令。`tests` 阶段使用

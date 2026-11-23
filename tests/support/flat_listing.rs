@@ -72,6 +72,9 @@ pub enum Fault {
     StreamFailure,
     SeedUnsupported,
     SnapshotIncomplete,
+    SeededWrongKind,
+    SeededObject,
+    SnapshotOnlyWrongKind,
 }
 
 /// Fixture model containing preexisting keys as well as contract seeds.
@@ -260,7 +263,15 @@ impl Provider {
                 }
                 matches!(self.fault, Fault::IgnoreFilter) || relative.starts_with(filter)
             })
-            .map(|key| DirEntry::new(Path::parse_literal(key).unwrap(), FileKind::File))
+            .map(|key| {
+                let kind = match self.fault {
+                    Fault::SeededWrongKind if key != "preexisting" => FileKind::Directory,
+                    Fault::SeededObject if key != "preexisting" => FileKind::Object,
+                    Fault::SnapshotOnlyWrongKind if key == "preexisting" => FileKind::Directory,
+                    _ => FileKind::File,
+                };
+                DirEntry::new(Path::parse_literal(key).unwrap(), kind)
+            })
             .collect::<Vec<_>>();
         if request.options().options().include_metadata() {
             for entry in &mut keys {

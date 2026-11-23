@@ -1,7 +1,7 @@
 # qubit-fs-testkit design
 
 This document describes the public contract model implemented by
-`qubit-fs-testkit` 0.9 against `qubit-fs` 0.4. The crate is development-only test support: it exercises a
+the unpublished `qubit-fs-testkit` 0.9.3 source against `qubit-fs` 0.4. Published 0.9.1 and 0.9.2 target `qubit-fs` 0.3. The crate is development-only test support: it exercises a
 provider through `qubit_fs::FileSystem` or `qubit_fs::AsyncFileSystem` and never
 depends on provider SPI types.
 
@@ -98,9 +98,13 @@ limit property check exercises the public clamp calculation. These observations
 do not establish every metadata field's absent/unknown semantics, stream
 termination after errors, or all provider-violation detection; core and
 provider-specific tests own those additional guarantees.
-For independently seeded entries, the suite also checks the reported category:
-directories must be `Directory`, while seeded files may be `File` or `Object`.
-It does not infer directory expectations from path text or verify every
+For independently seeded entries expected in either flat listing scope, the suite
+also checks file-like evidence: `File` or `Object` is accepted. The namespace
+path snapshot establishes the complete expected path set, including pre-existing
+keys, but entries found only in that snapshot have no independent type
+expectation. Independently seeded hierarchical entries retain their category
+checks: directories must be `Directory`, while files may be `File` or `Object`.
+Categories come from seed operations, not path text; this does not verify every
 metadata field.
 For hierarchical paths, `ListBasic` includes direct files and child directories
 but excludes grandchildren. `ListPrefix` uses a `Subtree` filter and recursive
@@ -299,7 +303,7 @@ Temporary-resource checks independently seed and verify non-empty file bytes
 and directory child contents across keep, persist, overwrite, and repeated
 lifecycle operations. Unsupported content hooks are reported as `Unverified`;
 setup errors remain failures. The suite also retains its typed temporary
-resource recovery path. Testkit 0.7 targeted `qubit-fs` 0.2; that is historical,
+resource recovery path. Testkit 0.7.0 and 0.7.1 targeted `qubit-fs` 0.2; that is historical,
 not the compatibility target of this 0.9 design. Directory overwrite uses an
 independently seeded empty destination as its baseline; it does not establish
 behavior for overwriting a non-empty directory.

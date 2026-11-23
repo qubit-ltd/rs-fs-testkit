@@ -23,6 +23,7 @@ use crate::ContractCheckOutcome;
 use crate::ContractFailure;
 use crate::FixturePreparation;
 use crate::FixtureSupport;
+use crate::internal::copy_statistics::copy_count_matches;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
@@ -173,7 +174,8 @@ impl AsyncFileSystemContractSuite<'_> {
             "copy did not provide the required server-side method",
         )?;
         verify_condition(
-            outcome.stats().bytes == snapshot.len() as u64 && outcome.stats().files + outcome.stats().objects == 1,
+            outcome.stats().bytes == snapshot.len() as u64
+                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
             id,
             "server-side copy statistics differ",
         )?;

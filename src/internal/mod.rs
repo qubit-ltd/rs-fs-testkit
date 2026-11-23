@@ -13,6 +13,7 @@ mod catch_unwind_future;
 pub(crate) mod check_catalog;
 pub(crate) mod check_spec;
 pub(crate) mod cleanup_failure;
+pub(crate) mod copy_statistics;
 #[cfg(feature = "async")]
 pub(crate) mod execute_copy;
 #[cfg(feature = "async")]
