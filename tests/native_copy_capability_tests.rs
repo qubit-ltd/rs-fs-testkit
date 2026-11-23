@@ -220,10 +220,7 @@ fn test_native_nonempty_copy_rejects_overflowing_statistics_without_panic() {
         ContractCheckOutcome::Failed { .. }
     ));
     assert_eq!(run.failures().len(), 1);
-    assert_eq!(
-        run.failures()[0].check(),
-        Some(ContractCheckId::CopyNativeNonEmpty)
-    );
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::CopyNativeNonEmpty));
     assert!(run.failures()[0].take_panic_payload().is_none());
     let snapshot = fixture.cleanup_snapshot();
     let (source, target) = fixture.last_paths();
@@ -424,10 +421,7 @@ fn test_async_native_nonempty_copy_rejects_overflowing_statistics_without_panic(
         ContractCheckOutcome::Failed { .. }
     ));
     assert_eq!(run.failures().len(), 1);
-    assert_eq!(
-        run.failures()[0].check(),
-        Some(ContractCheckId::CopyNativeNonEmpty)
-    );
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::CopyNativeNonEmpty));
     assert!(run.failures()[0].take_panic_payload().is_none());
     let snapshot = fixture.cleanup_snapshot();
     let (source, target) = fixture.last_paths();

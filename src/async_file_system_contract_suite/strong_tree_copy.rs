@@ -198,16 +198,8 @@ impl AsyncFileSystemContractSuite<'_> {
         verify_condition(achieved, id, "copy did not achieve its required publication guarantee")?;
         verify_condition(
             outcome.stats().bytes == bytes.len() as u64
-                && copy_count_matches(
-                    outcome.stats().files,
-                    outcome.stats().objects,
-                    1,
-                )
-                && copy_count_matches(
-                    outcome.stats().directories,
-                    outcome.stats().prefixes,
-                    2,
-                )
+                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1)
+                && copy_count_matches(outcome.stats().directories, outcome.stats().prefixes, 2)
                 && outcome.stats().skipped == 0
                 && outcome.stats().failed == 0
                 && outcome.stats().overwritten == 0,

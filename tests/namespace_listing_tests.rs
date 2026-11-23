@@ -72,10 +72,14 @@ fn test_flat_checks_reject_wrong_kind_for_seeded_paths() {
             assert_eq!(run.failures().len(), 1, "{id}");
             let failure = &run.failures()[0];
             assert_eq!(failure.check(), Some(id));
-            assert!(failure.message().contains("non-file-like kind"), "{}", failure.message());
+            assert!(
+                failure.message().contains("non-file-like kind"),
+                "{}",
+                failure.message()
+            );
         };
         let fixture = FlatFixture::new(Fault::SeededWrongKind, true);
-        verify(&FileSystemContractSuite::new(&fixture).run_check(id));
+        verify(FileSystemContractSuite::new(&fixture).run_check(id));
         #[cfg(feature = "async")]
         common::async_memory_file_system::run_controlled(async {
             let fixture = FlatFixture::new(Fault::SeededWrongKind, true);
@@ -89,12 +93,20 @@ fn test_flat_checks_reject_wrong_kind_for_seeded_paths() {
 fn test_flat_checks_keep_type_evidence_limited_to_seeded_paths() {
     for id in [ContractCheckId::ListNamespace, ContractCheckId::ListRawRootPrefix] {
         let fixture = FlatFixture::new(Fault::SeededObject, true);
-        assert!(FileSystemContractSuite::new(&fixture).run_check(id).requirements_satisfied(), "{id}");
+        assert!(
+            FileSystemContractSuite::new(&fixture)
+                .run_check(id)
+                .requirements_satisfied(),
+            "{id}"
+        );
         #[cfg(feature = "async")]
         common::async_memory_file_system::run_controlled(async {
             let fixture = FlatFixture::new(Fault::SeededObject, true);
             assert!(
-                AsyncFileSystemContractSuite::new(&fixture).run_check(id).await.requirements_satisfied(),
+                AsyncFileSystemContractSuite::new(&fixture)
+                    .run_check(id)
+                    .await
+                    .requirements_satisfied(),
                 "async {id}"
             );
         });

@@ -206,11 +206,8 @@ impl AsyncFileSystemContractSuite<'_> {
         };
         verify_condition(achieved, id, "copy did not achieve its required publication guarantee")?;
         verify_condition(
-            outcome.stats().bytes == bytes.len() as u64 && copy_count_matches(
-                    outcome.stats().files,
-                    outcome.stats().objects,
-                    1,
-                ),
+            outcome.stats().bytes == bytes.len() as u64
+                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
             id,
             "strong copy statistics differ",
         )?;

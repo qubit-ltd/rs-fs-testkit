@@ -130,11 +130,8 @@ impl AsyncFileSystemContractSuite<'_> {
             "copy did not complete with the Native method",
         )?;
         verify_condition(
-            outcome.stats().bytes == source_bytes.len() as u64 && copy_count_matches(
-                    outcome.stats().files,
-                    outcome.stats().objects,
-                    1,
-                ),
+            outcome.stats().bytes == source_bytes.len() as u64
+                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
             id,
             "native copy statistics differ",
         )?;

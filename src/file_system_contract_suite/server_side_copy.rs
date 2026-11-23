@@ -160,11 +160,7 @@ impl FileSystemContractSuite<'_> {
         )?;
         verify_condition(
             outcome.stats().bytes == snapshot.len() as u64
-                && copy_count_matches(
-                    outcome.stats().files,
-                    outcome.stats().objects,
-                    1,
-                ),
+                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
             id,
             "server-side copy statistics differ",
         )?;

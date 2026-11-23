@@ -27,6 +27,7 @@ use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FixtureError;
 use qubit_fs_testkit::FixtureFuture;
 use qubit_fs_testkit::FixtureResult;
+
 use self::common::AsyncMemoryFixture;
 use self::common::async_memory_file_system::run_controlled;
 
@@ -74,15 +75,9 @@ fn test_async_finish_capture_retains_teardown_error_and_panic() {
         run_controlled(async {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_contract(FileSystemContract::ErrorContext).await;
-            let failure = run
-                .cleanup()
-                .failures()
-                .first()
-                .expect("teardown failure retained");
+            let failure = run.cleanup().failures().first().expect("teardown failure retained");
             if panic || panic_before_future {
-                let payload = failure
-                    .take_panic_payload()
-                    .expect("original teardown panic retained");
+                let payload = failure.take_panic_payload().expect("original teardown panic retained");
                 let message = if panic_before_future {
                     "injected async fixture teardown construction panic"
                 } else {
@@ -104,9 +99,7 @@ fn test_async_explicit_finish_retains_construction_panic_and_can_retry() {
         calls: Arc::new(AtomicUsize::new(0)),
     };
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_controlled(suite.finish())
-    }));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_controlled(suite.finish())));
     assert!(
         result.is_err(),
         "explicit finish must preserve its public panic behavior"
@@ -125,10 +118,7 @@ fn test_async_explicit_finish_retains_construction_panic_and_can_retry() {
     assert!(!suite.run().cleanup().completed());
 
     run_controlled(suite.finish());
-    assert!(
-        suite.run().cleanup().completed(),
-        "a later finish retries cleanup"
-    );
+    assert!(suite.run().cleanup().completed(), "a later finish retries cleanup");
     assert_eq!(suite.run().cleanup().attempts(), 2);
 }
 

@@ -279,10 +279,7 @@ fn test_delete_without_conditional_capability_is_rejected_as_expected() {
     let fixture = AsyncMemoryFixture::without_optional_capabilities();
     run_controlled(async {
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        suite
-            .run_check(ContractCheckId::DeleteIfMatch)
-            .await
-            .assert_satisfied();
+        suite.run_check(ContractCheckId::DeleteIfMatch).await.assert_satisfied();
     });
     assert!(fixture.is_empty(), "conditional-delete rejection must clean up");
 }

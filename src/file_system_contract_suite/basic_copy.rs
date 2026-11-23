@@ -172,11 +172,7 @@ impl FileSystemContractSuite<'_> {
             .map_err(|error| ContractFailure::with_owned_source("copy execution failed", error).at(id))?;
         verify_condition(
             outcome.stats().bytes == bytes.len() as u64
-                && copy_count_matches(
-                    outcome.stats().files,
-                    outcome.stats().objects,
-                    1,
-                ),
+                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
             id,
             "copy statistics differ",
         )?;

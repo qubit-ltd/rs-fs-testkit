@@ -174,11 +174,8 @@ impl AsyncFileSystemContractSuite<'_> {
             "copy did not provide the required server-side method",
         )?;
         verify_condition(
-            outcome.stats().bytes == snapshot.len() as u64 && copy_count_matches(
-                    outcome.stats().files,
-                    outcome.stats().objects,
-                    1,
-                ),
+            outcome.stats().bytes == snapshot.len() as u64
+                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
             id,
             "server-side copy statistics differ",
         )?;

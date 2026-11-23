@@ -125,11 +125,7 @@ impl FileSystemContractSuite<'_> {
         )?;
         verify_condition(
             outcome.stats().bytes == source_bytes.len() as u64
-                && copy_count_matches(
-                    outcome.stats().files,
-                    outcome.stats().objects,
-                    1,
-                ),
+                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
             id,
             "native copy statistics differ",
         )?;

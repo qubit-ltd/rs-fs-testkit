@@ -1600,8 +1600,15 @@ fn test_async_random_access_declarations_and_optional_hooks_use_public_contract_
     let supported_provider = DeclaresUnsupported(AsyncRandomFixture::new(false, false));
     let mut suite = AsyncFileSystemContractSuite::new(&supported_provider);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
-    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }));
-    assert!(run.failures()[0].message().contains("declaring the operation unsupported"));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("declaring the operation unsupported")
+    );
     assert!(run.cleanup().completed());
 
     let unsupported_provider = AsyncRandomFixture::new(false, false);
@@ -1610,26 +1617,38 @@ fn test_async_random_access_declarations_and_optional_hooks_use_public_contract_
     let mut suite = AsyncFileSystemContractSuite::new(&unsupported_provider);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
     assert!(run.failures().is_empty(), "{:?}", run.failures());
-    assert_eq!(run.report().checks()[0].outcome(), &ContractCheckOutcome::RejectedAsExpected);
+    assert_eq!(
+        run.report().checks()[0].outcome(),
+        &ContractCheckOutcome::RejectedAsExpected
+    );
 
     let fixture = AsyncRandomFixture::with_open_error(FileSystemLimit::Unknown);
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
-    assert!(run.failures()[0].message().contains("declared random-access open failed"));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("declared random-access open failed")
+    );
     assert!(run.cleanup().completed());
 
     let fixture = DeclaresUnsupported(AsyncRandomFixture::with_open_error(FileSystemLimit::Unknown));
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
-    assert!(run.failures()[0]
-        .message()
-        .contains("undeclared random-access operation returned an unexpected error"));
+    assert!(
+        run.failures()[0]
+            .message()
+            .contains("undeclared random-access operation returned an unexpected error")
+    );
     assert!(run.cleanup().completed());
 
     let fixture = NoSeed(AsyncRandomFixture::new(false, false));
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
     let run = ready(suite.run_check(ContractCheckId::RandomAccessBasic));
-    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Unverified { .. }));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Unverified { .. }
+    ));
 
     let fixture = NoPendingProbe(AsyncRandomFixture::new(false, false));
     let mut suite = AsyncFileSystemContractSuite::new(&fixture);
