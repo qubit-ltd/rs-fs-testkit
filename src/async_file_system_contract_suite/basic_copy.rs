@@ -20,7 +20,7 @@ use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 use crate::ContractFailure;
 use crate::FixtureSupport;
-use crate::internal::copy_statistics::copy_count_matches;
+use crate::internal::copy_statistics::single_file_copy_matches;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
@@ -50,7 +50,6 @@ impl AsyncFileSystemContractSuite<'_> {
             .fixture
             .path(&target_relative)
             .map_err(|error| ContractFailure::with_source("copy target preparation failed", error).at(id))?;
-        self.context.record_created(target.clone());
         if self.check_copy_capability(id, &source_relative, &target).await? {
             return Ok(());
         }
@@ -65,7 +64,6 @@ impl AsyncFileSystemContractSuite<'_> {
             return Ok(());
         };
         let (source, target, options) = case.into_parts();
-        self.context.record_created(target.clone());
         verify_condition(
             options == CopyOptions::file(),
             id,
@@ -73,6 +71,26 @@ impl AsyncFileSystemContractSuite<'_> {
         )?;
         self.context.record_created(source.clone());
         verify_condition(source != target, id, "copy source and target alias")?;
+        let target_before = self.fixture.exists_out_of_band(&target).await.map_err(|error| {
+            ContractFailure::with_source("copy target observation failed", error).at(id)
+        })?;
+        match target_before {
+            FixtureSupport::Supported(false) => {},
+            FixtureSupport::Supported(true) => {
+                return Err(ContractFailure::message_only("copy target already exists").at(id));
+            }
+            FixtureSupport::Unsupported => {
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::Copy),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm copy target absence".to_owned(),
+                    },
+                );
+                return Ok(());
+            }
+        }
+        self.context.record_created(target.clone());
         if !self
             .verify_copy_contents(
                 id,
@@ -130,6 +148,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 );
                 return Ok(true);
             }
+            self.context.record_created(target.clone());
             let source = self
                 .fixture
                 .path(source_relative)
@@ -282,8 +301,7 @@ impl AsyncFileSystemContractSuite<'_> {
             }
         };
         verify_condition(
-            outcome.stats().bytes == bytes.len() as u64
-                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
+            single_file_copy_matches(outcome.stats(), bytes.len() as u64),
             id,
             "copy statistics differ",
         )?;

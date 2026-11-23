@@ -23,7 +23,7 @@ use crate::ContractFailure;
 use crate::CopyScenario;
 use crate::FixturePreparation;
 use crate::FixtureSupport;
-use crate::internal::copy_statistics::copy_count_matches;
+use crate::internal::copy_statistics::single_file_copy_matches;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
@@ -206,8 +206,7 @@ impl AsyncFileSystemContractSuite<'_> {
         };
         verify_condition(achieved, id, "copy did not achieve its required publication guarantee")?;
         verify_condition(
-            outcome.stats().bytes == bytes.len() as u64
-                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
+            single_file_copy_matches(outcome.stats(), bytes.len() as u64),
             id,
             "strong copy statistics differ",
         )?;

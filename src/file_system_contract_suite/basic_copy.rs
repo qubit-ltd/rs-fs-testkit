@@ -19,7 +19,7 @@ use crate::ContractCheckOutcome;
 use crate::ContractFailure;
 use crate::FileSystemContractSuite;
 use crate::FixtureSupport;
-use crate::internal::copy_statistics::copy_count_matches;
+use crate::internal::copy_statistics::single_file_copy_matches;
 use crate::internal::verify_condition;
 
 impl FileSystemContractSuite<'_> {
@@ -54,7 +54,6 @@ impl FileSystemContractSuite<'_> {
             .fixture
             .path(&target_relative)
             .map_err(|error| ContractFailure::with_source("copy target preparation failed", error).at(id))?;
-        self.context.record_created(target.clone());
         if !self.capable(FileSystemCapability::Copy) {
             let required = [
                 FileSystemCapability::Read,
@@ -74,6 +73,7 @@ impl FileSystemContractSuite<'_> {
                 );
                 return Ok(());
             }
+            self.context.record_created(target.clone());
             let source = self
                 .fixture
                 .path(&source_relative)
@@ -138,7 +138,6 @@ impl FileSystemContractSuite<'_> {
             }
         };
         let (source, target, options) = case.into_parts();
-        self.context.record_created(target.clone());
         verify_condition(
             options == CopyOptions::file(),
             id,
@@ -146,6 +145,26 @@ impl FileSystemContractSuite<'_> {
         )?;
         self.context.record_created(source.clone());
         verify_condition(source != target, id, "copy source and target alias")?;
+        let target_before = self.fixture.exists_out_of_band(&target).map_err(|error| {
+            ContractFailure::with_source("copy target observation failed", error).at(id)
+        })?;
+        match target_before {
+            FixtureSupport::Supported(false) => {},
+            FixtureSupport::Supported(true) => {
+                return Err(ContractFailure::message_only("copy target already exists").at(id));
+            }
+            FixtureSupport::Unsupported => {
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::Copy),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm copy target absence".to_owned(),
+                    },
+                );
+                return Ok(());
+            }
+        }
+        self.context.record_created(target.clone());
         let before = self
             .fixture
             .read_file(&source)
@@ -171,8 +190,7 @@ impl FileSystemContractSuite<'_> {
             .copy(&source, &target, CopyOptions::file())
             .map_err(|error| ContractFailure::with_owned_source("copy execution failed", error).at(id))?;
         verify_condition(
-            outcome.stats().bytes == bytes.len() as u64
-                && copy_count_matches(outcome.stats().files, outcome.stats().objects, 1),
+            single_file_copy_matches(outcome.stats(), bytes.len() as u64),
             id,
             "copy statistics differ",
         )?;
