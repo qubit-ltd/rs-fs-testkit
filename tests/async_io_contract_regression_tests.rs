@@ -249,6 +249,54 @@ fn test_async_conditional_delete_case_unavailability_is_unverified() {
 }
 
 #[test]
+fn test_optional_conditional_read_is_rejected_when_capability_is_absent() {
+    let fixture = AsyncMemoryFixture::without_optional_capabilities();
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        suite
+            .run_check(ContractCheckId::ReadIfMatchCurrent)
+            .await
+            .assert_satisfied();
+    });
+    assert!(fixture.is_empty(), "conditional-read rejection must clean up");
+}
+
+#[test]
+fn test_range_limit_is_skipped_when_provider_limit_is_unknown() {
+    let fixture = AsyncMemoryFixture::with_limits(FileSystemLimits::unknown());
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        suite
+            .run_check(ContractCheckId::ReadRangeLimit)
+            .await
+            .assert_satisfied();
+    });
+    assert!(fixture.is_empty(), "unknown-limit read check must clean up");
+}
+
+#[test]
+fn test_delete_without_conditional_capability_is_rejected_as_expected() {
+    let fixture = AsyncMemoryFixture::without_optional_capabilities();
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        suite
+            .run_check(ContractCheckId::DeleteIfMatch)
+            .await
+            .assert_satisfied();
+    });
+    assert!(fixture.is_empty(), "conditional-delete rejection must clean up");
+}
+
+#[test]
+fn test_basic_delete_without_delete_capability_is_rejected_as_expected() {
+    let fixture = AsyncMemoryFixture::read_only();
+    run_controlled(async {
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        suite.run_check(ContractCheckId::DeleteBasic).await.assert_satisfied();
+    });
+}
+
+#[test]
 fn test_async_fault_profiles_are_exercised_by_the_real_suite() {
     for fault in [
         AsyncMemoryFault::IgnoreReadIfMatch,
