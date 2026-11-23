@@ -25,11 +25,17 @@ impl<'a> FileSystemContractSuite<'a> {
     ///
     /// The first cleanup attempt closes resource preparation and all run
     /// entry points, even when cleanup fails. Call `finish` again to retry
-    /// cleanup; create a fresh fixture and suite for another run.
+    /// cleanup; create a fresh fixture and suite for another run. Automatic
+    /// cleanup during `run_contract`, `run_check`, or `run_all` retains facade
+    /// cleanup and fixture teardown failures in the returned run's cleanup
+    /// report.
     ///
     /// # Panics
     ///
-    /// Panics when a recorded resource cannot be inspected or deleted.
+    /// Panics when a recorded resource cannot be inspected or deleted, or
+    /// fixture teardown returns an error or panics. Inspect the run's cleanup
+    /// report after catching this panic; a later call retries failed cleanup
+    /// and teardown. Failures remain in the report after a successful retry.
     pub fn finish(&mut self) {
         if let Err(payload) = self.finish_capture() {
             resume_unwind(payload);

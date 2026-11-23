@@ -7,6 +7,10 @@
 // =============================================================================
 #![cfg(feature = "async")]
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+
 pub use ::qubit_fs_testkit;
 
 mod common;
@@ -23,13 +27,14 @@ use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FixtureError;
 use qubit_fs_testkit::FixtureFuture;
 use qubit_fs_testkit::FixtureResult;
-
 use self::common::AsyncMemoryFixture;
 use self::common::async_memory_file_system::run_controlled;
 
 struct TeardownFixture {
     inner: AsyncMemoryFixture,
     panic: bool,
+    panic_before_future: bool,
+    calls: Arc<AtomicUsize>,
 }
 
 impl AsyncFileSystemFixture for TeardownFixture {
@@ -42,6 +47,12 @@ impl AsyncFileSystemFixture for TeardownFixture {
     }
 
     fn teardown(&self) -> FixtureFuture<'_, ()> {
+        if self.panic_before_future && self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            panic!("injected async fixture teardown construction panic");
+        }
+        if self.panic_before_future {
+            return Box::pin(async { Ok(()) });
+        }
         Box::pin(async move {
             if self.panic {
                 panic!("injected async fixture teardown panic");
@@ -53,18 +64,72 @@ impl AsyncFileSystemFixture for TeardownFixture {
 
 #[test]
 fn test_async_finish_capture_retains_teardown_error_and_panic() {
-    for panic in [false, true] {
+    for (panic, panic_before_future) in [(false, false), (true, false), (false, true)] {
         let fixture = TeardownFixture {
             inner: AsyncMemoryFixture::new(),
             panic,
+            panic_before_future,
+            calls: Arc::new(AtomicUsize::new(0)),
         };
         run_controlled(async {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_contract(FileSystemContract::ErrorContext).await;
-            assert!(!run.cleanup().failures().is_empty());
+            let failure = run
+                .cleanup()
+                .failures()
+                .first()
+                .expect("teardown failure retained");
+            if panic || panic_before_future {
+                let payload = failure
+                    .take_panic_payload()
+                    .expect("original teardown panic retained");
+                let message = if panic_before_future {
+                    "injected async fixture teardown construction panic"
+                } else {
+                    "injected async fixture teardown panic"
+                };
+                assert_eq!(payload.downcast_ref::<&str>(), Some(&message));
+            }
             assert!(!run.requirements_satisfied());
         });
     }
+}
+
+#[test]
+fn test_async_explicit_finish_retains_construction_panic_and_can_retry() {
+    let fixture = TeardownFixture {
+        inner: AsyncMemoryFixture::new(),
+        panic: false,
+        panic_before_future: true,
+        calls: Arc::new(AtomicUsize::new(0)),
+    };
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run_controlled(suite.finish())
+    }));
+    assert!(
+        result.is_err(),
+        "explicit finish must preserve its public panic behavior"
+    );
+    let failure = suite
+        .run()
+        .cleanup()
+        .failures()
+        .first()
+        .expect("explicit cleanup report retains teardown panic");
+    let payload = failure.take_panic_payload().expect("original panic payload retained");
+    assert_eq!(
+        payload.downcast_ref::<&str>(),
+        Some(&"injected async fixture teardown construction panic")
+    );
+    assert!(!suite.run().cleanup().completed());
+
+    run_controlled(suite.finish());
+    assert!(
+        suite.run().cleanup().completed(),
+        "a later finish retries cleanup"
+    );
+    assert_eq!(suite.run().cleanup().attempts(), 2);
 }
 
 #[test]
