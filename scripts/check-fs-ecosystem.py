@@ -61,7 +61,11 @@ def validate_core_graph(root: Path, directory: str, source_mode: str = "local") 
             cwd=root / directory, check=True, capture_output=True, text=True,
         )
     except subprocess.CalledProcessError as error:
-        raise ValueError(f"{directory}: cargo metadata failed for {manifest}") from error
+        cargo_stderr = (error.stderr or "").strip()
+        detail = f"; cargo stderr: {cargo_stderr}" if cargo_stderr else "; cargo stderr: <empty>"
+        raise ValueError(
+            f"{directory}: cargo metadata failed for {manifest}{detail}"
+        ) from error
     packages = json.loads(result.stdout)["packages"]
     cores = [package for package in packages if package["name"] == "qubit-fs"]
     expected = (root / "rs-fs/Cargo.toml").resolve()
