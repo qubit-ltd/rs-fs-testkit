@@ -1,7 +1,11 @@
 # qubit-fs-testkit design
 
 This document describes the public contract model implemented by
-the unpublished `qubit-fs-testkit` 0.9.3 source against `qubit-fs` 0.4. Published 0.9.1 and 0.9.2 target `qubit-fs` 0.3. The crate is development-only test support: it exercises a
+the unpublished `qubit-fs-testkit` 0.9.3 source against `qubit-fs` 0.4. As
+checked on 2026-11-23, crates.io lists `qubit-fs` 0.3.3 and
+`qubit-fs-testkit` 0.9.2 as the latest available versions; published testkit
+0.9.1 and 0.9.2 target `qubit-fs` 0.3. There is no compatible registry pair
+yet. The crate is development-only test support: it exercises a
 provider through `qubit_fs::FileSystem` or `qubit_fs::AsyncFileSystem` and never
 depends on provider SPI types.
 
@@ -303,8 +307,9 @@ Temporary-resource checks independently seed and verify non-empty file bytes
 and directory child contents across keep, persist, overwrite, and repeated
 lifecycle operations. Unsupported content hooks are reported as `Unverified`;
 setup errors remain failures. The suite also retains its typed temporary
-resource recovery path. Testkit 0.7.0 and 0.7.1 targeted `qubit-fs` 0.2; that is historical,
-not the compatibility target of this 0.9 design. Directory overwrite uses an
+resource recovery path. Testkit 0.7.0 and 0.7.1 targeted `qubit-fs` 0.2; that is historical.
+Published testkit 0.9.1 and 0.9.2 target `qubit-fs` 0.3, while the unpublished
+0.9.3 source described here targets `qubit-fs` 0.4. Directory overwrite uses an
 independently seeded empty destination as its baseline; it does not establish
 behavior for overwriting a non-empty directory.
 

@@ -5,9 +5,12 @@
 ## Purpose and Audience
 
 This guide is for authors of synchronous or asynchronous `qubit-fs` 0.4
-providers using the current `qubit-fs-testkit` 0.9 contract suites. The testkit
-is test support and belongs in provider development dependencies. References
-to testkit 0.7 and `qubit-fs` 0.2 below describe historical interfaces.
+providers using the current `qubit-fs-testkit` 0.9.3 source contract suites.
+The 0.9.3 candidate is not published. As checked on 2026-11-23, crates.io lists
+`qubit-fs` 0.3.3 and `qubit-fs-testkit` 0.9.2 as latest; published testkit 0.9.1
+and 0.9.2 target `qubit-fs` 0.3, so no compatible registry pair is available.
+The testkit is test support and belongs in provider development dependencies.
+References to testkit 0.7 and `qubit-fs` 0.2 below describe historical interfaces.
 
 ## Conceptual Model
 
@@ -39,7 +42,9 @@ including when deletion is unavailable.
 ## Installation and Minimal Configuration
 
 The current 0.9.3 source checkout targets `qubit-fs` 0.4 but is not published.
-Published 0.9.1 and 0.9.2 target `qubit-fs` 0.3. With sibling checkouts at
+As checked on 2026-11-23, the latest registry versions are `qubit-fs` 0.3.3 and
+`qubit-fs-testkit` 0.9.2; published 0.9.1 and 0.9.2 target `qubit-fs` 0.3, so
+there is no compatible registry pair yet. With sibling checkouts at
 `../rs-fs-testkit`, add the source as a development dependency:
 
 ```bash
@@ -61,8 +66,9 @@ side by side. While using these unpublished sources, declare `qubit-fs` with
 `path = "../rs-fs"` in the provider and `qubit-fs-testkit` with
 `path = "../rs-fs-testkit"` in dev-dependencies. Both must resolve `qubit-fs`
 from the same checkout: registry and path copies are different Rust types, even
-at the same version. After 0.9.3 and `qubit-fs` 0.4 are published, use the
-registry dependencies `qubit-fs = "0.4"` and
+at the same version. Until `qubit-fs` 0.4 and compatible testkit 0.9.3 are
+published, use the sibling source command and matching path dependencies above.
+After both are published, use the registry dependencies `qubit-fs = "0.4"` and
 `qubit-fs-testkit = "=0.9.3"`. Add `features = ["async"]` to the testkit
 dependency when using the asynchronous suite. The provider itself uses `qubit-fs` 0.4. The repository's complete local
 provider fixture, including properties, independent seed/read/exists hooks,
@@ -646,7 +652,7 @@ evidence after opening and checking the resource. A caller that requires either
 check must list its check ID explicitly; a skip does not satisfy that
 requirement.
 
-For temporary resources, testkit 0.9 follows the qubit-fs 0.4 contract that keeps
+For temporary resources, testkit 0.9.3 follows the qubit-fs 0.4 contract that keeps
 publication facts independent from source qualification. This suite checks the
 existing repeated lifecycle, including the publication target after a successful
 `keep`. Core and adapter regressions cover the new source states, invalid retries,

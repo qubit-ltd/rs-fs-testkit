@@ -9,7 +9,10 @@
 
 `qubit-fs-testkit` provides reusable, capability-driven contracts for
 `qubit-fs` 0.4 provider implementations. The current source checkout is version
-0.9.3; it is not yet published. Published 0.9.1 and 0.9.2 target `qubit-fs` 0.3.
+0.9.3; it is not yet published. As checked on 2026-11-23, crates.io lists
+`qubit-fs` 0.3.3 and `qubit-fs-testkit` 0.9.2 as the latest available versions;
+published testkit 0.9.1 and 0.9.2 target `qubit-fs` 0.3. A compatible registry
+pair is not available yet.
 Add it to a provider's development
 dependencies, supply an isolated fixture, and run the synchronous or
 runtime-neutral asynchronous suite without putting test support in production
@@ -24,10 +27,15 @@ cargo add --dev qubit-fs-testkit --path ../rs-fs-testkit
 The sibling layout is `../rs-fs` and `../rs-fs-testkit`, relative to the provider
 crate. While using these unpublished sources, the provider and testkit must both
 resolve `qubit-fs` to the same `../rs-fs` checkout; a registry `qubit-fs` and a
-path `qubit-fs` are different Rust types even at the same version. The registry releases 0.9.1 and 0.9.2 depend on `qubit-fs` 0.3 and cannot be
-used with a 0.4 provider. After compatible 0.9.3 is published, use
-`cargo add --dev qubit-fs-testkit@=0.9.3`. The synchronous suite needs no
-feature; add `--features async` when using the asynchronous suite.
+path `qubit-fs` are different Rust types even at the same version. The registry
+releases 0.9.1 and 0.9.2 depend on `qubit-fs` 0.3 and cannot be used with a 0.4
+provider. For the current 0.9.3 candidate, use the sibling source command above
+and declare both `qubit-fs = { path = "../rs-fs" }` and
+`qubit-fs-testkit = { path = "../rs-fs-testkit" }` in the provider manifests;
+both crates must resolve the same facade checkout. After `qubit-fs` 0.4 and
+compatible testkit 0.9.3 are published, use `qubit-fs = "0.4"` and
+`qubit-fs-testkit = "=0.9.3"`. The synchronous suite needs no feature; add
+`--features async` when using the asynchronous suite.
 
 ## Quick Start
 

@@ -5,8 +5,9 @@
 ## 手册目标与读者
 
 本手册面向使用当前 `qubit-fs-testkit` 0.9.3 源码契约套件的同步或异步
-`qubit-fs` 0.4 provider 作者。该版本尚未发布；registry 中的 0.9.1 和 0.9.2 依赖
-`qubit-fs` 0.3。testkit 属于测试支持，应作为 provider 的开发依赖。下文提到的 testkit 0.7
+`qubit-fs` 0.4 provider 作者。0.9.3 候选尚未发布。截至 2026-11-23，crates.io 最新可用版本为
+`qubit-fs` 0.3.3 和 `qubit-fs-testkit` 0.9.2；已发布的 testkit 0.9.1 和 0.9.2 均依赖
+`qubit-fs` 0.3，因此暂无兼容的 registry 版本组合。testkit 属于测试支持，应作为 provider 的开发依赖。下文提到的 testkit 0.7
 和 `qubit-fs` 0.2 均指历史接口。
 
 ## 概念模型
@@ -34,8 +35,9 @@ native-copy 用例。异步 fixture 提供对应的 future 观察，以及可选
 
 ## 安装与最小配置
 
-当前 0.9.3 源码面向 `qubit-fs` 0.4，但尚未发布；已发布的 0.9.1 和 0.9.2
-面向 `qubit-fs` 0.3。假设同级检出了 `../rs-fs-testkit`，将源码作为开发依赖：
+当前 0.9.3 源码面向 `qubit-fs` 0.4，但尚未发布。截至 2026-11-23，registry 最新版本为
+`qubit-fs` 0.3.3 和 `qubit-fs-testkit` 0.9.2；已发布的 0.9.1 和 0.9.2
+面向 `qubit-fs` 0.3，因此暂无兼容的 registry 组合。假设同级检出了 `../rs-fs-testkit`，将源码作为开发依赖：
 
 ```bash
 cargo add --dev qubit-fs-testkit --path ../rs-fs-testkit
@@ -54,7 +56,8 @@ qubit-fs-testkit = { path = "../rs-fs-testkit" }
 同级布局中 `rs-fs`、`rs-fs-testkit` 与 provider crate 并列。使用未发布源码时，
 provider 的 `qubit-fs` 必须设置 `path = "../rs-fs"`，testkit 的 `qubit-fs` 也解析到
 同一 checkout；registry 与 path 即使版本相同也是不同 Rust 类型。testkit 开发依赖使用
-`path = "../rs-fs-testkit"`。待 0.9.3 与 `qubit-fs` 0.4 发布后，registry 依赖写作
+`path = "../rs-fs-testkit"`；当前候选继续使用上述同级源码命令，并确保 provider 与 testkit 都解析到同一
+`../rs-fs` checkout。待 `qubit-fs` 0.4 与兼容的 testkit 0.9.3 发布后，registry 依赖才写作
 `qubit-fs = "0.4"` 与 `qubit-fs-testkit = "=0.9.3"`。使用异步套件时为
 testkit 添加 `features = ["async"]`。仓库中的完整本地 provider fixture 示例
 [`fs_testkit_contract.rs`](https://github.com/qubit-ltd/rs-fs-local/blob/main/examples/fs_testkit_contract.rs)
@@ -501,7 +504,7 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 `Basic` 和 `Identity` 也仅在打开并检查资源后跳过其非空内容／身份验证。若调用方要求其中
 任一检查，必须显式列出对应检查 ID；跳过不满足该要求。
 
-对于临时资源，testkit 0.9 遵循 qubit-fs 0.4 将 publication 事实与源资格分开的契约。本套件
+对于临时资源，testkit 0.9.3 遵循 qubit-fs 0.4 将 publication 事实与源资格分开的契约。本套件
 检查既有的重复生命周期，包括成功 `keep` 后的发布目标；新增源状态、非法重试、
 cleanup 失败与取消由核心及 adapter 回归覆盖。
 

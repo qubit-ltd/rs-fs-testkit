@@ -1,7 +1,9 @@
 # Qubit FS Testkit 设计
 
-> 状态：当前实现说明。本文描述 `qubit-fs-testkit` 0.9 与 `qubit-fs` 0.4 的
-> provider contract 测试架构；0.7/0.2 仅作为历史版本记录。
+> 状态：当前实现说明。本文描述未发布的 `qubit-fs-testkit` 0.9.3 源码与
+> `qubit-fs` 0.4 的 provider contract 测试架构。截至 2026-11-23，crates.io 最新可用版本为
+> `qubit-fs` 0.3.3 和 `qubit-fs-testkit` 0.9.2；已发布的 0.9.1 和 0.9.2 对应 `qubit-fs` 0.3，暂无兼容的 registry 组合。
+> testkit 0.7/`qubit-fs` 0.2 仅作为历史版本记录。
 
 ## 1. 定位
 
@@ -672,7 +674,8 @@ fixture 准备 `CreateOrReplace` 时还会记录既有内容。清理保留的 r
 重复生命周期。缺少内容 hook 时结果标为 `Unverified`，setup 错误仍然失败；临时资源失败保留
 typed recovery source。同步的 expected-write cleanup 会在 provider abort 边界捕获 panic，同时保留
 原 `WriteAllFailure`、writer recovery 和 panic payload。testkit 0.7.0 和 0.7.1 曾对应 qubit-fs 0.2；这只是
-历史版本，不是当前 0.9 的兼容目标。目录覆盖以独立预置的空目标目录为基线，不据此承诺覆盖非空
+历史版本，不是当前 0.9.3 的兼容目标。已发布的 testkit 0.9.1 和 0.9.2 对应 `qubit-fs` 0.3，
+当前未发布的 0.9.3 源码对应 0.4。目录覆盖以独立预置的空目标目录为基线，不据此承诺覆盖非空
 目录的行为。
 
 可选检查 `CopyNativeNonEmpty` 独立验证 native 复制内容：准备 1..=64 KiB 的可独立观察源文件，

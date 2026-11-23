@@ -7,9 +7,11 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![English Document](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 
-`qubit-fs-testkit` 为 `qubit-fs` 0.4 provider 实现提供可复用、由 capability 驱动的契约测试。将它
-作为 provider 的开发依赖，提供隔离 fixture，并运行同步或运行时无关的异步套件，无需将测试支持
-放入生产依赖图。
+`qubit-fs-testkit` 为 `qubit-fs` 0.4 provider 实现提供可复用、由 capability 驱动的契约测试。当前源码版本为 0.9.3，尚未发布。
+截至 2026-11-23，crates.io 最新可用版本为 `qubit-fs` 0.3.3 和
+`qubit-fs-testkit` 0.9.2；已发布的 testkit 0.9.1 和 0.9.2 均依赖 `qubit-fs` 0.3，
+因此暂时没有兼容的 registry 版本组合。将 testkit 作为 provider 的开发依赖，提供隔离 fixture，
+并运行同步或运行时无关的异步套件，无需将测试支持放入生产依赖图。
 
 ## 安装
 
@@ -20,13 +22,22 @@ cargo add --dev qubit-fs-testkit --path ../rs-fs-testkit
 同步契约套件无需额外 feature 即可使用；使用异步套件时，请在开发依赖中加入
 `features = ["async"]`。
 
+截至 2026-11-23，crates.io 上 `qubit-fs` 最新为 0.3.3，`qubit-fs-testkit` 最新为
+0.9.2；已发布的 testkit 0.9.1 和 0.9.2 均依赖 `qubit-fs` 0.3，不能配合 0.4 provider。
+当前未发布的 0.9.3 候选请使用上面的同级源码命令，并在 provider manifest 中将
+`qubit-fs` 与 `qubit-fs-testkit` 都指向各自的同级源码，确保解析到同一门面 checkout。
+待 `qubit-fs` 0.4 和兼容的 testkit 0.9.3 发布后，才可改用 registry 依赖
+`qubit-fs = "0.4"` 与 `qubit-fs-testkit = "=0.9.3"`。
+
 ## 快速开始
 
 你正在交付 provider，需要用隔离 fixture 检查已声明的 capability。provider 已依赖
 `qubit-fs` 0.4；只需将 testkit 加入开发依赖。当前源码版本为 0.9.3，尚未发布；已发布的 0.9.1 和 0.9.2 依赖
 `qubit-fs` 0.3。以上命令假设 testkit 仓库位于同级目录 `../rs-fs-testkit`。
-0.9.3 发布后可使用 `cargo add --dev qubit-fs-testkit@=0.9.3`。同步套件无需
-feature；异步套件使用 `--features async`。同级布局为 provider crate 的 `../rs-fs` 和
+当前 0.9.3 候选请使用该同级源码命令，并在 provider manifest 中声明
+`qubit-fs = { path = "../rs-fs" }` 与 `qubit-fs-testkit = { path = "../rs-fs-testkit" }`，确保两者解析到同一门面 checkout。
+待 `qubit-fs` 0.4 与兼容的 testkit 0.9.3 发布后，registry 依赖才可使用
+`qubit-fs = "0.4"` 和 `qubit-fs-testkit = "=0.9.3"`。同步套件无需 feature；异步套件使用 `--features async`。同级布局为 provider crate 的 `../rs-fs` 和
 `../rs-fs-testkit`。使用这两个未发布源码时，provider 与 testkit 都必须将 `qubit-fs`
 解析到同一个 `../rs-fs`；registry 与 path 即使版本相同也会成为不同 Rust 类型。
 
