@@ -24,11 +24,19 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
     /// The first cleanup attempt closes resource preparation and all run
     /// entry points, even when cleanup fails or this future is cancelled. Call
     /// `finish` again to retry cleanup; create a fresh fixture and suite for
-    /// another run.
+    /// another run. Automatic cleanup during `run_contract`, `run_check`, or
+    /// `run_all` retains facade cleanup and fixture teardown failures in the
+    /// returned run's cleanup report. If this future is cancelled, the suite
+    /// retains its cleanup ledger and attempt state for a later retry, while
+    /// the fixture owner remains responsible for recovery if cleanup cannot
+    /// complete.
     ///
     /// # Panics
     ///
-    /// Panics when a recorded resource cannot be inspected or deleted.
+    /// Panics when a recorded resource cannot be inspected or deleted, or
+    /// fixture teardown returns an error or panics. Inspect the run's cleanup
+    /// report after catching this panic; a later call retries failed cleanup
+    /// and teardown. Failures remain in the report after a successful retry.
     pub async fn finish(&mut self) {
         if let Err(payload) = self.finish_capture().await {
             resume_unwind(payload);
@@ -126,7 +134,7 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.context.cleanup_async(self.fixture.file_system()).await;
         let mut teardown_failure = None;
         if !self.teardown_completed {
-            let teardown = crate::internal::catch_unwind_future(self.fixture.teardown()).await;
+            let teardown = crate::internal::catch_unwind_future(async { self.fixture.teardown().await }).await;
             match teardown {
                 Ok(Ok(())) => {
                     self.teardown_completed = true;
