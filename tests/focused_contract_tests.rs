@@ -1107,6 +1107,29 @@ fn test_focused_tree_copy_faults() {
     }
 }
 
+#[test]
+fn test_focused_tree_copy_rejects_overflowing_statistics() {
+    use self::common::MemoryFault;
+
+    for fault in [
+        MemoryFault::TreeCopyFileObjectCountsOverflow,
+        MemoryFault::TreeCopyDirectoryPrefixCountsOverflow,
+    ] {
+        let fixture = MemoryFixture::with_fault(fault);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::CopyAtomicTree);
+
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            testkit::ContractCheckOutcome::Failed { .. }
+        ));
+        assert_eq!(run.failures()[0].check(), Some(ContractCheckId::CopyAtomicTree));
+        assert_eq!(run.failures()[0].message(), "strong copy execution failed");
+        assert!(std::error::Error::source(&run.failures()[0]).is_some());
+        assert!(run.failures()[0].take_panic_payload().is_none());
+    }
+}
+
 /// Tree preparation does not require the tested CreateDirectory operation.
 #[test]
 fn test_focused_tree_copy_without_directory_creation() {
@@ -1157,6 +1180,35 @@ fn test_focused_async_tree_copy_faults() {
             let run = suite.run_check(id).await;
             assert!(!run.requirements_satisfied(), "{id} / {fault:?}");
             assert_eq!(run.failures()[0].check(), Some(id));
+            assert!(run.failures()[0].take_panic_payload().is_none());
+        }
+    });
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_focused_async_tree_copy_rejects_overflowing_statistics() {
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+
+    use self::common::AsyncMemoryFault;
+    use self::common::AsyncMemoryFixture;
+    use self::common::async_memory_file_system::run_controlled;
+    run_controlled(async {
+        for fault in [
+            AsyncMemoryFault::TreeCopyFileObjectCountsOverflow,
+            AsyncMemoryFault::TreeCopyDirectoryPrefixCountsOverflow,
+        ] {
+            let fixture = AsyncMemoryFixture::with_fault(fault);
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::CopyAtomicTree).await;
+
+            assert!(matches!(
+                run.report().checks()[0].outcome(),
+                testkit::ContractCheckOutcome::Failed { .. }
+            ));
+            assert_eq!(run.failures()[0].check(), Some(ContractCheckId::CopyAtomicTree));
+            assert_eq!(run.failures()[0].message(), "strong copy execution failed");
+            assert!(std::error::Error::source(&run.failures()[0]).is_some());
             assert!(run.failures()[0].take_panic_payload().is_none());
         }
     });

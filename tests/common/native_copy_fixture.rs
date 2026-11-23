@@ -89,6 +89,8 @@ struct State {
     exists_error: bool,
     wrong_method: bool,
     wrong_stats: bool,
+    copy_files: Option<u64>,
+    copy_objects: Option<u64>,
     mutate_source: bool,
 }
 
@@ -229,7 +231,8 @@ impl FileSystemSpi for NativeSpi {
         let bytes_count = if s.wrong_stats { 0 } else { bytes.len() as u64 };
         Ok(CopyAttempt::Completed(CopyOutcome::new(
             CopyStats {
-                files: 1,
+                files: s.copy_files.unwrap_or(1),
+                objects: s.copy_objects.unwrap_or(0),
                 bytes: bytes_count,
                 overwritten: u64::from(exists),
                 ..CopyStats::default()
@@ -340,6 +343,11 @@ impl NativeCopyFixture {
     }
     pub(crate) fn inject_copy_error(&self) {
         self.state.lock().expect("state lock").fail_copy = true;
+    }
+    pub(crate) fn inject_copy_counts(&self, files: u64, objects: u64) {
+        let mut state = self.state.lock().expect("state lock");
+        state.copy_files = Some(files);
+        state.copy_objects = Some(objects);
     }
     pub(crate) fn inject_wrong_content(&self) {
         self.state.lock().expect("state lock").wrong_content = true;
@@ -579,6 +587,11 @@ impl AsyncNativeCopyFixture {
     }
     pub(crate) fn inject_copy_error(&self) {
         self.state.lock().expect("state lock").fail_copy = true;
+    }
+    pub(crate) fn inject_copy_counts(&self, files: u64, objects: u64) {
+        let mut state = self.state.lock().expect("state lock");
+        state.copy_files = Some(files);
+        state.copy_objects = Some(objects);
     }
     pub(crate) fn inject_wrong_content(&self) {
         self.state.lock().expect("state lock").wrong_content = true;

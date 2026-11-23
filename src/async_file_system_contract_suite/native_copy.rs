@@ -16,6 +16,7 @@ use crate::ContractCheckId;
 use crate::ContractCheckOutcome;
 use crate::ContractFailure;
 use crate::FixtureSupport;
+use crate::internal::copy_statistics::copy_count_matches;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
@@ -129,7 +130,11 @@ impl AsyncFileSystemContractSuite<'_> {
             "copy did not complete with the Native method",
         )?;
         verify_condition(
-            outcome.stats().bytes == source_bytes.len() as u64 && outcome.stats().files + outcome.stats().objects == 1,
+            outcome.stats().bytes == source_bytes.len() as u64 && copy_count_matches(
+                    outcome.stats().files,
+                    outcome.stats().objects,
+                    1,
+                ),
             id,
             "native copy statistics differ",
         )?;

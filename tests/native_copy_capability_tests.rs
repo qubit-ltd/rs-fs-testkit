@@ -209,6 +209,37 @@ fn test_native_nonempty_copy_ignores_write_limits_and_detects_discarded_content(
 }
 
 #[test]
+fn test_native_nonempty_copy_rejects_overflowing_statistics_without_panic() {
+    let fixture = NativeCopyFixture::new(false, false);
+    fixture.inject_copy_counts(u64::MAX, 2);
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::CopyNativeNonEmpty);
+
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert_eq!(run.failures().len(), 1);
+    assert_eq!(
+        run.failures()[0].check(),
+        Some(ContractCheckId::CopyNativeNonEmpty)
+    );
+    assert!(run.failures()[0].take_panic_payload().is_none());
+    let snapshot = fixture.cleanup_snapshot();
+    let (source, target) = fixture.last_paths();
+    assert_eq!(
+        snapshot.get(&source).map(Vec::as_slice),
+        Some(b"native copy bytes".as_slice())
+    );
+    assert_eq!(
+        snapshot.get(&target).map(Vec::as_slice),
+        Some(b"native copy bytes".as_slice())
+    );
+    assert!(run.cleanup().completed());
+    assert!(fixture.is_empty());
+}
+
+#[test]
 fn test_missing_native_copy_is_optional_but_can_be_required() {
     let fixture = NativeCopyFixture::with_fixture_support(false, false, false, true);
     let mut suite = FileSystemContractSuite::new(&fixture);
@@ -378,6 +409,38 @@ fn test_async_native_nonempty_copy_ignores_write_limit_and_detects_discarded_con
             Some(b"native copy bytes".as_slice())
         );
     }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_native_nonempty_copy_rejects_overflowing_statistics_without_panic() {
+    let fixture = AsyncNativeCopyFixture::new(false, false);
+    fixture.inject_copy_counts(u64::MAX, 2);
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = run_controlled(suite.run_check(ContractCheckId::CopyNativeNonEmpty));
+
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert_eq!(run.failures().len(), 1);
+    assert_eq!(
+        run.failures()[0].check(),
+        Some(ContractCheckId::CopyNativeNonEmpty)
+    );
+    assert!(run.failures()[0].take_panic_payload().is_none());
+    let snapshot = fixture.cleanup_snapshot();
+    let (source, target) = fixture.last_paths();
+    assert_eq!(
+        snapshot.get(&source).map(Vec::as_slice),
+        Some(b"native copy bytes".as_slice())
+    );
+    assert_eq!(
+        snapshot.get(&target).map(Vec::as_slice),
+        Some(b"native copy bytes".as_slice())
+    );
+    assert!(run.cleanup().completed());
+    assert!(fixture.is_empty());
 }
 
 #[cfg(feature = "async")]
