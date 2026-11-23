@@ -35,7 +35,7 @@ feature；异步套件使用 `--features async`。同级布局为 provider crate
 qubit-fs = { path = "../rs-fs" }
 
 [dev-dependencies]
-qubit-fs-testkit = { path = "../rs-fs-testkit" }
+qubit-fs-testkit = { version = "0.9.3", path = "../rs-fs-testkit" }
 ```
 
 围绕 provider 的隔离门面实现 `FileSystemFixture`。`file_system()` 返回已配置的
@@ -75,7 +75,7 @@ suite.run_all().assert_satisfied();
 qubit-fs = { path = "../rs-fs" }
 
 [dev-dependencies]
-qubit-fs-testkit = { path = "../rs-fs-testkit", features = ["async"] }
+qubit-fs-testkit = { version = "0.9.3", path = "../rs-fs-testkit", features = ["async"] }
 ```
 
 套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝。

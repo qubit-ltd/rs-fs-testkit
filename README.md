@@ -40,7 +40,7 @@ only as a development dependency:
 qubit-fs = { path = "../rs-fs" }
 
 [dev-dependencies]
-qubit-fs-testkit = { path = "../rs-fs-testkit" }
+qubit-fs-testkit = { version = "0.9.3", path = "../rs-fs-testkit" }
 ```
 
 Implement `FileSystemFixture` around the provider's isolated facade. Its
@@ -85,7 +85,7 @@ dependency enables the feature explicitly:
 qubit-fs = { path = "../rs-fs" }
 
 [dev-dependencies]
-qubit-fs-testkit = { path = "../rs-fs-testkit", features = ["async"] }
+qubit-fs-testkit = { version = "0.9.3", path = "../rs-fs-testkit", features = ["async"] }
 ```
 
 The suite follows advertised capabilities. It checks supported behavior and
