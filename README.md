@@ -7,8 +7,10 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
-`qubit-fs-testkit` 0.9 provides reusable, capability-driven contracts for
-`qubit-fs` 0.4 provider implementations. Add it to a provider's development
+`qubit-fs-testkit` provides reusable, capability-driven contracts for
+`qubit-fs` 0.4 provider implementations. The current source checkout is version
+0.9.3; it is not yet published. Published 0.9.1 and 0.9.2 target `qubit-fs` 0.3.
+Add it to a provider's development
 dependencies, supply an isolated fixture, and run the synchronous or
 runtime-neutral asynchronous suite without putting test support in production
 dependency graphs.
@@ -16,12 +18,16 @@ dependency graphs.
 ## Installation
 
 ```bash
-cargo add --dev qubit-fs-testkit@0.9
+cargo add --dev qubit-fs-testkit --path ../rs-fs-testkit
 ```
 
-The synchronous contract suite is available without features. Add
-`features = ["async"]` to the development dependency when using the
-asynchronous suite.
+The sibling layout is `../rs-fs` and `../rs-fs-testkit`, relative to the provider
+crate. While using these unpublished sources, the provider and testkit must both
+resolve `qubit-fs` to the same `../rs-fs` checkout; a registry `qubit-fs` and a
+path `qubit-fs` are different Rust types even at the same version. The registry releases 0.9.1 and 0.9.2 depend on `qubit-fs` 0.3 and cannot be
+used with a 0.4 provider. After compatible 0.9.3 is published, use
+`cargo add --dev qubit-fs-testkit@=0.9.3`. The synchronous suite needs no
+feature; add `--features async` when using the asynchronous suite.
 
 ## Quick Start
 
@@ -30,8 +36,11 @@ capabilities. The provider already depends on `qubit-fs` 0.4; add the testkit
 only as a development dependency:
 
 ```toml
+[dependencies]
+qubit-fs = { path = "../rs-fs" }
+
 [dev-dependencies]
-qubit-fs-testkit = "0.9"
+qubit-fs-testkit = { path = "../rs-fs-testkit" }
 ```
 
 Implement `FileSystemFixture` around the provider's isolated facade. Its
@@ -72,8 +81,11 @@ provider runtime's future runner to the registration macro. Its development
 dependency enables the feature explicitly:
 
 ```toml
+[dependencies]
+qubit-fs = { path = "../rs-fs" }
+
 [dev-dependencies]
-qubit-fs-testkit = { version = "0.9", features = ["async"] }
+qubit-fs-testkit = { path = "../rs-fs-testkit", features = ["async"] }
 ```
 
 The suite follows advertised capabilities. It checks supported behavior and
@@ -141,7 +153,8 @@ the suite's current coverage.
 - [API documentation](https://docs.rs/qubit-fs-testkit)
 - [中文 README](README.zh_CN.md)
 
-Version 0.9 targets `qubit-fs` 0.4. Version 0.7 targeted `qubit-fs` 0.2;
+The unpublished 0.9.3 source targets `qubit-fs` 0.4. Published 0.9.1 and
+0.9.2 target `qubit-fs` 0.3; version 0.7 targeted 0.2;
 historical list, cancellation, and recovery details are distinguished in the
 [user guide](doc/user_guide.md).
 
