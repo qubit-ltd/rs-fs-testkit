@@ -8,6 +8,8 @@
 #![cfg(feature = "async")]
 
 use std::future::Future;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
@@ -137,6 +139,80 @@ fn test_async_temp_resources_do_not_reuse_a_live_path() {
 
 mod common;
 
+/// Public-API fixture with explicit upper bounds for supported seed calls.
+struct SeedBoundAsyncFixture<'a> {
+    file_system: &'a AsyncFileSystem,
+    directory_calls: AtomicUsize,
+    supported_directory_calls: usize,
+    file_calls: AtomicUsize,
+    supported_file_calls: usize,
+    teardown_calls: AtomicUsize,
+}
+
+impl SeedBoundAsyncFixture<'_> {
+    fn path_for(relative: &str) -> FixtureResult<Path> {
+        Path::parse(&format!("/default-fixture/{relative}"))
+            .map_err(|error| FixtureError::new(error.to_string()))
+    }
+}
+
+impl AsyncFileSystemFixture for SeedBoundAsyncFixture<'_> {
+    fn teardown(&self) -> testkit::FixtureFuture<'_, ()> {
+        self.teardown_calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn file_system(&self) -> &AsyncFileSystem {
+        self.file_system
+    }
+
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        Self::path_for(relative)
+    }
+
+    fn seed_empty_directory<'a>(
+        &'a self,
+        relative: &'a str,
+    ) -> testkit::FixtureFuture<'a, FixtureSupport<Path>> {
+        let call = self.directory_calls.fetch_add(1, Ordering::SeqCst) + 1;
+        let result = if call <= self.supported_directory_calls {
+            Self::path_for(relative).map(FixtureSupport::Supported)
+        } else {
+            Ok(FixtureSupport::Unsupported)
+        };
+        Box::pin(async move { result })
+    }
+
+    fn seed_file<'a>(
+        &'a self,
+        relative: &'a str,
+        _bytes: &'a [u8],
+    ) -> testkit::FixtureFuture<'a, FixtureSupport<Path>> {
+        let call = self.file_calls.fetch_add(1, Ordering::SeqCst) + 1;
+        let result = if call <= self.supported_file_calls {
+            Self::path_for(relative).map(FixtureSupport::Supported)
+        } else {
+            Ok(FixtureSupport::Unsupported)
+        };
+        Box::pin(async move { result })
+    }
+}
+
+fn seed_bound_fixture<'a>(
+    memory: &'a AsyncMemoryFixture,
+    supported_directory_calls: usize,
+    supported_file_calls: usize,
+) -> SeedBoundAsyncFixture<'a> {
+    SeedBoundAsyncFixture {
+        file_system: memory.file_system(),
+        directory_calls: AtomicUsize::new(0),
+        supported_directory_calls,
+        file_calls: AtomicUsize::new(0),
+        supported_file_calls,
+        teardown_calls: AtomicUsize::new(0),
+    }
+}
+
 /// Fixture that uses every asynchronous optional-hook default.
 struct DefaultAsyncFixture<'a> {
     file_system: &'a AsyncFileSystem,
@@ -215,6 +291,104 @@ fn poll_fixture_future<T>(future: impl Future<Output = FixtureResult<T>>) -> Fix
             panic!("default fixture future unexpectedly suspended")
         }
     }
+}
+
+#[test]
+fn test_default_random_access_fixture_hooks_report_unsupported() {
+    let memory = AsyncMemoryFixture::new();
+    let fixture = seed_bound_fixture(&memory, 0, 0);
+    let path = fixture.path("random-access").expect("build fixture path");
+    assert!(SeedBoundAsyncFixture::path_for("\0").is_err());
+
+    assert!(matches!(
+        run_controlled(fixture.replace_random_access_path(&path, b"replacement")),
+        Ok(FixtureSupport::Unsupported)
+    ));
+    assert!(matches!(
+        fixture.arm_random_access_pending_read(&path),
+        Ok(FixtureSupport::Unsupported)
+    ));
+    assert!(matches!(fixture.disarm_random_access_pending_read(&path), Ok(())));
+    assert!(matches!(
+        fixture.random_access_pending_read_reached(&path),
+        Ok(FixtureSupport::Unsupported)
+    ));
+}
+
+#[test]
+fn test_tree_copy_preparation_reports_missing_subdirectory_support() {
+    let memory = AsyncMemoryFixture::new();
+    let fixture = seed_bound_fixture(&memory, 1, 0);
+
+    let prepared = poll_fixture_future(fixture.prepare_copy(
+        CopyScenario::AtomicTree,
+        "source",
+        "target",
+        b"child",
+    ))
+    .expect("prepare tree copy");
+    assert!(matches!(
+        prepared,
+        FixturePreparation::Unavailable { ref reason } if reason == "tree subdirectory setup unavailable"
+    ));
+}
+
+#[test]
+fn test_tree_copy_preparation_reports_missing_child_support() {
+    let memory = AsyncMemoryFixture::new();
+    let fixture = seed_bound_fixture(&memory, 2, 0);
+
+    let prepared = poll_fixture_future(fixture.prepare_copy(
+        CopyScenario::DurableTree,
+        "source",
+        "target",
+        b"child",
+    ))
+    .expect("prepare tree copy");
+    assert!(matches!(
+        prepared,
+        FixturePreparation::Unavailable { ref reason } if reason == "tree child setup unavailable"
+    ));
+}
+
+#[test]
+fn test_file_copy_preparation_reports_missing_conflict_target_support() {
+    let memory = AsyncMemoryFixture::new();
+    let fixture = seed_bound_fixture(&memory, 0, 1);
+
+    let prepared = poll_fixture_future(fixture.prepare_copy(
+        CopyScenario::Conflict,
+        "source",
+        "target",
+        b"payload",
+    ))
+    .expect("prepare conflict copy");
+    assert!(matches!(
+        prepared,
+        FixturePreparation::Unavailable { ref reason } if reason == "copy conflict target seed unavailable"
+    ));
+}
+
+#[test]
+fn test_supported_copy_preparation_uses_fixture_path_and_cleanup_hooks() {
+    let memory = AsyncMemoryFixture::new();
+    let fixture = seed_bound_fixture(&memory, 2, 1);
+
+    assert!(std::ptr::eq(fixture.file_system(), memory.file_system()));
+    assert_eq!(
+        fixture.path("explicit").expect("map fixture path").as_str(),
+        "/default-fixture/explicit"
+    );
+    let prepared = poll_fixture_future(fixture.prepare_copy(
+        CopyScenario::DurableTree,
+        "source",
+        "target",
+        b"child",
+    ))
+    .expect("prepare supported tree copy");
+    assert!(matches!(prepared, FixturePreparation::Ready(_)));
+    poll_fixture_future(fixture.teardown()).expect("tear down fixture");
+    assert_eq!(fixture.teardown_calls.load(Ordering::SeqCst), 1);
 }
 
 /// Optional asynchronous fixture hooks report unavailable until a provider opts
