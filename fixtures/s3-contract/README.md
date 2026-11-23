@@ -47,11 +47,27 @@ are not resource keys: a listing scope ending in `/` remains valid.
 `read_prefix` does not automatically add ranges for this Conditional provider.
 Reader stream failures retain the typed filesystem error and SDK source chain.
 
+Run these commands from the repository root:
+
 ```bash
-cargo +1.94.0 check --all-targets
-cargo test --locked --lib --test adapter_unit_tests --test s3_listing_tests --test s3_recovery_tests --test s3_inflight_put_tests --test s3_range_http_tests
-cargo test --test s3_contract_tests -- --ignored --test-threads=1
+cargo +1.94.0 check --manifest-path fixtures/s3-contract/Cargo.toml --all-targets
+cargo test --locked --manifest-path fixtures/s3-contract/Cargo.toml --lib --test adapter_unit_tests --test s3_listing_tests --test s3_recovery_tests --test s3_inflight_put_tests --test s3_range_http_tests
+cargo test --locked --manifest-path fixtures/s3-contract/Cargo.toml
 ```
+
+The locked fixture command is the credential-free CI run. It exercises the
+default local matrix, including in-memory and local HTTP coverage, without
+contacting a configured S3 service. The real-service tests stay ignored by
+default. To opt in, configure the `RS_FS_S3_*` variables above and run:
+
+```bash
+cargo test --locked --manifest-path fixtures/s3-contract/Cargo.toml --test s3_contract_tests -- --ignored --test-threads=1
+```
+
+This command runs both ignored tests against the configured service. They use a
+unique child of the configured prefix, perform real PUT, GET, HEAD, and LIST
+operations, and attempt cleanup only for keys created by that run. It is not
+part of the default CI job.
 
 ## Recovery evidence and its limits
 
