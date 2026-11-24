@@ -121,6 +121,10 @@ impl FileSystemFixture for TeardownProbe {
         self.inner.path(relative)
     }
 
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
+        self.inner.exists_out_of_band(path)
+    }
+
     fn teardown(&self) -> FixtureResult<()> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         match &self.teardown {
@@ -143,6 +147,10 @@ impl FileSystemFixture for BodyAndCleanupProbe {
 
     fn path(&self, relative: &str) -> FixtureResult<Path> {
         self.inner.path(relative)
+    }
+
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
+        self.inner.exists_out_of_band(path)
     }
 
     fn read_file(&self, _path: &Path) -> FixtureResult<FixtureSupport<Vec<u8>>> {

@@ -104,7 +104,8 @@ pub trait AsyncFileSystemFixture: Sync {
     ///
     /// # Errors
     /// Returns [`FixtureError`](crate::FixtureError) when arming fails. The
-    /// runner attempts [`disarm_random_access_pending_read`](Self::disarm_random_access_pending_read)
+    /// runner attempts
+    /// [`disarm_random_access_pending_read`](Self::disarm_random_access_pending_read)
     /// after an error or panic because an implementation may have changed the
     /// gate before failing.
     #[inline]

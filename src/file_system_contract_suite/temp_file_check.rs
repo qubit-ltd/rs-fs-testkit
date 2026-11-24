@@ -359,7 +359,8 @@ impl FileSystemContractSuite<'_> {
                     id,
                     crate::internal::check_catalog::specification(id).capability,
                     crate::ContractCheckOutcome::Unverified {
-                        reason: "temporary publication needs fixture.exists_out_of_band to confirm a missing target".to_owned(),
+                        reason: "temporary publication needs fixture.exists_out_of_band to confirm a missing target"
+                            .to_owned(),
                     },
                 );
                 return Ok(());
@@ -408,10 +409,10 @@ impl FileSystemContractSuite<'_> {
                 "atomic preflight changed resource ownership",
             )?;
             if target_existed == Some(true) {
-                return Err(
-                    ContractFailure::message_only("atomic rejection target already existed before persistence")
-                        .at(id),
-                );
+                return Err(ContractFailure::message_only(
+                    "atomic rejection target already existed before persistence",
+                )
+                .at(id));
             }
             let target_after = self.fixture.exists_out_of_band(&target).map_err(|error| {
                 ContractFailure::with_source("atomic rejection target observation failed", error).at(id)

@@ -72,7 +72,7 @@ pub(super) async fn persist_temp_directory(
             Some(false)
         }
         FixtureSupport::Supported(true) if atomic_supported => {
-                return Err(ContractFailure::message_only("temporary publication target already exists").at(id));
+            return Err(ContractFailure::message_only("temporary publication target already exists").at(id));
         }
         FixtureSupport::Supported(true) => Some(true),
         FixtureSupport::Unsupported if atomic_supported => {
@@ -83,7 +83,9 @@ pub(super) async fn persist_temp_directory(
                 )
                 .at(id));
             }
-            return Ok(Some("temporary publication needs fixture.exists_out_of_band to confirm a missing target".to_owned()));
+            return Ok(Some(
+                "temporary publication needs fixture.exists_out_of_band to confirm a missing target".to_owned(),
+            ));
         }
         FixtureSupport::Unsupported => None,
     };

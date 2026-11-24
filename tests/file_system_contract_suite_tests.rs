@@ -307,13 +307,11 @@ fn test_sync_suite_classifies_default_hooks_as_unverified() {
 
     assert!(!run.was_interrupted());
     assert_eq!(run.failures().len(), 1);
-    assert_eq!(run.failures()[0].check(), Some(testkit::ContractCheckId::WriteBasic));
-    assert!(
-        run.report()
-            .checks()
-            .iter()
-            .any(|check| { matches!(check.outcome(), testkit::ContractCheckOutcome::Unverified { .. }) })
-    );
+    assert_eq!(run.failures()[0].check(), Some(testkit::ContractCheckId::TempFile));
+    assert!(run.report().checks().iter().any(|check| {
+        check.id() == testkit::ContractCheckId::WriteBasic
+            && matches!(check.outcome(), testkit::ContractCheckOutcome::Unverified { .. })
+    }));
     assert!(memory.is_empty());
 }
 

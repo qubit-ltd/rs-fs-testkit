@@ -416,7 +416,9 @@ impl AsyncFileSystemContractSuite<'_> {
                     )
                     .at(id));
                 }
-                return Ok(Some("temporary publication needs fixture.exists_out_of_band to confirm a missing target".to_owned()));
+                return Ok(Some(
+                    "temporary publication needs fixture.exists_out_of_band to confirm a missing target".to_owned(),
+                ));
             }
             FixtureSupport::Unsupported => None,
         };
@@ -462,10 +464,10 @@ impl AsyncFileSystemContractSuite<'_> {
                 "atomic preflight changed resource ownership",
             )?;
             if target_existed == Some(true) {
-                return Err(
-                    ContractFailure::message_only("atomic rejection target already existed before persistence")
-                        .at(id),
-                );
+                return Err(ContractFailure::message_only(
+                    "atomic rejection target already existed before persistence",
+                )
+                .at(id));
             }
             let target_after = self.fixture.exists_out_of_band(&target).await.map_err(|error| {
                 ContractFailure::with_source("atomic rejection target observation failed", error).at(id)

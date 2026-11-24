@@ -116,7 +116,10 @@ impl AsyncFileSystemFixture for AsyncTempExistenceMismatchFixture {
 
     fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
         if path.as_str().contains("persisted") {
-            self.observed_targets.lock().expect("target observations lock").push(path.as_str().to_owned());
+            self.observed_targets
+                .lock()
+                .expect("target observations lock")
+                .push(path.as_str().to_owned());
         }
         if self.unsupported_target && path.as_str().contains("persisted") {
             return Box::pin(async { Ok(FixtureSupport::Unsupported) });
@@ -668,9 +671,9 @@ fn test_async_temp_contracts_retain_each_existence_observation_error() {
                     "{id}, observation {error_at} unexpectedly passed"
                 );
                 assert!(
-                    run.failures().iter().any(|failure| {
-                        failure.check() == Some(id) && std::error::Error::source(failure).is_some()
-                    }),
+                    run.failures()
+                        .iter()
+                        .any(|failure| { failure.check() == Some(id) && std::error::Error::source(failure).is_some() }),
                     "{id}, observation {error_at}: {:?}",
                     run.failures()
                 );
@@ -730,10 +733,14 @@ fn test_async_temp_persistence_target_observation_gap_is_unverified_and_cleaned(
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id).await;
             assert!(run.failures().is_empty(), "{id}: {:?}", run.failures());
-            assert!(matches!(
-                run.report().checks()[0].outcome(),
-                qubit_fs_testkit::ContractCheckOutcome::Unverified { reason } if reason.contains("exists_out_of_band")
-            ), "{id}: {:?}", run.report().checks()[0].outcome());
+            assert!(
+                matches!(
+                    run.report().checks()[0].outcome(),
+                    qubit_fs_testkit::ContractCheckOutcome::Unverified { reason } if reason.contains("exists_out_of_band")
+                ),
+                "{id}: {:?}",
+                run.report().checks()[0].outcome()
+            );
             assert!(run.cleanup().completed(), "{id}");
         });
         assert!(fixture.inner.is_empty(), "{id}: source resource leaked");
@@ -747,14 +754,24 @@ fn test_async_temp_persistence_target_observation_gap_is_unverified_and_cleaned(
 
 #[test]
 fn test_async_temp_persistence_rejects_preexisting_target_before_persist() {
-    for id in [ContractCheckId::TempFile, ContractCheckId::TempDirectory, ContractCheckId::TempAtomic] {
-        let fixture = AsyncTempExistenceMismatchFixture::preexisting_target(AsyncMemoryFixture::with_fault(AsyncMemoryFault::TempPersistFails));
+    for id in [
+        ContractCheckId::TempFile,
+        ContractCheckId::TempDirectory,
+        ContractCheckId::TempAtomic,
+    ] {
+        let fixture = AsyncTempExistenceMismatchFixture::preexisting_target(AsyncMemoryFixture::with_fault(
+            AsyncMemoryFault::TempPersistFails,
+        ));
         run_controlled(async {
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id).await;
-            assert!(run.failures().iter().any(|failure| {
-                failure.check() == Some(id) && failure.message() == "temporary publication target already exists"
-            }), "{id}: {:?}", run.failures());
+            assert!(
+                run.failures().iter().any(|failure| {
+                    failure.check() == Some(id) && failure.message() == "temporary publication target already exists"
+                }),
+                "{id}: {:?}",
+                run.failures()
+            );
             assert!(run.cleanup().completed(), "{id}");
         });
         assert!(fixture.inner.is_empty(), "{id}: source resource leaked");
@@ -772,14 +789,21 @@ impl AsyncAtomicRejectPreexistingTargetFixture {
     async fn new(target_suffix: &'static str) -> Self {
         let inner = AsyncMemoryFixture::without_atomic_temp_persist();
         let target_path = if target_suffix == "persisted-directory" {
-            match inner.seed_empty_directory("protected-atomic-target").await.expect("target seed") {
+            match inner
+                .seed_empty_directory("protected-atomic-target")
+                .await
+                .expect("target seed")
+            {
                 FixtureSupport::Supported(path) => path,
                 FixtureSupport::Unsupported => panic!("target seed should be supported"),
             }
         } else {
             let path = Path::parse("/contract/protected-atomic-target").expect("target path");
             assert!(matches!(
-                inner.write_file_out_of_band(&path, b"pre-existing target").await.expect("target seed"),
+                inner
+                    .write_file_out_of_band(&path, b"pre-existing target")
+                    .await
+                    .expect("target seed"),
                 FixtureSupport::Supported(())
             ));
             path
@@ -847,12 +871,19 @@ fn test_async_atomic_rejection_does_not_claim_preexisting_targets() {
             let fixture = AsyncAtomicRejectPreexistingTargetFixture::new(target_suffix).await;
             let mut suite = AsyncFileSystemContractSuite::new(&fixture);
             let run = suite.run_check(ContractCheckId::TempAtomic).await;
-            assert!(run.failures().iter().any(|failure| {
-                failure.check() == Some(ContractCheckId::TempAtomic)
-                    && failure.message() == "atomic rejection target already existed before persistence"
-            }), "{target_suffix}: {:?}", run.failures());
+            assert!(
+                run.failures().iter().any(|failure| {
+                    failure.check() == Some(ContractCheckId::TempAtomic)
+                        && failure.message() == "atomic rejection target already existed before persistence"
+                }),
+                "{target_suffix}: {:?}",
+                run.failures()
+            );
             assert!(run.cleanup().completed(), "{target_suffix}");
-            assert!(fixture.target_existed_at_teardown.load(Ordering::Relaxed), "{target_suffix}");
+            assert!(
+                fixture.target_existed_at_teardown.load(Ordering::Relaxed),
+                "{target_suffix}"
+            );
         }
     });
 }
