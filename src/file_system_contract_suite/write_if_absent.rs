@@ -106,6 +106,19 @@ impl FileSystemContractSuite<'_> {
             "fixture changed If-Absent request semantics",
         )?;
         let path = case.path().clone();
+        match self.fixture.exists_out_of_band(&path).map_err(|error| {
+            ContractFailure::with_source("If-Absent initial target observation failed", error).at(id)
+        })? {
+            FixtureSupport::Supported(false) => {}
+            FixtureSupport::Supported(true) => {
+                return Err(ContractFailure::message_only("If-Absent target already exists before publication").at(id));
+            }
+            FixtureSupport::Unsupported => {
+                return Ok(ContractCheckOutcome::Unverified {
+                    reason: "fixture.exists_out_of_band cannot confirm the If-Absent target is missing".to_owned(),
+                });
+            }
+        }
         self.context.record_created(path.clone());
         self.fixture
             .file_system()

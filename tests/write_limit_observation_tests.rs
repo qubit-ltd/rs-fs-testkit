@@ -161,6 +161,108 @@ fn test_write_limit_requires_independent_target_baseline() {
     assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteLimit));
 }
 
+#[derive(Clone, Copy)]
+enum AcceptedTargetState {
+    Missing,
+    Present,
+    Unobservable,
+    ObservationError,
+}
+
+struct AcceptedTargetFixture {
+    inner: MemoryFixture,
+    state: AcceptedTargetState,
+}
+
+impl FileSystemFixture for AcceptedTargetFixture {
+    fn file_system(&self) -> &FileSystem {
+        self.inner.file_system()
+    }
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+    fn prepare_write(
+        &self,
+        scenario: qubit_fs_testkit::WriteScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<FixturePreparation<WriteFixtureCase>> {
+        let prepared = self.inner.prepare_write(scenario, relative, bytes)?;
+        if matches!(self.state, AcceptedTargetState::Present)
+            && let FixturePreparation::Ready(_) = &prepared
+        {
+            let _ = self.inner.seed_file(relative, bytes)?;
+        }
+        Ok(prepared)
+    }
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
+        match self.state {
+            AcceptedTargetState::Missing => self.inner.exists_out_of_band(path),
+            AcceptedTargetState::Present => Ok(FixtureSupport::Supported(true)),
+            AcceptedTargetState::Unobservable => Ok(FixtureSupport::Unsupported),
+            AcceptedTargetState::ObservationError => Err(FixtureError::new("injected accepted target error")),
+        }
+    }
+    fn read_file(&self, path: &Path) -> FixtureResult<FixtureSupport<Vec<u8>>> {
+        self.inner.read_file(path)
+    }
+}
+
+#[test]
+fn test_write_limit_acceptance_requires_observed_missing_target() {
+    for state in [
+        AcceptedTargetState::Missing,
+        AcceptedTargetState::Present,
+        AcceptedTargetState::Unobservable,
+        AcceptedTargetState::ObservationError,
+    ] {
+        let fixture = AcceptedTargetFixture {
+            inner: MemoryFixture::with_limits(limits()),
+            state,
+        };
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::WriteLimit);
+        let check = run
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == ContractCheckId::WriteLimit)
+            .unwrap();
+        match state {
+            AcceptedTargetState::Missing => assert!(
+                matches!(check.outcome(), ContractCheckOutcome::Passed),
+                "{:?}",
+                check.outcome()
+            ),
+            AcceptedTargetState::Present => {
+                assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteLimit));
+                assert!(
+                    matches!(check.outcome(), ContractCheckOutcome::Failed { reason } if reason.contains("already exists")),
+                    "{:?}",
+                    check.outcome()
+                );
+            }
+            AcceptedTargetState::Unobservable => {
+                assert!(matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }));
+                assert!(run.failures().is_empty());
+            }
+            AcceptedTargetState::ObservationError => {
+                assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteLimit));
+                assert!(std::error::Error::source(&run.failures()[0]).is_some());
+                assert!(
+                    run.failures()[0]
+                        .to_string()
+                        .contains("initial target observation failed")
+                );
+            }
+        }
+        assert!(fixture.inner.is_empty(), "accepted target cleanup");
+    }
+}
+
 #[test]
 fn test_write_limit_reports_unsupported_baseline_as_unverified() {
     let fixture = MemoryFixture::with_unsupported_fixture_hook_and_limits(FixtureHook::Exists, 1, limits());
@@ -382,6 +484,117 @@ mod async_write_limit_target_observation {
         read_calls: AtomicUsize,
         pause_exists_call: Option<usize>,
         pause_exists_gate: Option<Arc<AtomicBool>>,
+    }
+
+    struct AsyncAcceptedTargetFixture {
+        inner: AsyncMemoryFixture,
+        state: super::AcceptedTargetState,
+    }
+
+    impl AsyncFileSystemFixture for AsyncAcceptedTargetFixture {
+        fn file_system(&self) -> &AsyncFileSystem {
+            self.inner.file_system()
+        }
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            self.inner.path(relative)
+        }
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            self.inner.teardown()
+        }
+        fn prepare_write<'a>(
+            &'a self,
+            scenario: qubit_fs_testkit::WriteScenario,
+            relative: &'a str,
+            bytes: &'a [u8],
+        ) -> FixtureFuture<'a, FixturePreparation<WriteFixtureCase>> {
+            Box::pin(async move {
+                let prepared = self.inner.prepare_write(scenario, relative, bytes).await?;
+                if matches!(self.state, super::AcceptedTargetState::Present)
+                    && let FixturePreparation::Ready(_) = &prepared
+                {
+                    let _ = self.inner.seed_file(relative, bytes).await?;
+                }
+                Ok(prepared)
+            })
+        }
+        fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
+            Box::pin(async move {
+                match self.state {
+                    super::AcceptedTargetState::Missing => self.inner.exists_out_of_band(path).await,
+                    super::AcceptedTargetState::Present => Ok(FixtureSupport::Supported(true)),
+                    super::AcceptedTargetState::Unobservable => Ok(FixtureSupport::Unsupported),
+                    super::AcceptedTargetState::ObservationError => {
+                        Err(FixtureError::new("injected accepted target error"))
+                    }
+                }
+            })
+        }
+        fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
+            self.inner.read_file(path)
+        }
+    }
+
+    #[test]
+    fn test_async_creation_and_limit_checks_require_missing_targets() {
+        for id in [
+            ContractCheckId::WriteBasic,
+            ContractCheckId::WriteIfAbsent,
+            ContractCheckId::WriteDurable,
+            ContractCheckId::WriteLimit,
+            ContractCheckId::WriteOwningOperation,
+        ] {
+            for state in [
+                super::AcceptedTargetState::Missing,
+                super::AcceptedTargetState::Present,
+                super::AcceptedTargetState::Unobservable,
+                super::AcceptedTargetState::ObservationError,
+            ] {
+                let fixture = AsyncAcceptedTargetFixture {
+                    inner: AsyncMemoryFixture::with_fault_and_limits(crate::common::AsyncMemoryFault::None, limits()),
+                    state,
+                };
+                run_controlled(async {
+                    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+                    let run = suite.run_check(id).await;
+                    let check = run.report().checks().iter().find(|check| check.id() == id).unwrap();
+                    match state {
+                        super::AcceptedTargetState::Missing => {
+                            assert!(
+                                matches!(check.outcome(), ContractCheckOutcome::Passed),
+                                "{id}: {:?}",
+                                check.outcome()
+                            );
+                        }
+                        super::AcceptedTargetState::Present => {
+                            assert_eq!(run.failures()[0].check(), Some(id));
+                            assert!(
+                                matches!(check.outcome(), ContractCheckOutcome::Failed { reason } if reason.contains("already exists")),
+                                "{id}: {:?}",
+                                check.outcome()
+                            );
+                        }
+                        super::AcceptedTargetState::Unobservable => {
+                            assert!(
+                                matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }),
+                                "{id}"
+                            );
+                            assert!(run.failures().is_empty(), "{id}");
+                        }
+                        super::AcceptedTargetState::ObservationError => {
+                            assert_eq!(run.failures()[0].check(), Some(id));
+                            assert!(std::error::Error::source(&run.failures()[0]).is_some(), "{id}");
+                            assert!(
+                                run.failures()[0]
+                                    .to_string()
+                                    .contains("initial target observation failed"),
+                                "{id}"
+                            );
+                        }
+                    }
+                    assert!(fixture.inner.is_empty(), "{id}: fixture cleanup");
+                });
+            }
+        }
     }
 
     impl AsyncProbeFixture {

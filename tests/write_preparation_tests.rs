@@ -46,6 +46,9 @@ impl FileSystemFixture for MissingCreationFixture {
     fn read_file(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<Vec<u8>>> {
         self.0.read_file(path)
     }
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<bool>> {
+        self.0.exists_out_of_band(path)
+    }
     fn resource_version(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<qfs::metadata::ResourceVersion>> {
         self.0.resource_version(path)
     }
@@ -98,6 +101,345 @@ fn test_missing_creation_does_not_block_independent_writes() {
     assert!(!run.requirements_satisfied(), "creation remains unverified");
     assert!(run.failures().is_empty());
     assert!(fixture.0.is_empty());
+}
+
+#[derive(Clone, Copy)]
+enum InitialTargetState {
+    Missing,
+    Present,
+    Unobservable,
+    ObservationError,
+}
+
+struct InitialTargetFixture {
+    inner: MemoryFixture,
+    state: InitialTargetState,
+}
+
+impl FileSystemFixture for InitialTargetFixture {
+    fn file_system(&self) -> &FileSystem {
+        self.inner.file_system()
+    }
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+    fn prepare_write(
+        &self,
+        scenario: WriteScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<FixturePreparation<WriteFixtureCase>> {
+        let prepared = self.inner.prepare_write(scenario, relative, bytes)?;
+        if matches!(self.state, InitialTargetState::Present)
+            && let FixturePreparation::Ready(_) = &prepared
+        {
+            let _ = self.inner.seed_file(relative, bytes)?;
+        }
+        Ok(prepared)
+    }
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<bool>> {
+        match self.state {
+            InitialTargetState::Missing => self.inner.exists_out_of_band(path),
+            InitialTargetState::Present => Ok(testkit::FixtureSupport::Supported(true)),
+            InitialTargetState::Unobservable => Ok(testkit::FixtureSupport::Unsupported),
+            InitialTargetState::ObservationError => Err(testkit::FixtureError::new("injected initial target error")),
+        }
+    }
+    fn read_file(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<Vec<u8>>> {
+        self.inner.read_file(path)
+    }
+}
+
+#[test]
+fn test_independent_write_checks_require_observed_missing_targets() {
+    use qubit_fs::metadata::FileSystemLimit;
+    use qubit_fs::metadata::FileSystemLimits;
+
+    for id in [
+        ContractCheckId::WriteBasic,
+        ContractCheckId::WriteIfAbsent,
+        ContractCheckId::WriteDurable,
+    ] {
+        for state in [
+            InitialTargetState::Missing,
+            InitialTargetState::Present,
+            InitialTargetState::Unobservable,
+            InitialTargetState::ObservationError,
+        ] {
+            let fixture = InitialTargetFixture {
+                inner: MemoryFixture::with_limits(
+                    FileSystemLimits::unknown().with_max_write_bytes(FileSystemLimit::Maximum(4)),
+                ),
+                state,
+            };
+            let mut suite = FileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id);
+            let check = run.report().checks().iter().find(|check| check.id() == id).unwrap();
+            match state {
+                InitialTargetState::Missing => assert!(
+                    matches!(check.outcome(), ContractCheckOutcome::Passed),
+                    "{id}: {:?}",
+                    check.outcome()
+                ),
+                InitialTargetState::Present => {
+                    assert_eq!(run.failures()[0].check(), Some(id));
+                    assert!(
+                        matches!(check.outcome(), ContractCheckOutcome::Failed { reason } if reason.contains("already exists")),
+                        "{id}: {:?}",
+                        check.outcome()
+                    );
+                }
+                InitialTargetState::Unobservable => {
+                    assert!(
+                        matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }),
+                        "{id}"
+                    );
+                    assert!(run.failures().is_empty(), "{id}");
+                }
+                InitialTargetState::ObservationError => {
+                    assert_eq!(run.failures()[0].check(), Some(id));
+                    assert!(std::error::Error::source(&run.failures()[0]).is_some(), "{id}");
+                    assert!(
+                        run.failures()[0]
+                            .to_string()
+                            .contains("initial target observation failed"),
+                        "{id}"
+                    );
+                }
+            }
+            assert!(fixture.inner.is_empty(), "{id}: fixture cleanup");
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum IfMatchObservation {
+    SameContents,
+    Unsupported,
+    Error,
+}
+
+struct IfMatchObservationFixture {
+    inner: MemoryFixture,
+    observation: IfMatchObservation,
+}
+
+impl FileSystemFixture for IfMatchObservationFixture {
+    fn file_system(&self) -> &FileSystem {
+        self.inner.file_system()
+    }
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+    fn teardown(&self) -> FixtureResult<()> {
+        self.inner.teardown()
+    }
+    fn prepare_write(
+        &self,
+        scenario: WriteScenario,
+        relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<FixturePreparation<WriteFixtureCase>> {
+        if scenario == WriteScenario::IfMatch {
+            let testkit::FixtureSupport::Supported(path) = self.inner.seed_file(relative, bytes)? else {
+                return Ok(FixturePreparation::Unavailable {
+                    reason: "seed unavailable".into(),
+                });
+            };
+            let testkit::FixtureSupport::Supported(version) = self.inner.resource_version(&path)? else {
+                return Ok(FixturePreparation::Unavailable {
+                    reason: "version unavailable".into(),
+                });
+            };
+            return Ok(FixturePreparation::Ready(WriteFixtureCase::new(
+                path,
+                bytes.to_vec(),
+                qfs::write::WriteOptions::default().with_precondition(qfs::write::WritePrecondition::IfMatch(version)),
+            )));
+        }
+        self.inner.prepare_write(scenario, relative, bytes)
+    }
+    fn resource_version(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<qfs::metadata::ResourceVersion>> {
+        self.inner.resource_version(path)
+    }
+    fn stale_resource_version(
+        &self,
+        path: &Path,
+    ) -> FixtureResult<testkit::FixtureSupport<qfs::metadata::ResourceVersion>> {
+        self.inner.stale_resource_version(path)
+    }
+    fn read_file(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<Vec<u8>>> {
+        match self.observation {
+            IfMatchObservation::SameContents => self.inner.read_file(path),
+            IfMatchObservation::Unsupported => Ok(testkit::FixtureSupport::Unsupported),
+            IfMatchObservation::Error => Err(testkit::FixtureError::new("injected If-Match initial read failure")),
+        }
+    }
+}
+
+#[test]
+fn test_if_match_requires_distinct_initial_contents_and_independent_observation() {
+    for observation in [
+        IfMatchObservation::SameContents,
+        IfMatchObservation::Unsupported,
+        IfMatchObservation::Error,
+    ] {
+        let fixture = IfMatchObservationFixture {
+            inner: MemoryFixture::with_all_capabilities(),
+            observation,
+        };
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::WriteIfMatch);
+        let check = run
+            .report()
+            .checks()
+            .iter()
+            .find(|check| check.id() == ContractCheckId::WriteIfMatch)
+            .unwrap();
+        match observation {
+            IfMatchObservation::SameContents => {
+                assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteIfMatch));
+                assert!(run.failures()[0].to_string().contains("already equal"));
+            }
+            IfMatchObservation::Unsupported => {
+                assert!(matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }));
+                assert!(run.failures().is_empty());
+            }
+            IfMatchObservation::Error => {
+                assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteIfMatch));
+                assert!(std::error::Error::source(&run.failures()[0]).is_some());
+                assert!(
+                    run.failures()[0]
+                        .to_string()
+                        .contains("initial content observation failed")
+                );
+            }
+        }
+        assert!(fixture.inner.is_empty());
+    }
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_if_match_requires_distinct_initial_contents_and_observation() {
+    use qubit_fs::AsyncFileSystem;
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+    use qubit_fs_testkit::AsyncFileSystemFixture;
+    use qubit_fs_testkit::FixtureFuture;
+
+    use self::common::AsyncMemoryFixture;
+    use self::common::async_memory_file_system::run_controlled;
+
+    struct Fixture {
+        inner: AsyncMemoryFixture,
+        observation: IfMatchObservation,
+    }
+    impl AsyncFileSystemFixture for Fixture {
+        fn file_system(&self) -> &AsyncFileSystem {
+            self.inner.file_system()
+        }
+        fn path(&self, relative: &str) -> FixtureResult<Path> {
+            self.inner.path(relative)
+        }
+        fn teardown(&self) -> FixtureFuture<'_, ()> {
+            self.inner.teardown()
+        }
+        fn prepare_write<'a>(
+            &'a self,
+            scenario: WriteScenario,
+            relative: &'a str,
+            bytes: &'a [u8],
+        ) -> FixtureFuture<'a, FixturePreparation<WriteFixtureCase>> {
+            Box::pin(async move {
+                if scenario == WriteScenario::IfMatch {
+                    let testkit::FixtureSupport::Supported(path) = self.inner.seed_file(relative, bytes).await? else {
+                        return Ok(FixturePreparation::Unavailable {
+                            reason: "seed unavailable".into(),
+                        });
+                    };
+                    let testkit::FixtureSupport::Supported(version) = self.inner.resource_version(&path).await? else {
+                        return Ok(FixturePreparation::Unavailable {
+                            reason: "version unavailable".into(),
+                        });
+                    };
+                    return Ok(FixturePreparation::Ready(WriteFixtureCase::new(
+                        path,
+                        bytes.to_vec(),
+                        qfs::write::WriteOptions::default()
+                            .with_precondition(qfs::write::WritePrecondition::IfMatch(version)),
+                    )));
+                }
+                self.inner.prepare_write(scenario, relative, bytes).await
+            })
+        }
+        fn resource_version<'a>(
+            &'a self,
+            path: &'a Path,
+        ) -> FixtureFuture<'a, testkit::FixtureSupport<qfs::metadata::ResourceVersion>> {
+            self.inner.resource_version(path)
+        }
+        fn stale_resource_version<'a>(
+            &'a self,
+            path: &'a Path,
+        ) -> FixtureFuture<'a, testkit::FixtureSupport<qfs::metadata::ResourceVersion>> {
+            self.inner.stale_resource_version(path)
+        }
+        fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, testkit::FixtureSupport<Vec<u8>>> {
+            Box::pin(async move {
+                match self.observation {
+                    IfMatchObservation::SameContents => self.inner.read_file(path).await,
+                    IfMatchObservation::Unsupported => Ok(testkit::FixtureSupport::Unsupported),
+                    IfMatchObservation::Error => Err(testkit::FixtureError::new(
+                        "injected async If-Match initial read failure",
+                    )),
+                }
+            })
+        }
+    }
+
+    for observation in [
+        IfMatchObservation::SameContents,
+        IfMatchObservation::Unsupported,
+        IfMatchObservation::Error,
+    ] {
+        let fixture = Fixture {
+            inner: AsyncMemoryFixture::with_all_capabilities(),
+            observation,
+        };
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::WriteIfMatch).await;
+            let check = run
+                .report()
+                .checks()
+                .iter()
+                .find(|check| check.id() == ContractCheckId::WriteIfMatch)
+                .unwrap();
+            match observation {
+                IfMatchObservation::SameContents => {
+                    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteIfMatch));
+                    assert!(run.failures()[0].to_string().contains("already equal"));
+                }
+                IfMatchObservation::Unsupported => {
+                    assert!(matches!(check.outcome(), ContractCheckOutcome::Unverified { .. }));
+                    assert!(run.failures().is_empty());
+                }
+                IfMatchObservation::Error => {
+                    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::WriteIfMatch));
+                    assert!(std::error::Error::source(&run.failures()[0]).is_some());
+                    assert!(
+                        run.failures()[0]
+                            .to_string()
+                            .contains("initial content observation failed")
+                    );
+                }
+            }
+            assert!(fixture.inner.is_empty());
+        });
+    }
 }
 
 /// Creation conflict must execute even without a successful basic creation.
@@ -259,6 +601,9 @@ impl FileSystemFixture for FailingConditionalFixture {
     fn read_file(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<Vec<u8>>> {
         self.0.read_file(path)
     }
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<testkit::FixtureSupport<bool>> {
+        self.0.exists_out_of_band(path)
+    }
     fn prepare_write(
         &self,
         scenario: WriteScenario,
@@ -296,6 +641,9 @@ impl testkit::AsyncFileSystemFixture for BoundaryObservationFixture {
     }
     fn path(&self, relative: &str) -> FixtureResult<Path> {
         self.0.path(relative)
+    }
+    fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> testkit::FixtureFuture<'a, testkit::FixtureSupport<bool>> {
+        Box::pin(async move { self.0.exists_out_of_band(path).await })
     }
     fn teardown(&self) -> testkit::FixtureFuture<'_, ()> {
         self.0.teardown()
