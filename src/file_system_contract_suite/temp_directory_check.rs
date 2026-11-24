@@ -403,34 +403,37 @@ impl FileSystemContractSuite<'_> {
                 ContractFailure::with_source("temporary publication target preparation failed", error).at(id)
             })?;
         let atomic = id == ContractCheckId::TempAtomic;
-        if !atomic || self.capable(FileSystemCapability::AtomicTempPersist) {
-            match self.fixture.exists_out_of_band(&target).map_err(|error| {
-                ContractFailure::with_source("temporary publication target observation failed", error).at(id)
-            })? {
-                FixtureSupport::Supported(false) => {}
-                FixtureSupport::Supported(true) => {
-                    return Err(ContractFailure::message_only("temporary publication target already exists").at(id));
-                }
-                FixtureSupport::Unsupported => {
-                    if let Err(error) = temporary.cleanup() {
-                        return Err(ContractFailure::with_owned_source(
-                            "temporary source cleanup after unsupported target observation failed",
-                            ContractTempFailure::new(error, temporary),
-                        )
-                        .at(id));
-                    }
-                    self.context.record_check(
-                        id,
-                        crate::internal::check_catalog::specification(id).capability,
-                        crate::ContractCheckOutcome::Unverified {
-                            reason: "temporary publication needs fixture.exists_out_of_band to confirm a missing target".to_owned(),
-                        },
-                    );
-                    return Ok(());
-                }
+        let atomic_supported = !atomic || self.capable(FileSystemCapability::AtomicTempPersist);
+        let target_existed = match self.fixture.exists_out_of_band(&target).map_err(|error| {
+            ContractFailure::with_source("temporary publication target observation failed", error).at(id)
+        })? {
+            FixtureSupport::Supported(false) => {
+                self.context.record_created(target.clone());
+                Some(false)
             }
-        }
-        self.context.record_created(target.clone());
+            FixtureSupport::Supported(true) if atomic_supported => {
+                return Err(ContractFailure::message_only("temporary publication target already exists").at(id));
+            }
+            FixtureSupport::Supported(true) => Some(true),
+            FixtureSupport::Unsupported if atomic_supported => {
+                if let Err(error) = temporary.cleanup() {
+                    return Err(ContractFailure::with_owned_source(
+                        "temporary source cleanup after unsupported target observation failed",
+                        ContractTempFailure::new(error, temporary),
+                    )
+                    .at(id));
+                }
+                self.context.record_check(
+                    id,
+                    crate::internal::check_catalog::specification(id).capability,
+                    crate::ContractCheckOutcome::Unverified {
+                        reason: "temporary publication needs fixture.exists_out_of_band to confirm a missing target".to_owned(),
+                    },
+                );
+                return Ok(());
+            }
+            FixtureSupport::Unsupported => None,
+        };
         let options = PersistOptions::default().with_atomicity(if atomic {
             AtomicityRequirement::Required
         } else {
@@ -472,6 +475,12 @@ impl FileSystemContractSuite<'_> {
                 id,
                 "atomic preflight changed resource ownership",
             )?;
+            if target_existed == Some(true) {
+                return Err(
+                    ContractFailure::message_only("atomic rejection target already existed before persistence")
+                        .at(id),
+                );
+            }
             let target_after = self.fixture.exists_out_of_band(&target).map_err(|error| {
                 ContractFailure::with_source("atomic rejection target observation failed", error).at(id)
             })?;

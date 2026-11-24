@@ -63,27 +63,30 @@ pub(super) async fn persist_temp_directory(
         .map_err(|error| {
             ContractFailure::with_source("temporary publication target preparation failed", error).at(id)
         })?;
-    if !atomic || suite.capable(FileSystemCapability::AtomicTempPersist) {
-        match suite.fixture.exists_out_of_band(&target).await.map_err(|error| {
-            ContractFailure::with_source("temporary publication target observation failed", error).at(id)
-        })? {
-            FixtureSupport::Supported(false) => {}
-            FixtureSupport::Supported(true) => {
-                return Err(ContractFailure::message_only("temporary publication target already exists").at(id));
-            }
-            FixtureSupport::Unsupported => {
-                if let Err(error) = temporary.cleanup().await {
-                    return Err(ContractFailure::with_owned_source(
-                        "temporary source cleanup after unsupported target observation failed",
-                        ContractTempFailure::new(error, temporary),
-                    )
-                    .at(id));
-                }
-                return Ok(Some("temporary publication needs fixture.exists_out_of_band to confirm a missing target".to_owned()));
-            }
+    let atomic_supported = !atomic || suite.capable(FileSystemCapability::AtomicTempPersist);
+    let target_existed = match suite.fixture.exists_out_of_band(&target).await.map_err(|error| {
+        ContractFailure::with_source("temporary publication target observation failed", error).at(id)
+    })? {
+        FixtureSupport::Supported(false) => {
+            suite.context.record_created(target.clone());
+            Some(false)
         }
-    }
-    suite.context.record_created(target.clone());
+        FixtureSupport::Supported(true) if atomic_supported => {
+                return Err(ContractFailure::message_only("temporary publication target already exists").at(id));
+        }
+        FixtureSupport::Supported(true) => Some(true),
+        FixtureSupport::Unsupported if atomic_supported => {
+            if let Err(error) = temporary.cleanup().await {
+                return Err(ContractFailure::with_owned_source(
+                    "temporary source cleanup after unsupported target observation failed",
+                    ContractTempFailure::new(error, temporary),
+                )
+                .at(id));
+            }
+            return Ok(Some("temporary publication needs fixture.exists_out_of_band to confirm a missing target".to_owned()));
+        }
+        FixtureSupport::Unsupported => None,
+    };
     let options = PersistOptions::default().with_atomicity(if atomic {
         AtomicityRequirement::Required
     } else {
@@ -125,6 +128,11 @@ pub(super) async fn persist_temp_directory(
             id,
             "atomic preflight changed resource ownership",
         )?;
+        if target_existed == Some(true) {
+            return Err(
+                ContractFailure::message_only("atomic rejection target already existed before persistence").at(id),
+            );
+        }
         let target_after = suite.fixture.exists_out_of_band(&target).await.map_err(|error| {
             ContractFailure::with_source("atomic rejection target observation failed", error).at(id)
         })?;

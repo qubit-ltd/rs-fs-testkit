@@ -781,3 +781,89 @@ fn test_sync_temp_atomic_directory_target_observation_gap_is_unverified_and_clea
     assert!(run.cleanup().completed());
     assert!(fixture.inner.is_empty());
 }
+
+struct AtomicRejectPreexistingTargetFixture {
+    inner: MemoryFixture,
+    target_suffix: &'static str,
+    target_path: Path,
+    target_existed_at_teardown: Cell<Option<bool>>,
+}
+
+impl AtomicRejectPreexistingTargetFixture {
+    fn new(target_suffix: &'static str) -> Self {
+        let inner = MemoryFixture::without_atomic_temp_persist();
+        let target_path = if target_suffix == "persisted-directory" {
+            match inner.seed_empty_directory("protected-atomic-target").expect("target seed") {
+                FixtureSupport::Supported(path) => path,
+                FixtureSupport::Unsupported => panic!("target seed should be supported"),
+            }
+        } else {
+            let path = Path::parse("/contract/protected-atomic-target").expect("target path");
+            assert!(matches!(
+                inner.write_file_out_of_band(&path, b"pre-existing target").expect("target seed"),
+                FixtureSupport::Supported(())
+            ));
+            path
+        };
+        Self {
+            inner,
+            target_suffix,
+            target_path,
+            target_existed_at_teardown: Cell::new(None),
+        }
+    }
+}
+
+impl FileSystemFixture for AtomicRejectPreexistingTargetFixture {
+    fn file_system(&self) -> &qubit_fs::FileSystem {
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
+        if relative.ends_with(self.target_suffix) {
+            Ok(self.target_path.clone())
+        } else {
+            self.inner.path(relative)
+        }
+    }
+
+    fn read_file(&self, path: &Path) -> qubit_fs_testkit::FixtureResult<FixtureSupport<Vec<u8>>> {
+        self.inner.read_file(path)
+    }
+
+    fn exists_out_of_band(&self, path: &Path) -> qubit_fs_testkit::FixtureResult<FixtureSupport<bool>> {
+        self.inner.exists_out_of_band(path)
+    }
+
+    fn write_file_out_of_band(&self, path: &Path, bytes: &[u8]) -> qubit_fs_testkit::FixtureResult<FixtureSupport<()>> {
+        self.inner.write_file_out_of_band(path, bytes)
+    }
+
+    fn seed_empty_directory(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<FixtureSupport<Path>> {
+        self.inner.seed_empty_directory(relative)
+    }
+
+    fn teardown(&self) -> qubit_fs_testkit::FixtureResult<()> {
+        let observed = self.inner.exists_out_of_band(&self.target_path)?;
+        let FixtureSupport::Supported(exists) = observed else {
+            return Err(qubit_fs_testkit::FixtureError::new("target existence became unsupported"));
+        };
+        self.target_existed_at_teardown.set(Some(exists));
+        self.inner.teardown()
+    }
+}
+
+#[test]
+fn test_sync_atomic_rejection_does_not_claim_preexisting_targets() {
+    for target_suffix in ["persisted-file", "persisted-directory"] {
+        let fixture = AtomicRejectPreexistingTargetFixture::new(target_suffix);
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(ContractCheckId::TempAtomic);
+        assert!(run.failures().iter().any(|failure| {
+            failure.check() == Some(ContractCheckId::TempAtomic)
+                && failure.message() == "atomic rejection target already existed before persistence"
+        }), "{target_suffix}: {:?}", run.failures());
+        assert!(run.cleanup().completed(), "{target_suffix}");
+        assert_eq!(fixture.target_existed_at_teardown.get(), Some(true), "{target_suffix}");
+    }
+}
