@@ -74,7 +74,18 @@ impl<'a> FileSystemContractSuite<'a> {
                 if file {
                     self.execute_temp_file(id)?;
                 }
-                if directory {
+                let file_unverified = self
+                    .context
+                    .report()
+                    .checks()
+                    .iter()
+                    .find(|check| check.id() == id)
+                    .is_some_and(|check| matches!(
+                        check.outcome(),
+                        ContractCheckOutcome::Unverified { reason }
+                            if reason.contains("temporary publication needs fixture.exists_out_of_band")
+                    ));
+                if directory && !file_unverified {
                     self.execute_temp_directory(id)?;
                 }
                 if !file && !directory {
