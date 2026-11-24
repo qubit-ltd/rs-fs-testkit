@@ -8,6 +8,7 @@
 
 #![cfg(feature = "async")]
 
+use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
@@ -44,6 +45,9 @@ struct AsyncTempExistenceMismatchFixture {
     inner: AsyncMemoryFixture,
     mismatch_at: usize,
     error_at: Option<usize>,
+    unsupported_target: bool,
+    existing_target: bool,
+    observed_targets: Mutex<Vec<String>>,
     exists_calls: AtomicUsize,
 }
 
@@ -53,6 +57,9 @@ impl AsyncTempExistenceMismatchFixture {
             inner,
             mismatch_at,
             error_at: None,
+            unsupported_target: false,
+            existing_target: false,
+            observed_targets: Mutex::new(Vec::new()),
             exists_calls: AtomicUsize::new(0),
         }
     }
@@ -62,6 +69,33 @@ impl AsyncTempExistenceMismatchFixture {
             inner,
             mismatch_at: 0,
             error_at: Some(error_at),
+            unsupported_target: false,
+            existing_target: false,
+            observed_targets: Mutex::new(Vec::new()),
+            exists_calls: AtomicUsize::new(0),
+        }
+    }
+
+    fn unsupported_target_observation(inner: AsyncMemoryFixture) -> Self {
+        Self {
+            inner,
+            mismatch_at: 0,
+            error_at: None,
+            unsupported_target: true,
+            existing_target: false,
+            observed_targets: Mutex::new(Vec::new()),
+            exists_calls: AtomicUsize::new(0),
+        }
+    }
+
+    fn preexisting_target(inner: AsyncMemoryFixture) -> Self {
+        Self {
+            inner,
+            mismatch_at: 0,
+            error_at: None,
+            unsupported_target: false,
+            existing_target: true,
+            observed_targets: Mutex::new(Vec::new()),
             exists_calls: AtomicUsize::new(0),
         }
     }
@@ -81,6 +115,15 @@ impl AsyncFileSystemFixture for AsyncTempExistenceMismatchFixture {
     }
 
     fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
+        if path.as_str().contains("persisted") {
+            self.observed_targets.lock().expect("target observations lock").push(path.as_str().to_owned());
+        }
+        if self.unsupported_target && path.as_str().contains("persisted") {
+            return Box::pin(async { Ok(FixtureSupport::Unsupported) });
+        }
+        if self.existing_target && path.as_str().contains("persisted") {
+            return Box::pin(async { Ok(FixtureSupport::Supported(true)) });
+        }
         let call = self.exists_calls.fetch_add(1, Ordering::Relaxed) + 1;
         if self.error_at == Some(call) {
             return Box::pin(async { Err(FixtureError::new("injected existence observation failure")) });
@@ -625,7 +668,9 @@ fn test_async_temp_contracts_retain_each_existence_observation_error() {
                     "{id}, observation {error_at} unexpectedly passed"
                 );
                 assert!(
-                    run.failures().iter().any(|failure| failure.check() == Some(id)),
+                    run.failures().iter().any(|failure| {
+                        failure.check() == Some(id) && std::error::Error::source(failure).is_some()
+                    }),
                     "{id}, observation {error_at}: {:?}",
                     run.failures()
                 );
@@ -670,5 +715,48 @@ fn test_async_temp_content_setup_hook_errors_fail_the_check() {
             );
         });
         assert!(fixture.is_empty(), "{hook:?} error requires teardown cleanup");
+    }
+}
+
+#[test]
+fn test_async_temp_persistence_target_observation_gap_is_unverified_and_cleaned() {
+    for id in [
+        ContractCheckId::TempFile,
+        ContractCheckId::TempDirectory,
+        ContractCheckId::TempAtomic,
+    ] {
+        let fixture = AsyncTempExistenceMismatchFixture::unsupported_target_observation(AsyncMemoryFixture::new());
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id).await;
+            assert!(run.failures().is_empty(), "{id}: {:?}", run.failures());
+            assert!(matches!(
+                run.report().checks()[0].outcome(),
+                qubit_fs_testkit::ContractCheckOutcome::Unverified { reason } if reason.contains("exists_out_of_band")
+            ), "{id}: {:?}", run.report().checks()[0].outcome());
+            assert!(run.cleanup().completed(), "{id}");
+        });
+        assert!(fixture.inner.is_empty(), "{id}: source resource leaked");
+        if id == ContractCheckId::TempAtomic {
+            let targets = fixture.observed_targets.lock().expect("target observations lock");
+            assert!(targets.iter().any(|path| path.ends_with("persisted-file")));
+            assert!(targets.iter().any(|path| path.ends_with("persisted-directory")));
+        }
+    }
+}
+
+#[test]
+fn test_async_temp_persistence_rejects_preexisting_target_before_persist() {
+    for id in [ContractCheckId::TempFile, ContractCheckId::TempDirectory, ContractCheckId::TempAtomic] {
+        let fixture = AsyncTempExistenceMismatchFixture::preexisting_target(AsyncMemoryFixture::with_fault(AsyncMemoryFault::TempPersistFails));
+        run_controlled(async {
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(id).await;
+            assert!(run.failures().iter().any(|failure| {
+                failure.check() == Some(id) && failure.message() == "temporary publication target already exists"
+            }), "{id}: {:?}", run.failures());
+            assert!(run.cleanup().completed(), "{id}");
+        });
+        assert!(fixture.inner.is_empty(), "{id}: source resource leaked");
     }
 }

@@ -9,6 +9,7 @@
 mod common;
 
 use std::cell::Cell;
+use std::cell::RefCell;
 
 pub use ::qubit_fs_testkit;
 use qubit_fs::error::FsErrorKind;
@@ -90,6 +91,10 @@ struct TempExistenceMismatchFixture {
     inner: MemoryFixture,
     mismatch_at: usize,
     error_at: Option<usize>,
+    unsupported_target: bool,
+    unsupported_directory_target: bool,
+    existing_target: bool,
+    observed_targets: RefCell<Vec<String>>,
     exists_calls: Cell<usize>,
 }
 
@@ -99,6 +104,10 @@ impl TempExistenceMismatchFixture {
             inner,
             mismatch_at,
             error_at: None,
+            unsupported_target: false,
+            unsupported_directory_target: false,
+            existing_target: false,
+            observed_targets: RefCell::new(Vec::new()),
             exists_calls: Cell::new(0),
         }
     }
@@ -108,6 +117,49 @@ impl TempExistenceMismatchFixture {
             inner,
             mismatch_at: 0,
             error_at: Some(error_at),
+            unsupported_target: false,
+            unsupported_directory_target: false,
+            existing_target: false,
+            observed_targets: RefCell::new(Vec::new()),
+            exists_calls: Cell::new(0),
+        }
+    }
+
+    fn unsupported_target_observation(inner: MemoryFixture) -> Self {
+        Self {
+            inner,
+            mismatch_at: 0,
+            error_at: None,
+            unsupported_target: true,
+            unsupported_directory_target: false,
+            existing_target: false,
+            observed_targets: RefCell::new(Vec::new()),
+            exists_calls: Cell::new(0),
+        }
+    }
+
+    fn preexisting_target(inner: MemoryFixture) -> Self {
+        Self {
+            inner,
+            mismatch_at: 0,
+            error_at: None,
+            unsupported_target: false,
+            unsupported_directory_target: false,
+            existing_target: true,
+            observed_targets: RefCell::new(Vec::new()),
+            exists_calls: Cell::new(0),
+        }
+    }
+
+    fn unsupported_directory_target(inner: MemoryFixture) -> Self {
+        Self {
+            inner,
+            mismatch_at: 0,
+            error_at: None,
+            unsupported_target: false,
+            unsupported_directory_target: true,
+            existing_target: false,
+            observed_targets: RefCell::new(Vec::new()),
             exists_calls: Cell::new(0),
         }
     }
@@ -129,6 +181,17 @@ impl FileSystemFixture for TempExistenceMismatchFixture {
     fn exists_out_of_band(&self, path: &Path) -> qubit_fs_testkit::FixtureResult<FixtureSupport<bool>> {
         let call = self.exists_calls.get() + 1;
         self.exists_calls.set(call);
+        if path.as_str().contains("persisted") {
+            self.observed_targets.borrow_mut().push(path.as_str().to_owned());
+        }
+        if (self.unsupported_target && path.as_str().contains("persisted"))
+            || (self.unsupported_directory_target && path.as_str().ends_with("persisted-directory"))
+        {
+            return Ok(FixtureSupport::Unsupported);
+        }
+        if self.existing_target && path.as_str().contains("persisted") {
+            return Ok(FixtureSupport::Supported(true));
+        }
         if self.error_at == Some(call) {
             return Err(qubit_fs_testkit::FixtureError::new(
                 "injected independent existence observation failure",
@@ -193,7 +256,9 @@ fn test_sync_temp_contracts_attribute_each_existence_observation_error() {
             let mut suite = FileSystemContractSuite::new(&fixture);
             let run = suite.run_check(id);
             assert!(!run.requirements_satisfied(), "{id}, observation {error_at}");
-            assert!(run.failures().iter().any(|failure| failure.check() == Some(id)));
+            assert!(run.failures().iter().any(|failure| {
+                failure.check() == Some(id) && std::error::Error::source(failure).is_some()
+            }));
             assert!(run.cleanup().completed(), "{id}, observation {error_at}");
             assert!(fixture.inner.is_empty(), "{id}, observation {error_at}");
         }
@@ -663,4 +728,56 @@ fn test_sync_temp_contracts_reject_each_contradictory_existence_observation() {
             );
         }
     }
+}
+
+#[test]
+fn test_sync_temp_persistence_target_observation_gap_is_unverified_and_cleaned() {
+    for id in [
+        ContractCheckId::TempFile,
+        ContractCheckId::TempDirectory,
+        ContractCheckId::TempAtomic,
+    ] {
+        let fixture = TempExistenceMismatchFixture::unsupported_target_observation(MemoryFixture::with_all_capabilities());
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        assert!(run.failures().is_empty(), "{id}: {:?}", run.failures());
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Unverified { reason } if reason.contains("exists_out_of_band")
+        ), "{id}: {:?}", run.report().checks()[0].outcome());
+        assert!(run.cleanup().completed(), "{id}");
+        assert!(fixture.inner.is_empty(), "{id}: source resource leaked");
+    }
+}
+
+#[test]
+fn test_sync_temp_persistence_rejects_preexisting_target_before_persist() {
+    for id in [ContractCheckId::TempFile, ContractCheckId::TempDirectory, ContractCheckId::TempAtomic] {
+        let fixture = TempExistenceMismatchFixture::preexisting_target(MemoryFixture::with_fault(MemoryFault::TempPersistFails));
+        let mut suite = FileSystemContractSuite::new(&fixture);
+        let run = suite.run_check(id);
+        assert!(run.failures().iter().any(|failure| {
+            failure.check() == Some(id) && failure.message() == "temporary publication target already exists"
+        }), "{id}: {:?}", run.failures());
+        assert!(run.cleanup().completed(), "{id}");
+        assert!(fixture.inner.is_empty(), "{id}: source resource leaked");
+    }
+}
+
+#[test]
+fn test_sync_temp_atomic_directory_target_observation_gap_is_unverified_and_cleaned() {
+    let fixture = TempExistenceMismatchFixture::unsupported_directory_target(MemoryFixture::with_all_capabilities());
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::TempAtomic);
+    assert!(run.failures().is_empty(), "{:?}", run.failures());
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Unverified { reason } if reason.contains("exists_out_of_band")
+    ));
+    let targets = fixture.observed_targets.borrow();
+    assert!(targets.iter().any(|path| path.ends_with("persisted-file")));
+    assert!(targets.iter().any(|path| path.ends_with("persisted-directory")));
+    drop(targets);
+    assert!(run.cleanup().completed());
+    assert!(fixture.inner.is_empty());
 }

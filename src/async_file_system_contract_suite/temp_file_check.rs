@@ -395,8 +395,28 @@ impl AsyncFileSystemContractSuite<'_> {
             .map_err(|error| {
                 ContractFailure::with_source("temporary publication target preparation failed", error).at(id)
             })?;
-        self.context.record_created(target.clone());
         let atomic = id == ContractCheckId::TempAtomic;
+        if !atomic || self.capable(FileSystemCapability::AtomicTempPersist) {
+            match self.fixture.exists_out_of_band(&target).await.map_err(|error| {
+                ContractFailure::with_source("temporary publication target observation failed", error).at(id)
+            })? {
+                FixtureSupport::Supported(false) => {}
+                FixtureSupport::Supported(true) => {
+                    return Err(ContractFailure::message_only("temporary publication target already exists").at(id));
+                }
+                FixtureSupport::Unsupported => {
+                    if let Err(error) = temporary.cleanup().await {
+                        return Err(ContractFailure::with_owned_source(
+                            "temporary source cleanup after unsupported target observation failed",
+                            ContractTempFailure::new(error, temporary),
+                        )
+                        .at(id));
+                    }
+                    return Ok(Some("temporary publication needs fixture.exists_out_of_band to confirm a missing target".to_owned()));
+                }
+            }
+        }
+        self.context.record_created(target.clone());
         let options = PersistOptions::default().with_atomicity(if atomic {
             AtomicityRequirement::Required
         } else {
