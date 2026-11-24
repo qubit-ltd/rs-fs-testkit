@@ -103,7 +103,10 @@ pub trait AsyncFileSystemFixture: Sync {
     /// fixture cannot inject a pending read.
     ///
     /// # Errors
-    /// Returns [`FixtureError`](crate::FixtureError) when arming fails.
+    /// Returns [`FixtureError`](crate::FixtureError) when arming fails. The
+    /// runner attempts [`disarm_random_access_pending_read`](Self::disarm_random_access_pending_read)
+    /// after an error or panic because an implementation may have changed the
+    /// gate before failing.
     #[inline]
     fn arm_random_access_pending_read(&self, path: &Path) -> FixtureResult<FixtureSupport<()>> {
         let _ = path;

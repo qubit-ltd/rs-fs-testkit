@@ -243,6 +243,9 @@ struct AsyncState {
     inject_pending: bool,
     reopen_path: bool,
     teardown_calls: usize,
+    arm_calls: usize,
+    arm_error: bool,
+    arm_panic: bool,
     disarm_calls: usize,
     gate_entered: bool,
     events: Vec<&'static str>,
@@ -502,8 +505,15 @@ impl AsyncFileSystemFixture for AsyncRandomFixture {
     }
     fn arm_random_access_pending_read(&self, _path: &Path) -> FixtureResult<FixtureSupport<()>> {
         let mut state = self.state.lock().expect("async fixture state");
+        state.arm_calls += 1;
         state.probe_armed = true;
         state.probe_consumed = false;
+        if state.arm_error {
+            return Err(qubit_fs_testkit::FixtureError::new("injected partial arm failure"));
+        }
+        if state.arm_panic {
+            panic!("injected partial arm panic");
+        }
         Ok(FixtureSupport::Supported(()))
     }
     fn disarm_random_access_pending_read(&self, _path: &Path) -> FixtureResult<()> {
@@ -1170,6 +1180,92 @@ fn test_async_random_access_zero_range_limit_skips_content_and_identity_evidence
         run.report().checks()[0].outcome(),
         ContractCheckOutcome::Failed { .. }
     ));
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_cancel_zero_range_skips_without_arming() {
+    let fixture = AsyncRandomFixture::with_limit(true, false, FileSystemLimit::Maximum(0));
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+    assert!(run.failures().is_empty(), "{:?}", run.failures());
+    assert_eq!(
+        run.report().checks()[0].outcome(),
+        &ContractCheckOutcome::SkippedOptional {
+            reason: "zero random-access range limit prevents a non-empty pending-read probe".to_owned(),
+        }
+    );
+    assert!(run.requirements_satisfied());
+    assert!(!run.requirements_satisfied_with(&[ContractCheckId::RandomAccessCancel]));
+    let state = lock_async_state(&fixture.state);
+    assert_eq!(state.arm_calls, 0);
+    assert_eq!(state.disarm_calls, 0);
+    assert!(!state.probe_armed);
+
+    let open_error = AsyncRandomFixture::with_open_error(FileSystemLimit::Maximum(0));
+    let mut suite = AsyncFileSystemContractSuite::new(&open_error);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+    assert_eq!(run.failures().len(), 1);
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert_eq!(lock_async_state(&open_error.state).arm_calls, 0);
+
+    let wrong_length = AsyncRandomFixture::with_reported_length(FileSystemLimit::Maximum(0), 7);
+    let mut suite = AsyncFileSystemContractSuite::new(&wrong_length);
+    let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+    assert_eq!(run.failures().len(), 1);
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Failed { .. }
+    ));
+    assert_eq!(lock_async_state(&wrong_length.state).arm_calls, 0);
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_random_access_cancel_rolls_back_partial_arm_error_and_panic() {
+    for panic_during_arm in [false, true] {
+        let fixture = AsyncRandomFixture::new(true, false);
+        {
+            let mut state = lock_async_state(&fixture.state);
+            state.arm_error = !panic_during_arm;
+            state.arm_panic = panic_during_arm;
+            state.disarm_error = !panic_during_arm;
+        }
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let run = ready(suite.run_check(ContractCheckId::RandomAccessCancel));
+        assert_eq!(run.failures().len(), 1);
+        assert!(matches!(
+            run.report().checks()[0].outcome(),
+            ContractCheckOutcome::Failed { .. }
+        ));
+        let state = lock_async_state(&fixture.state);
+        assert_eq!(state.arm_calls, 1);
+        assert_eq!(state.disarm_calls, 1, "partial arming must be rolled back");
+        assert!(!state.probe_armed);
+        assert_eq!(state.teardown_calls, 1);
+        if panic_during_arm {
+            assert!(run.failures()[0].message().contains("probe arm panicked"));
+        } else {
+            assert!(run.failures()[0].message().contains("probe arm failed"));
+            assert!(
+                std::error::Error::source(&run.failures()[0])
+                    .is_some_and(|source| source.to_string().contains("injected partial arm failure"))
+            );
+            assert!(run.cleanup().failures().iter().any(|failure| {
+                std::error::Error::source(failure)
+                    .is_some_and(|source| source.to_string().contains("injected probe disarm failure"))
+            }));
+        }
+        if panic_during_arm {
+            let payload = run.failures()[0]
+                .take_panic_payload()
+                .expect("arm panic payload must be retained");
+            assert_eq!(payload.downcast_ref::<&str>(), Some(&"injected partial arm panic"));
+        }
+    }
 }
 
 #[cfg(feature = "async")]

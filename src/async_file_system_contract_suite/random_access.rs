@@ -8,6 +8,8 @@
 //! Independently checks asynchronous random-access sessions.
 
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 use std::pin::pin;
 use std::task::Context;
 use std::task::Poll;
@@ -300,15 +302,55 @@ impl AsyncFileSystemContractSuite<'_> {
         range_limit: FileSystemLimit,
         id: ContractCheckId,
     ) -> Result<ContractCheckOutcome, ContractFailure> {
-        let FixtureSupport::Supported(()) = self
-            .fixture
-            .arm_random_access_pending_read(path)
-            .map_err(|error| ContractFailure::with_source("pending random-access probe arm failed", error).at(id))?
-        else {
+        let probe_len = range_limit
+            .maximum()
+            .and_then(|maximum| usize::try_from(maximum).ok())
+            .map_or(2, |maximum| maximum.min(2));
+        if probe_len == 0 {
+            let reader = self
+                .fixture
+                .file_system()
+                .open_random_access_reader(path, ReadOptions::default())
+                .await
+                .map_err(|error| ContractFailure::with_source("declared random-access open failed", error).at(id))?;
+            if reader.len() != SEED.len() as u64 {
+                return Err(
+                    ContractFailure::message_only("random-access open-time length did not match the seed").at(id),
+                );
+            }
             return Ok(ContractCheckOutcome::SkippedOptional {
-                reason: "fixture cannot inject a pending random-access read".to_owned(),
+                reason: "zero random-access range limit prevents a non-empty pending-read probe".to_owned(),
             });
-        };
+        }
+        let arm_result = catch_unwind(AssertUnwindSafe(|| self.fixture.arm_random_access_pending_read(path)));
+        match arm_result {
+            Ok(Ok(FixtureSupport::Supported(()))) => {}
+            Ok(Ok(FixtureSupport::Unsupported)) => {
+                return Ok(ContractCheckOutcome::SkippedOptional {
+                    reason: "fixture cannot inject a pending random-access read".to_owned(),
+                });
+            }
+            Ok(Err(error)) => {
+                let fixture = self.fixture;
+                let probe_path = path;
+                let mut guard = crate::internal::probe_disarm_guard::ProbeDisarmGuard::new(
+                    move || fixture.disarm_random_access_pending_read(probe_path),
+                    &mut self.context.run.cleanup.failures,
+                );
+                let _ = guard.disarm();
+                return Err(ContractFailure::with_source("pending random-access probe arm failed", error).at(id));
+            }
+            Err(payload) => {
+                let fixture = self.fixture;
+                let probe_path = path;
+                let mut guard = crate::internal::probe_disarm_guard::ProbeDisarmGuard::new(
+                    move || fixture.disarm_random_access_pending_read(probe_path),
+                    &mut self.context.run.cleanup.failures,
+                );
+                let _ = guard.disarm();
+                return Err(ContractFailure::panicked("pending random-access probe arm panicked", payload).at(id));
+            }
+        }
         let fixture = self.fixture;
         let probe_path = path;
         let mut probe_guard = crate::internal::probe_disarm_guard::ProbeDisarmGuard::new(
@@ -322,15 +364,6 @@ impl AsyncFileSystemContractSuite<'_> {
             .map_err(|error| ContractFailure::with_source("declared random-access open failed", error).at(id))?;
         if reader.len() != SEED.len() as u64 {
             return Err(ContractFailure::message_only("random-access open-time length did not match the seed").at(id));
-        }
-        let probe_len = range_limit
-            .maximum()
-            .and_then(|maximum| usize::try_from(maximum).ok())
-            .map_or(2, |maximum| maximum.min(2));
-        if probe_len == 0 {
-            return Ok(ContractCheckOutcome::Unverified {
-                reason: "random-access range limit prevents a non-empty pending-read probe".to_owned(),
-            });
         }
         let waker = Waker::noop();
         let mut context = Context::from_waker(waker);
