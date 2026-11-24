@@ -760,3 +760,99 @@ fn test_async_temp_persistence_rejects_preexisting_target_before_persist() {
         assert!(fixture.inner.is_empty(), "{id}: source resource leaked");
     }
 }
+
+struct AsyncAtomicRejectPreexistingTargetFixture {
+    inner: AsyncMemoryFixture,
+    target_suffix: &'static str,
+    target_path: Path,
+    target_existed_at_teardown: std::sync::atomic::AtomicBool,
+}
+
+impl AsyncAtomicRejectPreexistingTargetFixture {
+    async fn new(target_suffix: &'static str) -> Self {
+        let inner = AsyncMemoryFixture::without_atomic_temp_persist();
+        let target_path = if target_suffix == "persisted-directory" {
+            match inner.seed_empty_directory("protected-atomic-target").await.expect("target seed") {
+                FixtureSupport::Supported(path) => path,
+                FixtureSupport::Unsupported => panic!("target seed should be supported"),
+            }
+        } else {
+            let path = Path::parse("/contract/protected-atomic-target").expect("target path");
+            assert!(matches!(
+                inner.write_file_out_of_band(&path, b"pre-existing target").await.expect("target seed"),
+                FixtureSupport::Supported(())
+            ));
+            path
+        };
+        Self {
+            inner,
+            target_suffix,
+            target_path,
+            target_existed_at_teardown: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+}
+
+impl AsyncFileSystemFixture for AsyncAtomicRejectPreexistingTargetFixture {
+    fn file_system(&self) -> &qubit_fs::AsyncFileSystem {
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> qubit_fs_testkit::FixtureResult<Path> {
+        if relative.ends_with(self.target_suffix) {
+            Ok(self.target_path.clone())
+        } else {
+            self.inner.path(relative)
+        }
+    }
+
+    fn read_file<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<Vec<u8>>> {
+        self.inner.read_file(path)
+    }
+
+    fn exists_out_of_band<'a>(&'a self, path: &'a Path) -> FixtureFuture<'a, FixtureSupport<bool>> {
+        self.inner.exists_out_of_band(path)
+    }
+
+    fn write_file_out_of_band<'a>(&'a self, path: &'a Path, bytes: &'a [u8]) -> FixtureFuture<'a, FixtureSupport<()>> {
+        self.inner.write_file_out_of_band(path, bytes)
+    }
+
+    fn seed_empty_directory<'a>(&'a self, relative: &'a str) -> FixtureFuture<'a, FixtureSupport<Path>> {
+        self.inner.seed_empty_directory(relative)
+    }
+
+    fn teardown(&self) -> FixtureFuture<'_, ()> {
+        let inner = &self.inner;
+        let target_path = &self.target_path;
+        let target_existed_at_teardown = &self.target_existed_at_teardown;
+        Box::pin(async move {
+            match inner.exists_out_of_band(target_path).await? {
+                FixtureSupport::Supported(exists) => {
+                    target_existed_at_teardown.store(exists, Ordering::Relaxed);
+                }
+                FixtureSupport::Unsupported => {
+                    return Err(FixtureError::new("target existence became unsupported"));
+                }
+            }
+            inner.teardown().await
+        })
+    }
+}
+
+#[test]
+fn test_async_atomic_rejection_does_not_claim_preexisting_targets() {
+    run_controlled(async {
+        for target_suffix in ["persisted-file", "persisted-directory"] {
+            let fixture = AsyncAtomicRejectPreexistingTargetFixture::new(target_suffix).await;
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let run = suite.run_check(ContractCheckId::TempAtomic).await;
+            assert!(run.failures().iter().any(|failure| {
+                failure.check() == Some(ContractCheckId::TempAtomic)
+                    && failure.message() == "atomic rejection target already existed before persistence"
+            }), "{target_suffix}: {:?}", run.failures());
+            assert!(run.cleanup().completed(), "{target_suffix}");
+            assert!(fixture.target_existed_at_teardown.load(Ordering::Relaxed), "{target_suffix}");
+        }
+    });
+}
