@@ -85,7 +85,7 @@ impl FileSystemContractSuite<'_> {
         self.context.record_created(path.clone());
         if self.publish_with_current_version(&case, &path, &bytes)?.is_none() {
             return Ok(ContractCheckOutcome::Unverified {
-                reason: "fixture current version unavailable".to_owned(),
+                reason: "fixture current version or distinct initial contents unavailable".to_owned(),
             });
         }
         self.verify_stale_if_match_rejection(&case, &path, &bytes, limit)
@@ -163,6 +163,18 @@ impl FileSystemContractSuite<'_> {
             id,
             "fixture changed If-Match request semantics",
         )?;
+        match self.fixture.read_file(path).map_err(|error| {
+            ContractFailure::with_source("If-Match initial content observation failed", error).at(id)
+        })? {
+            FixtureSupport::Supported(old) if old != bytes => {}
+            FixtureSupport::Supported(_) => {
+                return Err(ContractFailure::message_only(
+                    "If-Match target contents already equal the requested payload",
+                )
+                .at(id));
+            }
+            FixtureSupport::Unsupported => return Ok(None),
+        }
         self.fixture
             .file_system()
             .write_all(path, bytes, case.options().clone())

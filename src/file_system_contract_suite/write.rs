@@ -165,6 +165,28 @@ impl<'a> FileSystemContractSuite<'a> {
             .at(id));
         }
         let path = case.path().clone();
+        match self.fixture.exists_out_of_band(&path).map_err(|error| {
+            crate::ContractFailure::with_source("write/basic: initial target observation failed", error).at(id)
+        })? {
+            FixtureSupport::Supported(false) => {}
+            FixtureSupport::Supported(true) => {
+                return Err(crate::ContractFailure::message_only(
+                    "write/basic: prepared creation target already exists",
+                )
+                .at(id));
+            }
+            FixtureSupport::Unsupported => {
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::Write),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm the prepared creation target is absent"
+                            .to_owned(),
+                    },
+                );
+                return Ok(());
+            }
+        }
         self.context.record_created(path.clone());
         let outcome = self
             .fixture

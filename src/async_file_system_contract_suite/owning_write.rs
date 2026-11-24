@@ -112,6 +112,27 @@ impl AsyncFileSystemContractSuite<'_> {
             "owning write fixture changed creation semantics",
         )?;
         let path = case.path().clone();
+        match self.fixture.exists_out_of_band(&path).await.map_err(|error| {
+            ContractFailure::with_source("owning write initial target observation failed", error).at(id)
+        })? {
+            FixtureSupport::Supported(false) => {}
+            FixtureSupport::Supported(true) => {
+                return Err(
+                    ContractFailure::message_only("owning write target already exists before operation").at(id),
+                );
+            }
+            FixtureSupport::Unsupported => {
+                self.context.record_check(
+                    id,
+                    Some(FileSystemCapability::Write),
+                    ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm the owning-write target is missing"
+                            .to_owned(),
+                    },
+                );
+                return Ok(());
+            }
+        }
         self.context.record_created(path.clone());
         let mut operation = self
             .fixture

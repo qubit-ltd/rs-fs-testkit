@@ -125,6 +125,22 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "fixture changed If-Match request semantics",
         )?;
+        match self.fixture.read_file(&path).await.map_err(|error| {
+            ContractFailure::with_source("If-Match initial content observation failed", error).at(id)
+        })? {
+            FixtureSupport::Supported(old) if old != bytes => {}
+            FixtureSupport::Supported(_) => {
+                return Err(ContractFailure::message_only(
+                    "If-Match target contents already equal the requested payload",
+                )
+                .at(id));
+            }
+            FixtureSupport::Unsupported => {
+                return Ok(ContractCheckOutcome::Unverified {
+                    reason: "fixture.read_file cannot confirm If-Match contents differ before publication".to_owned(),
+                });
+            }
+        }
         let first = execute_write::execute_write(
             self.fixture.file_system(),
             path.clone(),

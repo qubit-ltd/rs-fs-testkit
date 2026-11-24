@@ -106,8 +106,8 @@ impl AsyncFileSystemContractSuite<'_> {
                 "write limit fixture changed creation semantics",
             )?;
             let path = case.path().clone();
-            self.context.record_created(path.clone());
             let rejected_baseline = if reject {
+                self.context.record_created(path.clone());
                 match self.fixture.exists_out_of_band(&path).await.map_err(|error| {
                     ContractFailure::with_source("write limit baseline observation failed", error).at(id)
                 })? {
@@ -140,7 +140,26 @@ impl AsyncFileSystemContractSuite<'_> {
                     }
                 }
             } else {
-                None
+                match self.fixture.exists_out_of_band(&path).await.map_err(|error| {
+                    ContractFailure::with_source("write limit initial target observation failed", error).at(id)
+                })? {
+                    FixtureSupport::Supported(false) => {
+                        self.context.record_created(path.clone());
+                        None
+                    }
+                    FixtureSupport::Supported(true) => {
+                        return Err(ContractFailure::message_only(
+                            "write limit accepted target already exists before publication",
+                        )
+                        .at(id));
+                    }
+                    FixtureSupport::Unsupported => {
+                        return Ok(ContractCheckOutcome::Unverified {
+                            reason: "fixture.exists_out_of_band cannot confirm the accepted write target is missing"
+                                .to_owned(),
+                        });
+                    }
+                }
             };
             let result = crate::internal::execute_write::execute_write(
                 self.fixture.file_system(),

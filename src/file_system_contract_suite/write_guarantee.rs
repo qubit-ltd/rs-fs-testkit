@@ -133,7 +133,9 @@ impl FileSystemContractSuite<'_> {
             }
         };
         let path = case.path().clone();
-        self.context.record_created(path.clone());
+        if scenario == WriteScenario::AtomicReplace {
+            self.context.record_created(path.clone());
+        }
         verify_condition(case.bytes() == bytes, id, "write guarantee fixture changed payload")?;
         if scenario == WriteScenario::AtomicReplace {
             verify_condition(
@@ -157,6 +159,24 @@ impl FileSystemContractSuite<'_> {
                 id,
                 "durable fixture weakened creation semantics",
             )?;
+            match self.fixture.exists_out_of_band(&path).map_err(|error| {
+                ContractFailure::with_source("durable write initial target observation failed", error).at(id)
+            })? {
+                FixtureSupport::Supported(false) => {
+                    self.context.record_created(path.clone());
+                }
+                FixtureSupport::Supported(true) => {
+                    return Err(ContractFailure::message_only(
+                        "durable write target already exists before publication",
+                    )
+                    .at(id));
+                }
+                FixtureSupport::Unsupported => {
+                    return Ok(ContractCheckOutcome::Unverified {
+                        reason: "fixture.exists_out_of_band cannot confirm the durable target is missing".to_owned(),
+                    });
+                }
+            }
         }
         let outcome = self
             .fixture
