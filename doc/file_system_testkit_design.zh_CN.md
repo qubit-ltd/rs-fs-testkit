@@ -151,6 +151,27 @@ Async fixture hook 返回 runtime-neutral future。Testkit 不创建全局 runti
 异步可选 hook 同样返回 `FixtureResult<FixtureSupport<T>>`，不能用 ready `None`
 混淆 unsupported 与 setup failure。
 
+### 3.3 Fixture 迁移所需的独立证据
+
+同步、异步套件的 `CopyBasic`，以及异步 `CopyRepeatedExecute`，都要求独立观察到目标原先不存在
+（`exists_out_of_band`），并通过 `read_file` 独立核对源内容。缺少观察能力时记为 `Unverified`；
+观察到目标已存在属于初态错误；hook 出错则保留为失败及其 cause。这是核心复制证据。
+单独的 `CopyNativeNonEmpty` 是可选检查；无法准备原生场景时默认记为 `SkippedOptional`，除非调用方显式要求。
+一旦返回场景，缺少 `exists_out_of_band` 或 `read_file` 观察则记为 `Unverified`，观察错误仍为失败。
+fixture 可通过原生文件系统、provider SDK 或独立状态模型准备和观察，不能调用待测门面来验证前提。
+
+`WriteBasic`、`WriteIfAbsent`、`WriteDurable`、`WriteLimit`，以及异步 `WriteOwningOperation`
+的新目标写入路径，必须先由 `exists_out_of_band` 确认目标不存在。非覆盖的临时文件或目录持久化
+（包括受支持的原子持久化）也遵循这一要求。观察到目标缺失后才可执行；目标已存在表示初态不符，观察不支持则为
+`Unverified`，观察出错仍是失败。写入既有目标的检查继续独立验证原内容或版本。fixture 的 `teardown`
+负责最终回收，但不能作为门面无副作用的证据。
+
+随机读取上限为零时，`RandomAccessCancel` 会先打开 reader 并检查长度，再记录带原因的
+`SkippedOptional`；由于探针需要非空读取，不会调用 arm 或 disarm。若调用方显式要求该检查，仍视为未满足。
+异步 pending-read arm hook 若返回错误或 panic，suite 会同步尝试一次 disarm，因为 hook 可能已在失败前改变 gate 状态。
+运行失败保留原始 arm 错误或 panic，disarm 失败另记于清理证据。确定性合成回归覆盖此路径；目前没有
+真实下游 gate 泄漏的已知证据。
+
 ## 4. Stateful contract suite
 
 删除 public `assert_*` free function。所有 contract 逻辑都进入 suite 方法。

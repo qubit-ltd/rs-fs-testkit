@@ -77,13 +77,17 @@ pub trait FileSystemFixture {
     ///
     /// File scenarios contain the supplied bytes and use file options, with
     /// required atomicity or durability for the respective strong scenario.
-    /// `Native` cases provide an independently seeded source containing
-    /// 1..=64 KiB; missing independent source evidence is reported as
-    /// unverified. `ServerSide` cases use provider-selected bytes that are
-    /// independently seeded and readable, contain 1..=64 KiB, and require
-    /// server-side copy. The suite independently checks source contents and
-    /// target absence before execution, then source and target contents after
-    /// execution; unavailable preparation or observation evidence is
+    /// `CopyBasic` requires `exists_out_of_band` to confirm that the prepared
+    /// target is absent and `read_file` to independently verify the source
+    /// bytes. The asynchronous `CopyRepeatedExecute` check has the same
+    /// initial-state and source-observation requirements. Missing target
+    /// observation or source content is reported as unverified; an observed
+    /// existing target is an initial-state failure, and observation errors
+    /// remain failures. `ServerSide` cases use provider-selected bytes that
+    /// are independently seeded and readable, contain 1..=64 KiB, and require
+    /// server-side copy. The suite checks target absence before execution and
+    /// independently observes source and target contents at the stages each
+    /// check requires; unavailable preparation or observation evidence is
     /// reported as unverified. Ready cases have distinct paths, and Conflict
     /// targets contain `b"existing"`.
     /// Teardown must clean partial setup even when preparation fails.
@@ -643,8 +647,10 @@ pub trait FileSystemFixture {
     /// or `Unsupported` when no such provider-specific case is available. For
     /// `Native`, the case must be a single file with a distinct, independently
     /// confirmed absent target and an independently seeded source containing
-    /// 1..=64 KiB. Return `Unsupported` when those native-specific premises
-    /// cannot be guaranteed; a streamed result does not satisfy this request.
+    /// 1..=64 KiB. `Unsupported` makes the optional native check skip; after a
+    /// case is returned, missing `exists_out_of_band` or `read_file` evidence
+    /// is `Unverified`, and observation errors fail the check. A streamed
+    /// result does not satisfy this request.
     /// The source and target are registered for fixture cleanup as soon as the
     /// case is returned.
     ///

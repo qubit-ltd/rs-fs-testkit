@@ -55,6 +55,37 @@ semantics, and service-specific guarantees beyond the suite's observations.
 | Suite bookkeeping, recovery ownership, and rejection of injected violations | Testkit self-validation with recording and deliberately faulty fixtures |
 | SPI dispatch/preflight, compile-time borrowing properties, drop/runtime behavior, and provider-specific platform or service guarantees | Core or provider tests at the layer that owns the behavior |
 
+### Fixture migration evidence
+
+`CopyBasic` in both suites and async `CopyRepeatedExecute` require an
+independently observed absent target (`exists_out_of_band`) and independently
+verified source bytes (`read_file`). Missing observations are `Unverified`, an
+observed pre-existing target is an initial-state failure, and hook errors
+remain failures with their cause. This is core copy evidence. The separate
+`CopyNativeNonEmpty` check is optional and reports unavailable preparation as
+`SkippedOptional` unless the caller requires it. Fixtures may use native
+filesystem access, the provider SDK, or a separate state model; they must not
+use the facade under test for either premise.
+
+`WriteBasic`, `WriteIfAbsent`, `WriteDurable`, `WriteLimit`, and async
+`WriteOwningOperation` require `exists_out_of_band` before their new-target
+write paths. Non-overwriting temporary file or directory persistence does the
+same, including supported atomic persistence. An observed absent target permits execution; an existing
+target fails the premise, unsupported observation is `Unverified`, and an
+observation error fails. Existing-target operations retain their independent
+content or version checks. Fixture `teardown` remains cleanup responsibility,
+not evidence about facade side effects.
+
+When the declared random-access maximum is zero, `RandomAccessCancel` opens the
+reader and checks its length before recording a reasoned `SkippedOptional`;
+the check does not call arm or disarm because its required read cannot be
+non-empty. Explicitly requiring that check remains unsatisfied. If the async
+pending-read arm hook returns an error or panics after changing gate state, the
+suite attempts one synchronous disarm. The original arm failure remains the
+execution failure and a disarm failure is retained separately as cleanup
+evidence. Deterministic synthetic regressions cover this path; the reviewed
+evidence shows no known real downstream gate leak.
+
 Positive random-access samples respect the declared `max_read_range_bytes`
 limit and accumulate short reads until the expected sample is complete.
 `RandomAccessBounds` checks an empty buffer, EOF, clipping, overflow rejection,

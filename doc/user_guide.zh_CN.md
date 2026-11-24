@@ -124,8 +124,9 @@ unsupported-capability 错误。未声明的强化保证会被检查是否返回
 
 `CopyNativeNonEmpty` 是单独报告的可选检查，用于验证非空文件确实通过 native 方法复制成功。
 它不会按 `max_write_bytes` 缩短源文件：该限制描述单个写入会话，而 native 请求不经过门面 writer。
-fixture 若无法准备不同且确认不存在的目标，以及可独立观察的 1..=64 KiB 源文件，可返回
-`Unsupported`。默认将缺少场景记为 `SkippedOptional`；要求这项证据的调用方可在 Copy phase
+fixture 若无法准备不同目标和独立预置的 1..=64 KiB 源文件，可返回 `Unsupported`；默认将缺少场景记为
+`SkippedOptional`。case 已返回后，若 `exists_out_of_band` 或 `read_file` 无法提供观察，则记为
+`Unverified`；观察 hook 出错仍会失败。要求这项证据的调用方可在 Copy phase
 或 `run_all()` 后调用
 `run.assert_satisfied_with(&[ContractCheckId::CopyNativeNonEmpty])`。注册宏只在 Copy phase
 要求该项时可写：
@@ -146,6 +147,13 @@ required_checks: |phase| match phase {
 `Unverified`，不能沿用 Native 检查的可选跳过策略。已经返回 `FixturePreparation::Ready` 的用例
 若源为空或超过预算，检查会失败。空对象复制仍是合法的 API 行为，只是不能作为这项正向能力检查的
 内容证据；原先使用空源的 fixture 应改为准备上述非空场景。
+
+迁移 fixture 时，同步与异步套件的 `CopyBasic`，以及异步
+`CopyRepeatedExecute`，都要求独立确认目标最初不存在，并通过 `exists_out_of_band`
+观察；还要用 `read_file` 核对源文件完整内容。这两个 hook 应读取原生文件系统、provider
+SDK 或独立测试状态模型，不能调用待测门面。缺少目标或源观察能力时结果为 `Unverified`；
+若目标实际已存在，初态检查失败；观察 hook 出错则保留为失败及其原始 cause。这是核心复制证据。
+单独的 `CopyNativeNonEmpty` 仍是可选探针：默认把无法准备场景记为 `SkippedOptional`，调用方也可显式要求该检查。
 
 套件直接检查公开门面结果、必需副作用和 fixture 独立 hook 能提供的观察。必要事实无法独立观察时，
 结果记为 `Unverified`，不算通过。testkit 自己的 recording provider 与故障 fixture 用来验证套件
@@ -359,6 +367,21 @@ RangeLimit 也不涵盖 EOF、裁剪或溢出行为。
 返回 `Supported(false)` 或 `Unsupported` 都是 `Unverified`。无法注入 gate 时是可选跳过。
 hook 错误或 panic，以及解除 gate 后 reader 无法继续使用，都会使检查失败。观测 hook 只能读取
 fixture 自身的 instrumentation，不得执行 I/O；该探针不依赖任何特定 runtime。
+
+随机读取上限为零时，取消检查无法发起 arm gate 所需的非空读取。套件仍会打开 reader 并检查长度，
+随后将 `RandomAccessCancel` 记为带原因的 `SkippedOptional`，且不会调用 arm 或 disarm。
+默认断言接受该跳过；显式要求 `ContractCheckId::RandomAccessCancel` 则不能满足。
+这不影响零范围和范围上限检查各自的证据。
+
+迁移写入与临时资源 fixture 时，`WriteBasic`、`WriteIfAbsent`、`WriteDurable`、`WriteLimit`，
+以及异步 `WriteOwningOperation` 的新目标写入路径，会先通过 `exists_out_of_band` 检查目标初态。
+非覆盖的临时文件或目录持久化也会先检查，包括受支持的原子持久化路径。`Supported(false)` 才允许继续，`Supported(true)` 表示
+场景初态不符；不支持观察时为 `Unverified`，hook 出错仍是失败。写入既有目标的场景仍需独立核对原内容
+或版本。资源回收继续由 fixture 独立的 `teardown` 负责；teardown 成功不能证明门面操作没有副作用。
+
+异步 pending-read arm hook 还承担部分失败回滚义务：若 arm 返回错误或 panic，套件会同步尝试一次
+disarm，因为 hook 可能在失败前已改变 gate 状态。运行结果保留原始 arm 错误或 panic；disarm 失败单独保留在清理证据中。
+确定性合成回归覆盖了该路径；目前没有证据表明真实下游 fixture 曾发生 gate 泄漏。
 
 属性中的路径限制探针通过门面提交超限 `stat` 请求，要求结构化的资源限制拒绝。
 请求遵守套件的分配预算及声明的绝对／相对路径形式。若另一项路径限制会掩盖所选边界，

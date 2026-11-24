@@ -180,13 +180,17 @@ pub trait AsyncFileSystemFixture: Sync {
     ///
     /// File scenarios contain the supplied bytes and use file options, with
     /// Required atomicity or durability for the respective strong scenario.
-    /// `Native` cases provide an independently seeded source containing
-    /// 1..=64 KiB; missing independent source evidence is reported as
-    /// unverified. `ServerSide` cases use provider-selected bytes that are
+    /// `CopyBasic` requires `exists_out_of_band` to confirm that the prepared
+    /// target is absent and `read_file` to independently verify the source
+    /// bytes. This also applies to the asynchronous `CopyRepeatedExecute`
+    /// check. Missing target observation or source content is reported as
+    /// unverified; an observed existing target is an initial-state failure,
+    /// and observation errors remain failures. `ServerSide` cases use
+    /// provider-selected bytes that are
     /// independently seeded and readable, contain 1..=64 KiB, and require
-    /// server-side copy. The suite independently checks source contents and
-    /// target absence before execution, then source and target contents after
-    /// execution; unavailable preparation or observation evidence is
+    /// server-side copy. The suite checks target absence before execution and
+    /// independently observes source and target contents at the stages each
+    /// check requires; unavailable preparation or observation evidence is
     /// reported as unverified. Ready cases have distinct paths, and Conflict
     /// targets contain `b"existing"`.
     /// Teardown must clean partial setup even when preparation fails.
@@ -746,8 +750,10 @@ pub trait AsyncFileSystemFixture: Sync {
     /// the fixture cannot provide the native path. For `Native`, the case
     /// must be a single file with a distinct, independently confirmed absent
     /// target and an independently seeded source containing 1..=64 KiB.
-    /// Return `Unsupported` when those premises cannot be guaranteed; a
-    /// streamed result does not satisfy this request. Returned source and
+    /// `Unsupported` makes the optional native check skip; after a case is
+    /// returned, missing `exists_out_of_band` or `read_file` evidence is
+    /// `Unverified`, and observation errors fail the check. A streamed result
+    /// does not satisfy this request. Returned source and
     /// target paths are registered for cleanup immediately.
     ///
     /// # Errors

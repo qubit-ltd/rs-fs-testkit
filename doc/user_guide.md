@@ -152,10 +152,12 @@ preflight.
 `CopyNativeNonEmpty` is an optional, separately reported check for a successful
 native copy of a non-empty file. It does not use `max_write_bytes` to shrink its
 source: that limit describes one write session, while the native request does
-not use the facade writer. A fixture may return `Unsupported` when it cannot
-prepare a distinct target known to be absent and an independently observable
-1..=64 KiB source. Such a missing case is `SkippedOptional` by default; callers
-that require this evidence can use `run.assert_satisfied_with(&[ContractCheckId::CopyNativeNonEmpty])`
+not use the facade writer. If the fixture cannot prepare a distinct target
+and an independently seeded 1..=64 KiB source, it may return `Unsupported`;
+that missing scenario is `SkippedOptional` by default. Once a case is returned,
+missing `exists_out_of_band` or `read_file` observations are `Unverified`, and
+observation errors fail. Callers that require this evidence can use
+`run.assert_satisfied_with(&[ContractCheckId::CopyNativeNonEmpty])`
 for a Copy phase or `run_all()`. Registration can require it only for the Copy
 phase:
 
@@ -177,6 +179,17 @@ absent target. If the fixture cannot prepare or observe that case, the check is
 `Unverified`; it does not borrow the Native check's optional-skip policy. An
 empty source remains valid for API copy requests, but cannot establish this
 positive capability evidence.
+
+For migration, `CopyBasic` in both suites and async
+`CopyRepeatedExecute` require the fixture to independently confirm that the
+prepared target is absent with `exists_out_of_band` and verify the complete
+source bytes with `read_file`. Implement both hooks through the native
+filesystem, provider SDK, or a separate fixture state model, not through the
+facade under test. Missing target or source observation is `Unverified`; an
+observed existing target fails the initial-state check; observation errors
+fail with their original cause. This core copy evidence is required. The
+separate `CopyNativeNonEmpty` probe remains optional: unavailable preparation
+is `SkippedOptional` by default, though callers can require its check ID.
 
 The read budget applies to bytes consumed from the selected window, rather than
 to the complete resource or its metadata length. For example, reading
@@ -460,6 +473,31 @@ injection remains an optional skip. Hook errors, panics, or a reader that cannot
 be used again after disarming fail the check. The observation hook must inspect
 fixture instrumentation only and perform no I/O. The suite has no runtime
 dependency for this probe.
+
+With a declared random-access maximum of zero, cancellation cannot issue the
+non-empty read needed to arm a gate. The suite still opens the reader and
+checks its length, then records `RandomAccessCancel` as `SkippedOptional` with
+a reason without calling either arm or disarm. Default assertions allow this
+skip; explicitly requiring `ContractCheckId::RandomAccessCancel` does not.
+This does not weaken the independent zero-range and range-limit checks.
+
+For write and temporary-resource migrations, `WriteBasic`, `WriteIfAbsent`,
+`WriteDurable`, `WriteLimit`, and async `WriteOwningOperation` check the
+pre-operation state through `exists_out_of_band` before their new-target write
+paths. Non-overwriting temporary file or directory persistence does the same,
+including supported atomic persist paths.
+`Supported(false)` permits the operation; `Supported(true)` fails the
+initial-state check. Unsupported observation is `Unverified`, while a hook
+error remains a failure. Existing-target operations keep their independent
+content or version premises. Fixture-owned `teardown` remains responsible
+for cleanup and does not prove that a facade operation had no side effect.
+
+The async pending-read arm hook also has a partial-failure rollback contract.
+If arming returns an error or panics, the suite makes one synchronous disarm
+attempt because the hook may have changed gate state before failing. The original arm error or panic remains the
+execution failure, and any disarm failure is retained separately in cleanup
+evidence. This behavior is covered by deterministic synthetic regression; no
+real downstream gate leak is known from the reviewed evidence.
 
 Property path-limit probes submit oversized `stat` requests through the facade
 and require structured resource-limit rejection. Requests remain within the
