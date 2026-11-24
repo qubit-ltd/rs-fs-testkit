@@ -18,33 +18,61 @@ use common::async_memory_file_system::run_controlled;
 use common::native_copy_fixture::AsyncNativeCopyFixture;
 use common::native_copy_fixture::NativeCopyFixture;
 use qubit_fs::copy::CopyConflictPolicy;
+use qubit_fs::copy::CopyFailure;
+use qubit_fs::copy::CopyStats;
+use qubit_fs::error::FsErrorKind;
+use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
 #[cfg(feature = "async")]
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
+#[cfg(feature = "async")]
+use qubit_fs_testkit::ContractAsyncCopyFailure;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractCheckOutcome;
 use qubit_fs_testkit::ContractSource;
 use qubit_fs_testkit::FileSystemContractSuite;
 
-fn failure_chain_contains(failure: &qubit_fs_testkit::ContractFailure, text: &str) -> bool {
-    let Some(source) = std::error::Error::source(failure).and_then(|source| source.downcast_ref::<ContractSource>())
-    else {
-        return false;
-    };
+fn assert_sync_copy_failure(
+    failure: &qubit_fs_testkit::ContractFailure,
+    id: ContractCheckId,
+    expected_stats: CopyStats,
+) {
+    assert_eq!(failure.check(), Some(id));
+    let source = std::error::Error::source(failure)
+        .and_then(|source| source.downcast_ref::<ContractSource>())
+        .expect("copy failure retained as a typed source");
     source
         .inspect(|error| {
-            let mut current: Option<&(dyn std::error::Error + 'static)> = Some(error);
-            while let Some(source) = current {
-                if source.to_string().contains(text) {
-                    return true;
-                }
-                current = source.source();
-            }
-            false
+            let failure = error.downcast_ref::<CopyFailure>().expect("sync copy failure retained");
+            assert_eq!(failure.error().kind(), FsErrorKind::ProviderContractViolation);
+            assert_eq!(failure.error().operation(), FsOperation::Copy);
+            assert_eq!(failure.partial_stats(), &expected_stats);
         })
-        .unwrap_or(false)
+        .expect("typed source remains available");
+}
+
+#[cfg(feature = "async")]
+fn assert_async_copy_failure(
+    failure: &qubit_fs_testkit::ContractFailure,
+    id: ContractCheckId,
+    expected_stats: CopyStats,
+) {
+    assert_eq!(failure.check(), Some(id));
+    let source = std::error::Error::source(failure)
+        .and_then(|source| source.downcast_ref::<ContractSource>())
+        .expect("copy failure retained as a typed source");
+    source
+        .inspect(|error| {
+            let failure = error
+                .downcast_ref::<ContractAsyncCopyFailure>()
+                .expect("async copy failure retained");
+            assert_eq!(failure.error().kind(), FsErrorKind::ProviderContractViolation);
+            assert_eq!(failure.error().operation(), FsOperation::Copy);
+            assert_eq!(failure.failure().partial_stats(), &expected_stats);
+        })
+        .expect("typed source remains available");
 }
 
 fn outcome(fixture: &NativeCopyFixture, id: ContractCheckId) -> ContractCheckOutcome {
@@ -137,31 +165,48 @@ fn test_native_basic_copy_statistics_reject_inconsistent_success_counts() {
         run.report().checks()[0].outcome(),
         ContractCheckOutcome::Failed { .. }
     ));
-    assert!(
-        run.failures()[0].message().contains("copy statistics differ"),
-        "{}",
-        run.failures()[0].message()
-    );
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::CopyBasic));
     assert_eq!(fixture.native_calls(), 1);
     assert!(run.cleanup().completed());
 }
 #[test]
 fn test_native_copy_facade_reports_rejected_statistics_in_error_chain() {
-    for (fault, id, cause) in [
+    for (fault, id, expected_stats, calls, target_contents) in [
         (
             "success_skipped",
             ContractCheckId::CopyBasic,
-            "provider reported structurally inconsistent copy statistics",
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                skipped: 1,
+                ..CopyStats::default()
+            },
+            1,
+            b"copy bytes".as_slice(),
         ),
         (
             "skip_copies",
             ContractCheckId::CopyFallbackOverwriteRejected,
-            "provider reported structurally inconsistent copy statistics",
+            CopyStats {
+                files: 1,
+                skipped: 1,
+                ..CopyStats::default()
+            },
+            2,
+            b"existing".as_slice(),
         ),
         (
             "overwrite_failed",
             ContractCheckId::CopyFallbackOverwriteRejected,
-            "provider reported structurally inconsistent copy statistics",
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                overwritten: 1,
+                failed: 1,
+                ..CopyStats::default()
+            },
+            3,
+            b"copy bytes".as_slice(),
         ),
     ] {
         let fixture = NativeCopyFixture::new(false, false);
@@ -172,25 +217,44 @@ fn test_native_copy_facade_reports_rejected_statistics_in_error_chain() {
             matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }),
             "{fault}"
         );
-        assert!(
-            failure_chain_contains(&run.failures()[0], cause),
-            "{fault}: {}",
-            run.failures()[0].message()
-        );
+        assert_sync_copy_failure(&run.failures()[0], id, expected_stats);
+        assert_eq!(fixture.native_calls(), calls, "{fault}");
         assert!(run.cleanup().completed(), "{fault}");
+        let (source, target) = fixture.last_paths();
+        let snapshot = fixture.cleanup_snapshot();
+        assert_eq!(
+            snapshot.get(&source).map(Vec::as_slice),
+            Some(b"copy bytes".as_slice()),
+            "{fault}"
+        );
+        assert_eq!(
+            snapshot.get(&target).map(Vec::as_slice),
+            Some(target_contents),
+            "{fault}"
+        );
     }
 }
 
 #[test]
 fn test_native_basic_copy_facade_rejects_failed_and_overwritten_statistics() {
-    for (fault, cause) in [
+    for (fault, expected_stats) in [
         (
             "success_failed",
-            "provider reported structurally inconsistent copy statistics",
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                failed: 1,
+                ..CopyStats::default()
+            },
         ),
         (
             "success_overwritten",
-            "provider reported overwritten copy entries without an overwrite conflict policy",
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                overwritten: 1,
+                ..CopyStats::default()
+            },
         ),
     ] {
         let fixture = NativeCopyFixture::new(false, false);
@@ -201,11 +265,7 @@ fn test_native_basic_copy_facade_rejects_failed_and_overwritten_statistics() {
             matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }),
             "{fault}"
         );
-        assert!(
-            failure_chain_contains(&run.failures()[0], cause),
-            "{fault}: {}",
-            run.failures()[0].message()
-        );
+        assert_sync_copy_failure(&run.failures()[0], ContractCheckId::CopyBasic, expected_stats);
         assert_eq!(fixture.native_calls(), 1, "{fault}");
         assert!(run.cleanup().completed(), "{fault}");
         let (source, target) = fixture.last_paths();
@@ -878,32 +938,49 @@ fn test_async_basic_copy_statistics_reject_inconsistent_counts() {
         run.report().checks()[0].outcome(),
         ContractCheckOutcome::Failed { .. }
     ));
-    assert!(
-        run.failures()[0].message().contains("copy statistics differ"),
-        "{}",
-        run.failures()[0].message()
-    );
+    assert_eq!(run.failures()[0].check(), Some(ContractCheckId::CopyBasic));
     assert_eq!(fixture.native_calls(), 1);
     assert!(run.cleanup().completed());
 }
 #[cfg(feature = "async")]
 #[test]
 fn test_async_copy_facade_reports_rejected_statistics_in_error_chain() {
-    for (fault, id, cause) in [
+    for (fault, id, expected_stats, calls, target_contents) in [
         (
             "success_skipped",
             ContractCheckId::CopyBasic,
-            "provider reported structurally inconsistent copy statistics",
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                skipped: 1,
+                ..CopyStats::default()
+            },
+            1,
+            b"copy bytes".as_slice(),
         ),
         (
             "skip_copies",
             ContractCheckId::CopyFallbackOverwriteRejected,
-            "provider reported structurally inconsistent copy statistics",
+            CopyStats {
+                files: 1,
+                skipped: 1,
+                ..CopyStats::default()
+            },
+            2,
+            b"existing".as_slice(),
         ),
         (
             "overwrite_failed",
             ContractCheckId::CopyFallbackOverwriteRejected,
-            "provider reported structurally inconsistent copy statistics",
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                overwritten: 1,
+                failed: 1,
+                ..CopyStats::default()
+            },
+            3,
+            b"copy bytes".as_slice(),
         ),
     ] {
         let fixture = AsyncNativeCopyFixture::new(false, false);
@@ -914,26 +991,45 @@ fn test_async_copy_facade_reports_rejected_statistics_in_error_chain() {
             matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }),
             "{fault}"
         );
-        assert!(
-            failure_chain_contains(&run.failures()[0], cause),
-            "{fault}: {}",
-            run.failures()[0].message()
-        );
+        assert_async_copy_failure(&run.failures()[0], id, expected_stats);
+        assert_eq!(fixture.native_calls(), calls, "{fault}");
         assert!(run.cleanup().completed(), "{fault}");
+        let (source, target) = fixture.last_paths();
+        let snapshot = fixture.cleanup_snapshot();
+        assert_eq!(
+            snapshot.get(&source).map(Vec::as_slice),
+            Some(b"copy bytes".as_slice()),
+            "{fault}"
+        );
+        assert_eq!(
+            snapshot.get(&target).map(Vec::as_slice),
+            Some(target_contents),
+            "{fault}"
+        );
     }
 }
 
 #[cfg(feature = "async")]
 #[test]
 fn test_async_basic_copy_facade_rejects_failed_and_overwritten_statistics() {
-    for (fault, cause) in [
+    for (fault, expected_stats) in [
         (
             "success_failed",
-            "provider reported structurally inconsistent copy statistics",
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                failed: 1,
+                ..CopyStats::default()
+            },
         ),
         (
             "success_overwritten",
-            "provider reported overwritten copy entries without an overwrite conflict policy",
+            CopyStats {
+                files: 1,
+                bytes: 10,
+                overwritten: 1,
+                ..CopyStats::default()
+            },
         ),
     ] {
         let fixture = AsyncNativeCopyFixture::new(false, false);
@@ -944,11 +1040,7 @@ fn test_async_basic_copy_facade_rejects_failed_and_overwritten_statistics() {
             matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Failed { .. }),
             "{fault}"
         );
-        assert!(
-            failure_chain_contains(&run.failures()[0], cause),
-            "{fault}: {}",
-            run.failures()[0].message()
-        );
+        assert_async_copy_failure(&run.failures()[0], ContractCheckId::CopyBasic, expected_stats);
         assert_eq!(fixture.native_calls(), 1, "{fault}");
         assert!(run.cleanup().completed(), "{fault}");
         let (source, target) = fixture.last_paths();
