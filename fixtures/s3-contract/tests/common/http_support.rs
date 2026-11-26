@@ -53,6 +53,34 @@ where
     G: FnOnce() + Send + 'static,
     D: Future<Output = ()> + Send + 'static,
 {
+    run_http_scenario_until_reporting(
+        phase,
+        server,
+        release_gate,
+        scenario,
+        deadline,
+        deadline_diagnostic,
+        |diagnostic| eprintln!("{diagnostic}"),
+    )
+    .await
+}
+
+/// Variant with a diagnostic sink for deterministic cleanup and dual-failure tests.
+pub async fn run_http_scenario_until_reporting<F, G, D, H>(
+    phase: &str,
+    server: JoinHandle<()>,
+    release_gate: G,
+    scenario: F,
+    deadline: D,
+    deadline_diagnostic: &'static str,
+    mut report: H,
+) -> Result<(), String>
+where
+    F: Future<Output = Result<(), String>> + Send + 'static,
+    G: FnOnce() + Send + 'static,
+    D: Future<Output = ()> + Send + 'static,
+    H: FnMut(String),
+{
     let mut server = Some(server);
     let mut scenario = tokio::spawn(scenario);
     let outcome = tokio::select! {
@@ -66,11 +94,14 @@ where
         Some(Ok(result)) => result,
         Some(Err(join_error)) if join_error.is_panic() => {
             let panic = join_error.into_panic();
-            if let Err(cleanup) = abort_and_reap(server.take().expect("server task")).await {
-                eprintln!("{phase}: server cleanup after scenario panic failed: {cleanup}");
+            match abort_and_reap(server.take().expect("server task")).await {
+                Ok(()) => report(format!("{phase}: server task reaped after scenario panic")),
+                Err(cleanup) => report(format!(
+                    "{phase}: server cleanup after scenario panic failed: {cleanup}"
+                )),
             }
             if let Some(error) = &release_error {
-                eprintln!("{phase}: release gate also panicked: {error}");
+                report(format!("{phase}: release gate also panicked: {error}"));
             }
             std::panic::resume_unwind(panic);
         }
@@ -108,40 +139,62 @@ where
     };
 
     match scenario_result {
-        Ok(()) if release_error.is_some() => {
-            let error = release_error.as_ref().expect("release error");
-            match abort_and_reap(server.take().expect("server task")).await {
-                Ok(()) => Err(format!(
-                    "{phase}: release gate panicked: {error}; server task reaped"
-                )),
-                Err(cleanup) => Err(format!(
-                    "{phase}: release gate panicked: {error}; server cleanup failed: {cleanup}"
-                )),
-            }
-        }
         Ok(()) => match timeout(SERVER_JOIN_TIMEOUT, server.as_mut().expect("server task")).await {
-            Ok(Ok(())) => Ok(()),
+            Ok(Ok(())) => release_error.map_or(Ok(()), |error| {
+                Err(format!(
+                    "{phase}: release gate panicked: {error}; server task joined"
+                ))
+            }),
             Ok(Err(join_error)) if join_error.is_panic() => {
-                std::panic::resume_unwind(join_error.into_panic());
+                let panic = join_error.into_panic();
+                let message = panic_message(&panic);
+                report(format!(
+                    "{phase}: server task panicked: {message}; server task terminated"
+                ));
+                if let Some(error) = &release_error {
+                    report(format!("{phase}: release gate also panicked: {error}"));
+                }
+                std::panic::resume_unwind(panic);
             }
-            Ok(Err(join_error)) => Err(format!("{phase}: server task failed: {join_error}")),
+            Ok(Err(join_error)) => {
+                let release = release_error
+                    .map(|error| format!("; release gate panicked: {error}"))
+                    .unwrap_or_default();
+                Err(format!(
+                    "{phase}: server task failed: {join_error}; server task terminated{release}"
+                ))
+            }
             Err(_) => {
                 let reap = abort_and_reap(server.take().expect("server task")).await;
-                Err(match reap {
-                    Ok(()) => format!(
-                        "{phase}: server join exceeded 5 second deadline; server task reaped"
-                    ),
-                    Err(error) => format!(
-                        "{phase}: server join exceeded 5 second deadline; server cleanup failed: {error}"
-                    ),
-                })
+                let terminal = match reap {
+                    Ok(()) => "server task reaped".to_owned(),
+                    Err(error) => format!("server cleanup failed: {error}"),
+                };
+                let release = release_error
+                    .map(|error| format!("; release gate panicked: {error}"))
+                    .unwrap_or_default();
+                Err(format!(
+                    "{phase}: server join exceeded 5 second deadline; {terminal}{release}"
+                ))
             }
         },
         Err(error) => {
             if let Some(server) = server.take() {
                 match abort_and_reap(server).await {
-                    Ok(()) => Err(format!("{error}; server task reaped")),
-                    Err(cleanup) => Err(format!("{error}; server cleanup failed: {cleanup}")),
+                    Ok(()) => {
+                        let release = release_error
+                            .map(|error| format!("; release gate panicked: {error}"))
+                            .unwrap_or_default();
+                        Err(format!("{error}; server task reaped{release}"))
+                    }
+                    Err(cleanup) => {
+                        let release = release_error
+                            .map(|error| format!("; release gate panicked: {error}"))
+                            .unwrap_or_default();
+                        Err(format!(
+                            "{error}; server cleanup failed: {cleanup}{release}"
+                        ))
+                    }
                 }
             } else {
                 Err(error)

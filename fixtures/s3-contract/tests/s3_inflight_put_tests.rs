@@ -281,3 +281,86 @@ async fn test_http_scenario_panic_preserves_cause_and_reaps_server() {
         "server must be reaped before panic resumes"
     );
 }
+
+#[tokio::test]
+async fn test_scenario_error_preserves_release_panic_and_server_reap() {
+    let server = tokio::spawn(async { std::future::pending::<()>().await });
+    let result = common::http_support::run_http_scenario(
+        "scenario and release faults",
+        server,
+        || panic!("release gate cause"),
+        async { Err("scenario primary cause".into()) },
+    )
+    .await;
+    let error = result.expect_err("scenario error remains a failure");
+    assert!(error.contains("scenario primary cause"), "{error}");
+    assert!(
+        error.contains("release gate panicked: release gate cause"),
+        "{error}"
+    );
+    assert!(error.contains("server task reaped"), "{error}");
+}
+
+#[tokio::test]
+async fn test_server_panic_preserves_release_panic_and_reports_terminal_state() {
+    use futures_util::FutureExt;
+    let diagnostics = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&diagnostics);
+    let server = tokio::spawn(async { panic!("server primary cause") });
+    let result =
+        std::panic::AssertUnwindSafe(common::http_support::run_http_scenario_until_reporting(
+            "server and release faults",
+            server,
+            || panic!("release secondary cause"),
+            async { Ok(()) },
+            std::future::pending::<()>(),
+            "controlled deadline",
+            move |diagnostic| recorded.lock().unwrap().push(diagnostic),
+        ))
+        .catch_unwind()
+        .await;
+    let panic = result.expect_err("server task panic must remain primary");
+    assert!(
+        panic
+            .downcast_ref::<String>()
+            .is_some_and(|message| message.contains("server primary cause"))
+            || panic
+                .downcast_ref::<&'static str>()
+                .is_some_and(|message| message.contains("server primary cause"))
+    );
+    let diagnostics = diagnostics.lock().unwrap().join("\n");
+    assert!(
+        diagnostics.contains("server primary cause"),
+        "{diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("release secondary cause"),
+        "{diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("server task terminated"),
+        "{diagnostics}"
+    );
+}
+
+#[tokio::test]
+async fn test_deadline_reports_release_panic_and_both_reap_outcomes() {
+    let server = tokio::spawn(async { std::future::pending::<()>().await });
+    let result = common::http_support::run_http_scenario_until(
+        "deadline and release faults",
+        server,
+        || panic!("deadline release cause"),
+        std::future::pending::<Result<(), String>>(),
+        async {},
+        "controlled deadline reached",
+    )
+    .await;
+    let error = result.expect_err("controlled deadline must fail");
+    assert!(error.contains("controlled deadline reached"), "{error}");
+    assert!(
+        error.contains("release gate panicked: deadline release cause"),
+        "{error}"
+    );
+    assert!(error.contains("scenario task reaped"), "{error}");
+    assert!(error.contains("server task reaped"), "{error}");
+}
