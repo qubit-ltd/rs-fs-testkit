@@ -57,6 +57,10 @@ semantics, and service-specific guarantees beyond the suite's observations.
 
 ### Fixture migration evidence
 
+Fixture support has three distinct results. `FixtureSupport::Unsupported` is the default for optional probes and means the fixture cannot supply independent evidence. A `FixtureError` means the fixture attempted setup or observation and failed; it remains a failure. When a required premise cannot be observed, such as initial target absence for `WriteBasic`, `CopyBasic`, or supported temporary publication, the check is `Unverified`. `NotApplicable` is reserved for a check the suite determines does not apply.
+
+Fixture ownership begins only after the suite has validated the request and independently confirmed the initial state. A path mapping, `Ready` response, or intention to probe does not transfer ownership of an existing target. The fixture retains responsibility for seeded resources and staging until independent evidence confirms the suite may register a created target. Cancellation probes must be disarmed before observation/registration proceeds; installing a disarm guard before observing prevents a probe from being stranded. Teardown remains responsible for all fixture-owned resources, including partially prepared resources.
+
 `CopyBasic` in both suites and async `CopyRepeatedExecute` require an
 independently observed absent target (`exists_out_of_band`) and independently
 verified source bytes (`read_file`). Missing observations are `Unverified`, an
@@ -98,8 +102,7 @@ independently prepares a reader, verifies that `n` bytes are accepted and
 reader reuse. For `Maximum(0)`, the accepted and post-rejection reads are empty
 requests; the one-byte request must still be rejected. Zero is a valid limit,
 but this check does not claim a non-empty read can succeed under it. Its seed
-and requests stay within a 64-byte probe budget. A finite maximum at or above
-that budget is `SkippedOptional` with a reason; `Unknown`, `Unbounded`, and
+and requests stay within a 64-byte probe budget. `Unknown`, `Unbounded`, and
 `NotApplicable` declarations produce
 `NotApplicable`. Missing seed support is `Unverified`; execution errors and
 incorrect bytes or errors fail. Without `Read`, all random-access checks are
@@ -168,7 +171,7 @@ failed. `run_check(id)` executes one catalog entry; `run_contract(phase)`
 executes that phase; `run_all()` executes all phases. Each suite is a single
 session and must be recreated for another run.
 
-Outcomes distinguish `Passed`, `RejectedAsExpected`, `NotApplicable`,
+`Passed` is positive behavior evidence; `RejectedAsExpected` proves only an expected-rejection claim. A required positive check must be `Passed`. A reasoned `NotApplicable` is accepted only when the suite determines it does not apply, and a reasoned `SkippedOptional` is accepted only when the caller has not required that ID. `Unverified`, `Failed`, missing evidence, and `NotRun` do not satisfy requirements. Outcomes distinguish `Passed`, `RejectedAsExpected`, `NotApplicable`,
 `Unverified`, `SkippedOptional`, `Failed`, and `NotRun`. Missing instrumentation
 is explicit. An optional check may be skipped only with a reason, while an
 executed optional check that fails still fails the run. Callers can require
@@ -249,7 +252,11 @@ and an unpublished S3-compatible fixture under `fixtures/s3-contract/`.
 The latter requires an explicit endpoint, an existing bucket, credentials,
 region, and a unique prefix. It creates and cleans only objects under a unique
 child of that configured prefix; it never creates a bucket or cleans an entire
-shared prefix. It must not be treated as evidence for an unconfigured service.
+shared prefix. The fixture locks `object_store` 0.14.2 and defaults to its
+`InMemory` adapter. Separate HTTP protocol tests include an unsatisfiable range
+that returns 416. Two explicit live-service tests are ignored by default; only
+running those against the configured service provides live-service evidence.
+This design describes the boundary and does not claim those ignored tests ran.
 
 Coverage thresholds apply to every source file without exemptions. Provider-
 dependent contract branches must be exercised by deterministic fixture profiles
@@ -292,6 +299,8 @@ cleans any retained recovery session, then independently confirms the target
 remains absent or unchanged. Missing observation support is unverified; errors
 or changed target state fail the check.
 
+The bounded `WriteLimit` probe budget is 64 KiB. `Maximum(65535)` can be tested at the limit and one byte over; `Maximum(65536)` or higher is `SkippedOptional` because its over-limit request exceeds the budget. Explicitly requiring `WriteLimit` rejects that optional skip. The synchronous and asynchronous suites use the same bound.
+
 This is whole-file facade evidence: with a finite write limit the suite submits
 one payload at the boundary and another one byte over it, checks the structured
 rejection, and observes that the target was not changed. It does not establish
@@ -324,11 +333,11 @@ the recovered writer; taking the source transfers that responsibility.
 
 ### Caller-owned asynchronous deadlines
 
-The runtime-neutral suite has no built-in deadline. Callers may wrap a
+The runtime-neutral suite has no built-in deadline. Dropping a timed run stops suite polling, but an already-issued provider or remote request may continue independently. Callers may wrap a
 manually managed `run_check` future in their runtime's timeout, then inspect
 `suite.run()` after the timed future is dropped and call `suite.finish()` under
 a separate cleanup budget. A run timeout remains a failed contract even when
-cleanup completes. If cleanup also times out, retained cleanup evidence does
+cleanup completes; a successful `finish()` retry does not clear interruption or reset the run. If cleanup also times out, retained cleanup evidence does
 not prove that asynchronous resources were reclaimed. Cooperative timeouts
 cannot preempt a blocking `poll`. The registration macro runner owns the whole
 fixture/suite wrapper; timing out that wrapper does not expose its retained run
@@ -348,6 +357,14 @@ Synchronous expected-write cleanup catches an abort panic at the provider
 boundary and retains both the original `WriteAllFailure` and panic payload for
 explicit caller recovery. This does not change the recorded failed run.
 
+Copy outcome matrix for the fixture-facing checks:
+
+| Check | Preparation unavailable | Case prepared but independent observation missing | Evidence required after setup |
+| --- | --- | --- | --- |
+| `CopyNativeNonEmpty` (`Native`) | `SkippedOptional` | `Unverified` | Native method, statistics, source preservation, target bytes |
+| `CopyServerSide` (`ServerSide`) | `Unverified` | `Unverified` | Server-side method and independent source/target state |
+| `CopyBasic` / `CopyRepeatedExecute` | `Unverified` when required seed hooks are unavailable | `Unverified` | Initially absent target and complete source bytes |
+
 The optional `CopyNativeNonEmpty` check supplies distinct evidence for native
 copy contents. It prepares an independently observable source of 1..=64 KiB,
 uses the returned `CopyOptions`, confirms the target is absent, and checks the
@@ -355,4 +372,4 @@ native method, statistics, source preservation, and target bytes. It does not
 clip the source by `max_write_bytes`, which limits a facade write session
 rather than a native copy request. Missing hook support is `SkippedOptional`;
 callers can require the ID explicitly. A fixture that returns a case owns setup
-and cleanup for both paths, and an empty source cannot satisfy this evidence.
+and cleanup for both paths, and an empty source cannot satisfy this evidence. For Native, unsupported preparation is `SkippedOptional`, while missing independent observation after returning a case is `Unverified`. For advertised ServerSide copy, missing preparation or required observation is `Unverified`. Fixtures may override `prepare_copy`; there is no dedicated Clone probe, so existence is observed through the shared hook.

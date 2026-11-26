@@ -15,6 +15,14 @@ use crate::ContractCheckOutcome;
 
 /// A report containing stable check identities and their outcomes.
 ///
+/// `Passed` is positive behavior evidence; `RejectedAsExpected` is evidence
+/// only for an expected-rejection claim. A reasoned `NotApplicable` satisfies
+/// a check the suite determines does not apply. A reasoned `SkippedOptional`
+/// satisfies the default policy only when the caller has not required that ID.
+/// `Unverified`, `Failed`, missing evidence, and `NotRun` never satisfy a
+/// requirement. Requiring a positive optional check therefore requires its
+/// outcome to be `Passed`.
+///
 /// This report describes check evidence only. It does not establish that the
 /// contract run completed, that its execution succeeded, or that cleanup
 /// succeeded. Use

@@ -43,6 +43,13 @@ pub type FixtureFuture<'a, T> = Pin<Box<dyn Future<Output = FixtureResult<T>> + 
 
 /// Supplies an isolated asynchronous facade and optional provider observations.
 ///
+/// The fixture owns resources it seeded and any pre-existing target. A mapped
+/// path, readiness result, or probe intent alone does not transfer cleanup
+/// ownership to the suite. The suite registers a new target only after request
+/// validation and independent initial-state evidence. Fixture teardown remains
+/// responsible for partially prepared resources. Cancellation probes must be
+/// disarmed safely before their associated resources are released.
+///
 /// # Examples
 ///
 /// ```
@@ -589,7 +596,11 @@ pub trait AsyncFileSystemFixture: Sync {
     /// # Returns
     ///
     /// A future resolving to `Supported(true/false)` when observable, or
-    /// `Unsupported` when independent observation is unavailable.
+    /// `Unsupported` when independent observation is unavailable. The default
+    /// returns `Unsupported`; checks that need to prove an initially absent
+    /// target record required evidence as `Unverified` without this hook. A
+    /// `FixtureError` reports a failed observation attempt and remains a
+    /// failure; it is not equivalent to `Unsupported`.
     ///
     /// # Errors
     ///

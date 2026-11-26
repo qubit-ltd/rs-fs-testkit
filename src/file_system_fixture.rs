@@ -19,6 +19,13 @@ use crate::FixtureSupport;
 
 /// Supplies an isolated facade and provider-specific contract observations.
 ///
+/// The fixture owns resources it seeded and any pre-existing target. A mapped
+/// path, readiness result, or probe intent alone does not transfer cleanup
+/// ownership to the suite. The suite registers a new target only after request
+/// validation and independent initial-state evidence. Fixture teardown remains
+/// responsible for partially prepared resources. Cancellation probes must be
+/// disarmed safely before their associated resources are released.
+///
 /// # Examples
 ///
 /// ```
@@ -471,7 +478,12 @@ pub trait FileSystemFixture {
     /// # Returns
     ///
     /// `Supported(true)` or `Supported(false)` when existence can be observed,
-    /// or `Unsupported` when no independent observation is available.
+    /// or `Unsupported` when no independent observation is available. The default
+    /// returns `Unsupported`; checks that need to prove an initially absent
+    /// target (including `WriteBasic`, `CopyBasic`, and supported temporary
+    /// publication) record required evidence as `Unverified` without this hook.
+    /// A `FixtureError` reports a failed observation attempt and remains a
+    /// failure; it is not equivalent to `Unsupported`.
     ///
     /// # Errors
     ///

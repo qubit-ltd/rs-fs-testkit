@@ -98,7 +98,7 @@ qubit_fs_testkit::register_file_system_contract_tests! {
     fixture: super::RootedFixture::new,
     required_checks: |phase| match phase {
         qubit_fs_testkit::FileSystemContract::Read => vec![
-            qubit_fs_testkit::ContractCheckId::RandomAccessIdentity,
+            qubit_fs_testkit::ContractCheckId::CopyNativeNonEmpty,
         ],
         _ => Vec::new(),
     },
@@ -129,6 +129,9 @@ assert!(run.cleanup().completed());
 ```
 
 The registration macro applies the same assertion policy for generated tests.
+
+The linked `RootedFixture` example implements the native-copy preparation and independent observation hooks, so its `CopyNativeNonEmpty` check is expected to be `Passed`. It does not provide the independent random-access identity probe; requiring `RandomAccessIdentity` would make that example fail. A positive check required by policy must have outcome `Passed`. `RejectedAsExpected` is valid evidence for a check whose claim is correct rejection, but it cannot satisfy a positive behavior requirement. A reasoned `NotApplicable` is acceptable only when the suite determines the check does not apply; `SkippedOptional` is accepted only when the caller has not required that check. `Unverified`, missing evidence, and `Failed` never satisfy a requirement.
+
 
 Both suites check properties, `stat`, read, write, list, directory creation,
 delete, copy, rename, append, recursive deletion, required-atomic
@@ -172,6 +175,14 @@ An optional skip makes `all_applicable_checks_verified()` false. A supported
 case that executes incorrectly fails the run. `CopyNativeNonEmpty` is a new
 public enum variant, so downstream exhaustive `ContractCheckId` matches must
 add a branch for it or provide a default arm.
+
+Copy outcome matrix for the fixture-facing checks:
+
+| Check | Preparation unavailable | Case prepared but independent observation missing | Evidence required after setup |
+| --- | --- | --- | --- |
+| `CopyNativeNonEmpty` (`Native`) | `SkippedOptional` | `Unverified` | Native method, statistics, source preservation, target bytes |
+| `CopyServerSide` (`ServerSide`) | `Unverified` | `Unverified` | Server-side method and independent source/target state |
+| `CopyBasic` / `CopyRepeatedExecute` | `Unverified` when required seed hooks are unavailable | `Unverified` | Initially absent target and complete source bytes |
 
 The `ServerSideCopy` contract check separately requires a fixture-prepared,
 independently seeded and observable non-empty source of 1..=64 KiB, plus an
@@ -431,6 +442,8 @@ properties include `Read`. Without it, the checks are recorded as
 `NotApplicable` before random-access declaration or preparation hooks run.
 `ReadBasic` still checks the facade's structured rejection for missing `Read`.
 
+The default `exists_out_of_band` hook returns `FixtureSupport::Unsupported`; the async default does the same. This is an availability answer, not a successful observation and not an operation failure. Implement independent existence observation for `WriteBasic`, `CopyBasic`, and supported temporary publication paths: without it the suite cannot prove a new target was absent, so required evidence is `Unverified`. `FixtureError` means the fixture attempted the hook and setup/observation failed; that error is retained as a failure rather than converted to unsupported. Hooks that only support a capability-specific scenario may remain unsupported when that scenario is optional.
+
 The random-access evidence is split by claim. `RandomAccessBounds`
 (`read/random-access-bounds`) checks an empty buffer, a read at EOF, clipping to
 the reader's open-time length, overflow rejection, and successful reuse of the
@@ -512,6 +525,8 @@ source preservation and publication claims during recovery. Missing optional
 probes are reported explicitly. Use `run.assert_satisfied_with(&[check_id])`
 to require selected probes; an executed probe failure always fails the run.
 
+Copy fixture outcomes depend on what is missing. For `Native` copy, an unsupported preparation hook is `SkippedOptional`; once a case is returned, missing independent source or target observation is `Unverified`. For `ServerSide`, absent preparation or required independent observation is `Unverified`, because the contract applies to an advertised capability. `prepare_copy` may be overridden when the default seed/read composition cannot prepare the scenario. There is no dedicated `Clone` probe: the shared existence hook supplies that observation.
+
 For a second, remote-provider signal, the repository has a separate unpublished
 validation crate at `fixtures/s3-contract/`. It uses an S3-compatible endpoint
 and the same public testkit to exercise real range reads, create-only writes,
@@ -521,8 +536,7 @@ never create a bucket or clean an entire shared prefix. It is intentionally outs
 published provider dependency graph. A successful local testkit run does not
 constitute remote-backend evidence: any claim about S3 compatibility must cite
 that crate's environment, backend version, lockfile, and recorded run output.
-This guide records the validation boundary only and does not claim that the
-remote suite has been run.
+The fixture locks `object_store` 0.14.2. Its default adapter is `InMemory`; HTTP tests are separate local protocol checks, including a 416 response for an unsatisfiable range. Two tests that contact a real S3-compatible service are ignored by default and require the configured endpoint, existing bucket, credentials, and isolated prefix. The source tree does not provide evidence that those live tests have run.
 
 The temporary-directory overwrite case starts with an independently seeded
 empty destination and checks the published replacement contents. It does not
@@ -667,6 +681,8 @@ success is not evidence about the rejected write. Missing optional write
 cancellation probes are explicit skips; executed probe failures remain failures.
 Existing check IDs remain unchanged; range checks include zero and EOF windows
 when capability permits.
+
+`WriteLimit` uses a 64 KiB maximum probe budget. A declared `Maximum(65535)` can be tested using requests at the boundary and one byte over. At `Maximum(65536)` or above, the suite does not allocate or send a larger boundary probe and records `SkippedOptional` with its reason. If the caller explicitly requires `WriteLimit`, that skip fails the assertion. The rule is the same in the synchronous and asynchronous suites.
 
 With a finite `max_write_bytes`, `WriteLimit` checks whole-file requests at the
 declared boundary and one byte above it. It validates the structured

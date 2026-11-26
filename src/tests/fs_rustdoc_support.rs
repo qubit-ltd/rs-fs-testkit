@@ -236,8 +236,11 @@ pub mod rustdoc_provider {
 }
 
 #[cfg(feature = "async")]
-#[cfg(feature = "async")]
+#[path = "fs_rustdoc_support/async_recording_spi.rs"]
 pub mod async_recording_spi;
+#[cfg(feature = "async")]
+#[path = "fs_rustdoc_support/poll_support.rs"]
+pub mod poll_support;
 
 /// Creates the shared asynchronous facade used by Rustdoc examples.
 #[cfg(feature = "async")]

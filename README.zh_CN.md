@@ -60,7 +60,8 @@ qubit-fs-testkit = { version = "0.9.3", path = "../rs-fs-testkit" }
 cargo run --manifest-path ../rs-fs-local/Cargo.toml --example fs_testkit_contract
 ```
 
-示例中的 fixture 类型为 `RootedFixture`。新建的 suite 会在首个阶段检查 provider 的
+示例中的 fixture 类型为 `RootedFixture`。它能独立准备并观察 native copy，因此 `CopyNativeNonEmpty` 应得到
+`Passed`；但它没有提供 `RandomAccessIdentity` 所需的独立观察。新建的 suite 会在首个阶段检查 provider 的
 `FileSystemProperties`；另一次运行要使用新的 fixture 和 suite：
 
 ```rust,ignore
@@ -89,10 +90,10 @@ qubit-fs = { path = "../rs-fs" }
 qubit-fs-testkit = { version = "0.9.3", path = "../rs-fs-testkit", features = ["async"] }
 ```
 
-套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝。
-不适用的检查和缺失的可选探针会在报告中明确记录。
+套件按已声明 capability 运行：检查受支持操作的行为和不可用操作的结构化拒绝。正向行为要求必须有
+`Passed` 证据；`RejectedAsExpected` 只证明拒绝符合预期。不适用的检查和缺失的可选探针会在报告中明确记录。
 
-默认断言只在报告记录了非空 `SkippedOptional` 原因时接受缺失的可选取消探针。
+默认断言只在报告记录了非空 `SkippedOptional` 原因时接受缺失的可选探针。
 这表示本次运行的必需检查已通过，但在所有适用的可选探针都有证据前，
 `run.all_applicable_checks_verified()` 仍为 false。若某个可选探针是发布要求，
 请使用 `run.assert_satisfied_with(&[check_id])`；已经执行的探针失败仍会使运行失败。

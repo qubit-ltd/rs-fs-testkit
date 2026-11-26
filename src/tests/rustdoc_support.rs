@@ -7,10 +7,17 @@
 // =============================================================================
 // Deterministic fixtures used only by executable Rustdoc examples.
 
+#[path = "fs_rustdoc_support.rs"]
+pub mod fs_rustdoc_support;
+
+#[cfg(feature = "async")]
+#[allow(unused_imports)]
+pub use fs_rustdoc_support::poll_support;
+pub use fs_rustdoc_support::rustdoc_provider;
+
 use qubit_fs::FileSystem;
 use qubit_fs::path::Path;
 
-use super::fs_rustdoc_support::rustdoc_provider;
 use crate::qubit_fs_testkit::FileSystemFixture;
 use crate::qubit_fs_testkit::FixtureError;
 use crate::qubit_fs_testkit::FixtureResult;
@@ -50,7 +57,7 @@ mod asynchronous {
     use qubit_fs::AsyncFileSystem;
     use qubit_fs::path::Path;
 
-    use super::super::fs_rustdoc_support::async_filesystem;
+    use super::fs_rustdoc_support::async_filesystem;
     use crate::qubit_fs_testkit::AsyncFileSystemFixture;
     use crate::qubit_fs_testkit::FixtureError;
     use crate::qubit_fs_testkit::FixtureFuture;

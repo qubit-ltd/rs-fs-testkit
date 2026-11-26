@@ -352,7 +352,6 @@ Limit contract 至少覆盖：
 `ResourceLimitExceeded`，再确认 reader 仍可用。`Maximum(0)` 时，允许的请求和拒绝后的复查都是空读取，
 单字节请求仍须被拒绝。零是合法上限，但这项检查不声称它允许成功读取非空内容。
 种子与请求均受 64 字节探针预算约束。
-有限上限达到该预算时，因不执行更大的探针而记录带原因的 `SkippedOptional`；
 `Unknown`、`Unbounded` 和 `NotApplicable` 则因不存在有限上限而记录 `NotApplicable`。
 缺少 seed hook 是 `Unverified`；执行错误或字节、错误结果不符均为失败。缺少 `Read` 时，所有随机读取
 检查会在调用能力声明或准备 hook 前记为 `NotApplicable`；`ReadBasic` 仍独立核实门面对缺少能力的结构化拒绝。
@@ -539,9 +538,9 @@ testkit 的可控 future 和故障模型自验证 `AsyncCopyOperation`：
 
 ### 调用方控制异步 deadline
 
-runtime-neutral suite 不内置 deadline。调用方可用所用 runtime 的 timeout 包裹手动管理的
+runtime-neutral suite 不内置 deadline。drop 超时运行会停止 suite 继续 poll，但已发出的 provider 或远程请求可能独立继续。调用方可用所用 runtime 的 timeout 包裹手动管理的
 `run_check` future；计时 future 被 drop 后，可检查 `suite.run()` 保留的运行证据，并使用独立的
-cleanup budget 调用 `suite.finish()`。即使清理完成，run timeout 仍表示 contract 失败。若清理也超时，
+cleanup budget 调用 `suite.finish()`。即使清理完成，run timeout 仍表示 contract 失败；`finish()` 重试成功也不会清除中断状态或重置本次运行。若清理也超时，
 保留的 cleanup evidence 不证明异步资源已经回收。协作式 timeout 无法抢占阻塞的 `poll`。
 注册宏 runner 拥有整个 fixture/suite wrapper；超时丢弃 wrapper 后，调用方无法取回 retained run
 进行检查或重试 `finish()`。
@@ -600,7 +599,9 @@ object key 子集必须在请求前拒绝，并在验证记录中明确限制范
 
 本设计只定义验证入口和证据要求，不把本地 testkit 或编译成功当作远程后端已验证。只有在独立
 工程实际运行后，连同后端版本、依赖 lockfile、配置变量（不含 secret）和可追踪的成功/冲突/取消/
-清理结果一并记录，才可以得出远程 provider 结论。
+清理结果一并记录，才可以得出远程 provider 结论。fixture 锁定 `object_store` 0.14.2，默认使用
+`InMemory` adapter；独立 HTTP 协议测试包含不可满足 range 返回 416 的用例。两项连接真实服务的测试
+默认 ignored，只有实际对配置好的服务运行后才能作为 live-service 证据。本设计不声称这些测试已经运行。
 
 ## 14. 模块组织
 
@@ -667,6 +668,8 @@ request；这只验证调用方侧的消费预算，不代表 provider 或服务
 fixture 准备 `CreateOrReplace` 时还会记录既有内容。清理保留的 recovery session 后，
 套件再次独立确认目标仍缺失或保持原状。观测能力缺失记为未验证；观测错误或目标变化会使检查失败。
 
+`WriteLimit` 的探针预算为 64 KiB。`Maximum(65535)` 可以测试边界值和超出一字节的请求；`Maximum(65536)` 或更高时，超限请求会超过预算，因此记为 `SkippedOptional`。显式要求 `WriteLimit` 时，可选跳过不满足策略。同步与异步套件使用相同上限。
+
 这是整文件门面证据：对于有限写入上限，套件分别提交恰好位于边界及超出一个字节的单个 payload，
 检查结构化拒绝，并独立观察目标未改变。它不能证明同一个打开流上的多次写入累计限制。同步核心回归
 [`test_open_writer_rejects_cumulative_bytes_over_finite_write_limit`](https://github.com/qubit-ltd/rs-fs/blob/ed022d4f20ad6299d3a28346966244a5866ec248/tests/writer/write_all_failure_tests.rs)
@@ -703,4 +706,4 @@ typed recovery source。同步的 expected-write cleanup 会在 provider abort �
 使用 hook 返回的 `CopyOptions`，确认目标初始不存在，并核对 Native 方法、统计、源保持不变及目标
 字节。它不会按 `max_write_bytes` 裁剪源；该上限约束门面写入会话，不约束 native copy 请求。
 缺少 hook 支持记为 `SkippedOptional`，调用方可显式要求该 ID。fixture 一旦返回 case，就须负责
-源与目标的准备及清理；空源不能作为这项证据。
+源与目标的准备及清理；空源不能作为这项证据。Native 准备不支持时为 `SkippedOptional`，返回 case 后缺少独立观察则为 `Unverified`。已声明的 ServerSide copy 缺少准备或必要观察也为 `Unverified`。fixture 可覆盖 `prepare_copy`；当前没有专门的 Clone 探针，存在性通过共享 hook 观察。

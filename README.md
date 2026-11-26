@@ -65,8 +65,10 @@ example; a provider contract violation makes that assertion fail:
 cargo run --manifest-path ../rs-fs-local/Cargo.toml --example fs_testkit_contract
 ```
 
-The example's fixture type is `RootedFixture`. A fresh suite checks the
-provider's `FileSystemProperties` in its first phase; use a separate fixture
+The example's fixture type is `RootedFixture`. The linked `RootedFixture` independently prepares and observes native copy, so its
+`CopyNativeNonEmpty` check is expected to be `Passed`. It does not provide the
+`RandomAccessIdentity` observation required by some providers. A fresh suite checks
+the provider's `FileSystemProperties` in its first phase; use a separate fixture
 and suite for another run:
 
 ```rust,ignore
@@ -97,11 +99,12 @@ qubit-fs-testkit = { version = "0.9.3", path = "../rs-fs-testkit", features = ["
 ```
 
 The suite follows advertised capabilities. It checks supported behavior and
-structured rejection of unavailable operations. Inapplicable checks and missing
-optional instrumentation remain explicit in the report.
+structured rejection of unavailable operations. A positive behavior requirement
+needs `Passed` evidence; `RejectedAsExpected` proves a rejection claim only.
+Inapplicable checks and missing optional instrumentation remain explicit in the report.
 
-The default assertion accepts a missing optional cancellation probe only when
-the report records a non-empty `SkippedOptional` reason. This means the run's
+The default assertion accepts a missing optional probe only when the report records
+a non-empty `SkippedOptional` reason. This means the run's
 required checks passed, while `run.all_applicable_checks_verified()` remains
 false until every applicable optional probe has evidence. Use
 `run.assert_satisfied_with(&[check_id])` when a particular optional probe is a

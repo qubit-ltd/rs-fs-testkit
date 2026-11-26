@@ -14,6 +14,7 @@ use std::task::Context;
 use std::task::Waker;
 
 /// Polls a future that is expected to complete without scheduling work.
+#[allow(dead_code)]
 pub fn ready<F>(future: F) -> F::Output
 where
     F: Future,

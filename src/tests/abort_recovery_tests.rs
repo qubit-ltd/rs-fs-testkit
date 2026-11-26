@@ -22,9 +22,9 @@ use qubit_fs::write::AsyncFileWriter;
 use qubit_fs::write::WriteAbortOutcome;
 use qubit_fs::write::WriterState;
 
-use super::fs_rustdoc_support::async_recording_spi::AsyncCopyStage;
-use super::fs_rustdoc_support::async_recording_spi::AsyncRecordingConfig;
-use super::fs_rustdoc_support::async_recording_spi::async_recording_file_system;
+use super::rustdoc_support::fs_rustdoc_support::async_recording_spi::AsyncCopyStage;
+use super::rustdoc_support::fs_rustdoc_support::async_recording_spi::AsyncRecordingConfig;
+use super::rustdoc_support::fs_rustdoc_support::async_recording_spi::async_recording_file_system;
 use crate::AsyncFileSystemContractSuite;
 use crate::AsyncFileSystemFixture;
 use crate::ContractCheckId;

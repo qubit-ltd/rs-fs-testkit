@@ -26,8 +26,8 @@
 //!     module: provider_contracts,
 //!     fixture: super::RootedFixture::new,
 //!     required_checks: |phase| match phase {
-//!         qubit_fs_testkit::FileSystemContract::Read => vec![
-//!             qubit_fs_testkit::ContractCheckId::RandomAccessIdentity,
+//!         qubit_fs_testkit::FileSystemContract::Copy => vec![
+//!             qubit_fs_testkit::ContractCheckId::CopyNativeNonEmpty,
 //!         ],
 //!         _ => Vec::new(),
 //!     },

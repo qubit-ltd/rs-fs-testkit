@@ -157,8 +157,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
     /// Executes all phases once and retains evidence across cancellation.
     ///
-    /// Dropping this future stops I/O and preserves the suite's cleanup ledger.
-    /// Call `finish` to retry cleanup before dropping the fixture owner.
+    /// Dropping this future stops suite polling and preserves the cleanup ledger;
+    /// an already-issued provider or remote request may continue independently.
+    /// Call `finish` under a separate cleanup budget to retry teardown. A retry
+    /// can complete cleanup but does not erase the original interruption or
+    /// make the run successful. Keep the fixture owner alive until cleanup is
+    /// confirmed.
     /// A run requested after cleanup has started returns a lifecycle failure;
     /// create a fresh fixture and suite for another run.
     ///

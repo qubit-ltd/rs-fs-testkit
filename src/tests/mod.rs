@@ -16,7 +16,6 @@ mod contract_report_tests;
 mod contract_source_tests;
 mod contract_temp_failure_tests;
 mod contract_writer_failure_tests;
-mod fs_rustdoc_support;
 mod internal;
-mod rustdoc_support;
+pub mod rustdoc_support;
 mod suite_unit_build_coverage_tests;

@@ -83,7 +83,7 @@ qubit_fs_testkit::register_file_system_contract_tests! {
     fixture: super::RootedFixture::new,
     required_checks: |phase| match phase {
         qubit_fs_testkit::FileSystemContract::Read => vec![
-            qubit_fs_testkit::ContractCheckId::RandomAccessIdentity,
+            qubit_fs_testkit::ContractCheckId::CopyNativeNonEmpty,
         ],
         _ => Vec::new(),
     },
@@ -109,6 +109,9 @@ assert!(run.cleanup().completed());
 ```
 
 注册宏生成的测试也使用相同的断言策略。
+
+链接中的 `RootedFixture` 实现了 native copy 的准备和独立观察 hooks，因此 `CopyNativeNonEmpty` 应得到 `Passed`。它没有提供随机读取 identity 的独立探针；若要求 `RandomAccessIdentity`，该示例就会失败。策略要求某项正向行为时，结果必须是 `Passed`。`RejectedAsExpected` 适用于“应当拒绝”的检查，不能代替正向行为证据。只有套件确认检查不适用时，带原因的 `NotApplicable` 才可接受；未被调用方要求的可选检查可带原因跳过。`Unverified`、缺失证据和 `Failed` 均不满足要求。
+
 
 同步与异步套件都会依次检查 properties、`stat`、read、write、list、创建目录、delete、copy、
 rename、追加写、递归删除、必需原子 rename/replace、必需持久 copy、包括原子持久化在内的临时
@@ -141,6 +144,14 @@ required_checks: |phase| match phase {
 可选跳过会使 `all_applicable_checks_verified()` 返回 false；fixture 已提供场景后若执行不符，
 运行会失败。`CopyNativeNonEmpty` 是新增的公开枚举变体，下游对 `ContractCheckId` 的穷尽 match
 需要新增该分支，或提供默认分支。
+
+fixture 相关复制检查的结果对照：
+
+| 检查 | 无法准备场景 | 已准备但缺少独立观察 | 准备后必须提供的证据 |
+| --- | --- | --- | --- |
+| `CopyNativeNonEmpty`（`Native`） | `SkippedOptional` | `Unverified` | Native 方法、统计、源保持不变和目标字节 |
+| `CopyServerSide`（`ServerSide`） | `Unverified` | `Unverified` | Server-side 方法以及 source/target 独立状态 |
+| `CopyBasic` / `CopyRepeatedExecute` | 必需 seed hook 不支持时为 `Unverified` | `Unverified` | 目标初始不存在、source 完整字节 |
 
 `ServerSideCopy` 的正向检查 `ContractCheckId::CopyServerSide` 要求 fixture 独立预置并能独立读取
 大小为 `1..=64 KiB` 的非空源文件，同时确认目标初始不存在。若缺少准备或独立观察能力，结果为
@@ -339,6 +350,8 @@ setup 返回错误仍然是失败。
 随机读取检查仅在捕获的文件系统属性包含 `Read` 时适用。缺少该能力时，检查会在调用随机读取声明或
 准备 hook 前记为 `NotApplicable`。`ReadBasic` 仍会验证门面针对缺少 `Read` 返回结构化拒绝。
 
+同步和异步的 `exists_out_of_band` 默认都返回 `FixtureSupport::Unsupported`。这表示 fixture 无法独立观察，不代表观察成功，也不表示操作本身失败。`WriteBasic`、`CopyBasic` 和受支持的临时资源发布需要独立确认目标初态；缺少该能力时，套件无法证明目标原本不存在，结果会是 `Unverified`。若 hook 已执行但返回 `FixtureError`，则作为失败保留，不会伪装成“不支持”。只服务于可选场景的 hook 可以在该场景不需要时保持不支持。
+
 随机读取证据按验证目标拆分。`RandomAccessBounds`
 （`read/random-access-bounds`）检查空缓冲、EOF 读取、按 reader 打开时长度裁剪、溢出拒绝，
 以及同一 reader 在该错误后能否继续读取，前提是声明上限允许执行非空边界探针。
@@ -392,13 +405,15 @@ disarm，因为 hook 可能在失败前已改变 gate 状态。运行结果保�
 独立观察验证源内容保持及恢复过程中的发布声明。缺失的可选探针会明确记录，可通过
 `run.assert_satisfied_with(&[check_id])` 强制要求指定探针；已执行的探针失败始终使运行失败。
 
+copy fixture 的结果取决于缺失内容。`Native` copy 的准备 hook 不支持时记为 `SkippedOptional`；hook 已返回用例后，如果无法独立观察 source 或 target，则记为 `Unverified`。对已声明的 `ServerSide` 能力，缺少准备或必要的独立观察也会记为 `Unverified`。默认 `prepare_copy` 无法构造场景时可自行覆盖。当前没有专门的 `Clone` 探针，相关观察由共享的 exists hook 提供。
+
 仓库还提供一个独立且不可发布的真实远程后端验证 crate：`fixtures/s3-contract/`。它使用
 S3 兼容 endpoint 和同一套公共 testkit，验证真实 range read、create-only write、冲突、取消
 以及清理，并且不进入已发布 provider 的依赖图。bucket 必须事先存在；测试只在显式配置 prefix
 的唯一子路径下创建并清理对象，不会创建 bucket，也不会清理整个共享 prefix。一次本地 testkit
 通过不能作为远程后端证据；
 任何关于 S3 兼容性的结论都必须同时记录该 crate 的环境、后端版本、lockfile 和运行输出。
-本手册只说明验证边界，不声称远程套件已经运行。
+fixture 锁定 `object_store` 0.14.2，默认 adapter 是 `InMemory`；HTTP 测试是单独的本地协议检查，其中包括不可满足 range 时返回 416。两项连接真实 S3 兼容服务的测试默认 ignored，需要 endpoint、已存在的 bucket、凭据和隔离 prefix。源码本身不能证明这些 live 测试已经运行。
 
 ## 异步运行与清理的独立超时
 
@@ -510,6 +525,8 @@ writer／临时资源打开的负面检查遇到 provider 契约违例时，会�
 不能用 teardown 成功推断拒绝写入没有副作用。
 缺少的可选写取消探针会明确记录为跳过；已执行探针失败仍然失败。既有检查 ID 不变，
 范围能力允许时，读取契约增加零长度和 EOF 窗口验证。
+
+`WriteLimit` 的探针预算为 64 KiB。`Maximum(65535)` 可以执行边界及超出一字节的请求；达到 `Maximum(65536)` 或更高时，套件不会分配或发送更大的边界探针，而是记录带原因的 `SkippedOptional`。如果调用方显式要求 `WriteLimit`，该跳过会导致断言失败。同步与异步套件遵循同一规则。
 
 当 `max_write_bytes` 为有限值时，`WriteLimit` 检查整文件请求在声明边界上的写入，
 以及超出一个字节的请求。它验证结构化的 `ResourceLimitExceeded` 拒绝，并独立确认
