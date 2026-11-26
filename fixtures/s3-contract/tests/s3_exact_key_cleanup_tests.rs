@@ -21,7 +21,10 @@ use object_store::memory::InMemory;
 use object_store::path::Path;
 
 async fn put(store: &dyn ObjectStore, key: &Path) {
-    store.put(key, Bytes::from_static(b"owned").into()).await.unwrap();
+    store
+        .put(key, Bytes::from_static(b"owned").into())
+        .await
+        .unwrap();
 }
 
 async fn exists(store: &dyn ObjectStore, key: &Path) -> bool {
@@ -38,7 +41,8 @@ async fn test_successful_verification_cleans_owned_keys_and_keeps_sentinel() {
     }
 
     let (outcome, errors) =
-        common::exact_key_cleanup::run_with_exact_key_cleanup(&store, &owned, async { Ok(()) }).await;
+        common::exact_key_cleanup::run_with_exact_key_cleanup(&store, &owned, async { Ok(()) })
+            .await;
     assert!(outcome.is_ok_and(|result| result.is_ok()));
     assert!(errors.is_empty());
     for key in &owned {
@@ -106,7 +110,8 @@ async fn test_verification_error_and_not_found_still_clean_all_exact_keys() {
     .expect_err("verification error must remain a failure");
     let message = panic.downcast_ref::<String>().unwrap();
     assert!(message.contains("verification marker"));
-    assert!(message.contains("cleanup error count: 1"));
+    assert!(message.contains("owned/fail-delete"));
+    assert!(message.contains("injected delete failure"));
 }
 
 #[tokio::test]
@@ -187,6 +192,36 @@ async fn test_successful_verification_with_cleanup_failure_fails() {
         panic
             .downcast_ref::<String>()
             .unwrap()
-            .contains("cleanup failed for 1 owned keys")
+            .contains("owned/fail-delete")
     );
+}
+
+#[tokio::test]
+async fn test_delete_panic_is_reported_and_later_keys_are_still_cleaned() {
+    let base = Arc::new(InMemory::new());
+    let panic_key = Path::from("owned/panics");
+    let later_key = Path::from("owned/later");
+    put(base.as_ref(), &panic_key).await;
+    put(base.as_ref(), &later_key).await;
+    let base_for_delete = Arc::clone(&base);
+    let (outcome, errors) = common::exact_key_cleanup::run_with_exact_key_cleanup_using(
+        &[panic_key.clone(), later_key.clone()],
+        async { Ok(()) },
+        move |key| {
+            let base = Arc::clone(&base_for_delete);
+            async move {
+                if key == Path::from("owned/panics") {
+                    panic!("injected delete panic");
+                }
+                base.delete(&key).await
+            }
+        },
+    )
+    .await;
+    assert!(outcome.is_ok_and(|result| result.is_ok()));
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("owned/panics"));
+    assert!(errors[0].contains("injected delete panic"));
+    assert!(exists(base.as_ref(), &panic_key).await);
+    assert!(!exists(base.as_ref(), &later_key).await);
 }

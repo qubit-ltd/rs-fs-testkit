@@ -46,6 +46,8 @@ pub struct S3Reader {
     chunk: Bytes,
     /// The next unread byte within `chunk`.
     offset: usize,
+    /// Whether the payload stream has returned EOF.
+    eof: bool,
 }
 
 impl S3Reader {
@@ -138,7 +140,8 @@ impl S3Reader {
             .with_len(Some(result.meta.size))
             .with_etag(result.meta.e_tag.clone().map(Into::into));
         Self {
-            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path).with_metadata(metadata),
+            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path)
+                .with_metadata(metadata),
             stream: if empty {
                 Box::pin(empty_stream())
             } else {
@@ -146,6 +149,7 @@ impl S3Reader {
             },
             chunk: Bytes::new(),
             offset: 0,
+            eof: empty,
         }
     }
 
@@ -195,6 +199,9 @@ impl AsyncInput for S3Reader {
         if count == 0 {
             return Poll::Ready(Ok(0));
         }
+        if self.eof {
+            return Poll::Ready(Ok(0));
+        }
         loop {
             if self.offset < self.chunk.len() {
                 let n = count.min(self.chunk.len() - self.offset);
@@ -204,13 +211,18 @@ impl AsyncInput for S3Reader {
             }
             match self.stream.as_mut().poll_next(cx) {
                 Poll::Pending => return Poll::Pending,
-                Poll::Ready(None) => return Poll::Ready(Ok(0)),
+                Poll::Ready(None) => {
+                    self.eof = true;
+                    return Poll::Ready(Ok(0));
+                }
                 Poll::Ready(Some(Ok(bytes))) => {
                     self.chunk = bytes;
                     self.offset = 0;
                 }
                 Poll::Ready(Some(Err(error))) => {
-                    return Poll::Ready(Err(error_mapper::map(error, FsOperation::Read).into_io_error()));
+                    return Poll::Ready(Err(
+                        error_mapper::map(error, FsOperation::Read).into_io_error()
+                    ));
                 }
             }
         }
@@ -219,10 +231,11 @@ impl AsyncInput for S3Reader {
 
 /// Recognizes only the SDK's range failure, never arbitrary transport errors.
 ///
-/// object_store 0.14.1 hides the name of its InvalidGetRange and RetryError
+/// object_store 0.14.2 hides the name of its InvalidGetRange and RetryError
 /// types. Infer the former from GetRange and compare its exact variant through
 /// the source chain. For HTTP, the pinned SDK's status source exposes 416 only
-/// through Display. This narrow fixture boundary must be rechecked on upgrades.
+/// through Display. The fixture's HTTP 416 regression covers this exact locked
+/// SDK behavior; recheck the boundary when upgrading.
 ///
 /// # Parameters
 ///
@@ -278,8 +291,12 @@ fn same_error_variant<T: std::error::Error + 'static>(
 #[cfg(test)]
 mod tests {
     use std::error::Error;
+    use std::pin::Pin;
+    use std::task::Context;
+    use std::task::Poll;
 
     use bytes::Bytes;
+    use futures_util::Stream;
     use futures_util::stream::iter;
     use object_store::Error as ObjectStoreError;
     use qubit_fs::FsError;
@@ -307,6 +324,7 @@ mod tests {
             stream: Box::pin(iter([Err(error)])),
             chunk: Bytes::new(),
             offset: 0,
+            eof: false,
         };
         let mut output = [0; 1];
         let error = reader.read_async(&mut output).await.unwrap_err();
@@ -320,5 +338,36 @@ mod tests {
         }
         assert!(found_sdk);
         assert_eq!(cause.to_string(), "SDK source");
+    }
+
+    struct PanicsAfterEof(bool);
+
+    impl Stream for PanicsAfterEof {
+        type Item = Result<Bytes, ObjectStoreError>;
+
+        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            if self.0 {
+                panic!("payload stream polled after EOF");
+            }
+            self.0 = true;
+            Poll::Ready(None)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_payload_eof_is_fused_for_repeated_nonempty_reads() {
+        let mut reader = S3Reader {
+            info: OpenedFileInfo::new(
+                FileSystemId::new("s3-contract").unwrap(),
+                Path::parse_literal("key").unwrap(),
+            ),
+            stream: Box::pin(PanicsAfterEof(false)),
+            chunk: Bytes::new(),
+            offset: 0,
+            eof: false,
+        };
+        let mut output = [0; 2];
+        assert_eq!(reader.read_async(&mut output).await.unwrap(), 0);
+        assert_eq!(reader.read_async(&mut output).await.unwrap(), 0);
     }
 }

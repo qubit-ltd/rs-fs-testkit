@@ -68,6 +68,18 @@ impl TestControl {
         self.0.aborts.load(Ordering::SeqCst)
     }
 
+    /// Returns exact SDK keys confirmed by successful adapter PUT responses.
+    #[must_use]
+    pub fn created_keys(&self) -> Vec<String> {
+        self.0
+            .created_keys
+            .lock()
+            .expect("created key ledger")
+            .iter()
+            .cloned()
+            .collect()
+    }
+
     /// Acknowledges arrival at the armed stage without advancing the operation.
     ///
     /// # Parameters
@@ -96,7 +108,10 @@ impl TestControl {
     /// * `stage` — operation boundary at which the adapter should pause.
     pub fn arm(&self, stage: TestStage) {
         let mut gate = self.0.gate.lock().expect("test gate lock");
-        assert!(gate.stage.is_none(), "release the previous test gate before rearming");
+        assert!(
+            gate.stage.is_none(),
+            "release the previous test gate before rearming"
+        );
         self.0.accepted.store(0, Ordering::SeqCst);
         gate.stage = Some(stage);
         gate.reached = false;
@@ -166,6 +181,15 @@ impl TestControl {
     /// Records dispatch immediately before the SDK PUT future is first polled.
     pub(crate) fn record_put(&self) {
         self.0.puts.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Records a key only after the SDK confirms the PUT result.
+    pub(crate) fn record_created(&self, key: String) {
+        self.0
+            .created_keys
+            .lock()
+            .expect("created key ledger")
+            .insert(key);
     }
 
     /// Records one abort attempt and consumes a configured one-shot failure.

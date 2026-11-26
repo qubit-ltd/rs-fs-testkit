@@ -8,15 +8,15 @@
 
 //! Opt-in real-service I/O evidence with cleanup limited to this run's keys.
 
+use std::collections::HashSet;
 use std::io;
-use std::panic;
 use std::process;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 use bytes::Bytes;
-use futures_util::FutureExt;
 use object_store::ObjectStore;
 use object_store::ObjectStoreExt;
 use object_store::PutMode;
@@ -39,7 +39,10 @@ use qubit_fs_testkit::AsyncFileSystemFixture;
 #[ignore = "requires an explicitly configured, isolated S3-compatible test service"]
 async fn test_s3_contract_requires_explicit_environment() {
     let mut config = S3ContractConfig::from_env().expect("explicit S3 configuration required");
-    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     config.prefix = format!("{}/io-{}-{nonce}", config.prefix, process::id());
     let store: Arc<dyn ObjectStore> = Arc::new(
         AmazonS3Builder::new()
@@ -58,14 +61,20 @@ async fn test_s3_contract_requires_explicit_environment() {
     );
     let filesystem = open_with_store(config.clone(), Arc::clone(&store)).unwrap();
     let names = ["folder", "folder/a", "folderish"];
-    let owned = names
+    let candidates = names
         .iter()
         .map(|name| ObjectStorePath::parse(format!("{}/{name}", config.prefix)).unwrap())
         .collect::<Vec<_>>();
-    let (result, cleanup_errors) =
-        common::exact_key_cleanup::run_with_exact_key_cleanup(store.as_ref(), &owned, async {
-            for key in &owned[..2] {
-                store
+    let owned = Arc::new(Mutex::new(HashSet::new()));
+    let ledger = Arc::clone(&owned);
+    let store_for_verification = Arc::clone(&store);
+    let unresolved_candidates = candidates.clone();
+    let (result, cleanup_errors) = common::exact_key_cleanup::run_with_exact_key_cleanup_ledger(
+        store.as_ref(),
+        Arc::clone(&owned),
+        async move {
+            for key in &candidates[..2] {
+                store_for_verification
                     .put_opts(
                         key,
                         Bytes::from_static(b"real-s3").into(),
@@ -75,6 +84,10 @@ async fn test_s3_contract_requires_explicit_environment() {
                         },
                     )
                     .await?;
+                ledger
+                    .lock()
+                    .expect("created-key ledger")
+                    .insert(key.clone());
             }
             let target = Path::parse_literal(names[2])?;
             let mut write = filesystem.begin_write_all(
@@ -83,7 +96,15 @@ async fn test_s3_contract_requires_explicit_environment() {
                 WriteOptions::default().with_disposition(WriteDisposition::CreateNew),
             )?;
             write.execute().await?;
-            let stored = store.get(&owned[2]).await?.bytes().await?;
+            ledger
+                .lock()
+                .expect("created-key ledger")
+                .insert(candidates[2].clone());
+            let stored = store_for_verification
+                .get(&candidates[2])
+                .await?
+                .bytes()
+                .await?;
             if stored.as_ref() != b"real-s3" {
                 return Err(io::Error::other("SDK GET did not observe facade PUT bytes").into());
             }
@@ -96,7 +117,10 @@ async fn test_s3_contract_requires_explicit_environment() {
                     return Err(io::Error::other("GET content mismatch").into());
                 }
             }
-            for scope in [ListScope::Namespace, ListScope::Path(Path::parse_literal("folder")?)] {
+            for scope in [
+                ListScope::Namespace,
+                ListScope::Path(Path::parse_literal("folder")?),
+            ] {
                 let mut stream = filesystem.list(&scope, ListOptions::object_keys()).await?;
                 let mut actual = Vec::new();
                 while let Some(entry) = stream.next_entry_async().await? {
@@ -108,8 +132,21 @@ async fn test_s3_contract_requires_explicit_environment() {
                 }
             }
             Ok(())
-        })
-        .await;
+        },
+    )
+    .await;
+    let confirmed = owned.lock().expect("created-key ledger");
+    let unresolved = unresolved_candidates
+        .iter()
+        .filter(|key| !confirmed.contains(*key))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if !unresolved.is_empty() {
+        eprintln!(
+            "candidate keys without confirmed creation evidence were retained: {}",
+            unresolved.join(", ")
+        );
+    }
     common::exact_key_cleanup::finalize_verification(result, cleanup_errors);
 }
 
@@ -122,7 +159,10 @@ mod common;
 #[ignore = "requires explicit RS_FS_S3_* configuration; writes exact keys under a unique prefix"]
 async fn test_real_s3_recovery_matrix_preserves_published_targets() {
     let mut config = S3ContractConfig::from_env().expect("explicit S3 configuration required");
-    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time")
+        .as_nanos();
     config.prefix = format!("{}/recovery-{}-{nonce}", config.prefix, process::id());
     let store: Arc<dyn ObjectStore> = Arc::new(
         AmazonS3Builder::new()
@@ -140,12 +180,15 @@ async fn test_real_s3_recovery_matrix_preserves_published_targets() {
             .expect("explicit service client"),
     );
     let fixture = common::Fixture::new(config, store);
-    let result = panic::AssertUnwindSafe(common::recovery_matrix::verify(&fixture))
-        .catch_unwind()
-        .await;
-    let cleanup = fixture.teardown().await;
-    cleanup.expect("exact-key cleanup must succeed");
-    if let Err(panic) = result {
-        panic::resume_unwind(panic);
-    }
+    common::failure_preservation::verify_then_cleanup(
+        common::recovery_matrix::verify(&fixture),
+        async {
+            fixture
+                .teardown()
+                .await
+                .map_err(|error| io::Error::other(error.to_string()))
+        },
+        |diagnostic| eprintln!("{diagnostic}"),
+    )
+    .await;
 }
