@@ -90,7 +90,16 @@ pub trait FileSystemFixture {
     /// check requires; unavailable preparation or observation evidence is
     /// reported as unverified. Ready cases have distinct paths, and Conflict
     /// targets contain `b"existing"`.
-    /// Teardown must clean partial setup even when preparation fails.
+    /// Cleanup responsibility is evidence-based: returning `Ready` does not
+    /// transfer ownership of an ordinary destination or an unrelated object
+    /// that was already present. The suite claims the source after independent
+    /// source evidence and claims an ordinary target only after independently
+    /// confirming it was absent. A `Conflict` target explicitly seeded by this
+    /// preparation transfers to suite cleanup with the returned case. Until
+    /// those conditions hold, and whenever setup returns `Unavailable` or an
+    /// error, the fixture remains responsible for resources it seeded; it must
+    /// preserve pre-existing resources it did not seed. Teardown must clean
+    /// partial setup even when preparation fails.
     ///
     /// # Parameters
     ///

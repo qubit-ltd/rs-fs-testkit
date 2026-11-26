@@ -193,8 +193,17 @@ pub trait AsyncFileSystemFixture: Sync {
     /// independently observes source and target contents at the stages each
     /// check requires; unavailable preparation or observation evidence is
     /// reported as unverified. Ready cases have distinct paths, and Conflict
-    /// targets contain `b"existing"`.
-    /// Teardown must clean partial setup even when preparation fails.
+    /// targets contain `b"existing"`. Cleanup responsibility is evidence-
+    /// based: returning `Ready` does not transfer ownership of an ordinary
+    /// destination or unrelated object that was already present. The suite
+    /// claims the source after independent source evidence and claims an
+    /// ordinary target only after independently confirming it was absent. A
+    /// `Conflict` target explicitly seeded by this preparation transfers to
+    /// suite cleanup with the returned case. Until those conditions hold, and
+    /// whenever setup returns `Unavailable` or an error, the fixture remains
+    /// responsible for resources it seeded and must preserve pre-existing
+    /// resources it did not seed. Teardown must clean partial setup even when
+    /// preparation fails.
     ///
     /// # Parameters
     ///
@@ -775,7 +784,15 @@ pub trait AsyncFileSystemFixture: Sync {
     /// A supported probe must also support independent `read_file` and
     /// `exists_out_of_band` observations for its source and destination.
     /// The source must contain a complete file and the destination must have
-    /// a known initial state; otherwise return `Unsupported`.
+    /// a known initial state; otherwise return `Unsupported`. Returning a
+    /// probe transfers responsibility for releasing its armed provider gate to
+    /// the suite, which disarms it after stopping execution, including during
+    /// cancellation or unwind. The probe owns gate release only; `disarm`
+    /// performs no filesystem I/O. The fixture retains responsibility for
+    /// seeded resources until the suite independently observes the source and
+    /// target. The suite then claims the source and claims the target only if
+    /// absence was confirmed. A pre-existing target remains fixture-owned and
+    /// must be preserved by cleanup.
     ///
     /// # Parameters
     ///
@@ -805,7 +822,14 @@ pub trait AsyncFileSystemFixture: Sync {
     /// Prepares a stage-aware whole-file write cancellation probe. A supported
     /// probe independently observes the target and reports bytes accepted by
     /// the provider writer. Return `Unsupported` when reliable stage
-    /// acknowledgement or evidence is unavailable.
+    /// acknowledgement or evidence is unavailable. Returning a probe
+    /// transfers responsibility for releasing its armed provider gate to the
+    /// suite, which disarms it after stopping execution, including during
+    /// cancellation or unwind; `disarm` performs no filesystem I/O. The
+    /// fixture retains responsibility for the target until the suite observes
+    /// its initial state. The suite claims the target only when absence is
+    /// confirmed; a pre-existing target remains fixture-owned and must be
+    /// preserved by cleanup.
     ///
     /// # Parameters
     ///
