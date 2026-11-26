@@ -10,7 +10,6 @@
 
 use std::collections::HashSet;
 use std::io;
-use std::panic;
 use std::process;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -18,7 +17,6 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 use bytes::Bytes;
-use futures_util::FutureExt;
 use object_store::ObjectStore;
 use object_store::ObjectStoreExt;
 use object_store::PutMode;
@@ -182,12 +180,15 @@ async fn test_real_s3_recovery_matrix_preserves_published_targets() {
             .expect("explicit service client"),
     );
     let fixture = common::Fixture::new(config, store);
-    let result = panic::AssertUnwindSafe(common::recovery_matrix::verify(&fixture))
-        .catch_unwind()
-        .await;
-    let cleanup = fixture.teardown().await;
-    cleanup.expect("exact-key cleanup must succeed");
-    if let Err(panic) = result {
-        panic::resume_unwind(panic);
-    }
+    common::failure_preservation::verify_then_cleanup(
+        common::recovery_matrix::verify(&fixture),
+        async {
+            fixture
+                .teardown()
+                .await
+                .map_err(|error| io::Error::other(error.to_string()))
+        },
+        |diagnostic| eprintln!("{diagnostic}"),
+    )
+    .await;
 }

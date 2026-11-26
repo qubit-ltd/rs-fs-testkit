@@ -527,17 +527,81 @@ async fn test_unsupported_writer_options_fail_before_publication() {
 /// The same recovery matrix used by opt-in real-service tests runs locally.
 #[tokio::test]
 async fn test_shared_recovery_matrix_runs_in_memory() {
-    use futures_util::FutureExt;
     use qubit_fs_testkit::AsyncFileSystemFixture;
     let fixture = common::Fixture::memory("shared-recovery");
-    let result = std::panic::AssertUnwindSafe(common::recovery_matrix::verify(&fixture))
-        .catch_unwind()
-        .await;
-    let cleanup = fixture.teardown().await;
-    cleanup.expect("exact-key cleanup");
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
+    common::failure_preservation::verify_then_cleanup(
+        common::recovery_matrix::verify(&fixture),
+        async {
+            fixture
+                .teardown()
+                .await
+                .map_err(|error| std::io::Error::other(error.to_string()))
+        },
+        |diagnostic| eprintln!("{diagnostic}"),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_recovery_panic_remains_primary_when_teardown_fails_or_panics() {
+    use futures_util::FutureExt;
+
+    let diagnostics = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = std::sync::Arc::clone(&diagnostics);
+    let result = std::panic::AssertUnwindSafe(common::failure_preservation::verify_then_cleanup(
+        async { panic!("recovery primary panic") },
+        async { Err(std::io::Error::other("teardown error marker")) },
+        move |message| recorded.lock().unwrap().push(message),
+    ))
+    .catch_unwind()
+    .await;
+    let primary = result.expect_err("recovery panic remains primary");
+    assert!(
+        primary
+            .downcast_ref::<&'static str>()
+            .is_some_and(|message| message.contains("recovery primary panic"))
+            || primary
+                .downcast_ref::<String>()
+                .is_some_and(|message| message.contains("recovery primary panic"))
+    );
+    assert!(
+        diagnostics
+            .lock()
+            .unwrap()
+            .join("\n")
+            .contains("teardown error marker"),
+        "teardown error must be captured alongside the recovery panic"
+    );
+
+    diagnostics.lock().unwrap().clear();
+    let recorded = std::sync::Arc::clone(&diagnostics);
+    let teardown_panic = std::future::poll_fn(|_| -> std::task::Poll<Result<(), std::io::Error>> {
+        panic!("teardown panic marker")
+    });
+    let result = std::panic::AssertUnwindSafe(common::failure_preservation::verify_then_cleanup(
+        async { panic!("second recovery primary") },
+        teardown_panic,
+        move |message| recorded.lock().unwrap().push(message),
+    ))
+    .catch_unwind()
+    .await;
+    let primary = result.expect_err("second recovery panic remains primary");
+    assert!(
+        primary
+            .downcast_ref::<&'static str>()
+            .is_some_and(|message| message.contains("second recovery primary"))
+            || primary
+                .downcast_ref::<String>()
+                .is_some_and(|message| message.contains("second recovery primary"))
+    );
+    assert!(
+        diagnostics
+            .lock()
+            .unwrap()
+            .join("\n")
+            .contains("teardown panic marker"),
+        "teardown panic must be captured alongside the recovery panic"
+    );
 }
 
 #[tokio::test]
