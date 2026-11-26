@@ -93,6 +93,8 @@ struct TempExistenceMismatchFixture {
     error_at: Option<usize>,
     unsupported_target: bool,
     unsupported_directory_target: bool,
+    unsupported_file_target: bool,
+    mismatch_directory_target: bool,
     existing_target: bool,
     observed_targets: RefCell<Vec<String>>,
     exists_calls: Cell<usize>,
@@ -106,6 +108,8 @@ impl TempExistenceMismatchFixture {
             error_at: None,
             unsupported_target: false,
             unsupported_directory_target: false,
+            unsupported_file_target: false,
+            mismatch_directory_target: false,
             existing_target: false,
             observed_targets: RefCell::new(Vec::new()),
             exists_calls: Cell::new(0),
@@ -119,6 +123,8 @@ impl TempExistenceMismatchFixture {
             error_at: Some(error_at),
             unsupported_target: false,
             unsupported_directory_target: false,
+            unsupported_file_target: false,
+            mismatch_directory_target: false,
             existing_target: false,
             observed_targets: RefCell::new(Vec::new()),
             exists_calls: Cell::new(0),
@@ -132,6 +138,8 @@ impl TempExistenceMismatchFixture {
             error_at: None,
             unsupported_target: true,
             unsupported_directory_target: false,
+            unsupported_file_target: false,
+            mismatch_directory_target: false,
             existing_target: false,
             observed_targets: RefCell::new(Vec::new()),
             exists_calls: Cell::new(0),
@@ -145,6 +153,8 @@ impl TempExistenceMismatchFixture {
             error_at: None,
             unsupported_target: false,
             unsupported_directory_target: false,
+            unsupported_file_target: false,
+            mismatch_directory_target: false,
             existing_target: true,
             observed_targets: RefCell::new(Vec::new()),
             exists_calls: Cell::new(0),
@@ -158,6 +168,23 @@ impl TempExistenceMismatchFixture {
             error_at: None,
             unsupported_target: false,
             unsupported_directory_target: true,
+            unsupported_file_target: false,
+            mismatch_directory_target: false,
+            existing_target: false,
+            observed_targets: RefCell::new(Vec::new()),
+            exists_calls: Cell::new(0),
+        }
+    }
+
+    fn unavailable_file_and_wrong_directory_target(inner: MemoryFixture) -> Self {
+        Self {
+            inner,
+            mismatch_at: 0,
+            error_at: None,
+            unsupported_target: false,
+            unsupported_directory_target: false,
+            unsupported_file_target: true,
+            mismatch_directory_target: true,
             existing_target: false,
             observed_targets: RefCell::new(Vec::new()),
             exists_calls: Cell::new(0),
@@ -185,6 +212,7 @@ impl FileSystemFixture for TempExistenceMismatchFixture {
             self.observed_targets.borrow_mut().push(path.as_str().to_owned());
         }
         if (self.unsupported_target && path.as_str().contains("persisted"))
+            || (self.unsupported_file_target && path.as_str().ends_with("persisted-file"))
             || (self.unsupported_directory_target && path.as_str().ends_with("persisted-directory"))
         {
             return Ok(FixtureSupport::Unsupported);
@@ -198,7 +226,7 @@ impl FileSystemFixture for TempExistenceMismatchFixture {
             ));
         }
         let observed = self.inner.exists_out_of_band(path)?;
-        if call == self.mismatch_at {
+        if call == self.mismatch_at || (self.mismatch_directory_target && path.as_str().ends_with("persisted-directory")) {
             Ok(match observed {
                 FixtureSupport::Supported(exists) => FixtureSupport::Supported(!exists),
                 FixtureSupport::Unsupported => FixtureSupport::Supported(false),
@@ -794,6 +822,30 @@ fn test_sync_temp_atomic_directory_target_observation_gap_is_unverified_and_clea
     assert!(targets.iter().any(|path| path.ends_with("persisted-file")));
     assert!(targets.iter().any(|path| path.ends_with("persisted-directory")));
     drop(targets);
+    assert!(run.cleanup().completed());
+    assert!(fixture.inner.is_empty());
+}
+
+#[test]
+fn test_sync_temp_atomic_observes_directory_even_when_file_evidence_is_unavailable() {
+    let fixture = TempExistenceMismatchFixture::unavailable_file_and_wrong_directory_target(
+        MemoryFixture::with_all_capabilities(),
+    );
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::TempAtomic);
+    assert!(run.failures().iter().any(|failure| {
+        failure.check() == Some(ContractCheckId::TempAtomic)
+            && failure.message() == "temporary publication target already exists"
+    }), "{:?}", run.failures());
+    assert!(fixture.observed_targets.borrow().iter().any(|path| path.ends_with("persisted-directory")));
+    assert!(run.cleanup().completed());
+    assert!(fixture.inner.is_empty());
+
+    let fixture = TempExistenceMismatchFixture::unsupported_target_observation(MemoryFixture::with_all_capabilities());
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_check(ContractCheckId::TempAtomic);
+    assert!(run.failures().is_empty(), "{:?}", run.failures());
+    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Unverified { .. }));
     assert!(run.cleanup().completed());
     assert!(fixture.inner.is_empty());
 }

@@ -139,6 +139,22 @@ impl FileSystemContractSuite<'_> {
                 )
                 .at(id));
             }
+            // A rejected range must not poison the reader: prove the same
+            // non-empty request still fails and a permitted read still works.
+            let repeated_error = reader
+                .read_at(0, &mut rejected_buffer)
+                .expect_err("repeated range above finite limit must fail");
+            if repeated_error.kind() != FsErrorKind::ResourceLimitExceeded
+                || repeated_error.operation() != FsOperation::Read
+            {
+                return Err(ContractFailure::message_only(
+                    "repeated range above finite random-access limit returned the wrong error",
+                )
+                .at(id));
+            }
+            if accepted > 0 {
+                verify_sample(&mut reader, 0, &expected[..accepted as usize], limit, id)?;
+            }
             let empty_after = reader.read_at(0, &mut empty).map_err(|error| {
                 ContractFailure::with_source("empty random-access read after range rejection failed", error).at(id)
             })?;

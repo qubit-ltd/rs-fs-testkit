@@ -11,10 +11,12 @@ mod common;
 
 #[cfg(feature = "async")]
 use common::AsyncMemoryFixture;
+use common::MemoryFault;
 use common::MemoryFixture;
 #[cfg(feature = "async")]
 use common::async_memory_file_system::run_controlled;
 #[cfg(feature = "async")]
+use common::AsyncMemoryFault;
 #[cfg(feature = "async")]
 use common::native_copy_fixture::AsyncNativeCopyFixture;
 use common::native_copy_fixture::NativeCopyFixture;
@@ -74,6 +76,38 @@ fn assert_async_copy_failure(
             assert_eq!(failure.failure().partial_stats(), &expected_stats);
         })
         .expect("typed source remains available");
+}
+
+#[test]
+fn test_strong_tree_copy_requires_zero_symlink_statistics() {
+    for id in [ContractCheckId::CopyAtomicTree, ContractCheckId::CopyDurableTree] {
+        let healthy = MemoryFixture::with_all_capabilities();
+        let mut healthy_suite = FileSystemContractSuite::new(&healthy);
+        let healthy_run = healthy_suite.run_check(id);
+        assert!(healthy_run.failures().is_empty(), "{id}: {:?}", healthy_run.failures());
+        assert!(healthy_run.cleanup().completed());
+
+        let faulty = MemoryFixture::with_fault(MemoryFault::TreeCopyExtraSymlinkCount);
+        let mut suite = FileSystemContractSuite::new(&faulty);
+        let run = suite.run_check(id);
+        assert_eq!(run.failures().first().and_then(|failure| failure.check()), Some(id));
+        assert!(run.cleanup().completed());
+
+        #[cfg(feature = "async")]
+        {
+            let healthy = AsyncMemoryFixture::with_all_capabilities();
+            let mut suite = AsyncFileSystemContractSuite::new(&healthy);
+            let run = run_controlled(suite.run_check(id));
+            assert!(run.failures().is_empty(), "async {id}: {:?}", run.failures());
+            assert!(run.cleanup().completed());
+
+            let faulty = AsyncMemoryFixture::with_fault(AsyncMemoryFault::TreeCopyExtraSymlinkCount);
+            let mut suite = AsyncFileSystemContractSuite::new(&faulty);
+            let run = run_controlled(suite.run_check(id));
+            assert_eq!(run.failures().first().and_then(|failure| failure.check()), Some(id));
+            assert!(run.cleanup().completed());
+        }
+    }
 }
 
 fn outcome(fixture: &NativeCopyFixture, id: ContractCheckId) -> ContractCheckOutcome {

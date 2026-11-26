@@ -599,6 +599,8 @@ pub enum AsyncMemoryFault {
     TreeCopyFileObjectCountsOverflow,
     /// Overflows the combined directory and prefix counts for a tree copy.
     TreeCopyDirectoryPrefixCountsOverflow,
+    /// Reports one unexpected symlink in tree-copy statistics.
+    TreeCopyExtraSymlinkCount,
     /// Reports non-durable completion for a required durable rename.
     DurableRenameNonDurable,
     /// Publishes the requested destination but reports a different target.
@@ -2811,6 +2813,7 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                             stats.directories = u64::MAX;
                             stats.prefixes = 3;
                         }
+                        AsyncMemoryFault::TreeCopyExtraSymlinkCount => stats.symlinks = 1,
                         _ => {}
                     }
                 }

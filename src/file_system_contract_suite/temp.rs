@@ -71,26 +71,36 @@ impl<'a> FileSystemContractSuite<'a> {
                 }
             }
             ContractCheckId::TempAtomic | ContractCheckId::TempRepeatedLifecycle => {
+                let mut unverified_reasons = Vec::new();
                 if file {
                     self.execute_temp_file(id)?;
+                    if let Some(reason) = self.context.report().checks().iter().rev()
+                        .find(|check| check.id() == id)
+                        .and_then(|check| match check.outcome() {
+                            ContractCheckOutcome::Unverified { reason } => Some(reason.clone()),
+                            _ => None,
+                        })
+                    {
+                        unverified_reasons.push(reason);
+                    }
                 }
-                let file_unverified = self
-                    .context
-                    .report()
-                    .checks()
-                    .iter()
-                    .find(|check| check.id() == id)
-                    .is_some_and(|check| {
-                        matches!(
-                            check.outcome(),
-                            ContractCheckOutcome::Unverified { reason }
-                                if reason.contains("temporary publication needs fixture.exists_out_of_band")
-                        )
-                    });
-                if directory && !file_unverified {
+                if directory {
                     self.execute_temp_directory(id)?;
+                    if let Some(reason) = self.context.report().checks().iter().rev()
+                        .find(|check| check.id() == id)
+                        .and_then(|check| match check.outcome() {
+                            ContractCheckOutcome::Unverified { reason } => Some(reason.clone()),
+                            _ => None,
+                        })
+                    {
+                        unverified_reasons.push(reason);
+                    }
                 }
-                if !file && !directory {
+                if !unverified_reasons.is_empty() {
+                    ContractCheckOutcome::Unverified {
+                        reason: unverified_reasons.join("; "),
+                    }
+                } else if !file && !directory {
                     ContractCheckOutcome::NotApplicable {
                         reason: "no temporary resource capability".to_owned(),
                     }

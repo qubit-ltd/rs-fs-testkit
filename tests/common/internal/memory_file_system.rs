@@ -378,6 +378,8 @@ pub enum MemoryFault {
     TreeCopyFileObjectCountsOverflow,
     /// Overflows the combined directory and prefix counts for a tree copy.
     TreeCopyDirectoryPrefixCountsOverflow,
+    /// Reports one unexpected symlink in tree-copy statistics.
+    TreeCopyExtraSymlinkCount,
     /// Fails a basic copy before publishing a target.
     CopyFails,
     /// Fails an overwrite-policy copy after other conflict policies succeed.
@@ -507,6 +509,7 @@ impl MemoryFixture {
                 | MemoryFault::TreeCopyWrongStats
                 | MemoryFault::TreeCopyFileObjectCountsOverflow
                 | MemoryFault::TreeCopyDirectoryPrefixCountsOverflow
+                | MemoryFault::TreeCopyExtraSymlinkCount
                 | MemoryFault::DurableRenameNonDurable
                 | MemoryFault::AtomicTempPersistNonAtomic
                 | MemoryFault::ServerSideCopyFallsBack
@@ -534,6 +537,7 @@ impl MemoryFixture {
                 | MemoryFault::TreeCopyWrongStats
                 | MemoryFault::TreeCopyFileObjectCountsOverflow
                 | MemoryFault::TreeCopyDirectoryPrefixCountsOverflow
+                | MemoryFault::TreeCopyExtraSymlinkCount
         ) {
             fixture
                 .state
@@ -2241,6 +2245,7 @@ impl FileSystemSpi for MemorySpi {
                         stats.directories = u64::MAX;
                         stats.prefixes = 3;
                     }
+                    MemoryFault::TreeCopyExtraSymlinkCount => stats.symlinks = 1,
                     _ => {}
                 }
             }
