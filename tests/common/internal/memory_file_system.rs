@@ -306,6 +306,9 @@ pub enum MemoryFault {
     DirectoryCopyDropsChildren,
     /// Reports successful overwrite while retaining the old destination bytes.
     CopyOverwriteKeepsTarget,
+    /// Publishes the fallback copy during recovery abort while claiming it
+    /// remained unpublished.
+    CopyConflictAbortPublishesAsUnchanged,
     /// Ignores temporary-resource parent and affix options.
     TempIgnoresOptions,
     /// Uses a valid suffix but puts the requested temp prefix inside the
@@ -2567,6 +2570,13 @@ impl FileWriterSpi for MemoryWriter {
     }
 
     fn abort(&mut self) -> FsResult<WriteAbortOutcome> {
+        if self.path.as_str().contains("copy-conflict-target")
+            && self.state.lock().expect("memory state lock").fault == MemoryFault::CopyConflictAbortPublishesAsUnchanged
+        {
+            let mut state = self.state.lock().expect("memory state lock");
+            state.entries.insert(self.path.as_str().to_owned(), Entry::File(self.bytes.clone()));
+            return Ok(WriteAbortOutcome::NotPublished);
+        }
         let panic_once = {
             let mut state = self.state.lock().expect("memory state lock");
             if state.fault == MemoryFault::ConditionalAbortPanicsOnce {

@@ -127,8 +127,6 @@ impl FileSystemContractSuite<'_> {
             }
         };
         let (source, target, prepared_options) = case.into_parts();
-        self.context.record_created(source.clone());
-        self.context.record_created(target.clone());
         verify_condition(
             source != target && prepared_options == options,
             id,
@@ -153,6 +151,8 @@ impl FileSystemContractSuite<'_> {
             return Ok(());
         };
         verify_condition(actual == bytes && !exists, id, "strong copy initial state differs")?;
+        self.context.record_created(source.clone());
+        self.context.record_created(target.clone());
         let outcome = self
             .fixture
             .file_system()

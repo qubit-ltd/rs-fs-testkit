@@ -86,7 +86,6 @@ impl AsyncFileSystemContractSuite<'_> {
                 .fixture
                 .path(&target_relative)
                 .map_err(|error| ContractFailure::with_source("strong copy target path failed", error).at(id))?;
-            self.context.record_created(target.clone());
             let failure = match crate::internal::execute_copy::execute_copy(
                 self.fixture.file_system(),
                 source.clone(),
@@ -130,8 +129,6 @@ impl AsyncFileSystemContractSuite<'_> {
             }
         };
         let (source, target, prepared_options) = case.into_parts();
-        self.context.record_created(source.clone());
-        self.context.record_created(target.clone());
         verify_condition(
             source != target && prepared_options == options,
             id,
@@ -143,9 +140,6 @@ impl AsyncFileSystemContractSuite<'_> {
         let source_child = source.join(&child);
         let target_sub = target.join(&sub);
         let target_child = target.join(&child);
-        for path in [&source_sub, &source_child, &target_sub, &target_child] {
-            self.context.record_created(path.clone());
-        }
         for path in [&source, &source_sub] {
             let observed = self.fixture.exists_out_of_band(path).await.map_err(|error| {
                 ContractFailure::with_source("tree initial directory observation failed", error).at(id)
@@ -161,6 +155,7 @@ impl AsyncFileSystemContractSuite<'_> {
                 return Ok(());
             };
             verify_condition(exists, id, "tree source directory was not prepared")?;
+            self.context.record_created(path.clone());
         }
         let source_before = self
             .fixture
@@ -182,6 +177,25 @@ impl AsyncFileSystemContractSuite<'_> {
             return Ok(());
         };
         verify_condition(actual == bytes && !exists, id, "strong copy initial state differs")?;
+        self.context.record_created(source_child.clone());
+        for path in [&target_sub, &target_child] {
+            let observed = self.fixture.exists_out_of_band(path).await.map_err(|error| {
+                ContractFailure::with_source("tree target child observation failed", error).at(id)
+            })?;
+            let FixtureSupport::Supported(false) = observed else {
+                self.context.record_check(
+                    id,
+                    Some(capability),
+                    ContractCheckOutcome::Unverified {
+                        reason: "independent target child absence evidence unavailable".to_owned(),
+                    },
+                );
+                return Ok(());
+            };
+        }
+        self.context.record_created(target.clone());
+        self.context.record_created(target_sub.clone());
+        self.context.record_created(target_child.clone());
         let outcome = crate::internal::execute_copy::execute_copy(
             self.fixture.file_system(),
             source.clone(),

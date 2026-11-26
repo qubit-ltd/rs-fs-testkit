@@ -12,6 +12,8 @@ use std::io::Result as IoResult;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
 
@@ -98,6 +100,7 @@ pub(crate) enum AsyncCopyStage {
     WriterWrite,
     WriterFlush,
     WriterCommit,
+    WriterAbort,
 }
 
 /// Controls the recording provider's externally observable behavior.
@@ -131,6 +134,7 @@ pub(crate) struct AsyncRecordingConfig {
     pub(crate) writer_durable: bool,
     pub(crate) writer_commit_failure: Option<WriteFailureState>,
     pub(crate) writer_abort_failure: Option<FsErrorKind>,
+    pub(crate) writer_abort_release: Option<Arc<AtomicBool>>,
     pub(crate) writer_open_error: Option<FsErrorKind>,
     pub(crate) writer_open_effect: Option<FsEffectState>,
     /// Maximum bytes acknowledged by one successful provider write.
@@ -714,6 +718,21 @@ impl AsyncFileWriteSession for RecordingWriter {
     fn abort_async<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, FsResult<WriteAbortOutcome>> {
         let config = self.get_mut().config.clone();
         Box::pin(async move {
+            if config.pending_stage == Some(AsyncCopyStage::WriterAbort) {
+                if let Some(release) = &config.writer_abort_release {
+                    std::future::poll_fn(|context| {
+                        if release.load(Ordering::Relaxed) {
+                            Poll::Ready(())
+                        } else {
+                            context.waker().wake_by_ref();
+                            Poll::Pending
+                        }
+                    })
+                    .await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            }
             match config.writer_abort_failure {
                 Some(kind) => Err(FsError::new(kind, FsOperation::AbortWriter, "injected abort failure")),
                 None => Ok(match config.writer_commit_failure {

@@ -73,11 +73,18 @@ impl FileSystemContractSuite<'_> {
                 );
                 return Ok(());
             }
-            self.context.record_created(target.clone());
             let source = self
                 .fixture
                 .path(&source_relative)
                 .map_err(|error| ContractFailure::with_source("copy source path preparation failed", error).at(id))?;
+            if matches!(
+                self.fixture.exists_out_of_band(&target).map_err(|error| {
+                    ContractFailure::with_source("unsupported copy target observation failed", error).at(id)
+                })?,
+                FixtureSupport::Supported(false)
+            ) {
+                self.context.record_created(target.clone());
+            }
             let failure = match self.fixture.file_system().copy(&source, &target, CopyOptions::file()) {
                 Err(error) => error,
                 Ok(_) => {
@@ -143,7 +150,6 @@ impl FileSystemContractSuite<'_> {
             id,
             "basic copy preparation changed required options",
         )?;
-        self.context.record_created(source.clone());
         verify_condition(source != target, id, "copy source and target alias")?;
         let target_before = self
             .fixture
@@ -165,7 +171,6 @@ impl FileSystemContractSuite<'_> {
                 return Ok(());
             }
         }
-        self.context.record_created(target.clone());
         let before = self
             .fixture
             .read_file(&source)
@@ -185,6 +190,8 @@ impl FileSystemContractSuite<'_> {
             id,
             "copy source evidence is unavailable or differs",
         )?;
+        self.context.record_created(source.clone());
+        self.context.record_created(target.clone());
         let outcome = self
             .fixture
             .file_system()

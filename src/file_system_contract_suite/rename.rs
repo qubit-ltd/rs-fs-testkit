@@ -251,13 +251,13 @@ impl FileSystemContractSuite<'_> {
                 );
                 return Ok(());
             };
+            self.context.record_created(target.clone());
             target
         } else {
             self.fixture
                 .path(&target_relative)
                 .map_err(|error| ContractFailure::with_source("rename target preparation failed", error).at(id))?
         };
-        self.context.record_created(target.clone());
         verify_condition(source != target, id, "rename fixture requires distinct paths")?;
         let initial = self
             .fixture
@@ -283,6 +283,7 @@ impl FileSystemContractSuite<'_> {
             match before {
                 FixtureSupport::Supported(actual) => {
                     verify_condition(!actual, id, "rename target must initially be absent")?;
+                    self.context.record_created(target.clone());
                 }
                 FixtureSupport::Unsupported => {
                     return self.record_rename_unverified(

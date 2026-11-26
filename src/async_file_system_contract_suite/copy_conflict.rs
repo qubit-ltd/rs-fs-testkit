@@ -14,6 +14,9 @@ use qubit_fs::error::FsErrorKind;
 use qubit_fs::error::FsOperation;
 use qubit_fs::metadata::FileSystemCapability;
 use qubit_fs::path::Path;
+use qubit_fs::write::AsyncWriterRecovery;
+use qubit_fs::write::WriteAbortOutcome;
+use qubit_fs::write::WriterState;
 
 use crate::AsyncFileSystemContractSuite;
 use crate::ContractCheckId;
@@ -201,6 +204,50 @@ impl AsyncFileSystemContractSuite<'_> {
             {
                 return Err(ContractFailure::with_owned_source("copy conflict rejection differs", failure).at(id));
             }
+            if policy == CopyConflictPolicy::Fail
+                && failure.operation().is_some_and(|operation| operation.has_recovery())
+            {
+                use crate::internal::copy_conflict_cleanup_guard::CopyConflictCleanupGuard;
+
+                let mut guard = CopyConflictCleanupGuard::new(
+                    failure,
+                    &mut self.context.run.cleanup.failures,
+                    id,
+                );
+                let (abort, state) = {
+                    let recovery = guard
+                        .failure_mut()
+                        .operation_mut()
+                        .and_then(|operation| operation.recovery());
+                    let Some(AsyncWriterRecovery::Opened(writer)) = recovery else {
+                        return Err(ContractFailure::with_owned_source(
+                            "copy conflict retained an invalid recovery session",
+                            guard.finish(),
+                        )
+                        .at(id));
+                    };
+                    let abort = writer.abort_async().await;
+                    (abort, writer.state())
+                };
+                let failure = guard.finish();
+                match abort {
+                    Ok(WriteAbortOutcome::NotPublished) if state == WriterState::Aborted => {}
+                    Ok(_) => {
+                        return Err(ContractFailure::with_owned_source(
+                            "copy conflict recovery did not confirm non-publication",
+                            failure,
+                        )
+                        .at(id));
+                    }
+                    Err(error) => {
+                        return Err(ContractFailure::with_owned_source(
+                            "copy conflict recovery abort failed",
+                            crate::ContractWriterFailure::new(error, failure),
+                        )
+                        .at(id));
+                    }
+                }
+            }
         } else {
             let outcome = result
                 .map_err(|error| ContractFailure::with_owned_source("copy conflict execution failed", error).at(id))?;
@@ -277,5 +324,55 @@ impl AsyncFileSystemContractSuite<'_> {
             )?;
         }
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use qubit_fs::copy::CopyConflictPolicy;
+    use qubit_fs::metadata::FileSystemLimits;
+
+    use crate::AsyncFileSystemContractSuite;
+    use crate::AsyncFileSystemFixture;
+    use crate::ContractCheckId;
+    use crate::FixtureSupport;
+    use crate::tests::common::AsyncMemoryFault;
+    use crate::tests::common::AsyncMemoryFixture;
+    use crate::tests::common::async_memory_file_system::run_controlled;
+
+    #[test]
+    fn test_async_fail_conflict_aborts_and_verifies_retained_writer() {
+        let fixture = AsyncMemoryFixture::fallback_only_with_fault_and_limits(
+            AsyncMemoryFault::CopyConflictAbortPublishesAsUnchanged,
+            FileSystemLimits::unknown(),
+        );
+        run_controlled(async {
+            let FixtureSupport::Supported(source) = fixture
+                .seed_file("copy-conflict-source", b"copy bytes")
+                .await
+                .unwrap()
+            else {
+                panic!("source seed required");
+            };
+            let FixtureSupport::Supported(target) = fixture
+                .seed_file("copy-conflict-target", b"existing")
+                .await
+                .unwrap()
+            else {
+                panic!("target seed required");
+            };
+            let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+            let result = suite
+                .check_copy_conflict_policy(
+                    ContractCheckId::CopyFallbackOverwriteRejected,
+                    &source,
+                    &target,
+                    b"copy bytes",
+                    CopyConflictPolicy::Fail,
+                    true,
+                )
+                .await;
+            assert!(result.is_err(), "commit-time abort publication must fail verification");
+        });
     }
 }

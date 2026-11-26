@@ -88,7 +88,6 @@ impl FileSystemContractSuite<'_> {
             )?;
             let path = case.path().clone();
             let rejected_baseline = if reject {
-                self.context.record_created(path.clone());
                 match self.fixture.exists_out_of_band(&path).map_err(|error| {
                     ContractFailure::with_source("write limit baseline observation failed", error).at(id)
                 })? {
@@ -97,7 +96,10 @@ impl FileSystemContractSuite<'_> {
                             reason: "fixture.exists_out_of_band is required to observe a rejected write".to_owned(),
                         });
                     }
-                    FixtureSupport::Supported(false) => None,
+                    FixtureSupport::Supported(false) => {
+                        self.context.record_created(path.clone());
+                        None
+                    }
                     FixtureSupport::Supported(true) => {
                         if case.options().disposition() == WriteDisposition::CreateNew {
                             return Err(ContractFailure::message_only(

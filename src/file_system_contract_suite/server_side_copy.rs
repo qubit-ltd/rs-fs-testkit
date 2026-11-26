@@ -64,7 +64,6 @@ impl FileSystemContractSuite<'_> {
                 .fixture
                 .path(&target_relative)
                 .map_err(|error| ContractFailure::with_source("server-side target path failed", error).at(id))?;
-            self.context.record_created(target.clone());
             let options = CopyOptions::file().with_server_side(ServerSidePreference::Require);
             let failure = match self.fixture.file_system().copy(&source, &target, options) {
                 Err(failure) => failure,
@@ -104,8 +103,6 @@ impl FileSystemContractSuite<'_> {
             }
         };
         let (source, target, options) = case.into_parts();
-        self.context.record_created(source.clone());
-        self.context.record_created(target.clone());
         verify_condition(
             source != target
                 && options.mode() == CopyMode::File
@@ -148,6 +145,8 @@ impl FileSystemContractSuite<'_> {
             return Ok(());
         };
         verify_condition(!exists, id, "server-side destination already exists")?;
+        self.context.record_created(source.clone());
+        self.context.record_created(target.clone());
         let outcome = self
             .fixture
             .file_system()

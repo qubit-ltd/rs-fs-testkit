@@ -9,6 +9,8 @@
 
 pub(crate) mod common;
 mod contract_context_tests;
+#[cfg(feature = "async")]
+mod abort_recovery_tests;
 mod contract_failure_tests;
 mod contract_report_tests;
 mod contract_source_tests;

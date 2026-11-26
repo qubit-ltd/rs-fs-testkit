@@ -149,7 +149,15 @@ impl<'a> FileSystemContractSuite<'a> {
         self.context.run.cleanup.attempts += 1;
         self.context.run.cleanup.completed = false;
         let failure_start = self.context.run.cleanup.failures.len();
-        self.context.cleanup(self.fixture.file_system());
+        match catch_unwind(AssertUnwindSafe(|| self.fixture.file_system())) {
+            Ok(file_system) => self.context.cleanup(file_system),
+            Err(payload) => {
+                self.context.run.cleanup.failures.push(crate::ContractFailure::panicked(
+                    "fixture filesystem accessor panicked during cleanup",
+                    payload,
+                ));
+            }
+        }
         let mut teardown_failure = None;
         if !self.teardown_completed {
             let teardown = catch_unwind(AssertUnwindSafe(|| self.fixture.teardown()));

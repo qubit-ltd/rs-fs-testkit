@@ -171,15 +171,49 @@ impl ContractContext {
     /// `owner_check` is the static check name responsible for that resource.
     #[inline]
     pub(crate) fn record_resource(&mut self, path: Path, owner_check: &'static str) {
-        if self.resources.iter().any(|resource| resource.path == path) {
+        Self::record_resource_parts(&mut self.resources, &mut self.resource_index, path, owner_check);
+    }
+
+    /// Records a resource through split ownership borrowed by an async drop
+    /// guard.
+    pub(crate) fn record_resource_parts(
+        resources: &mut Vec<TrackedResource>,
+        resource_index: &mut u64,
+        path: Path,
+        owner_check: &'static str,
+    ) {
+        if resources.iter().any(|resource| resource.path == path) {
             return;
         }
-        self.resource_index = self.resource_index.saturating_add(1);
-        self.resources.push(TrackedResource {
+        *resource_index = resource_index.saturating_add(1);
+        resources.push(TrackedResource {
             path,
             owner_check,
-            creation_index: self.resource_index,
+            creation_index: *resource_index,
         });
+    }
+
+    /// Installs a probe guard that can also record resource ownership after
+    /// independent observation without releasing the disarm obligation.
+    #[cfg(feature = "async")]
+    pub(crate) fn probe_disarm_guard<'a>(
+        &'a mut self,
+        disarm: impl Fn() -> crate::FixtureResult<()> + Send + Sync + 'a,
+    ) -> crate::internal::probe_disarm_guard::ProbeDisarmGuard<'a> {
+        let Self {
+            resources,
+            resource_index,
+            current_contract,
+            run,
+            ..
+        } = self;
+        crate::internal::probe_disarm_guard::ProbeDisarmGuard::with_resource_ledger(
+            disarm,
+            &mut run.cleanup.failures,
+            resources,
+            resource_index,
+            *current_contract,
+        )
     }
 
     /// Records one stable check outcome after its phase has executed.

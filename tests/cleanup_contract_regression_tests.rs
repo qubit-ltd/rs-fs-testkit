@@ -9,6 +9,7 @@
 pub use ::qubit_fs_testkit;
 mod common;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
@@ -20,6 +21,9 @@ use qubit_fs_testkit::FileSystemFixture;
 use qubit_fs_testkit::FixtureError;
 use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
+use qubit_fs_testkit::CopyScenario;
+use qubit_fs_testkit::CopyFixtureCase;
+use qubit_fs_testkit::FixturePreparation;
 
 use self::common::MemoryFault;
 use self::common::MemoryFixture;
@@ -49,6 +53,96 @@ fn test_borrowed_cleanup_failure_exposes_original_panic() {
     assert!(!run.requirements_satisfied(), "taking evidence must not erase failure");
 }
 
+/// A panic from the cleanup filesystem accessor is retained while teardown is
+/// still attempted independently.
+#[test]
+fn test_cleanup_accessor_panic_is_retained_and_teardown_runs() {
+    let fixture = AccessorPanicProbe {
+        inner: MemoryFixture::new(),
+        accesses: AtomicUsize::new(0),
+        teardown_calls: AtomicUsize::new(0),
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_contract(FileSystemContract::ErrorContext);
+
+    assert!(!run.requirements_satisfied());
+    assert_eq!(fixture.teardown_calls.load(Ordering::Relaxed), 1);
+    let failure = run.cleanup().failures().first().expect("accessor panic retained");
+    let payload = failure.take_panic_payload().expect("original payload available");
+    assert_eq!(payload.downcast_ref::<&str>(), Some(&"cleanup accessor panic"));
+}
+
+#[cfg(feature = "async")]
+#[test]
+fn test_async_cleanup_accessor_panic_is_retained_and_teardown_runs() {
+    let fixture = AsyncAccessorPanicProbe {
+        inner: common::AsyncMemoryFixture::new(),
+        accesses: AtomicUsize::new(0),
+        teardown_calls: AtomicUsize::new(0),
+    };
+    common::async_memory_file_system::run_controlled(async {
+        let mut suite = qubit_fs_testkit::AsyncFileSystemContractSuite::new(&fixture);
+        let run = suite
+            .run_contract(qubit_fs_testkit::FileSystemContract::ErrorContext)
+            .await;
+        assert!(!run.requirements_satisfied());
+        let failure = run.cleanup().failures().first().expect("accessor panic retained");
+        let payload = failure.take_panic_payload().expect("original payload available");
+        assert_eq!(payload.downcast_ref::<&str>(), Some(&"async cleanup accessor panic"));
+    });
+    assert_eq!(fixture.teardown_calls.load(Ordering::Relaxed), 1);
+}
+
+struct AccessorPanicProbe {
+    inner: MemoryFixture,
+    accesses: AtomicUsize,
+    teardown_calls: AtomicUsize,
+}
+
+impl FileSystemFixture for AccessorPanicProbe {
+    fn file_system(&self) -> &FileSystem {
+        if self.accesses.fetch_add(1, Ordering::Relaxed) == 2 {
+            panic!("cleanup accessor panic");
+        }
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+
+    fn teardown(&self) -> FixtureResult<()> {
+        self.teardown_calls.fetch_add(1, Ordering::Relaxed);
+        self.inner.teardown()
+    }
+}
+
+#[cfg(feature = "async")]
+struct AsyncAccessorPanicProbe {
+    inner: common::AsyncMemoryFixture,
+    accesses: AtomicUsize,
+    teardown_calls: AtomicUsize,
+}
+
+#[cfg(feature = "async")]
+impl qubit_fs_testkit::AsyncFileSystemFixture for AsyncAccessorPanicProbe {
+    fn file_system(&self) -> &qubit_fs::AsyncFileSystem {
+        if self.accesses.fetch_add(1, Ordering::Relaxed) == 2 {
+            panic!("async cleanup accessor panic");
+        }
+        self.inner.file_system()
+    }
+
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
+
+    fn teardown(&self) -> qubit_fs_testkit::FixtureFuture<'_, ()> {
+        self.teardown_calls.fetch_add(1, Ordering::Relaxed);
+        self.inner.teardown()
+    }
+}
+
 /// Teardown errors and panics remain visible as cleanup failures.
 #[test]
 fn test_cleanup_retains_teardown_error_and_panic() {
@@ -66,6 +160,68 @@ fn test_cleanup_retains_teardown_error_and_panic() {
     let panic_run = panic_suite.run_contract(FileSystemContract::ErrorContext);
     assert!(!panic_run.cleanup().failures().is_empty());
     assert!(!panic_run.requirements_satisfied());
+}
+
+/// An unowned target with unavailable baseline evidence is left for its owner.
+#[test]
+fn test_copy_does_not_claim_unowned_target_when_absence_is_unverified() {
+    let fixture = UnownedCopyTargetProbe {
+        inner: MemoryFixture::new(),
+        target: Mutex::new(None),
+    };
+    let mut suite = FileSystemContractSuite::new(&fixture);
+    let run = suite.run_contract(FileSystemContract::Copy);
+
+    let target = fixture.target.lock().expect("target mutex").clone().expect("target seeded");
+    assert!(run.report().checks().iter().any(|check| {
+        matches!(check.outcome(), qubit_fs_testkit::ContractCheckOutcome::Unverified { .. })
+    }));
+    assert_eq!(
+        fixture.inner.read_file(&target).expect("sentinel readable"),
+        FixtureSupport::Supported(b"unowned target sentinel".to_vec()),
+    );
+}
+
+struct UnownedCopyTargetProbe {
+    inner: MemoryFixture,
+    target: Mutex<Option<Path>>,
+}
+
+impl FileSystemFixture for UnownedCopyTargetProbe {
+    fn file_system(&self) -> &FileSystem { self.inner.file_system() }
+    fn path(&self, relative: &str) -> FixtureResult<Path> { self.inner.path(relative) }
+
+    fn prepare_copy(
+        &self,
+        scenario: CopyScenario,
+        source_relative: &str,
+        target_relative: &str,
+        bytes: &[u8],
+    ) -> FixtureResult<FixturePreparation<CopyFixtureCase>> {
+        let prepared = self.inner.prepare_copy(scenario, source_relative, target_relative, bytes)?;
+        if scenario == CopyScenario::Basic && let FixturePreparation::Ready(case) = &prepared {
+            let target = case.target().clone();
+            assert!(matches!(
+                self.inner.write_file_out_of_band(&target, b"unowned target sentinel")?,
+                FixtureSupport::Supported(())
+            ));
+            *self.target.lock().expect("target mutex") = Some(target);
+        }
+        Ok(prepared)
+    }
+
+    fn exists_out_of_band(&self, path: &Path) -> FixtureResult<FixtureSupport<bool>> {
+        if self.target.lock().expect("target mutex").as_ref() == Some(path) {
+            return Ok(FixtureSupport::Unsupported);
+        }
+        self.inner.exists_out_of_band(path)
+    }
+
+    fn read_file(&self, path: &Path) -> FixtureResult<FixtureSupport<Vec<u8>>> {
+        self.inner.read_file(path)
+    }
+
+    fn teardown(&self) -> FixtureResult<()> { Ok(()) }
 }
 
 /// A report validates check evidence, while the run also accounts for teardown.

@@ -63,8 +63,6 @@ impl AsyncFileSystemContractSuite<'_> {
             }
         };
         let (source, target, options) = case.into_parts();
-        self.context.record_created(source.clone());
-        self.context.record_created(target.clone());
         verify_condition(source != target, id, "native copy source and target alias")?;
         verify_condition(
             options.mode() == CopyMode::File,
@@ -116,6 +114,8 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "native copy source must contain 1..=64 KiB",
         )?;
+        self.context.record_created(source.clone());
+        self.context.record_created(target.clone());
         let outcome = crate::internal::execute_copy::execute_copy(
             self.fixture.file_system(),
             source.clone(),

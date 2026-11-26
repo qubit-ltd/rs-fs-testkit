@@ -68,7 +68,6 @@ impl AsyncFileSystemContractSuite<'_> {
                 .fixture
                 .path(&target_relative)
                 .map_err(|error| ContractFailure::with_source("server-side target path failed", error).at(id))?;
-            self.context.record_created(target.clone());
             let options = CopyOptions::file().with_server_side(ServerSidePreference::Require);
             let failure = match crate::internal::execute_copy::execute_copy(
                 self.fixture.file_system(),
@@ -116,8 +115,6 @@ impl AsyncFileSystemContractSuite<'_> {
             }
         };
         let (source, target, options) = case.into_parts();
-        self.context.record_created(source.clone());
-        self.context.record_created(target.clone());
         verify_condition(
             source != target
                 && options.mode() == CopyMode::File
@@ -160,6 +157,8 @@ impl AsyncFileSystemContractSuite<'_> {
             return Ok(());
         };
         verify_condition(!exists, id, "server-side destination already exists")?;
+        self.context.record_created(source.clone());
+        self.context.record_created(target.clone());
         let outcome = crate::internal::execute_copy::execute_copy(
             self.fixture.file_system(),
             source.clone(),

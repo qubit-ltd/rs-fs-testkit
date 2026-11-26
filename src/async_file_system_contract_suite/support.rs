@@ -131,7 +131,15 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
         self.context.run.cleanup.attempts += 1;
         self.context.run.cleanup.completed = false;
         let failure_start = self.context.run.cleanup.failures.len();
-        self.context.cleanup_async(self.fixture.file_system()).await;
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.fixture.file_system())) {
+            Ok(file_system) => self.context.cleanup_async(file_system).await,
+            Err(payload) => {
+                self.context.run.cleanup.failures.push(crate::ContractFailure::panicked(
+                    "fixture filesystem accessor panicked during cleanup",
+                    payload,
+                ));
+            }
+        }
         let mut teardown_failure = None;
         if !self.teardown_completed {
             let teardown = crate::internal::catch_unwind_future(async { self.fixture.teardown().await }).await;

@@ -499,6 +499,9 @@ pub enum AsyncMemoryFault {
     DirectoryCopyDropsChildren,
     /// Reports successful overwrite while retaining the old destination bytes.
     CopyOverwriteKeepsTarget,
+    /// Publishes the fallback copy during recovery abort while claiming it
+    /// remained unpublished.
+    CopyConflictAbortPublishesAsUnchanged,
     /// Publishes through a native method despite requiring server-side copy.
     ServerSideCopyFallsBack,
     /// Fails stage acknowledgement in the copy cancellation probe.
@@ -3195,6 +3198,15 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
     fn abort_async<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, FsResult<WriteAbortOutcome>> {
         let this = self.get_mut();
         Box::pin(async move {
+            if this.path.as_str().contains("copy-conflict-target")
+                && this.fault == AsyncMemoryFault::CopyConflictAbortPublishesAsUnchanged
+            {
+                this.state
+                    .lock()
+                    .expect("async memory state lock")
+                    .insert(this.path.as_str().to_owned(), Entry::File(this.bytes.clone()));
+                return Ok(WriteAbortOutcome::NotPublished);
+            }
             if this.fault == AsyncMemoryFault::RecoveryAbortFailsOnce
                 && (this.copy_gate.lock().expect("copy gate lock").ever_reached
                     || !this.write_gate.lock().expect("write gate lock").observed.is_empty())

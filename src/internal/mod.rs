@@ -15,6 +15,10 @@ pub(crate) mod check_spec;
 pub(crate) mod cleanup_failure;
 pub(crate) mod copy_statistics;
 #[cfg(feature = "async")]
+pub(crate) mod copy_conflict_cleanup_guard;
+#[cfg(feature = "async")]
+pub(crate) mod async_writer_recovery_guard;
+#[cfg(feature = "async")]
 pub(crate) mod execute_copy;
 #[cfg(feature = "async")]
 pub(crate) mod execute_write;

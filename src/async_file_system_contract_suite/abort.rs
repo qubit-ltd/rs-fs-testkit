@@ -20,6 +20,7 @@ use crate::ContractFailure;
 use crate::ContractWriterFailure;
 use crate::FixturePreparation;
 use crate::FixtureSupport;
+use crate::internal::async_writer_recovery_guard::AsyncWriterRecoveryGuard;
 use crate::internal::verify_condition;
 
 impl AsyncFileSystemContractSuite<'_> {
@@ -74,7 +75,6 @@ impl AsyncFileSystemContractSuite<'_> {
             }
         };
         let path = case.path().clone();
-        self.context.record_created(path.clone());
         verify_condition(
             case.bytes() == bytes && case.options().disposition() == WriteDisposition::CreateNew,
             id,
@@ -91,21 +91,30 @@ impl AsyncFileSystemContractSuite<'_> {
             });
         };
         verify_condition(!before, id, "abort fixture requires an absent destination")?;
-        let mut writer = self
+        self.context.record_created(path.clone());
+        let writer = self
             .fixture
             .file_system()
             .open_writer(&path, case.options().clone())
             .await
             .map_err(|error| ContractFailure::with_owned_source("abort writer opening failed", error))?;
-        if let Err(error) = writer.write_fully_async(&bytes).await {
+        let mut writer = AsyncWriterRecoveryGuard::new(
+            writer,
+            &mut self.context.run.cleanup.failures,
+            id,
+            "async abort check was interrupted while retaining its writer",
+        );
+        if let Err(error) = writer.writer_mut().write_fully_async(&bytes).await {
+            let writer = writer.take();
             return Err(ContractFailure::with_owned_source(
                 "abort writer rejected bytes",
                 ContractWriterFailure::new(error, writer),
             ));
         }
-        let outcome = match writer.abort_async().await {
+        let outcome = match writer.writer_mut().abort_async().await {
             Ok(outcome) => outcome,
             Err(error) => {
+                let writer = writer.take();
                 return Err(ContractFailure::with_owned_source(
                     "explicit writer abort failed",
                     ContractWriterFailure::new(error, writer),
@@ -117,11 +126,19 @@ impl AsyncFileSystemContractSuite<'_> {
             WriteAbortOutcome::Published => WriterState::Published,
             WriteAbortOutcome::Indeterminate => WriterState::Indeterminate,
         };
-        verify_condition(
-            writer.state() == expected_state,
-            id,
-            "abort outcome and writer state disagree",
-        )?;
+        let actual_state = writer.writer_mut().state();
+        let writer = writer.take();
+        if actual_state != expected_state {
+            return Err(ContractFailure::with_owned_source(
+                "abort outcome and writer state disagree",
+                ContractWriterFailure::new(
+                    ContractFailure::message_only("abort outcome and writer state disagree").at(id),
+                    writer,
+                ),
+            )
+            .at(id));
+        }
+        drop(writer);
         let after = self
             .fixture
             .exists_out_of_band(&path)

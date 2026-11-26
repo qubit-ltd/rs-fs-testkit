@@ -69,7 +69,6 @@ impl AsyncFileSystemContractSuite<'_> {
             id,
             "basic copy preparation changed required options",
         )?;
-        self.context.record_created(source.clone());
         verify_condition(source != target, id, "copy source and target alias")?;
         let target_before = self
             .fixture
@@ -92,7 +91,6 @@ impl AsyncFileSystemContractSuite<'_> {
                 return Ok(());
             }
         }
-        self.context.record_created(target.clone());
         if !self
             .verify_copy_contents(
                 id,
@@ -105,6 +103,8 @@ impl AsyncFileSystemContractSuite<'_> {
         {
             return Ok(());
         }
+        self.context.record_created(source.clone());
+        self.context.record_created(target.clone());
         self.execute_basic_copy(id, source, target, bytes).await
     }
 
@@ -150,11 +150,16 @@ impl AsyncFileSystemContractSuite<'_> {
                 );
                 return Ok(true);
             }
-            self.context.record_created(target.clone());
             let source = self
                 .fixture
                 .path(source_relative)
                 .map_err(|error| ContractFailure::with_source("copy source path preparation failed", error).at(id))?;
+            let target_missing = self.fixture.exists_out_of_band(target).await.map_err(|error| {
+                ContractFailure::with_source("unsupported copy target observation failed", error).at(id)
+            })?;
+            if matches!(target_missing, FixtureSupport::Supported(false)) {
+                self.context.record_created(target.clone());
+            }
             let (failure, retained_operation) =
                 match self
                     .fixture

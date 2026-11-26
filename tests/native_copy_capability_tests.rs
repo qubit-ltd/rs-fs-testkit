@@ -15,6 +15,7 @@ use common::MemoryFixture;
 #[cfg(feature = "async")]
 use common::async_memory_file_system::run_controlled;
 #[cfg(feature = "async")]
+#[cfg(feature = "async")]
 use common::native_copy_fixture::AsyncNativeCopyFixture;
 use common::native_copy_fixture::NativeCopyFixture;
 use qubit_fs::copy::CopyConflictPolicy;

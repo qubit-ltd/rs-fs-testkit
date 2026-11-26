@@ -71,7 +71,6 @@ impl FileSystemContractSuite<'_> {
             }
         };
         let path = case.path().clone();
-        self.context.record_created(path.clone());
         verify_condition(
             case.bytes() == bytes && case.options().disposition() == WriteDisposition::CreateNew,
             id,
@@ -87,6 +86,7 @@ impl FileSystemContractSuite<'_> {
             });
         };
         verify_condition(!before, id, "abort fixture requires an absent destination")?;
+        self.context.record_created(path.clone());
         let mut writer = self
             .fixture
             .file_system()

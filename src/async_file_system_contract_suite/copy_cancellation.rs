@@ -32,6 +32,7 @@ use crate::ContractCheckOutcome;
 use crate::ContractFailure;
 use crate::CopyCancellationProbe;
 use crate::FixtureSupport;
+use crate::internal::async_writer_recovery_guard::AsyncWriterRecoveryGuard;
 use crate::internal::probe_disarm_guard::ProbeDisarmGuard;
 use crate::internal::verify_condition;
 
@@ -113,13 +114,15 @@ impl AsyncFileSystemContractSuite<'_> {
                 resume_unwind(payload);
             }
         };
-        self.context.record_created(source.clone());
-        self.context.record_created(target.clone());
-        let mut guard = ProbeDisarmGuard::new(|| probe.disarm(), &mut self.context.run.cleanup.failures);
+        let mut guard = self.context.probe_disarm_guard(|| probe.disarm());
         let source_before = observe_file(self.fixture, &source, id)
             .await?
             .ok_or_else(|| ContractFailure::message_only("copy cancellation source is absent").at(id))?;
         let target_before = observe_file(self.fixture, &target, id).await?;
+        guard.record_created(source.clone());
+        if target_before.is_none() {
+            guard.record_created(target.clone());
+        }
         let mut operation = self
             .fixture
             .file_system()
@@ -254,7 +257,7 @@ impl AsyncFileSystemContractSuite<'_> {
             return Err(retain_copy_operation(error, operation, id));
         }
         if let Some(recovery) = operation.take_recovery() {
-            let mut writer = match recovery {
+            let writer = match recovery {
                 AsyncWriterRecovery::Opened(writer) => *writer,
                 AsyncWriterRecovery::Rejected(recovery) => {
                     return Err(ContractFailure::with_owned_source(
@@ -267,9 +270,16 @@ impl AsyncFileSystemContractSuite<'_> {
                     .at(id));
                 }
             };
-            let outcome = match writer.abort_async().await {
+            let mut writer = AsyncWriterRecoveryGuard::new(
+                writer,
+                &mut self.context.run.cleanup.failures,
+                id,
+                "copy cancellation recovery was interrupted while retaining its writer",
+            );
+            let outcome = match writer.writer_mut().abort_async().await {
                 Ok(outcome) => outcome,
                 Err(error) => {
+                    let writer = writer.take();
                     return Err(ContractFailure::with_owned_source(
                         "copy recovery abort failed",
                         crate::ContractWriterFailure::new(error, writer),
@@ -282,11 +292,20 @@ impl AsyncFileSystemContractSuite<'_> {
                 WriteAbortOutcome::Published => WriterState::Published,
                 WriteAbortOutcome::Indeterminate => WriterState::Indeterminate,
             };
-            verify_condition(
-                writer.state() == expected,
-                id,
-                "copy recovery state differs from abort outcome",
-            )?;
+            let actual_state = writer.writer_mut().state();
+            let recovery_writer = writer.take();
+            drop(writer);
+            if actual_state != expected {
+                return Err(ContractFailure::with_owned_source(
+                    "copy recovery state differs from abort outcome",
+                    crate::ContractWriterFailure::new(
+                        ContractFailure::message_only("copy recovery state differs from abort outcome").at(id),
+                        recovery_writer,
+                    ),
+                )
+                .at(id));
+            }
+            drop(recovery_writer);
             let target_after = observe_file(self.fixture, &target, id).await?;
             match outcome {
                 WriteAbortOutcome::NotPublished => verify_condition(
