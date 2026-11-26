@@ -78,6 +78,7 @@ mod common;
 struct ControlledDeadlineFixture {
     inner: common::Fixture,
     teardown_pending: bool,
+    teardown_panics: bool,
     probe_acknowledgement_polls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -89,6 +90,8 @@ enum DeadlineOutcome {
         interrupted: bool,
         cleanup_timed_out: bool,
         cleanup_completed: bool,
+        cleanup_panicked: bool,
+        cleanup_diagnostic: Option<String>,
     },
 }
 
@@ -171,6 +174,12 @@ impl qubit_fs_testkit::AsyncFileSystemFixture for ControlledDeadlineFixture {
     fn teardown(&self) -> qubit_fs_testkit::FixtureFuture<'_, ()> {
         if self.teardown_pending {
             Box::pin(std::future::pending::<qubit_fs_testkit::FixtureResult<()>>())
+        } else if self.teardown_panics {
+            Box::pin(async {
+                panic!("controlled fixture teardown panic");
+                #[allow(unreachable_code)]
+                Ok(())
+            })
         } else {
             qubit_fs_testkit::AsyncFileSystemFixture::teardown(&self.inner)
         }
@@ -188,6 +197,7 @@ async fn run_suite_check_with_budgets(
     cleanup_budget: std::time::Duration,
     control: Option<&qubit_fs_s3_contract::TestControl>,
 ) -> DeadlineOutcome {
+    use futures_util::FutureExt;
     use std::future::poll_fn;
 
     let (run_timed_out, provider_stage_reached) = if let Some(control) = control {
@@ -206,12 +216,25 @@ async fn run_suite_check_with_budgets(
     };
     if run_timed_out {
         let interrupted = suite.run().was_interrupted();
-        let cleanup = tokio::time::timeout(cleanup_budget, suite.finish()).await;
+        let cleanup =
+            std::panic::AssertUnwindSafe(tokio::time::timeout(cleanup_budget, suite.finish()))
+                .catch_unwind()
+                .await;
+        let cleanup_timed_out = matches!(&cleanup, Ok(Err(_)));
+        let cleanup_panicked = matches!(&cleanup, Err(_));
+        let cleanup_diagnostic = suite
+            .run()
+            .cleanup()
+            .failures()
+            .last()
+            .map(ToString::to_string);
         return DeadlineOutcome::RunTimedOut {
             provider_stage_reached,
             interrupted,
-            cleanup_timed_out: cleanup.is_err(),
+            cleanup_timed_out,
             cleanup_completed: suite.run().cleanup().completed(),
+            cleanup_panicked,
+            cleanup_diagnostic,
         };
     }
     suite.run().assert_satisfied_with(&[id]);
@@ -241,8 +264,10 @@ async fn run_check_with_deadlines(
             interrupted,
             cleanup_timed_out,
             cleanup_completed,
+            cleanup_panicked,
+            cleanup_diagnostic,
         } => panic!(
-            "contract {id}: run deadline reached; provider stage reached={provider_stage_reached}; interrupted={interrupted}; cleanup timed out={cleanup_timed_out}; cleanup completed={cleanup_completed}"
+            "contract {id}: run deadline reached; provider stage reached={provider_stage_reached}; interrupted={interrupted}; cleanup timed out={cleanup_timed_out}; cleanup panicked={cleanup_panicked}; cleanup completed={cleanup_completed}; cleanup diagnostic={cleanup_diagnostic:?}"
         ),
     }
 }
@@ -267,6 +292,7 @@ async fn test_real_suite_run_timeout_retains_evidence_and_cleanup_succeeds() {
     let fixture = ControlledDeadlineFixture {
         inner: common::Fixture::memory("run-timeout-cleanup-ok"),
         teardown_pending: false,
+        teardown_panics: false,
         probe_acknowledgement_polls: std::sync::Arc::default(),
     };
     let control = fixture.inner.control.clone();
@@ -286,6 +312,8 @@ async fn test_real_suite_run_timeout_retains_evidence_and_cleanup_succeeds() {
             interrupted: true,
             cleanup_timed_out: false,
             cleanup_completed: true,
+            cleanup_panicked: false,
+            cleanup_diagnostic: None,
         }
     );
     assert!(suite.run().was_interrupted());
@@ -309,6 +337,67 @@ async fn test_real_suite_run_timeout_retains_evidence_and_cleanup_succeeds() {
     );
 }
 
+/// A teardown panic is retained as cleanup evidence without hiding the original run timeout.
+#[tokio::test(start_paused = true)]
+async fn test_real_suite_run_timeout_retains_evidence_when_teardown_panics() {
+    use std::time::Duration;
+
+    use qubit_fs_testkit::AsyncFileSystemContractSuite;
+
+    let fixture = ControlledDeadlineFixture {
+        inner: common::Fixture::memory("run-timeout-teardown-panic"),
+        teardown_pending: false,
+        teardown_panics: true,
+        probe_acknowledgement_polls: std::sync::Arc::default(),
+    };
+    let control = fixture.inner.control.clone();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let outcome = run_suite_check_with_budgets(
+        &mut suite,
+        qubit_fs_testkit::ContractCheckId::WriteCancelOpen,
+        Duration::from_secs(1),
+        Duration::from_secs(5),
+        Some(&control),
+    )
+    .await;
+
+    let DeadlineOutcome::RunTimedOut {
+        provider_stage_reached,
+        interrupted,
+        cleanup_timed_out,
+        cleanup_completed,
+        cleanup_panicked,
+        cleanup_diagnostic,
+    } = outcome
+    else {
+        panic!("run timeout state must survive teardown panic: {outcome:?}");
+    };
+    assert!(provider_stage_reached);
+    assert!(interrupted, "the original run timeout remains recorded");
+    assert!(
+        !cleanup_timed_out,
+        "teardown panicked before the cleanup budget elapsed"
+    );
+    assert!(!cleanup_completed);
+    assert!(cleanup_panicked);
+    let diagnostic = cleanup_diagnostic.expect("cleanup report retains teardown panic");
+    assert!(
+        diagnostic.contains("fixture teardown panicked"),
+        "{diagnostic}"
+    );
+    assert!(suite.run().was_interrupted());
+    assert!(!suite.run().cleanup().completed());
+    assert!(
+        suite
+            .run()
+            .cleanup()
+            .failures()
+            .iter()
+            .any(|failure| failure.to_string().contains("fixture teardown panicked")),
+        "teardown panic must remain in CleanupReport"
+    );
+}
+
 /// A provider-stage run timeout remains interrupted when cleanup also expires.
 #[tokio::test(start_paused = true)]
 async fn test_real_suite_run_and_cleanup_timeouts_retain_incomplete_cleanup() {
@@ -319,6 +408,7 @@ async fn test_real_suite_run_and_cleanup_timeouts_retain_incomplete_cleanup() {
     let fixture = ControlledDeadlineFixture {
         inner: common::Fixture::memory("run-and-cleanup-timeout"),
         teardown_pending: true,
+        teardown_panics: false,
         probe_acknowledgement_polls: std::sync::Arc::default(),
     };
     let control = fixture.inner.control.clone();
@@ -338,6 +428,8 @@ async fn test_real_suite_run_and_cleanup_timeouts_retain_incomplete_cleanup() {
             interrupted: true,
             cleanup_timed_out: true,
             cleanup_completed: false,
+            cleanup_panicked: false,
+            cleanup_diagnostic: None,
         }
     );
     assert!(suite.run().was_interrupted());
