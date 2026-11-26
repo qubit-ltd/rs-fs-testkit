@@ -127,6 +127,16 @@ Fixture 不负责重新解释 capability 或放宽 contract。
 不能把它当成 unsupported 而跳过测试。构造核心 logical `Path` 是所有 fixture 的基本
 责任，因此 `path()` 返回 `FixtureResult<Path>`，没有 `Unsupported` 分支。
 
+`exists_out_of_band` 默认返回 `FixtureSupport::Unsupported`。这表示 fixture 无法独立观察，
+不代表目标已确认存在或不存在；若检查必须确认新目标原本不存在，缺少该 hook 会使证据成为
+`Unverified`。hook 实际执行但返回 `FixtureError` 时则按失败处理，不能转成“不支持”。
+
+fixture 仍负责自己预置的 source、既有 target 和 staging 资源。只有请求校验通过，且独立观察
+确认了初始状态后，suite 才会登记由操作新建的 target 并接管其清理责任。路径映射、`Ready`
+返回或准备探针的意图都不会转移既有 target 的所有权。即使准备只完成一部分，fixture 的
+teardown 仍必须回收其拥有的所有资源。取消探针要先安装 disarm guard，再进行可能失败的
+观察和登记；suite 会在释放关联资源前解除探针，避免 gate 遗留。
+
 `resource_version`、representation seed 和 `copy_fast_path_case` 有默认
 `Unsupported` 实现。`CopyFixtureCase` 包含已经准备好的 source、target 和 options；
 它必须保证请求的 `CopyMethod` 在 provider 声明的静态适用范围内。

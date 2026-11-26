@@ -261,6 +261,10 @@ fn test_cancelled_run_retains_report_and_rejects_restart() {
     assert_eq!(fixture.state.calls.load(Ordering::Relaxed), calls);
     fixture.state.paused.store(false, Ordering::Relaxed);
     ready(suite.finish());
+    assert!(suite.run().was_interrupted());
+    assert!(!suite.run().requirements_satisfied());
+    assert!(!suite.run().failures().is_empty());
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| suite.run().assert_satisfied())).is_err());
 }
 
 /// A later cancelled await cannot erase a failure already observed.
