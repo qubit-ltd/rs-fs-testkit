@@ -8,6 +8,9 @@
 
 #![cfg(feature = "async")]
 
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+use std::error::Error;
 use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
@@ -15,12 +18,17 @@ use std::task::Waker;
 pub use ::qubit_fs_testkit;
 use qubit_fs::metadata::FileSystemLimit;
 use qubit_fs::metadata::FileSystemLimits;
+use qubit_fs::write::AsyncFileWriter;
+use qubit_fs::write::WriteAbortOutcome;
+use qubit_fs::write::WriterState;
 use qubit_fs_testkit as testkit;
 use qubit_fs_testkit::AsyncFileSystemContractSuite;
 use qubit_fs_testkit::AsyncFileSystemFixture;
 use qubit_fs_testkit::AsyncWriteCancellationStage;
 use qubit_fs_testkit::ContractCheckId;
 use qubit_fs_testkit::ContractCheckOutcome;
+use qubit_fs_testkit::ContractSource;
+use qubit_fs_testkit::ContractWriterFailure;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FixtureSupport;
 
@@ -28,6 +36,186 @@ use self::common::AsyncMemoryFixture;
 use self::common::async_memory_file_system::run_controlled;
 
 mod common;
+
+/// Dropping copy cancellation while recovery abort is suspended retains the writer.
+#[test]
+fn test_copy_cancellation_abort_drop_retains_writer_for_retry() {
+    let fixture = AsyncMemoryFixture::new();
+    fixture.suspend_writer_abort();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let mut check = Box::pin(suite.run_check(ContractCheckId::AsyncCopyCancelCommit));
+    let mut context = Context::from_waker(Waker::noop());
+    let mut reached_abort = false;
+    for _ in 0..64 {
+        assert!(matches!(check.as_mut().poll(&mut context), Poll::Pending));
+        if fixture.writer_abort_calls() > 0 {
+            reached_abort = true;
+            break;
+        }
+    }
+    assert!(reached_abort, "copy cancellation must suspend in provider abort");
+    drop(check);
+
+    let failure = suite
+        .run()
+        .cleanup()
+        .failures()
+        .first()
+        .expect("interrupted copy recovery must retain cleanup evidence");
+    assert_eq!(failure.check(), Some(ContractCheckId::AsyncCopyCancelCommit));
+    assert!(failure.message().contains("copy cancellation recovery was interrupted"));
+    let source = Error::source(failure)
+        .and_then(|source| source.downcast_ref::<ContractSource>())
+        .expect("retained copy recovery source");
+    let retained = source.take().expect("copy writer transfers exactly once");
+    let mut retained = retained
+        .downcast::<ContractWriterFailure<AsyncFileWriter>>()
+        .unwrap_or_else(|_| panic!("expected retained copy recovery writer"));
+
+    fixture.release_writer_abort();
+    assert_eq!(
+        run_controlled(retained.writer_mut().abort_async()).expect("copy abort retry"),
+        WriteAbortOutcome::NotPublished,
+    );
+    assert_eq!(retained.writer().state(), WriterState::Aborted);
+    run_controlled(fixture.teardown()).expect("copy probe cleanup");
+    assert!(fixture.is_empty(), "copy probe resources must be cleaned");
+}
+
+/// Dropping write cancellation while recovery abort is suspended retains the writer.
+#[test]
+fn test_write_cancellation_abort_drop_retains_writer_for_retry() {
+    let fixture = AsyncMemoryFixture::new();
+    fixture.suspend_writer_abort();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let mut check = Box::pin(suite.run_check(ContractCheckId::WriteCancelCommit));
+    let mut context = Context::from_waker(Waker::noop());
+    let mut reached_abort = false;
+    for _ in 0..64 {
+        assert!(matches!(check.as_mut().poll(&mut context), Poll::Pending));
+        if fixture.writer_abort_calls() > 0 {
+            reached_abort = true;
+            break;
+        }
+    }
+    assert!(reached_abort, "write cancellation must suspend in provider abort");
+    drop(check);
+
+    let failure = suite
+        .run()
+        .cleanup()
+        .failures()
+        .first()
+        .expect("interrupted write recovery must retain cleanup evidence");
+    assert_eq!(failure.check(), Some(ContractCheckId::WriteCancelCommit));
+    assert!(failure.message().contains("write cancellation recovery was interrupted"));
+    let source = Error::source(failure)
+        .and_then(|source| source.downcast_ref::<ContractSource>())
+        .expect("retained write recovery source");
+    let retained = source.take().expect("write writer transfers exactly once");
+    let mut retained = retained
+        .downcast::<ContractWriterFailure<AsyncFileWriter>>()
+        .unwrap_or_else(|_| panic!("expected retained write recovery writer"));
+
+    fixture.release_writer_abort();
+    assert_eq!(
+        run_controlled(retained.writer_mut().abort_async()).expect("write abort retry"),
+        WriteAbortOutcome::NotPublished,
+    );
+    assert_eq!(retained.writer().state(), WriterState::Aborted);
+    run_controlled(fixture.teardown()).expect("write probe cleanup");
+    assert!(fixture.is_empty(), "write probe resources must be cleaned");
+}
+
+/// Unwinding during a suspended copy recovery abort retains its writer.
+#[test]
+fn test_copy_cancellation_abort_unwind_retains_writer_for_retry() {
+    let fixture = AsyncMemoryFixture::new();
+    fixture.suspend_writer_abort();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let unwind = catch_unwind(AssertUnwindSafe(|| {
+        let mut check = Box::pin(suite.run_check(ContractCheckId::AsyncCopyCancelCommit));
+        let mut context = Context::from_waker(Waker::noop());
+        for _ in 0..64 {
+            assert!(matches!(check.as_mut().poll(&mut context), Poll::Pending));
+            if fixture.writer_abort_calls() > 0 {
+                panic!("injected unwind while copy abort is suspended");
+            }
+        }
+        panic!("copy abort was never suspended");
+    }));
+    assert!(unwind.is_err());
+
+    let failure = suite
+        .run()
+        .cleanup()
+        .failures()
+        .first()
+        .expect("unwound copy recovery must retain cleanup evidence");
+    assert_eq!(failure.check(), Some(ContractCheckId::AsyncCopyCancelCommit));
+    assert!(failure.message().contains("copy cancellation recovery was interrupted"));
+    let source = Error::source(failure)
+        .and_then(|source| source.downcast_ref::<ContractSource>())
+        .expect("retained copy recovery source");
+    let retained = source.take().expect("copy writer transfers exactly once");
+    let mut retained = retained
+        .downcast::<ContractWriterFailure<AsyncFileWriter>>()
+        .unwrap_or_else(|_| panic!("expected retained copy recovery writer"));
+
+    fixture.release_writer_abort();
+    assert_eq!(
+        run_controlled(retained.writer_mut().abort_async()).expect("copy abort retry"),
+        WriteAbortOutcome::NotPublished,
+    );
+    assert_eq!(retained.writer().state(), WriterState::Aborted);
+    run_controlled(fixture.teardown()).expect("copy probe cleanup");
+    assert!(fixture.is_empty(), "copy probe resources must be cleaned");
+}
+
+/// Unwinding during a suspended write recovery abort retains its writer.
+#[test]
+fn test_write_cancellation_abort_unwind_retains_writer_for_retry() {
+    let fixture = AsyncMemoryFixture::new();
+    fixture.suspend_writer_abort();
+    let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+    let unwind = catch_unwind(AssertUnwindSafe(|| {
+        let mut check = Box::pin(suite.run_check(ContractCheckId::WriteCancelCommit));
+        let mut context = Context::from_waker(Waker::noop());
+        for _ in 0..64 {
+            assert!(matches!(check.as_mut().poll(&mut context), Poll::Pending));
+            if fixture.writer_abort_calls() > 0 {
+                panic!("injected unwind while write abort is suspended");
+            }
+        }
+        panic!("write abort was never suspended");
+    }));
+    assert!(unwind.is_err());
+
+    let failure = suite
+        .run()
+        .cleanup()
+        .failures()
+        .first()
+        .expect("unwound write recovery must retain cleanup evidence");
+    assert_eq!(failure.check(), Some(ContractCheckId::WriteCancelCommit));
+    assert!(failure.message().contains("write cancellation recovery was interrupted"));
+    let source = Error::source(failure)
+        .and_then(|source| source.downcast_ref::<ContractSource>())
+        .expect("retained write recovery source");
+    let retained = source.take().expect("write writer transfers exactly once");
+    let mut retained = retained
+        .downcast::<ContractWriterFailure<AsyncFileWriter>>()
+        .unwrap_or_else(|_| panic!("expected retained write recovery writer"));
+
+    fixture.release_writer_abort();
+    assert_eq!(
+        run_controlled(retained.writer_mut().abort_async()).expect("write abort retry"),
+        WriteAbortOutcome::NotPublished,
+    );
+    assert_eq!(retained.writer().state(), WriterState::Aborted);
+    run_controlled(fixture.teardown()).expect("write probe cleanup");
+    assert!(fixture.is_empty(), "write probe resources must be cleaned");
+}
 
 /// Every stage is acknowledged after multiple real provider suspensions.
 #[test]

@@ -199,6 +199,8 @@ pub struct AsyncMemoryFixture {
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
     copy_gate: Arc<Mutex<CopyGate>>,
     write_gate: Arc<Mutex<WriteGate>>,
+    writer_abort_release: Arc<AtomicBool>,
+    writer_abort_calls: Arc<AtomicUsize>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
     versions: Arc<Mutex<HashMap<String, u64>>>,
     supports_cancellation_cases: bool,
@@ -1166,6 +1168,8 @@ impl AsyncMemoryFixture {
         let stage = Arc::new(Mutex::new(AsyncCopyCancellationStage::NativeAttempt));
         let copy_gate = Arc::new(Mutex::new(CopyGate::new()));
         let write_gate = Arc::new(Mutex::new(WriteGate::new()));
+        let writer_abort_release = Arc::new(AtomicBool::new(true));
+        let writer_abort_calls = Arc::new(AtomicUsize::new(0));
         let entries = Arc::new(Mutex::new(HashMap::new()));
         let versions = Arc::new(Mutex::new(HashMap::new()));
         let path_calls = Arc::new(AtomicUsize::new(0));
@@ -1182,6 +1186,8 @@ impl AsyncMemoryFixture {
             stage: Arc::clone(&stage),
             copy_gate: Arc::clone(&copy_gate),
             write_gate: Arc::clone(&write_gate),
+            writer_abort_release: Arc::clone(&writer_abort_release),
+            writer_abort_calls: Arc::clone(&writer_abort_calls),
             entries: Arc::clone(&entries),
             versions: Arc::clone(&versions),
             fault,
@@ -1211,6 +1217,8 @@ impl AsyncMemoryFixture {
             stage,
             copy_gate,
             write_gate,
+            writer_abort_release,
+            writer_abort_calls,
             entries,
             versions,
             supports_cancellation_cases,
@@ -1264,6 +1272,23 @@ impl AsyncMemoryFixture {
     /// Reports whether the armed write provider stage was reached.
     pub fn write_cancellation_stage_reached(&self) -> bool {
         self.write_gate.lock().expect("write gate lock").stage_reached()
+    }
+
+    /// Suspends provider writer aborts until `release_writer_abort` is called.
+    pub fn suspend_writer_abort(&self) {
+        self.writer_abort_calls.store(0, Ordering::Release);
+        self.writer_abort_release.store(false, Ordering::Release);
+    }
+
+    /// Releases suspended provider writer aborts.
+    pub fn release_writer_abort(&self) {
+        self.writer_abort_release.store(true, Ordering::Release);
+    }
+
+    /// Returns the number of provider writer abort attempts.
+    #[must_use]
+    pub fn writer_abort_calls(&self) -> usize {
+        self.writer_abort_calls.load(Ordering::Acquire)
     }
 
     /// Counts polls of the write cancellation acknowledgement probe.
@@ -2068,6 +2093,8 @@ struct AsyncMemorySpi {
     stage: Arc<Mutex<AsyncCopyCancellationStage>>,
     copy_gate: Arc<Mutex<CopyGate>>,
     write_gate: Arc<Mutex<WriteGate>>,
+    writer_abort_release: Arc<AtomicBool>,
+    writer_abort_calls: Arc<AtomicUsize>,
     entries: Arc<Mutex<HashMap<String, Entry>>>,
     versions: Arc<Mutex<HashMap<String, u64>>>,
     fault: AsyncMemoryFault,
@@ -2436,6 +2463,8 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
         let versions = Arc::clone(&self.versions);
         let copy_gate = Arc::clone(&self.copy_gate);
         let write_gate = Arc::clone(&self.write_gate);
+        let writer_abort_release = Arc::clone(&self.writer_abort_release);
+        let writer_abort_calls = Arc::clone(&self.writer_abort_calls);
         let fault = self.fault;
         let disposition = request.options().options().disposition();
         let atomicity = request.options().options().atomicity();
@@ -2464,6 +2493,8 @@ impl AsyncFileSystemSpi for AsyncMemorySpi {
                     versions,
                     copy_gate,
                     write_gate,
+                    writer_abort_release,
+                    writer_abort_calls,
                     path,
                     bytes: Vec::new(),
                     partial_published: false,
@@ -2988,6 +3019,8 @@ struct AsyncMemoryWriter {
     stage: AsyncCopyCancellationStage,
     copy_gate: Arc<Mutex<CopyGate>>,
     write_gate: Arc<Mutex<WriteGate>>,
+    writer_abort_release: Arc<AtomicBool>,
+    writer_abort_calls: Arc<AtomicUsize>,
     state: Arc<Mutex<HashMap<String, Entry>>>,
     versions: Arc<Mutex<HashMap<String, u64>>>,
     path: Path,
@@ -3198,6 +3231,10 @@ impl AsyncFileWriteSession for AsyncMemoryWriter {
     fn abort_async<'a>(self: Pin<&'a mut Self>) -> SpiFuture<'a, FsResult<WriteAbortOutcome>> {
         let this = self.get_mut();
         Box::pin(async move {
+            this.writer_abort_calls.fetch_add(1, Ordering::AcqRel);
+            if !this.writer_abort_release.load(Ordering::Acquire) {
+                future::poll_fn(|_| Poll::<()>::Pending).await;
+            }
             if this.path.as_str().contains("copy-conflict-target")
                 && this.fault == AsyncMemoryFault::CopyConflictAbortPublishesAsUnchanged
             {

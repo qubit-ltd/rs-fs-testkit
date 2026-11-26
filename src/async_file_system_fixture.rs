@@ -754,8 +754,11 @@ pub trait AsyncFileSystemFixture: Sync {
     /// `Unsupported` makes the optional native check skip; after a case is
     /// returned, missing `exists_out_of_band` or `read_file` evidence is
     /// `Unverified`, and observation errors fail the check. A streamed result
-    /// does not satisfy this request. Returned source and
-    /// target paths are registered for cleanup immediately.
+    /// does not satisfy this request. Returning a case does not by itself
+    /// transfer cleanup ownership of its target. The suite registers paths
+    /// only after validating the request, independently observing the source,
+    /// and confirming target absence; the fixture remains responsible for any
+    /// resource it seeded until that evidence is available.
     ///
     /// # Errors
     ///

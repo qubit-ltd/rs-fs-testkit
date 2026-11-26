@@ -651,8 +651,11 @@ pub trait FileSystemFixture {
     /// case is returned, missing `exists_out_of_band` or `read_file` evidence
     /// is `Unverified`, and observation errors fail the check. A streamed
     /// result does not satisfy this request.
-    /// The source and target are registered for fixture cleanup as soon as the
-    /// case is returned.
+    /// Returning a case does not by itself transfer cleanup ownership of its
+    /// target. The suite registers paths only after validating the request,
+    /// independently observing the source, and confirming target absence;
+    /// the fixture remains responsible for any resource it seeded until that
+    /// evidence is available.
     ///
     /// # Errors
     ///
