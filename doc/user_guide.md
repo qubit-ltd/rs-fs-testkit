@@ -97,7 +97,7 @@ qubit_fs_testkit::register_file_system_contract_tests! {
     module: provider_contracts,
     fixture: super::RootedFixture::new,
     required_checks: |phase| match phase {
-        qubit_fs_testkit::FileSystemContract::Read => vec![
+        qubit_fs_testkit::FileSystemContract::Copy => vec![
             qubit_fs_testkit::ContractCheckId::CopyNativeNonEmpty,
         ],
         _ => Vec::new(),
