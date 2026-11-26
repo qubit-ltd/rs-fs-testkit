@@ -5,7 +5,8 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Recovery ownership when an explicit asynchronous writer operation is dropped.
+//! Recovery ownership when an explicit asynchronous writer operation is
+//! dropped.
 
 use std::error::Error;
 use std::future::Future;
@@ -93,7 +94,10 @@ fn test_abort_future_drop_retains_writer_for_explicit_retry() {
 
     release_abort.store(true, Ordering::Relaxed);
     let mut retry = Box::pin(retained.writer_mut().abort_async());
-    assert!(matches!(poll_once(retry.as_mut()), Poll::Ready(Ok(WriteAbortOutcome::NotPublished))));
+    assert!(matches!(
+        poll_once(retry.as_mut()),
+        Poll::Ready(Ok(WriteAbortOutcome::NotPublished))
+    ));
     drop(retry);
     assert_eq!(retained.writer().state(), WriterState::Aborted);
 }
@@ -125,7 +129,10 @@ fn test_pending_abort_write_after_open_retains_writer_for_explicit_retry() {
         .downcast::<ContractWriterFailure<AsyncFileWriter>>()
         .unwrap_or_else(|_| panic!("expected retained async file writer"));
     let mut retry = Box::pin(retained.writer_mut().abort_async());
-    assert!(matches!(poll_once(retry.as_mut()), Poll::Ready(Ok(WriteAbortOutcome::NotPublished))));
+    assert!(matches!(
+        poll_once(retry.as_mut()),
+        Poll::Ready(Ok(WriteAbortOutcome::NotPublished))
+    ));
     drop(retry);
     assert_eq!(retained.writer().state(), WriterState::Aborted);
 }

@@ -33,10 +33,7 @@ pub async fn run_with_exact_key_cleanup<F>(
 where
     F: Future<Output = Result<(), Box<dyn Error>>>,
 {
-    run_with_exact_key_cleanup_using(owned, verification, |key| async move {
-        store.delete(&key).await
-    })
-    .await
+    run_with_exact_key_cleanup_using(owned, verification, |key| async move { store.delete(&key).await }).await
 }
 
 /// Uses a ledger populated only after independent successful create results.
@@ -50,14 +47,7 @@ where
 {
     run_with_exact_key_cleanup_provider(
         verification,
-        move || {
-            owned
-                .lock()
-                .expect("created-key ledger")
-                .iter()
-                .cloned()
-                .collect()
-        },
+        move || owned.lock().expect("created-key ledger").iter().cloned().collect(),
         |key| async move { store.delete(&key).await },
     )
     .await
@@ -92,17 +82,11 @@ where
     let outcome = panic::AssertUnwindSafe(verification).catch_unwind().await;
     let mut cleanup_errors = Vec::new();
     for key in owned() {
-        match panic::AssertUnwindSafe(delete(key.clone()))
-            .catch_unwind()
-            .await
-        {
+        match panic::AssertUnwindSafe(delete(key.clone())).catch_unwind().await {
             Ok(Ok(())) => {}
             Ok(Err(object_store::Error::NotFound { .. })) => {}
             Ok(Err(error)) => cleanup_errors.push(format!("{key}: {error}")),
-            Err(payload) => cleanup_errors.push(format!(
-                "{key}: delete panicked: {}",
-                panic_message(&payload)
-            )),
+            Err(payload) => cleanup_errors.push(format!("{key}: delete panicked: {}", panic_message(&payload))),
         }
     }
     (outcome, cleanup_errors)
@@ -117,9 +101,7 @@ pub fn finalize_verification(outcome: VerificationOutcome, cleanup_errors: Vec<S
             panic::resume_unwind(payload);
         }
         Ok(Err(error)) => {
-            panic!(
-                "real service PUT/GET/HEAD/LIST verification failed: {error}; cleanup errors: {diagnostics}"
-            );
+            panic!("real service PUT/GET/HEAD/LIST verification failed: {error}; cleanup errors: {diagnostics}");
         }
         Ok(Ok(())) => assert!(cleanup_errors.is_empty(), "cleanup failed: {diagnostics}"),
     }
@@ -137,10 +119,6 @@ fn panic_message(payload: &Box<dyn Any + Send>) -> String {
     payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&'static str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&'static str>().map(|value| (*value).to_owned()))
         .unwrap_or_else(|| "non-string panic payload".into())
 }

@@ -8,9 +8,9 @@
 
 #![cfg(feature = "async")]
 
+use std::error::Error;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
-use std::error::Error;
 use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
@@ -37,7 +37,8 @@ use self::common::async_memory_file_system::run_controlled;
 
 mod common;
 
-/// Dropping copy cancellation while recovery abort is suspended retains the writer.
+/// Dropping copy cancellation while recovery abort is suspended retains the
+/// writer.
 #[test]
 fn test_copy_cancellation_abort_drop_retains_writer_for_retry() {
     let fixture = AsyncMemoryFixture::new();
@@ -82,7 +83,8 @@ fn test_copy_cancellation_abort_drop_retains_writer_for_retry() {
     assert!(fixture.is_empty(), "copy probe resources must be cleaned");
 }
 
-/// Dropping write cancellation while recovery abort is suspended retains the writer.
+/// Dropping write cancellation while recovery abort is suspended retains the
+/// writer.
 #[test]
 fn test_write_cancellation_abort_drop_retains_writer_for_retry() {
     let fixture = AsyncMemoryFixture::new();
@@ -108,7 +110,11 @@ fn test_write_cancellation_abort_drop_retains_writer_for_retry() {
         .first()
         .expect("interrupted write recovery must retain cleanup evidence");
     assert_eq!(failure.check(), Some(ContractCheckId::WriteCancelCommit));
-    assert!(failure.message().contains("write cancellation recovery was interrupted"));
+    assert!(
+        failure
+            .message()
+            .contains("write cancellation recovery was interrupted")
+    );
     let source = Error::source(failure)
         .and_then(|source| source.downcast_ref::<ContractSource>())
         .expect("retained write recovery source");
@@ -198,7 +204,11 @@ fn test_write_cancellation_abort_unwind_retains_writer_for_retry() {
         .first()
         .expect("unwound write recovery must retain cleanup evidence");
     assert_eq!(failure.check(), Some(ContractCheckId::WriteCancelCommit));
-    assert!(failure.message().contains("write cancellation recovery was interrupted"));
+    assert!(
+        failure
+            .message()
+            .contains("write cancellation recovery was interrupted")
+    );
     let source = Error::source(failure)
         .and_then(|source| source.downcast_ref::<ContractSource>())
         .expect("retained write recovery source");

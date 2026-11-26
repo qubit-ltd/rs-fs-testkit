@@ -165,9 +165,10 @@ impl FileSystemContractSuite<'_> {
         verify_condition(actual == bytes && !exists, id, "strong copy initial state differs")?;
         self.context.record_created(source_child.clone());
         for path in [&target_sub, &target_child] {
-            let observed = self.fixture.exists_out_of_band(path).map_err(|error| {
-                ContractFailure::with_source("tree target child observation failed", error).at(id)
-            })?;
+            let observed = self
+                .fixture
+                .exists_out_of_band(path)
+                .map_err(|error| ContractFailure::with_source("tree target child observation failed", error).at(id))?;
             let FixtureSupport::Supported(false) = observed else {
                 self.context.record_check(
                     id,

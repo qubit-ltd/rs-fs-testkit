@@ -10,11 +10,7 @@
 #[path = "fs_rustdoc_support.rs"]
 pub mod fs_rustdoc_support;
 
-#[cfg(feature = "async")]
-#[allow(unused_imports)]
-pub use fs_rustdoc_support::poll_support;
 pub use fs_rustdoc_support::rustdoc_provider;
-
 use qubit_fs::FileSystem;
 use qubit_fs::path::Path;
 

@@ -209,11 +209,7 @@ impl AsyncFileSystemContractSuite<'_> {
             {
                 use crate::internal::copy_conflict_cleanup_guard::CopyConflictCleanupGuard;
 
-                let mut guard = CopyConflictCleanupGuard::new(
-                    failure,
-                    &mut self.context.run.cleanup.failures,
-                    id,
-                );
+                let mut guard = CopyConflictCleanupGuard::new(failure, &mut self.context.run.cleanup.failures, id);
                 let (abort, state) = {
                     let recovery = guard
                         .failure_mut()
@@ -347,17 +343,13 @@ mod tests {
             FileSystemLimits::unknown(),
         );
         run_controlled(async {
-            let FixtureSupport::Supported(source) = fixture
-                .seed_file("copy-conflict-source", b"copy bytes")
-                .await
-                .unwrap()
+            let FixtureSupport::Supported(source) =
+                fixture.seed_file("copy-conflict-source", b"copy bytes").await.unwrap()
             else {
                 panic!("source seed required");
             };
-            let FixtureSupport::Supported(target) = fixture
-                .seed_file("copy-conflict-target", b"existing")
-                .await
-                .unwrap()
+            let FixtureSupport::Supported(target) =
+                fixture.seed_file("copy-conflict-target", b"existing").await.unwrap()
             else {
                 panic!("target seed required");
             };

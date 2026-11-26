@@ -128,9 +128,7 @@ async fn test_cancelled_inflight_put_remains_indeterminate_during_abort() {
 
 #[tokio::test]
 async fn test_http_put_without_ack_reports_deadline_and_reaps_server() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("listener");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let (request_received_tx, request_received_rx) = tokio::sync::oneshot::channel();
     let server = tokio::spawn(async move {
@@ -225,22 +223,12 @@ async fn test_http_scenario_reaps_server_pending_after_successful_scenario() {
     let server = tokio::spawn(async move {
         std::future::pending::<()>().await;
     });
-    let result = common::http_support::run_http_scenario(
-        "completed PUT with pending server",
-        server,
-        || {},
-        async { Ok(()) },
-    )
-    .await;
+    let result =
+        common::http_support::run_http_scenario("completed PUT with pending server", server, || {}, async { Ok(()) })
+            .await;
     let error = result.expect_err("permanently pending server must hit its join deadline");
-    assert!(
-        error.contains("completed PUT with pending server"),
-        "{error}"
-    );
-    assert!(
-        error.contains("server join exceeded 5 second deadline"),
-        "{error}"
-    );
+    assert!(error.contains("completed PUT with pending server"), "{error}");
+    assert!(error.contains("server join exceeded 5 second deadline"), "{error}");
     assert!(error.contains("server task reaped"), "{error}");
 }
 
@@ -294,10 +282,7 @@ async fn test_scenario_error_preserves_release_panic_and_server_reap() {
     .await;
     let error = result.expect_err("scenario error remains a failure");
     assert!(error.contains("scenario primary cause"), "{error}");
-    assert!(
-        error.contains("release gate panicked: release gate cause"),
-        "{error}"
-    );
+    assert!(error.contains("release gate panicked: release gate cause"), "{error}");
     assert!(error.contains("server task reaped"), "{error}");
 }
 
@@ -307,18 +292,17 @@ async fn test_server_panic_preserves_release_panic_and_reports_terminal_state() 
     let diagnostics = Arc::new(std::sync::Mutex::new(Vec::new()));
     let recorded = Arc::clone(&diagnostics);
     let server = tokio::spawn(async { panic!("server primary cause") });
-    let result =
-        std::panic::AssertUnwindSafe(common::http_support::run_http_scenario_until_reporting(
-            "server and release faults",
-            server,
-            || panic!("release secondary cause"),
-            async { Ok(()) },
-            std::future::pending::<()>(),
-            "controlled deadline",
-            move |diagnostic| recorded.lock().unwrap().push(diagnostic),
-        ))
-        .catch_unwind()
-        .await;
+    let result = std::panic::AssertUnwindSafe(common::http_support::run_http_scenario_until_reporting(
+        "server and release faults",
+        server,
+        || panic!("release secondary cause"),
+        async { Ok(()) },
+        std::future::pending::<()>(),
+        "controlled deadline",
+        move |diagnostic| recorded.lock().unwrap().push(diagnostic),
+    ))
+    .catch_unwind()
+    .await;
     let panic = result.expect_err("server task panic must remain primary");
     assert!(
         panic
@@ -329,18 +313,9 @@ async fn test_server_panic_preserves_release_panic_and_reports_terminal_state() 
                 .is_some_and(|message| message.contains("server primary cause"))
     );
     let diagnostics = diagnostics.lock().unwrap().join("\n");
-    assert!(
-        diagnostics.contains("server primary cause"),
-        "{diagnostics}"
-    );
-    assert!(
-        diagnostics.contains("release secondary cause"),
-        "{diagnostics}"
-    );
-    assert!(
-        diagnostics.contains("server task terminated"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("server primary cause"), "{diagnostics}");
+    assert!(diagnostics.contains("release secondary cause"), "{diagnostics}");
+    assert!(diagnostics.contains("server task terminated"), "{diagnostics}");
 }
 
 #[tokio::test]

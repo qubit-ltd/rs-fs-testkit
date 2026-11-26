@@ -2579,7 +2579,9 @@ impl FileWriterSpi for MemoryWriter {
             && self.state.lock().expect("memory state lock").fault == MemoryFault::CopyConflictAbortPublishesAsUnchanged
         {
             let mut state = self.state.lock().expect("memory state lock");
-            state.entries.insert(self.path.as_str().to_owned(), Entry::File(self.bytes.clone()));
+            state
+                .entries
+                .insert(self.path.as_str().to_owned(), Entry::File(self.bytes.clone()));
             return Ok(WriteAbortOutcome::NotPublished);
         }
         let panic_once = {

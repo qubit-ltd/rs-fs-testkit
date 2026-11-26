@@ -10,10 +10,11 @@
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
-use crate::ContractFailure;
-use crate::contract_context::ContractContext;
-use crate::FixtureResult;
 use qubit_fs::path::Path;
+
+use crate::ContractFailure;
+use crate::FixtureResult;
+use crate::contract_context::ContractContext;
 
 /// Releases a fixture gate once and retains errors even during unwinding.
 ///
@@ -25,7 +26,11 @@ pub(crate) struct ProbeDisarmGuard<'a> {
     /// Suite-owned sink that retains disarm failures.
     failures: &'a mut Vec<ContractFailure>,
     /// Optional suite resource ledger borrowed independently of failures.
-    resources: Option<(&'a mut Vec<crate::internal::tracked_resource::TrackedResource>, &'a mut u64, &'static str)>,
+    resources: Option<(
+        &'a mut Vec<crate::internal::tracked_resource::TrackedResource>,
+        &'a mut u64,
+        &'static str,
+    )>,
     /// Whether the release operation still needs to be attempted.
     armed: bool,
 }
@@ -56,6 +61,21 @@ impl<'a> ProbeDisarmGuard<'a> {
     }
 
     /// Creates a probe guard that can record independently verified paths.
+    ///
+    /// # Parameters
+    ///
+    /// - `disarm`: Operation that releases the gate without starting I/O.
+    /// - `failures`: Run failure list that receives release errors or panics.
+    /// - `resources`: Resource ledger that receives independently verified
+    ///   paths.
+    /// - `resource_index`: Monotonic index assigned to newly recorded
+    ///   resources.
+    /// - `owner_check`: Check identity responsible for recorded resources.
+    ///
+    /// # Returns
+    ///
+    /// A guard that releases the gate and can record verified resource
+    /// ownership.
     pub(crate) fn with_resource_ledger(
         disarm: impl Fn() -> FixtureResult<()> + Send + Sync + 'a,
         failures: &'a mut Vec<ContractFailure>,
@@ -72,6 +92,10 @@ impl<'a> ProbeDisarmGuard<'a> {
     }
 
     /// Transfers a confirmed resource path to the suite cleanup ledger.
+    ///
+    /// # Parameters
+    ///
+    /// - `path`: Resource path independently confirmed as created.
     pub(crate) fn record_created(&mut self, path: Path) {
         if let Some((resources, resource_index, owner_check)) = &mut self.resources {
             ContractContext::record_resource_parts(resources, resource_index, path, owner_check);

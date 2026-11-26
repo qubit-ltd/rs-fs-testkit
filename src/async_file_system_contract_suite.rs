@@ -95,7 +95,8 @@ mod support;
 ///
 /// ```
 /// # mod support { include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/rustdoc_support.rs")); }
-/// # use support::{poll_support, RustdocAsyncFixture};
+/// # use support::fs_rustdoc_support::poll_support;
+/// # use support::RustdocAsyncFixture;
 /// use qubit_fs_testkit::{AsyncFileSystemContractSuite, FileSystemContract};
 ///
 /// let fixture = RustdocAsyncFixture::new();
@@ -157,12 +158,12 @@ impl<'a> AsyncFileSystemContractSuite<'a> {
 
     /// Executes all phases once and retains evidence across cancellation.
     ///
-    /// Dropping this future stops suite polling and preserves the cleanup ledger;
-    /// an already-issued provider or remote request may continue independently.
-    /// Call `finish` under a separate cleanup budget to retry teardown. A retry
-    /// can complete cleanup but does not erase the original interruption or
-    /// make the run successful. Keep the fixture owner alive until cleanup is
-    /// confirmed.
+    /// Dropping this future stops suite polling and preserves the cleanup
+    /// ledger; an already-issued provider or remote request may continue
+    /// independently. Call `finish` under a separate cleanup budget to
+    /// retry teardown. A retry can complete cleanup but does not erase the
+    /// original interruption or make the run successful. Keep the fixture
+    /// owner alive until cleanup is confirmed.
     /// A run requested after cleanup has started returns a lifecycle failure;
     /// create a fresh fixture and suite for another run.
     ///

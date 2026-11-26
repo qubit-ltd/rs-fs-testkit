@@ -176,6 +176,14 @@ impl ContractContext {
 
     /// Records a resource through split ownership borrowed by an async drop
     /// guard.
+    ///
+    /// # Parameters
+    ///
+    /// - `resources`: Resource ledger receiving the path unless already
+    ///   present.
+    /// - `resource_index`: Monotonic index advanced for a newly recorded path.
+    /// - `path`: Resource path retained for cleanup.
+    /// - `owner_check`: Check identity responsible for the resource.
     pub(crate) fn record_resource_parts(
         resources: &mut Vec<TrackedResource>,
         resource_index: &mut u64,
@@ -195,6 +203,14 @@ impl ContractContext {
 
     /// Installs a probe guard that can also record resource ownership after
     /// independent observation without releasing the disarm obligation.
+    ///
+    /// # Parameters
+    ///
+    /// - `disarm`: Operation that releases the fixture's probe gate.
+    ///
+    /// # Returns
+    ///
+    /// A guard that releases the gate and can record verified resources.
     #[cfg(feature = "async")]
     pub(crate) fn probe_disarm_guard<'a>(
         &'a mut self,
@@ -212,7 +228,7 @@ impl ContractContext {
             &mut run.cleanup.failures,
             resources,
             resource_index,
-            *current_contract,
+            current_contract,
         )
     }
 

@@ -65,7 +65,8 @@ where
     .await
 }
 
-/// Variant with a diagnostic sink for deterministic cleanup and dual-failure tests.
+/// Variant with a diagnostic sink for deterministic cleanup and dual-failure
+/// tests.
 pub async fn run_http_scenario_until_reporting<F, G, D, H>(
     phase: &str,
     server: JoinHandle<()>,
@@ -141,9 +142,7 @@ where
     match scenario_result {
         Ok(()) => match timeout(SERVER_JOIN_TIMEOUT, server.as_mut().expect("server task")).await {
             Ok(Ok(())) => release_error.map_or(Ok(()), |error| {
-                Err(format!(
-                    "{phase}: release gate panicked: {error}; server task joined"
-                ))
+                Err(format!("{phase}: release gate panicked: {error}; server task joined"))
             }),
             Ok(Err(join_error)) if join_error.is_panic() => {
                 let panic = join_error.into_panic();
@@ -191,9 +190,7 @@ where
                         let release = release_error
                             .map(|error| format!("; release gate panicked: {error}"))
                             .unwrap_or_default();
-                        Err(format!(
-                            "{error}; server cleanup failed: {cleanup}{release}"
-                        ))
+                        Err(format!("{error}; server cleanup failed: {cleanup}{release}"))
                     }
                 }
             } else {
@@ -221,10 +218,6 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
     payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| {
-            payload
-                .downcast_ref::<&'static str>()
-                .map(|value| (*value).to_owned())
-        })
+        .or_else(|| payload.downcast_ref::<&'static str>().map(|value| (*value).to_owned()))
         .unwrap_or_else(|| "non-string panic payload".into())
 }

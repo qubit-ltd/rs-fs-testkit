@@ -10,13 +10,13 @@ pub use ::qubit_fs_testkit;
 mod common;
 
 #[cfg(feature = "async")]
+use common::AsyncMemoryFault;
+#[cfg(feature = "async")]
 use common::AsyncMemoryFixture;
 use common::MemoryFault;
 use common::MemoryFixture;
 #[cfg(feature = "async")]
 use common::async_memory_file_system::run_controlled;
-#[cfg(feature = "async")]
-use common::AsyncMemoryFault;
 #[cfg(feature = "async")]
 use common::native_copy_fixture::AsyncNativeCopyFixture;
 use common::native_copy_fixture::NativeCopyFixture;

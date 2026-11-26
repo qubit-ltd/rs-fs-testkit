@@ -37,11 +37,7 @@ pub async fn verify(fixture: &Fixture) {
     ] {
         let mut suite = AsyncFileSystemContractSuite::new(fixture);
         let run = suite.run_check(id).await;
-        assert!(
-            run.requirements_satisfied_with(&[id]),
-            "{id:?}: {:#?}",
-            run.report()
-        );
+        assert!(run.requirements_satisfied_with(&[id]), "{id:?}: {:#?}", run.report());
         let evidence = run.report().checks().iter().find(|check| check.id() == id);
         assert!(
             matches!(
@@ -51,9 +47,7 @@ pub async fn verify(fixture: &Fixture) {
             "{id:?} must positively pass; got {evidence:?}"
         );
     }
-    let path = fixture
-        .path("sdk-result-suppressed")
-        .expect("unique fixture path");
+    let path = fixture.path("sdk-result-suppressed").expect("unique fixture path");
     fixture.control.arm(TestStage::AfterPutBeforeResult);
     let before_puts = fixture.control.put_calls();
     let before_aborts = fixture.control.abort_calls();
@@ -91,11 +85,7 @@ pub async fn verify(fixture: &Fixture) {
     assert_eq!(operation.state(), state);
     assert_eq!(operation.written_bytes(), confirmed);
     assert_eq!(
-        operation
-            .execute()
-            .await
-            .expect_err("no reexecution")
-            .state(),
+        operation.execute().await.expect_err("no reexecution").state(),
         WriteFailureState::Indeterminate
     );
     assert_eq!(fixture.control.put_calls() - before_puts, 1);

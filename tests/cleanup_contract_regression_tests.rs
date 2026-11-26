@@ -15,15 +15,15 @@ use std::sync::atomic::Ordering;
 
 use qubit_fs::FileSystem;
 use qubit_fs::path::Path;
+use qubit_fs_testkit::CopyFixtureCase;
+use qubit_fs_testkit::CopyScenario;
 use qubit_fs_testkit::FileSystemContract;
 use qubit_fs_testkit::FileSystemContractSuite;
 use qubit_fs_testkit::FileSystemFixture;
 use qubit_fs_testkit::FixtureError;
+use qubit_fs_testkit::FixturePreparation;
 use qubit_fs_testkit::FixtureResult;
 use qubit_fs_testkit::FixtureSupport;
-use qubit_fs_testkit::CopyScenario;
-use qubit_fs_testkit::CopyFixtureCase;
-use qubit_fs_testkit::FixturePreparation;
 
 use self::common::MemoryFault;
 use self::common::MemoryFixture;
@@ -172,9 +172,17 @@ fn test_copy_does_not_claim_unowned_target_when_absence_is_unverified() {
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_contract(FileSystemContract::Copy);
 
-    let target = fixture.target.lock().expect("target mutex").clone().expect("target seeded");
+    let target = fixture
+        .target
+        .lock()
+        .expect("target mutex")
+        .clone()
+        .expect("target seeded");
     assert!(run.report().checks().iter().any(|check| {
-        matches!(check.outcome(), qubit_fs_testkit::ContractCheckOutcome::Unverified { .. })
+        matches!(
+            check.outcome(),
+            qubit_fs_testkit::ContractCheckOutcome::Unverified { .. }
+        )
     }));
     assert_eq!(
         fixture.inner.read_file(&target).expect("sentinel readable"),
@@ -188,8 +196,12 @@ struct UnownedCopyTargetProbe {
 }
 
 impl FileSystemFixture for UnownedCopyTargetProbe {
-    fn file_system(&self) -> &FileSystem { self.inner.file_system() }
-    fn path(&self, relative: &str) -> FixtureResult<Path> { self.inner.path(relative) }
+    fn file_system(&self) -> &FileSystem {
+        self.inner.file_system()
+    }
+    fn path(&self, relative: &str) -> FixtureResult<Path> {
+        self.inner.path(relative)
+    }
 
     fn prepare_copy(
         &self,
@@ -198,8 +210,12 @@ impl FileSystemFixture for UnownedCopyTargetProbe {
         target_relative: &str,
         bytes: &[u8],
     ) -> FixtureResult<FixturePreparation<CopyFixtureCase>> {
-        let prepared = self.inner.prepare_copy(scenario, source_relative, target_relative, bytes)?;
-        if scenario == CopyScenario::Basic && let FixturePreparation::Ready(case) = &prepared {
+        let prepared = self
+            .inner
+            .prepare_copy(scenario, source_relative, target_relative, bytes)?;
+        if scenario == CopyScenario::Basic
+            && let FixturePreparation::Ready(case) = &prepared
+        {
             let target = case.target().clone();
             assert!(matches!(
                 self.inner.write_file_out_of_band(&target, b"unowned target sentinel")?,
@@ -221,7 +237,9 @@ impl FileSystemFixture for UnownedCopyTargetProbe {
         self.inner.read_file(path)
     }
 
-    fn teardown(&self) -> FixtureResult<()> { Ok(()) }
+    fn teardown(&self) -> FixtureResult<()> {
+        Ok(())
+    }
 }
 
 /// A report validates check evidence, while the run also accounts for teardown.

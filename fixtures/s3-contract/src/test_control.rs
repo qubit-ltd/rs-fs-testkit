@@ -108,10 +108,7 @@ impl TestControl {
     /// * `stage` — operation boundary at which the adapter should pause.
     pub fn arm(&self, stage: TestStage) {
         let mut gate = self.0.gate.lock().expect("test gate lock");
-        assert!(
-            gate.stage.is_none(),
-            "release the previous test gate before rearming"
-        );
+        assert!(gate.stage.is_none(), "release the previous test gate before rearming");
         self.0.accepted.store(0, Ordering::SeqCst);
         gate.stage = Some(stage);
         gate.reached = false;
@@ -184,15 +181,19 @@ impl TestControl {
     }
 
     /// Records a key only after the SDK confirms the PUT result.
+    ///
+    /// # Parameters
+    ///
+    /// - `key`: Exact object key confirmed as created by the SDK.
     pub(crate) fn record_created(&self, key: String) {
-        self.0
-            .created_keys
-            .lock()
-            .expect("created key ledger")
-            .insert(key);
+        self.0.created_keys.lock().expect("created key ledger").insert(key);
     }
 
     /// Records one abort attempt and consumes a configured one-shot failure.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the configured abort failure was consumed.
     pub(crate) fn begin_abort(&self) -> bool {
         self.0.aborts.fetch_add(1, Ordering::SeqCst);
         self.0.fail_abort.swap(false, Ordering::SeqCst)

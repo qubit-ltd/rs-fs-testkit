@@ -286,8 +286,7 @@ mod tests {
         else {
             panic!("source seed required");
         };
-        let FixtureSupport::Supported(target) = fixture.seed_file("copy-conflict-target", b"existing").unwrap()
-        else {
+        let FixtureSupport::Supported(target) = fixture.seed_file("copy-conflict-target", b"existing").unwrap() else {
             panic!("target seed required");
         };
         let mut suite = FileSystemContractSuite::new(&fixture);
@@ -306,5 +305,4 @@ mod tests {
             "commit-time abort publication must fail final target verification"
         );
     }
-
 }

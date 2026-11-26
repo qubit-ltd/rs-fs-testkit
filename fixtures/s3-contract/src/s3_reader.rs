@@ -140,8 +140,7 @@ impl S3Reader {
             .with_len(Some(result.meta.size))
             .with_etag(result.meta.e_tag.clone().map(Into::into));
         Self {
-            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path)
-                .with_metadata(metadata),
+            info: OpenedFileInfo::new(FileSystemId::new("s3-contract").unwrap(), path).with_metadata(metadata),
             stream: if empty {
                 Box::pin(empty_stream())
             } else {
@@ -220,9 +219,7 @@ impl AsyncInput for S3Reader {
                     self.offset = 0;
                 }
                 Poll::Ready(Some(Err(error))) => {
-                    return Poll::Ready(Err(
-                        error_mapper::map(error, FsOperation::Read).into_io_error()
-                    ));
+                    return Poll::Ready(Err(error_mapper::map(error, FsOperation::Read).into_io_error()));
                 }
             }
         }

@@ -15,14 +15,29 @@ use crate::ContractWriterFailure;
 
 /// Owns a writer throughout every asynchronous write and abort suspension.
 pub(crate) struct AsyncWriterRecoveryGuard<'a> {
+    /// Writer retained until the awaited operation completes or is dropped.
     writer: Option<AsyncFileWriter>,
+    /// Run failures that receive ownership when this guard is abandoned.
     failures: &'a mut Vec<ContractFailure>,
+    /// Check identity attached to the retained writer failure.
     id: ContractCheckId,
+    /// Diagnostic used when cancellation interrupts the operation.
     interruption: &'static str,
 }
 
 impl<'a> AsyncWriterRecoveryGuard<'a> {
     /// Arms ownership immediately after a writer has been opened.
+    ///
+    /// # Parameters
+    ///
+    /// - `writer`: The newly opened writer to retain.
+    /// - `failures`: The run failure list that receives an interrupted writer.
+    /// - `id`: The contract check responsible for the writer.
+    /// - `interruption`: The diagnostic recorded if this guard is dropped.
+    ///
+    /// # Returns
+    ///
+    /// A guard that owns `writer` until it is taken or dropped.
     pub(crate) fn new(
         writer: AsyncFileWriter,
         failures: &'a mut Vec<ContractFailure>,

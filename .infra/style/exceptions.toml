@@ -157,13 +157,18 @@ reason = "This file intentionally uses a legacy import shape required by its mod
 
 [[exceptions]]
 rule = "test-redirect"
-path = "tests/common/fs_rustdoc_support.rs"
-reason = "Rustdoc integration tests include the shared filesystem fixture implementation in a scoped module."
+path = "src/tests/rustdoc_support.rs"
+reason = "The packaged support module uses one filesystem fixture from unit-test and included doctest contexts."
 
 [[exceptions]]
 rule = "test-redirect"
 path = "tests/common/rustdoc_support.rs"
 reason = "Rustdoc integration tests include the shared provider fixture implementation in a scoped module."
+
+[[exceptions]]
+rule = "test-redirect"
+path = "src/tests/fs_rustdoc_support.rs"
+reason = "The packaged filesystem fixture anchors its async modules for unit-test and included doctest contexts."
 
 [[exceptions]]
 rule = "test-redirect"

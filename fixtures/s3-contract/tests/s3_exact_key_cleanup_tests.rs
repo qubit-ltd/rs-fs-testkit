@@ -21,10 +21,7 @@ use object_store::memory::InMemory;
 use object_store::path::Path;
 
 async fn put(store: &dyn ObjectStore, key: &Path) {
-    store
-        .put(key, Bytes::from_static(b"owned").into())
-        .await
-        .unwrap();
+    store.put(key, Bytes::from_static(b"owned").into()).await.unwrap();
 }
 
 async fn exists(store: &dyn ObjectStore, key: &Path) -> bool {
@@ -41,8 +38,7 @@ async fn test_successful_verification_cleans_owned_keys_and_keeps_sentinel() {
     }
 
     let (outcome, errors) =
-        common::exact_key_cleanup::run_with_exact_key_cleanup(&store, &owned, async { Ok(()) })
-            .await;
+        common::exact_key_cleanup::run_with_exact_key_cleanup(&store, &owned, async { Ok(()) }).await;
     assert!(outcome.is_ok_and(|result| result.is_ok()));
     assert!(errors.is_empty());
     for key in &owned {
@@ -188,12 +184,7 @@ async fn test_successful_verification_with_cleanup_failure_fails() {
     .catch_unwind()
     .await
     .expect_err("cleanup failure must fail successful verification");
-    assert!(
-        panic
-            .downcast_ref::<String>()
-            .unwrap()
-            .contains("owned/fail-delete")
-    );
+    assert!(panic.downcast_ref::<String>().unwrap().contains("owned/fail-delete"));
 }
 
 #[tokio::test]

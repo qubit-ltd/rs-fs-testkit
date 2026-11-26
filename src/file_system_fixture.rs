@@ -478,12 +478,13 @@ pub trait FileSystemFixture {
     /// # Returns
     ///
     /// `Supported(true)` or `Supported(false)` when existence can be observed,
-    /// or `Unsupported` when no independent observation is available. The default
-    /// returns `Unsupported`; checks that need to prove an initially absent
-    /// target (including `WriteBasic`, `CopyBasic`, and supported temporary
-    /// publication) record required evidence as `Unverified` without this hook.
-    /// A `FixtureError` reports a failed observation attempt and remains a
-    /// failure; it is not equivalent to `Unsupported`.
+    /// or `Unsupported` when no independent observation is available. The
+    /// default returns `Unsupported`; checks that need to prove an
+    /// initially absent target (including `WriteBasic`, `CopyBasic`, and
+    /// supported temporary publication) record required evidence as
+    /// `Unverified` without this hook. A `FixtureError` reports a failed
+    /// observation attempt and remains a failure; it is not equivalent to
+    /// `Unsupported`.
     ///
     /// # Errors
     ///

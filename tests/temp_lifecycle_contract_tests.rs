@@ -226,7 +226,9 @@ impl FileSystemFixture for TempExistenceMismatchFixture {
             ));
         }
         let observed = self.inner.exists_out_of_band(path)?;
-        if call == self.mismatch_at || (self.mismatch_directory_target && path.as_str().ends_with("persisted-directory")) {
+        if call == self.mismatch_at
+            || (self.mismatch_directory_target && path.as_str().ends_with("persisted-directory"))
+        {
             Ok(match observed {
                 FixtureSupport::Supported(exists) => FixtureSupport::Supported(!exists),
                 FixtureSupport::Unsupported => FixtureSupport::Supported(false),
@@ -833,11 +835,21 @@ fn test_sync_temp_atomic_observes_directory_even_when_file_evidence_is_unavailab
     );
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::TempAtomic);
-    assert!(run.failures().iter().any(|failure| {
-        failure.check() == Some(ContractCheckId::TempAtomic)
-            && failure.message() == "temporary publication target already exists"
-    }), "{:?}", run.failures());
-    assert!(fixture.observed_targets.borrow().iter().any(|path| path.ends_with("persisted-directory")));
+    assert!(
+        run.failures().iter().any(|failure| {
+            failure.check() == Some(ContractCheckId::TempAtomic)
+                && failure.message() == "temporary publication target already exists"
+        }),
+        "{:?}",
+        run.failures()
+    );
+    assert!(
+        fixture
+            .observed_targets
+            .borrow()
+            .iter()
+            .any(|path| path.ends_with("persisted-directory"))
+    );
     assert!(run.cleanup().completed());
     assert!(fixture.inner.is_empty());
 
@@ -845,7 +857,10 @@ fn test_sync_temp_atomic_observes_directory_even_when_file_evidence_is_unavailab
     let mut suite = FileSystemContractSuite::new(&fixture);
     let run = suite.run_check(ContractCheckId::TempAtomic);
     assert!(run.failures().is_empty(), "{:?}", run.failures());
-    assert!(matches!(run.report().checks()[0].outcome(), ContractCheckOutcome::Unverified { .. }));
+    assert!(matches!(
+        run.report().checks()[0].outcome(),
+        ContractCheckOutcome::Unverified { .. }
+    ));
     assert!(run.cleanup().completed());
     assert!(fixture.inner.is_empty());
 }

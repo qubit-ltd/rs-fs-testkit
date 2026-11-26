@@ -74,7 +74,12 @@ impl<'a> FileSystemContractSuite<'a> {
                 let mut unverified_reasons = Vec::new();
                 if file {
                     self.execute_temp_file(id)?;
-                    if let Some(reason) = self.context.report().checks().iter().rev()
+                    if let Some(reason) = self
+                        .context
+                        .report()
+                        .checks()
+                        .iter()
+                        .rev()
                         .find(|check| check.id() == id)
                         .and_then(|check| match check.outcome() {
                             ContractCheckOutcome::Unverified { reason } => Some(reason.clone()),
@@ -86,7 +91,12 @@ impl<'a> FileSystemContractSuite<'a> {
                 }
                 if directory {
                     self.execute_temp_directory(id)?;
-                    if let Some(reason) = self.context.report().checks().iter().rev()
+                    if let Some(reason) = self
+                        .context
+                        .report()
+                        .checks()
+                        .iter()
+                        .rev()
                         .find(|check| check.id() == id)
                         .and_then(|check| match check.outcome() {
                             ContractCheckOutcome::Unverified { reason } => Some(reason.clone()),
