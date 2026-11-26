@@ -128,7 +128,9 @@ async fn test_cancelled_inflight_put_remains_indeterminate_during_abort() {
 
 #[tokio::test]
 async fn test_http_put_without_ack_reports_deadline_and_reaps_server() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
     let address = listener.local_addr().expect("address");
     let (request_received_tx, request_received_rx) = tokio::sync::oneshot::channel();
     let server = tokio::spawn(async move {
@@ -223,11 +225,59 @@ async fn test_http_scenario_reaps_server_pending_after_successful_scenario() {
     let server = tokio::spawn(async move {
         std::future::pending::<()>().await;
     });
-    let result =
-        common::http_support::run_http_scenario("completed PUT with pending server", server, || {}, async { Ok(()) })
-            .await;
+    let result = common::http_support::run_http_scenario(
+        "completed PUT with pending server",
+        server,
+        || {},
+        async { Ok(()) },
+    )
+    .await;
     let error = result.expect_err("permanently pending server must hit its join deadline");
-    assert!(error.contains("completed PUT with pending server"), "{error}");
-    assert!(error.contains("server join exceeded 5 second deadline"), "{error}");
+    assert!(
+        error.contains("completed PUT with pending server"),
+        "{error}"
+    );
+    assert!(
+        error.contains("server join exceeded 5 second deadline"),
+        "{error}"
+    );
     assert!(error.contains("server task reaped"), "{error}");
+}
+
+#[tokio::test]
+async fn test_http_scenario_panic_preserves_cause_and_reaps_server() {
+    use futures_util::FutureExt;
+    let stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stopped_by_server = Arc::clone(&stopped);
+    let server = tokio::spawn(async move {
+        struct OnDrop(Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for OnDrop {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let _drop = OnDrop(stopped_by_server);
+        std::future::pending::<()>().await;
+    });
+    let result = std::panic::AssertUnwindSafe(common::http_support::run_http_scenario(
+        "controlled panic",
+        server,
+        || {},
+        async { panic!("scenario cause marker") },
+    ))
+    .catch_unwind()
+    .await;
+    let panic = result.expect_err("scenario panic must be rethrown");
+    assert!(
+        panic
+            .downcast_ref::<String>()
+            .is_some_and(|message| message.contains("scenario cause marker"))
+            || panic
+                .downcast_ref::<&'static str>()
+                .is_some_and(|message| message.contains("scenario cause marker"))
+    );
+    assert!(
+        stopped.load(std::sync::atomic::Ordering::SeqCst),
+        "server must be reaped before panic resumes"
+    );
 }

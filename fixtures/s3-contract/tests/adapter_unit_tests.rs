@@ -102,7 +102,10 @@ impl qubit_fs_testkit::WriteCancellationProbe for NeverAcknowledgeProbe {
         self.inner.case()
     }
 
-    fn poll_reached(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<qubit_fs_testkit::FixtureResult<()>> {
+    fn poll_reached(
+        &self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<qubit_fs_testkit::FixtureResult<()>> {
         self.acknowledgement_polls
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         match self.inner.poll_reached(cx) {
@@ -141,18 +144,26 @@ impl qubit_fs_testkit::AsyncFileSystemFixture for ControlledDeadlineFixture {
         'a,
         qubit_fs_testkit::FixtureSupport<Box<dyn qubit_fs_testkit::WriteCancellationProbe>>,
     > {
-        let prepared =
-            qubit_fs_testkit::AsyncFileSystemFixture::prepare_write_cancellation(&self.inner, stage, relative);
+        let prepared = qubit_fs_testkit::AsyncFileSystemFixture::prepare_write_cancellation(
+            &self.inner,
+            stage,
+            relative,
+        );
         Box::pin(async move {
             match prepared.await? {
                 qubit_fs_testkit::FixtureSupport::Supported(probe) => {
-                    let probe: Box<dyn qubit_fs_testkit::WriteCancellationProbe> = Box::new(NeverAcknowledgeProbe {
-                        inner: probe,
-                        acknowledgement_polls: std::sync::Arc::clone(&self.probe_acknowledgement_polls),
-                    });
+                    let probe: Box<dyn qubit_fs_testkit::WriteCancellationProbe> =
+                        Box::new(NeverAcknowledgeProbe {
+                            inner: probe,
+                            acknowledgement_polls: std::sync::Arc::clone(
+                                &self.probe_acknowledgement_polls,
+                            ),
+                        });
                     Ok(qubit_fs_testkit::FixtureSupport::Supported(probe))
                 }
-                qubit_fs_testkit::FixtureSupport::Unsupported => Ok(qubit_fs_testkit::FixtureSupport::Unsupported),
+                qubit_fs_testkit::FixtureSupport::Unsupported => {
+                    Ok(qubit_fs_testkit::FixtureSupport::Unsupported)
+                }
             }
         })
     }
@@ -208,7 +219,10 @@ async fn run_suite_check_with_budgets(
 }
 
 /// Runs one check with caller-owned run and cleanup deadlines.
-async fn run_check_with_deadlines(fixture: &common::Fixture, id: qubit_fs_testkit::ContractCheckId) {
+async fn run_check_with_deadlines(
+    fixture: &common::Fixture,
+    id: qubit_fs_testkit::ContractCheckId,
+) {
     use qubit_fs_testkit::AsyncFileSystemContractSuite;
 
     let mut suite = AsyncFileSystemContractSuite::new(fixture);
@@ -376,7 +390,48 @@ async fn test_in_memory_adapter_runs_the_supported_contract_matrix() {
     ] {
         let fixture = common::Fixture::memory("write-contract-run");
         let mut suite = AsyncFileSystemContractSuite::new(&fixture);
-        suite.run_check(id).await.assert_satisfied();
+        let run = suite.run_check(id).await;
+        run.assert_satisfied();
+        if id != ContractCheckId::WriteLimit {
+            let outcome = run
+                .report()
+                .checks()
+                .iter()
+                .find(|check| check.id() == id)
+                .map(|check| check.outcome());
+            if id == ContractCheckId::WriteCreateConflict {
+                assert!(
+                    matches!(
+                        outcome,
+                        Some(qubit_fs_testkit::ContractCheckOutcome::RejectedAsExpected)
+                    ),
+                    "collision check must record its expected rejection: {:#?}",
+                    run.report()
+                );
+            } else {
+                assert!(
+                    matches!(
+                        outcome,
+                        Some(qubit_fs_testkit::ContractCheckOutcome::Passed)
+                    ),
+                    "supported in-memory check {id:?} must pass positively: {:#?}",
+                    run.report()
+                );
+            }
+        } else {
+            assert!(
+                matches!(
+                    run.report()
+                        .checks()
+                        .iter()
+                        .find(|check| check.id() == id)
+                        .map(|check| check.outcome()),
+                    Some(qubit_fs_testkit::ContractCheckOutcome::SkippedOptional { .. })
+                ),
+                "1 MiB request exceeds the fixture's 64 KiB probe budget: {:#?}",
+                run.report()
+            );
+        }
     }
 }
 
@@ -389,7 +444,10 @@ async fn test_create_only_collision_is_not_published_and_keeps_payload() {
     let filesystem = open_in_memory("writer-recovery").unwrap();
     let path = Path::parse_literal("same-key").unwrap();
     let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
-    let mut first = filesystem.open_writer(&path, options.clone()).await.unwrap();
+    let mut first = filesystem
+        .open_writer(&path, options.clone())
+        .await
+        .unwrap();
     first.write_fully_async(b"existing").await.unwrap();
     first.commit_async().await.unwrap();
 
@@ -398,7 +456,10 @@ async fn test_create_only_collision_is_not_published_and_keeps_payload() {
     let failure = second.commit_async().await.unwrap_err();
     assert_eq!(failure.state(), WriteFailureState::NotPublished);
     assert_eq!(
-        filesystem.read_all(&path, Default::default(), 64).await.unwrap(),
+        filesystem
+            .read_all(&path, Default::default(), 64)
+            .await
+            .unwrap(),
         b"existing"
     );
     let retry = second.commit_async().await.unwrap_err();
@@ -428,12 +489,17 @@ async fn test_in_memory_listing_preserves_literal_object_prefixes() {
     for key in ["folder/a", "folder/ab", "other"] {
         let path = Path::parse_literal(key).unwrap();
         let options = WriteOptions::default().with_disposition(WriteDisposition::CreateNew);
-        let mut operation = filesystem.begin_write_all(path, b"x".to_vec(), options).unwrap();
+        let mut operation = filesystem
+            .begin_write_all(path, b"x".to_vec(), options)
+            .unwrap();
         operation.execute().await.unwrap();
     }
     let root = Path::parse_literal("folder").unwrap();
     let mut stream = filesystem
-        .list(&qubit_fs::directory::ListScope::Path(root), ListOptions::object_keys())
+        .list(
+            &qubit_fs::directory::ListScope::Path(root),
+            ListOptions::object_keys(),
+        )
         .await
         .unwrap();
     let mut names = Vec::new();
@@ -475,10 +541,52 @@ async fn test_shared_recovery_matrix_runs_in_memory() {
 }
 
 #[tokio::test]
+async fn test_mapped_or_colliding_key_is_not_claimed_for_cleanup() {
+    use bytes::Bytes;
+    use object_store::ObjectStoreExt;
+    use qubit_fs_testkit::AsyncFileSystemFixture;
+    let fixture = common::Fixture::memory("ownership-collision");
+    let key = object_store::path::Path::from("ownership-collision/sentinel");
+    fixture
+        .store
+        .put(&key, Bytes::from_static(b"preexisting").into())
+        .await
+        .unwrap();
+    let path = fixture.path("sentinel").unwrap();
+    let mut writer = fixture
+        .filesystem
+        .open_writer(
+            &path,
+            qubit_fs::write::WriteOptions::default()
+                .with_disposition(qubit_fs::write::WriteDisposition::CreateNew),
+        )
+        .await
+        .unwrap();
+    writer.write_fully_async(b"collision").await.unwrap();
+    assert!(writer.commit_async().await.is_err());
+    fixture.teardown().await.unwrap();
+    assert_eq!(
+        fixture
+            .store
+            .get(&key)
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap()
+            .as_ref(),
+        b"preexisting"
+    );
+}
+
+#[tokio::test]
 async fn test_expected_conditional_failures_abort_the_retained_session() {
     use qubit_fs_testkit::AsyncFileSystemContractSuite;
     use qubit_fs_testkit::ContractCheckId;
-    for id in [ContractCheckId::WriteIfAbsent, ContractCheckId::WriteIfMatch] {
+    for id in [
+        ContractCheckId::WriteIfAbsent,
+        ContractCheckId::WriteIfMatch,
+    ] {
         let fixture = common::Fixture::memory("expected-cleanup");
         AsyncFileSystemContractSuite::new(&fixture)
             .run_check(id)
@@ -519,11 +627,17 @@ async fn test_conditional_cleanup_failure_retains_original_snapshot_and_session(
         .expect("owned failure")
         .downcast::<ContractWriterFailure<ContractAsyncWriteFailure>>()
         .expect("both failures and operation");
-    assert_eq!(retained.writer().error().kind(), FsErrorKind::PreconditionFailed);
+    assert_eq!(
+        retained.writer().error().kind(),
+        FsErrorKind::PreconditionFailed
+    );
     let state = retained.writer().failure().state();
     let bytes = retained.writer().failure().written_bytes();
     assert_eq!(state, WriteFailureState::NotPublished);
-    let operation = retained.writer_mut().operation_mut().expect("retained operation");
+    let operation = retained
+        .writer_mut()
+        .operation_mut()
+        .expect("retained operation");
     let Some(AsyncWriterRecovery::Opened(writer)) = operation.recovery() else {
         panic!("opened session")
     };
@@ -574,7 +688,9 @@ async fn test_cancelling_expected_rejection_cleanup_preserves_session_in_run() {
         .downcast::<ContractAsyncWriteFailure>()
         .expect("operation ownership");
     let bytes = failure.failure().written_bytes();
-    let Some(AsyncWriterRecovery::Opened(writer)) = failure.operation_mut().expect("operation").recovery() else {
+    let Some(AsyncWriterRecovery::Opened(writer)) =
+        failure.operation_mut().expect("operation").recovery()
+    else {
         panic!("retained writer")
     };
     assert_eq!(

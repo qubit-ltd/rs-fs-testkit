@@ -32,7 +32,7 @@ open/write/flush/commit cancellation contracts with acknowledged stage probes.
 `ListScope::Namespace` covers exactly the configured namespace. A path scope is a
 raw logical-key prefix: `folder` selects `folder`, `folder/a`, and `folderish`.
 `LiteralPrefix` is relative to that scope, so scope `folder/` plus filter `a`
-selects `folder/a` and `folder/ab`. Because object_store 0.14.1 lists by component
+selects `folder/a` and `folder/ab`. Because object_store 0.14.2 lists by component
 prefix, the SDK query uses only the configured namespace and matching is applied
 locally. Each stream scans at most 1024 SDK entries, including nonmatches; the
 1025th entry raises `ResourceLimitExceeded`. This scan ceiling is separate from
@@ -55,19 +55,20 @@ cargo test --locked --manifest-path fixtures/s3-contract/Cargo.toml --lib --test
 cargo test --locked --manifest-path fixtures/s3-contract/Cargo.toml
 ```
 
-The locked fixture command is the credential-free CI run. It exercises the
-default local matrix, including in-memory and local HTTP coverage, without
-contacting a configured S3 service. The real-service tests stay ignored by
-default. To opt in, configure the `RS_FS_S3_*` variables above and run:
+The locked fixture command is the credential-free CI run. Its InMemory adapter
+matrix and local HTTP protocol tests exercise deterministic adapter behavior
+without contacting a configured S3 service. The real-service tests stay ignored
+by default. To opt in, configure the `RS_FS_S3_*` variables above and run:
 
 ```bash
 cargo test --locked --manifest-path fixtures/s3-contract/Cargo.toml --test s3_contract_tests -- --ignored --test-threads=1
 ```
 
-This command runs both ignored tests against the configured service. They use a
-unique child of the configured prefix, perform real PUT, GET, HEAD, and LIST
-operations, and attempt cleanup only for keys created by that run. It is not
-part of the default CI job.
+This command runs both ignored tests against the explicitly configured service.
+They use a unique child of the configured prefix and perform real PUT, GET,
+HEAD, and LIST operations. Their results are evidence only for that service and
+configuration; they do not establish behavior for other S3-compatible services
+or untested network failures. This command is not part of default CI.
 
 ## Recovery evidence and its limits
 
@@ -91,13 +92,15 @@ Zero-length reads issue HEAD and return an empty stream with full-resource
 metadata. An EOF range rejection becomes an empty result only after a conditional
 HEAD confirms the offset is at or beyond object length. Other failures, including
 NotFound and authentication/permission failures, are not converted to empty data.
-Range error classification is tied to object_store 0.14.1: SDK-native range errors
+Range error classification is tied to the locked object_store 0.14.2: SDK-native range errors
 are distinguished through their source type and variant; HTTP 416 is recognized
-from that version's narrow status-error prefix and requires the metadata proof.
-Revalidate that boundary when upgrading the SDK.
+from its narrow status-error prefix and requires the metadata proof. The local
+HTTP range regression supplies a real 416 response to the pinned SDK and checks
+that only a subsequent successful HEAD can establish EOF. Revalidate that
+boundary when upgrading the SDK.
 
-The real recovery test and the InMemory test call the same matrix. The fixture
-records exact keys prepared for the run and attempts their cleanup even when a
-matrix assertion panics. It never deletes by listing an entire shared prefix.
-A missing environment leaves ignored tests unverified; local passing results do
-not claim remote validation.
+The real recovery test and the InMemory test call the same recovery matrix.
+InMemory and HTTP results are local adapter and protocol evidence. The two
+ignored service tests are the only live-service evidence. A missing environment
+leaves those tests unverified; local passing results do not claim remote
+validation.

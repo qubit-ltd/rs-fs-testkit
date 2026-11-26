@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::collections::HashSet;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
@@ -23,6 +24,8 @@ pub(in crate::test_control) struct ControlState {
     pub(in crate::test_control) accepted: AtomicUsize,
     /// Number of abort futures polled.
     pub(in crate::test_control) aborts: AtomicUsize,
+    /// Exact keys whose PUT was confirmed successful by the SDK.
+    pub(in crate::test_control) created_keys: Mutex<HashSet<String>>,
     /// Whether the next abort should fail.
     pub(in crate::test_control) fail_abort: AtomicBool,
 }
