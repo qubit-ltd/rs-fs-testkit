@@ -325,16 +325,31 @@ impl AsyncFileSystemContractSuite<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+    use std::future::Future;
+    use std::task::Context;
+    use std::task::Poll;
+    use std::task::Waker;
+
     use qubit_fs::copy::CopyConflictPolicy;
     use qubit_fs::metadata::FileSystemLimits;
+    use qubit_fs::write::AsyncWriterRecovery;
+    use qubit_fs::write::WriteAbortOutcome;
+    use qubit_fs::write::WriterState;
 
     use crate::AsyncFileSystemContractSuite;
     use crate::AsyncFileSystemFixture;
+    use crate::ContractAsyncCopyFailure;
     use crate::ContractCheckId;
+    use crate::ContractSource;
     use crate::FixtureSupport;
     use crate::tests::common::AsyncMemoryFault;
     use crate::tests::common::AsyncMemoryFixture;
     use crate::tests::common::async_memory_file_system::run_controlled;
+
+    fn poll_once<F: Future>(future: std::pin::Pin<&mut F>) -> Poll<F::Output> {
+        future.poll(&mut Context::from_waker(Waker::noop()))
+    }
 
     #[test]
     fn test_async_fail_conflict_aborts_and_verifies_retained_writer() {
@@ -366,5 +381,83 @@ mod tests {
                 .await;
             assert!(result.is_err(), "commit-time abort publication must fail verification");
         });
+    }
+
+    #[test]
+    fn test_async_fail_conflict_drop_retains_operation_for_retry() {
+        let fixture = AsyncMemoryFixture::fallback_only_with_fault_and_limits(
+            AsyncMemoryFault::None,
+            FileSystemLimits::unknown(),
+        );
+        let (source, target) = run_controlled(async {
+            let FixtureSupport::Supported(source) =
+                fixture.seed_file("copy-conflict-source", b"copy bytes").await.unwrap()
+            else {
+                panic!("source seed required");
+            };
+            let FixtureSupport::Supported(target) =
+                fixture.seed_file("copy-conflict-target", b"existing").await.unwrap()
+            else {
+                panic!("target seed required");
+            };
+            (source, target)
+        });
+
+        fixture.suspend_writer_abort();
+        let mut suite = AsyncFileSystemContractSuite::new(&fixture);
+        let mut check = Box::pin(suite.check_copy_conflict_policy(
+            ContractCheckId::CopyFallbackOverwriteRejected,
+            &source,
+            &target,
+            b"copy bytes",
+            CopyConflictPolicy::Fail,
+            true,
+        ));
+        assert!(matches!(poll_once(check.as_mut()), Poll::Pending));
+        assert_eq!(fixture.writer_abort_calls(), 1);
+        drop(check);
+
+        let failure = suite
+            .run()
+            .cleanup()
+            .failures()
+            .first()
+            .expect("dropping interrupted copy recovery must retain the operation");
+        assert_eq!(failure.check(), Some(ContractCheckId::CopyFallbackOverwriteRejected));
+        assert!(failure.to_string().contains("copy conflict recovery was cancelled"));
+        let failure_source = Error::source(failure)
+            .and_then(|source| source.downcast_ref::<ContractSource>())
+            .expect("retained copy failure source");
+        let retained = failure_source.take().expect("copy failure ownership transfers once");
+        let mut retained = retained
+            .downcast::<ContractAsyncCopyFailure>()
+            .unwrap_or_else(|_| panic!("expected retained async copy failure"));
+        let operation = retained
+            .operation_mut()
+            .expect("admitted copy operation remains available");
+        let Some(AsyncWriterRecovery::Opened(mut writer)) = operation.take_recovery() else {
+            panic!("expected retained opened writer");
+        };
+
+        fixture.release_writer_abort();
+        let mut retry = Box::pin(writer.abort_async());
+        assert!(matches!(
+            poll_once(retry.as_mut()),
+            Poll::Ready(Ok(WriteAbortOutcome::NotPublished))
+        ));
+        drop(retry);
+        assert_eq!(writer.state(), WriterState::Aborted);
+
+        let (source_contents, target_contents) = run_controlled(async {
+            let FixtureSupport::Supported(source_contents) = fixture.read_file(&source).await.unwrap() else {
+                panic!("source observation required");
+            };
+            let FixtureSupport::Supported(target_contents) = fixture.read_file(&target).await.unwrap() else {
+                panic!("target observation required");
+            };
+            (source_contents, target_contents)
+        });
+        assert_eq!(source_contents, b"copy bytes");
+        assert_eq!(target_contents, b"existing");
     }
 }
